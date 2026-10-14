@@ -38,8 +38,20 @@ export const SearchPanel: React.FC = () => {
 
   const { openFile, workspacePath } = useWorkspaceStore();
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const replacementSourceKey = JSON.stringify({ workspacePath, query, replacement, isCaseSensitive, matchWholeWord, isRegex, includePattern, excludePattern });
 
   const totalMatches = results.reduce((acc, file) => acc + file.matches.length, 0);
+
+  useEffect(() => {
+    const current = useWorkspaceEditStore.getState().request;
+    if (current?.sourceKey && current.sourceKey !== replacementSourceKey) useWorkspaceEditStore.getState().markRequestStale();
+  }, [replacementSourceKey]);
+
+  useEffect(() => {
+    const onWorkspaceMutated = () => { void handleSearch(); };
+    window.addEventListener('workspace-files-mutated', onWorkspaceMutated);
+    return () => window.removeEventListener('workspace-files-mutated', onWorkspaceMutated);
+  });
 
   const handleSearch = async (searchTerm?: string) => {
     const term = searchTerm !== undefined ? searchTerm : query;
@@ -93,56 +105,44 @@ export const SearchPanel: React.FC = () => {
     }
   };
 
-  const handleReplaceAll = async () => {
+  const prepareReplacement = async (filePaths?: string[]) => {
     if (!query.trim() || !window.electronAPI) return;
     setIsReplacing(true);
-
+    const options: ReplaceInFilesOptions = {
+      query,
+      replacement,
+      isCaseSensitive,
+      matchWholeWord,
+      isRegex,
+      includePattern: includePattern.trim() || undefined,
+      excludePattern: excludePattern.trim() || undefined,
+      filePaths
+    };
     try {
-      const options: ReplaceInFilesOptions = {
-        query,
-        replacement,
-        isCaseSensitive,
-        matchWholeWord,
-        isRegex,
-        includePattern: includePattern.trim() || undefined,
-        excludePattern: excludePattern.trim() || undefined
-      };
-
-      const res = await window.electronAPI.replaceInFiles(options);
-      if (res.success && res.data) {
-        setStatusMessage(`Replaced ${res.data.replacedCount} occurrence(s) in ${res.data.filesChanged} file(s).`);
-        // Refresh search results
-        void handleSearch();
-      } else {
-        setStatusMessage(res.error || 'Replace failed');
-      }
-    } catch (err: unknown) {
-      setStatusMessage(err instanceof Error ? err.message : 'Replace error');
+      const response = await window.electronAPI.previewReplace(options);
+      if (!response.success || !response.data) throw new Error(response.error || 'Could not prepare a replacement preview.');
+      const preview = response.data;
+      useWorkspaceEditStore.getState().setRequest({
+        preview,
+        isStale: false,
+        sourceKey: replacementSourceKey,
+        refresh: async () => {
+          const refreshed = await window.electronAPI.previewReplace(options);
+          if (!refreshed.success || !refreshed.data) throw new Error(refreshed.error || 'Could not refresh replacement preview.');
+          return refreshed.data;
+        }
+      });
+      setStatusMessage(`Preview ready: ${preview.totalEdits} changes in ${preview.files.length} file${preview.files.length === 1 ? '' : 's'}.`);
+    } catch (reason) {
+      setStatusMessage(reason instanceof Error ? reason.message : 'Could not preview replacements.');
     } finally {
       setIsReplacing(false);
     }
   };
 
-  const handleReplaceInFile = async (filePath: string) => {
-    if (!query.trim() || !window.electronAPI) return;
-    try {
-      const options: ReplaceInFilesOptions = {
-        query,
-        replacement,
-        isCaseSensitive,
-        matchWholeWord,
-        isRegex,
-        filePaths: [filePath]
-      };
-      const res = await window.electronAPI.replaceInFiles(options);
-      if (res.success && res.data) {
-        setStatusMessage(`Replaced in ${filePath.split(/[\/\\]/).pop()}`);
-        void handleSearch();
-      }
-    } catch {
-      // Ignore
-    }
-  };
+  const handleReplaceAll = () => prepareReplacement();
+
+  const handleReplaceInFile = (filePath: string) => prepareReplacement([filePath]);
 
   const toggleFileCollapse = (filePath: string) => {
     setCollapsedFiles((prev) => ({ ...prev, [filePath]: !prev[filePath] }));
