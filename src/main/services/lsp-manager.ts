@@ -75,6 +75,8 @@ export interface TrackedDocument {
   languageId: string;
   version: number;
   text: string;
+  savedText: string;
+  isDirty: boolean;
 }
 
 export const SUPPORTED_LANGUAGE_SERVERS: LanguageServerSpec[] = [
@@ -489,6 +491,8 @@ export class LspManager {
    * Stops a language server
    */
   public async stopServer(languageId: string): Promise<void> {
+    const pendingStart = this.startPromises.get(languageId);
+    if (pendingStart) await pendingStart;
     const client = this.clients.get(languageId);
     if (client) {
       await client.stop();
@@ -520,7 +524,7 @@ export class LspManager {
       if (existing.text !== text) this.onDocumentChanged(normalizedPath, text);
       return;
     }
-    const doc: TrackedDocument = { uri, filePath: normalizedPath, languageId: resolvedLanguageId, version: 1, text };
+    const doc: TrackedDocument = { uri, filePath: normalizedPath, languageId: resolvedLanguageId, version: 1, text, savedText: text, isDirty: false };
     this.trackedDocuments.set(uri, doc);
 
     const client = this.clients.get(resolvedLanguageId);
