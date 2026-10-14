@@ -86,9 +86,9 @@ export const SkillsPanel: React.FC = () => {
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <Sparkles size={14} color="var(--accent-primary)" />
-          <span>Antigravity Capabilities</span>
+          <span>Capabilities</span>
         </div>
-        <button onClick={loadSkills} title="Refresh Skills">
+        <button onClick={loadSkills} title="Refresh Capabilities">
           <RefreshCw size={12} className={isLoading ? 'animate-spin' : ''} />
         </button>
       </div>

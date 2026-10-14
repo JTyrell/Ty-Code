@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { FileNode, ProposedDiff } from '../../preload/types';
+import type { FileNode, ProposedDiff } from '../../../preload/types';
 
 export interface EditorTab {
   path: string;

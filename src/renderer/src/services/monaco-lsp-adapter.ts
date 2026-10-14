@@ -1,0 +1,372 @@
+/**
+ * Ty-Claude Monaco LSP Adapter
+ * Bridges Monaco Editor instances with Language Server Protocol IPC endpoints.
+ * Registers completion, hover, definition, references, rename, symbols, and signature help.
+ */
+
+import type * as monacoType from 'monaco-editor';
+
+type Monaco = typeof monacoType;
+
+const REGISTERED_LANGUAGES = ['typescript', 'javascript', 'python', 'rust', 'go', 'cpp', 'c', 'java'];
+let isAdapterRegistered = false;
+
+// Conversion helpers from LSP to Monaco types
+function toMonacoRange(range: any): monacoType.IRange {
+  if (!range || !range.start) {
+    return { startLineNumber: 1, startColumn: 1, endLineNumber: 1, endColumn: 1 };
+  }
+  return {
+    startLineNumber: (range.start.line ?? 0) + 1,
+    startColumn: (range.start.character ?? 0) + 1,
+    endLineNumber: (range.end?.line ?? range.start.line ?? 0) + 1,
+    endColumn: (range.end?.character ?? range.start.character ?? 0) + 1
+  };
+}
+
+function toMonacoCompletionKind(monaco: Monaco, kind?: number): monacoType.languages.CompletionItemKind {
+  const K = monaco.languages.CompletionItemKind;
+  switch (kind) {
+    case 1: return K.Text;
+    case 2: return K.Method;
+    case 3: return K.Function;
+    case 4: return K.Constructor;
+    case 5: return K.Field;
+    case 6: return K.Variable;
+    case 7: return K.Class;
+    case 8: return K.Interface;
+    case 9: return K.Module;
+    case 10: return K.Property;
+    case 11: return K.Unit;
+    case 12: return K.Value;
+    case 13: return K.Enum;
+    case 14: return K.Keyword;
+    case 15: return K.Snippet;
+    case 16: return K.Color;
+    case 17: return K.File;
+    case 18: return K.Reference;
+    case 19: return K.Folder;
+    case 20: return K.EnumMember;
+    case 21: return K.Constant;
+    case 22: return K.Struct;
+    case 23: return K.Event;
+    case 24: return K.Operator;
+    case 25: return K.TypeParameter;
+    default: return K.Text;
+  }
+}
+
+function toMonacoSymbolKind(monaco: Monaco, kind: number): monacoType.languages.SymbolKind {
+  const K = monaco.languages.SymbolKind;
+  switch (kind) {
+    case 1: return K.File;
+    case 2: return K.Module;
+    case 3: return K.Namespace;
+    case 4: return K.Package;
+    case 5: return K.Class;
+    case 6: return K.Method;
+    case 7: return K.Property;
+    case 8: return K.Field;
+    case 9: return K.Constructor;
+    case 10: return K.Enum;
+    case 11: return K.Interface;
+    case 12: return K.Function;
+    case 13: return K.Variable;
+    case 14: return K.Constant;
+    case 15: return K.String;
+    case 16: return K.Number;
+    case 17: return K.Boolean;
+    case 18: return K.Array;
+    case 19: return K.Object;
+    case 20: return K.Key;
+    case 21: return K.Null;
+    case 22: return K.EnumMember;
+    case 23: return K.Struct;
+    case 24: return K.Event;
+    case 25: return K.Operator;
+    case 26: return K.TypeParameter;
+    default: return K.Variable;
+  }
+}
+
+function parseUri(uriStr: string): monacoType.Uri {
+  try {
+    return (window as any).monaco.Uri.parse(uriStr);
+  } catch {
+    return { path: uriStr } as any;
+  }
+}
+
+export function registerMonacoLspProviders(monaco: Monaco): void {
+  if (isAdapterRegistered || !window.electronAPI) return;
+  isAdapterRegistered = true;
+
+  for (const lang of REGISTERED_LANGUAGES) {
+    // 1. Completion Provider
+    monaco.languages.registerCompletionItemProvider(lang, {
+      triggerCharacters: ['.', ':', '/', '@', '"', "'", '<', '$', '_'],
+      provideCompletionItems: async (model, position) => {
+        try {
+          const filePath = model.uri.fsPath || model.uri.path;
+          const res = await window.electronAPI.lspCompletion({
+            filePath,
+            line: position.lineNumber - 1,
+            character: position.column - 1
+          });
+
+          if (!res.success || !res.data) {
+            return { suggestions: [] };
+          }
+
+          const rawItems = Array.isArray(res.data) ? res.data : res.data.items || [];
+          const word = model.getWordUntilPosition(position);
+          const defaultRange: monacoType.IRange = {
+            startLineNumber: position.lineNumber,
+            endLineNumber: position.lineNumber,
+            startColumn: word.startColumn,
+            endColumn: word.endColumn
+          };
+
+          const suggestions: monacoType.languages.CompletionItem[] = rawItems.map((item: any) => ({
+            label: typeof item.label === 'string' ? item.label : item.label?.label || '',
+            kind: toMonacoCompletionKind(monaco, item.kind),
+            detail: item.detail,
+            documentation: typeof item.documentation === 'string'
+              ? item.documentation
+              : item.documentation?.value,
+            insertText: item.insertText || (typeof item.label === 'string' ? item.label : item.label?.label || ''),
+            range: item.textEdit?.range ? toMonacoRange(item.textEdit.range) : defaultRange,
+            sortText: item.sortText,
+            filterText: item.filterText
+          }));
+
+          return { suggestions };
+        } catch {
+          return { suggestions: [] };
+        }
+      }
+    });
+
+    // 2. Hover Provider
+    monaco.languages.registerHoverProvider(lang, {
+      provideHover: async (model, position) => {
+        try {
+          const filePath = model.uri.fsPath || model.uri.path;
+          const res = await window.electronAPI.lspHover({
+            filePath,
+            line: position.lineNumber - 1,
+            character: position.column - 1
+          });
+
+          if (!res.success || !res.data || !res.data.contents) {
+            return null;
+          }
+
+          const raw = res.data.contents;
+          const contents: monacoType.IMarkdownString[] = [];
+
+          if (typeof raw === 'string') {
+            contents.push({ value: raw });
+          } else if (Array.isArray(raw)) {
+            for (const c of raw) {
+              if (typeof c === 'string') contents.push({ value: c });
+              else if (c && c.value) contents.push({ value: `\`\`\`${c.language || ''}\n${c.value}\n\`\`\`` });
+            }
+          } else if (raw && raw.value) {
+            contents.push({ value: raw.value });
+          }
+
+          return {
+            range: res.data.range ? toMonacoRange(res.data.range) : undefined,
+            contents
+          };
+        } catch {
+          return null;
+        }
+      }
+    });
+
+    // 3. Definition Provider (F12)
+    monaco.languages.registerDefinitionProvider(lang, {
+      provideDefinition: async (model, position) => {
+        try {
+          const filePath = model.uri.fsPath || model.uri.path;
+          const res = await window.electronAPI.lspDefinition({
+            filePath,
+            line: position.lineNumber - 1,
+            character: position.column - 1
+          });
+
+          if (!res.success || !res.data) return null;
+
+          const raw = Array.isArray(res.data) ? res.data : [res.data];
+          const locations: monacoType.languages.Location[] = [];
+
+          for (const loc of raw) {
+            if (loc.uri && loc.range) {
+              locations.push({
+                uri: parseUri(loc.uri),
+                range: toMonacoRange(loc.range)
+              });
+            } else if (loc.targetUri && loc.targetRange) {
+              locations.push({
+                uri: parseUri(loc.targetUri),
+                range: toMonacoRange(loc.targetRange)
+              });
+            }
+          }
+
+          return locations.length === 1 ? locations[0] : locations;
+        } catch {
+          return null;
+        }
+      }
+    });
+
+    // 4. Reference Provider (Shift+F12)
+    monaco.languages.registerReferenceProvider(lang, {
+      provideReferences: async (model, position, context) => {
+        try {
+          const filePath = model.uri.fsPath || model.uri.path;
+          const res = await window.electronAPI.lspReferences({
+            filePath,
+            line: position.lineNumber - 1,
+            character: position.column - 1,
+            includeDeclaration: context.includeDeclaration
+          });
+
+          if (!res.success || !Array.isArray(res.data)) return [];
+
+          return res.data.map((loc: any) => ({
+            uri: parseUri(loc.uri),
+            range: toMonacoRange(loc.range)
+          }));
+        } catch {
+          return [];
+        }
+      }
+    });
+
+    // 5. Rename Provider (F2)
+    monaco.languages.registerRenameProvider(lang, {
+      provideRenameEdits: async (model, position, newName) => {
+        try {
+          const filePath = model.uri.fsPath || model.uri.path;
+          const res = await window.electronAPI.lspRename({
+            filePath,
+            line: position.lineNumber - 1,
+            character: position.column - 1,
+            newName
+          });
+
+          if (!res.success || !res.data) return null;
+
+          const workspaceEdit = res.data;
+          const edits: monacoType.languages.IWorkspaceTextEdit[] = [];
+
+          if (workspaceEdit.changes) {
+            for (const [uriStr, textEdits] of Object.entries(workspaceEdit.changes)) {
+              for (const edit of textEdits as any[]) {
+                edits.push({
+                  resource: parseUri(uriStr),
+                  textEdit: {
+                    range: toMonacoRange(edit.range),
+                    text: edit.newText
+                  },
+                  versionId: undefined
+                });
+              }
+            }
+          }
+
+          return { edits };
+        } catch {
+          return null;
+        }
+      }
+    });
+
+    // 6. Document Symbol Provider (Outline / Breadcrumbs)
+    monaco.languages.registerDocumentSymbolProvider(lang, {
+      provideDocumentSymbols: async (model) => {
+        try {
+          const filePath = model.uri.fsPath || model.uri.path;
+          const res = await window.electronAPI.lspDocumentSymbols({ filePath });
+
+          if (!res.success || !Array.isArray(res.data)) return [];
+
+          function mapSymbol(sym: any): monacoType.languages.DocumentSymbol {
+            return {
+              name: sym.name,
+              detail: sym.detail || '',
+              kind: toMonacoSymbolKind(monaco, sym.kind),
+              tags: [],
+              range: toMonacoRange(sym.range),
+              selectionRange: toMonacoRange(sym.selectionRange || sym.range),
+              children: Array.isArray(sym.children) ? sym.children.map(mapSymbol) : []
+            };
+          }
+
+          return res.data.map(mapSymbol);
+        } catch {
+          return [];
+        }
+      }
+    });
+
+    // 7. Signature Help Provider
+    monaco.languages.registerSignatureHelpProvider(lang, {
+      signatureHelpTriggerCharacters: ['(', ','],
+      provideSignatureHelp: async (model, position) => {
+        try {
+          const filePath = model.uri.fsPath || model.uri.path;
+          const res = await window.electronAPI.lspSignatureHelp({
+            filePath,
+            line: position.lineNumber - 1,
+            character: position.column - 1
+          });
+
+          if (!res.success || !res.data) return null;
+
+          return {
+            value: {
+              signatures: res.data.signatures || [],
+              activeSignature: res.data.activeSignature || 0,
+              activeParameter: res.data.activeParameter || 0
+            },
+            dispose: () => {}
+          };
+        } catch {
+          return null;
+        }
+      }
+    });
+  }
+}
+
+/**
+ * Synchronizes an open Monaco document model with the LSP backend
+ */
+export function syncDocumentWithLsp(filePath: string, languageId: string, content: string): void {
+  if (!window.electronAPI) return;
+  void window.electronAPI.lspDidOpen({ filePath, languageId, text: content });
+}
+
+let changeDebounceTimer: any = null;
+export function notifyDocumentChanged(filePath: string, content: string): void {
+  if (!window.electronAPI) return;
+  clearTimeout(changeDebounceTimer);
+  changeDebounceTimer = setTimeout(() => {
+    void window.electronAPI.lspDidChange({ filePath, text: content });
+  }, 250);
+}
+
+export function notifyDocumentSaved(filePath: string, content?: string): void {
+  if (!window.electronAPI) return;
+  void window.electronAPI.lspDidSave({ filePath, text: content });
+}
+
+export function notifyDocumentClosed(filePath: string): void {
+  if (!window.electronAPI) return;
+  void window.electronAPI.lspDidClose({ filePath });
+}

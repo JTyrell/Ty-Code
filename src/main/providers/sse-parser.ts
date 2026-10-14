@@ -1,5 +1,5 @@
 export interface DeltaToolCall {
-  index: number;
+  index?: number;
   id?: string;
   type?: 'function';
   function?: {
@@ -10,7 +10,8 @@ export interface DeltaToolCall {
 
 export interface DeltaChunk {
   content?: string;
-  reasoning_content?: string; // DeepSeek R1 reasoning tokens
+  reasoning_content?: string;
+  reasoning?: string;
   tool_calls?: DeltaToolCall[];
 }
 
@@ -25,35 +26,19 @@ export interface StreamPayload {
   choices?: StreamResponseChoice[];
 }
 
-export function parseSSELines(
-  buffer: string,
-  onChunk: (payload: StreamPayload) => void
-): string {
+export function parseSSELines(buffer: string, onChunk: (payload: StreamPayload) => void): string {
   const lines = buffer.split('\n');
-  // Keep the last incomplete line in the buffer
   const remainder = lines.pop() ?? '';
-
   for (const line of lines) {
     const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith(':')) {
-      // Keep-alive comments or empty lines
-      continue;
-    }
-
-    if (trimmed.startsWith('data: ')) {
-      const dataStr = trimmed.slice(6).trim();
-      if (dataStr === '[DONE]') {
-        continue;
-      }
-
-      try {
-        const json = JSON.parse(dataStr) as StreamPayload;
-        onChunk(json);
-      } catch {
-        // Skip malformed JSON lines
-      }
+    if (!trimmed || trimmed.startsWith(':') || !trimmed.startsWith('data:')) continue;
+    const data = trimmed.slice(5).trimStart();
+    if (!data || data === '[DONE]') continue;
+    try {
+      onChunk(JSON.parse(data) as StreamPayload);
+    } catch {
+      // Ignore non-JSON messages and keep-alive payloads.
     }
   }
-
   return remainder;
 }

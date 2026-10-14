@@ -13,6 +13,8 @@ import { useChatStore } from '../state/chat-store';
 import { DEFAULT_PRESET_MODELS } from '../../../main/providers/provider-gateway';
 import type { ProviderType } from '../../../preload/types';
 
+const appRegion = (region: 'drag' | 'no-drag'): React.CSSProperties => ({ WebkitAppRegion: region } as React.CSSProperties);
+
 export const TitleBar: React.FC = () => {
   const { workspacePath, setWorkspacePath, setFileTree } = useWorkspaceStore();
   const { settings, saveSettings, toggleSettings, toggleTerminal, isTerminalOpen } = useChatStore();
@@ -56,11 +58,11 @@ export const TitleBar: React.FC = () => {
         justifyContent: 'space-between',
         padding: '0 8px',
         userSelect: 'none',
-        WebkitAppRegion: 'drag' as unknown as string
+        ...appRegion('drag')
       }}
     >
       {/* Left: App Title & Workspace */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', WebkitAppRegion: 'no-drag' as unknown as string }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', ...appRegion('no-drag') }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600, color: 'var(--text-primary)' }}>
           <Cpu size={16} color="var(--accent-primary)" />
           <span>Ty-Claude</span>
@@ -84,7 +86,7 @@ export const TitleBar: React.FC = () => {
       </div>
 
       {/* Center: Model Selector */}
-      <div style={{ WebkitAppRegion: 'no-drag' as unknown as string, display: 'flex', alignItems: 'center', gap: '6px' }}>
+      <div style={{ ...appRegion('no-drag'), display: 'flex', alignItems: 'center', gap: '6px' }}>
         <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Model:</div>
         <select
           value={settings?.activeModel || 'deepseek/deepseek-chat'}
@@ -107,7 +109,7 @@ export const TitleBar: React.FC = () => {
       </div>
 
       {/* Right: Actions & Window Controls */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', WebkitAppRegion: 'no-drag' as unknown as string }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', ...appRegion('no-drag') }}>
         <button
           onClick={toggleTerminal}
           style={{

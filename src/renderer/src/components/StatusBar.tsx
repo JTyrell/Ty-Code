@@ -1,14 +1,18 @@
-import React from 'react';
-import { GitBranch, AlertCircle, Cpu, Check } from 'lucide-react';
+import { GitBranch, AlertCircle, Cpu, Check, RefreshCw } from 'lucide-react';
 import { useWorkspaceStore } from '../state/workspace-store';
 import { useChatStore } from '../state/chat-store';
+import { useGitStore } from '../state/git-store';
 
 export const StatusBar: React.FC = () => {
   const { openTabs, activeTabPath } = useWorkspaceStore();
   const { settings } = useChatStore();
+  const { status, isSyncing, syncRepo, refreshStatus } = useGitStore();
 
   const activeTab = openTabs.find((t) => t.path === activeTabPath);
   const language = activeTab?.language || 'plaintext';
+
+  const branchName = status?.isRepo ? status.currentBranch : 'No Git';
+  const hasAheadBehind = Boolean((status?.ahead || 0) > 0 || (status?.behind || 0) > 0);
 
   return (
     <div
@@ -28,9 +32,20 @@ export const StatusBar: React.FC = () => {
     >
       {/* Left Items: Git Branch & Diagnostic Counts */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }} title="Git Branch">
+        <div
+          onClick={() => void (status?.isRepo ? syncRepo() : refreshStatus())}
+          style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}
+          title={status?.isRepo ? `Git Branch: ${branchName} (Click to sync remote)` : 'Click to check Git status'}
+        >
           <GitBranch size={12} color="var(--accent-primary)" />
-          <span>master</span>
+          <span>{branchName}</span>
+          {hasAheadBehind && (
+            <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+              {status?.behind ? `↓${status.behind}` : ''}
+              {status?.ahead ? `↑${status.ahead}` : ''}
+            </span>
+          )}
+          {isSyncing && <RefreshCw size={10} className="spin" />}
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }} title="Diagnostics: 0 Errors, 0 Warnings">

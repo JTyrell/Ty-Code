@@ -1,4 +1,6 @@
-import type { ExtensionMetadata, IpcResponse } from '../../preload/types';
+import { dialog, BrowserWindow } from 'electron';
+import type { ExtensionMetadata, InstalledExtension, IpcResponse } from '../../preload/types';
+import { extensionManager } from '../services/extension-manager';
 
 export async function searchOpenVsxExtensions(query: string): Promise<IpcResponse<ExtensionMetadata[]>> {
   try {
@@ -32,7 +34,8 @@ export async function searchOpenVsxExtensions(query: string): Promise<IpcRespons
         rating: e.averageRating ? Math.round(e.averageRating * 10) / 10 : undefined,
         publishedDate: e.timestamp,
         repository: e.repository,
-        downloadUrl: files.download
+        downloadUrl: files.download,
+        categories: e.categories || ['Tools']
       };
     });
 
@@ -60,6 +63,78 @@ export async function getOpenVsxExtensionDetails(
 
     const data = await res.json() as Record<string, unknown>;
     return { success: true, data };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { success: false, error: msg };
+  }
+}
+
+export async function handleGetInstalledExtensions(): Promise<IpcResponse<InstalledExtension[]>> {
+  try {
+    await extensionManager.init();
+    const installed = extensionManager.getInstalledExtensions();
+    return { success: true, data: installed };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { success: false, error: msg };
+  }
+}
+
+export async function handleInstallExtension(ext: ExtensionMetadata): Promise<IpcResponse<InstalledExtension>> {
+  try {
+    const installed = await extensionManager.installExtension(ext);
+    return { success: true, data: installed };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { success: false, error: msg };
+  }
+}
+
+export async function handleUninstallExtension(id: string): Promise<IpcResponse<void>> {
+  try {
+    await extensionManager.uninstallExtension(id);
+    return { success: true };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { success: false, error: msg };
+  }
+}
+
+export async function handleToggleExtension(id: string, enabled: boolean): Promise<IpcResponse<InstalledExtension>> {
+  try {
+    const updated = await extensionManager.toggleExtension(id, enabled);
+    return { success: true, data: updated };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { success: false, error: msg };
+  }
+}
+
+export async function handleUpdateExtensionSettings(id: string, settings: Record<string, unknown>): Promise<IpcResponse<void>> {
+  try {
+    await extensionManager.updateSettings(id, settings);
+    return { success: true };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { success: false, error: msg };
+  }
+}
+
+export async function handleInstallExtensionFromVsix(window?: BrowserWindow): Promise<IpcResponse<InstalledExtension>> {
+  try {
+    const win = window || BrowserWindow.getFocusedWindow();
+    const result = await dialog.showOpenDialog(win!, {
+      title: 'Select Extension VSIX Package',
+      filters: [{ name: 'VSIX Package', extensions: ['vsix', 'zip'] }],
+      properties: ['openFile']
+    });
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return { success: false, error: 'Installation cancelled' };
+    }
+
+    const installed = await extensionManager.installFromVsix(result.filePaths[0]);
+    return { success: true, data: installed };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     return { success: false, error: msg };

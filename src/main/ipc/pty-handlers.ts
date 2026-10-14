@@ -3,150 +3,118 @@ import fs from 'fs';
 import path from 'path';
 import { BrowserWindow } from 'electron';
 import * as pty from 'node-pty';
-import type {
-  CommandExecutionOptions,
-  CommandResult,
-  IpcResponse,
-  PtySessionInfo,
-  PtySpawnOptions,
-  ShellInfo
-} from '../../preload/types';
+import type { CommandExecutionOptions, CommandResult, IpcResponse, PtySessionInfo, PtySpawnOptions, ShellInfo } from '../../preload/types';
 
-// Active PTY process registry
-const activePtys = new Map<string, pty.IPty>();
+interface ActivePty {
+  process: pty.IPty;
+  shellPath: string;
+  window: BrowserWindow;
+  outputBuffer: string;
+  attached: boolean;
+  exited?: number;
+  subscriptions: Array<{ dispose: () => void }>;
+}
 
-/**
- * Detect all available terminal shells based on the host Operating System
- */
+const activePtys = new Map<string, ActivePty>();
+const MAX_UNATTACHED_OUTPUT = 256_000;
+
+function shellExists(shellPath: string): boolean {
+  try { return fs.statSync(shellPath).isFile(); } catch { return false; }
+}
+
+function findOnPath(command: string): string | undefined {
+  const extensions = process.platform === 'win32' ? (process.env.PATHEXT || '.EXE;.CMD;.BAT').split(';') : [''];
+  for (const directory of (process.env.PATH || '').split(path.delimiter)) {
+    if (!directory) continue;
+    for (const extension of extensions) {
+      const candidate = path.join(directory, command.includes('.') ? command : `${command}${extension}`);
+      if (shellExists(candidate)) return candidate;
+    }
+  }
+  return undefined;
+}
+
 export function getAvailableShells(): ShellInfo[] {
-  const isWin = process.platform === 'win32';
-  const isMac = process.platform === 'darwin';
-
-  if (isWin) {
-    const shells: ShellInfo[] = [
-      {
-        id: 'powershell',
-        name: 'PowerShell',
-        path: process.env.SystemRoot
-          ? path.join(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
-          : 'powershell.exe',
-        isDefault: true
-      },
-      {
-        id: 'cmd',
-        name: 'Command Prompt',
-        path: process.env.SystemRoot
-          ? path.join(process.env.SystemRoot, 'System32', 'cmd.exe')
-          : 'cmd.exe'
-      }
+  if (process.platform === 'win32') {
+    const root = process.env.SystemRoot || 'C:\\Windows';
+    const candidates: ShellInfo[] = [
+      { id: 'powershell', name: 'Windows PowerShell', path: path.join(root, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'), isDefault: true },
+      { id: 'cmd', name: 'Command Prompt', path: process.env.ComSpec || path.join(root, 'System32', 'cmd.exe') }
     ];
-
-    // Check Git Bash
-    const gitBashPaths = [
+    const shells = candidates.filter((shell) => shellExists(shell.path));
+    const pwshPath = findOnPath('pwsh');
+    if (pwshPath) shells.splice(1, 0, { id: 'pwsh', name: 'PowerShell 7', path: pwshPath });
+    const gitBash = [
       'C:\\Program Files\\Git\\bin\\bash.exe',
       'C:\\Program Files (x86)\\Git\\bin\\bash.exe',
       path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Git', 'bin', 'bash.exe')
-    ];
-    for (const p of gitBashPaths) {
-      if (fs.existsSync(p)) {
-        shells.push({ id: 'git-bash', name: 'Git Bash', path: p });
-        break;
-      }
-    }
-
-    // Check WSL
-    const wslPath = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'wsl.exe');
-    if (fs.existsSync(wslPath)) {
-      shells.push({ id: 'wsl', name: 'WSL (Linux)', path: wslPath });
-    }
-
+    ].find(shellExists);
+    if (gitBash) shells.push({ id: 'git-bash', name: 'Git Bash', path: gitBash });
+    const wsl = path.join(root, 'System32', 'wsl.exe');
+    if (shellExists(wsl)) shells.push({ id: 'wsl', name: 'WSL (Linux)', path: wsl });
     return shells;
   }
 
-  if (isMac) {
-    return [
-      { id: 'zsh', name: 'zsh', path: '/bin/zsh', isDefault: true },
-      { id: 'bash', name: 'bash', path: '/bin/bash' }
-    ];
+  const candidates = process.platform === 'darwin'
+    ? [{ id: 'zsh', name: 'zsh', path: '/bin/zsh', isDefault: true }, { id: 'bash', name: 'bash', path: '/bin/bash' }]
+    : [{ id: 'bash', name: 'bash', path: '/bin/bash', isDefault: true }, { id: 'zsh', name: 'zsh', path: '/bin/zsh' }, { id: 'sh', name: 'sh', path: '/bin/sh' }];
+  const shells = candidates.filter((shell) => shellExists(shell.path));
+  const userShell = process.env.SHELL;
+  if (userShell && path.isAbsolute(userShell) && shellExists(userShell) && !shells.some((shell) => shell.path === userShell)) {
+    shells.unshift({ id: 'user-shell', name: path.basename(userShell), path: userShell, isDefault: shells.length === 0 });
   }
-
-  // Linux
-  const linuxShells: ShellInfo[] = [
-    { id: 'bash', name: 'bash', path: '/bin/bash', isDefault: true }
-  ];
-  if (fs.existsSync('/bin/zsh') || fs.existsSync('/usr/bin/zsh')) {
-    linuxShells.push({
-      id: 'zsh',
-      name: 'zsh',
-      path: fs.existsSync('/bin/zsh') ? '/bin/zsh' : '/usr/bin/zsh'
-    });
-  }
-  if (fs.existsSync('/bin/sh')) {
-    linuxShells.push({ id: 'sh', name: 'sh', path: '/bin/sh' });
-  }
-
-  return linuxShells;
+  return shells;
 }
 
-/**
- * Spawn an interactive PTY session
- */
-export function spawnPtySession(
-  mainWindow: BrowserWindow,
-  options: PtySpawnOptions
-): IpcResponse<PtySessionInfo> {
+export function spawnPtySession(mainWindow: BrowserWindow, options: PtySpawnOptions, customShellPath?: string): IpcResponse<PtySessionInfo> {
   try {
     const availableShells = getAvailableShells();
-    let selectedShell = availableShells.find((s) => s.id === options.shellId) || availableShells.find((s) => s.isDefault) || availableShells[0];
-
-    const ptyId = `pty_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-    const cols = options.cols || 80;
-    const rows = options.rows || 24;
-    const cwd = options.cwd || process.cwd();
-
-    // Inherit full parent environment with UTF-8 encoding flags
-    const ptyEnv = {
-      ...process.env,
-      COLORTERM: 'truecolor',
-      TERM: 'xterm-256color',
-      LC_ALL: 'en_US.UTF-8',
-      LANG: 'en_US.UTF-8'
-    };
-
-    // Node-pty spawn with truecolor terminal emulation
-    const ptyProcess = pty.spawn(selectedShell.path, [], {
-      name: 'xterm-256color',
-      cols,
-      rows,
-      cwd,
-      env: ptyEnv
-    });
-
-    activePtys.set(ptyId, ptyProcess);
-
-    // Stream stdout to renderer
-    ptyProcess.onData((data) => {
-      if (!mainWindow.isDestroyed()) {
-        mainWindow.webContents.send(`pty:data:${ptyId}`, data);
+    let selectedShell: ShellInfo | undefined;
+    if (options.shellId === 'custom') {
+      if (!customShellPath || !path.isAbsolute(customShellPath) || !shellExists(customShellPath)) {
+        return { success: false, error: 'The custom shell path must point to an existing executable.' };
       }
-    });
+      selectedShell = { id: 'custom', name: path.basename(customShellPath), path: customShellPath };
+    } else if (options.shellId) {
+      selectedShell = availableShells.find((shell) => shell.id === options.shellId);
+      if (!selectedShell) return { success: false, error: `Shell '${options.shellId}' is not available on this system.` };
+    } else {
+      selectedShell = availableShells.find((shell) => shell.isDefault) || availableShells[0];
+    }
+    if (!selectedShell) return { success: false, error: 'No supported shell was detected on this system.' };
 
-    // Notify renderer on exit
-    ptyProcess.onExit(({ exitCode }) => {
-      activePtys.delete(ptyId);
-      if (!mainWindow.isDestroyed()) {
-        mainWindow.webContents.send(`pty:exit:${ptyId}`, exitCode);
-      }
-    });
+    const ptyId = `pty_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+    const cols = Number.isInteger(options.cols) && options.cols && options.cols > 0 ? Math.min(options.cols, 500) : 80;
+    const rows = Number.isInteger(options.rows) && options.rows && options.rows > 0 ? Math.min(options.rows, 300) : 24;
+    const cwd = options.cwd && fs.existsSync(options.cwd) && fs.statSync(options.cwd).isDirectory() ? path.resolve(options.cwd) : process.cwd();
+    const ptyEnv: Record<string, string> = Object.fromEntries(
+      Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === 'string')
+    );
+    ptyEnv.COLORTERM = 'truecolor';
+    ptyEnv.TERM = 'xterm-256color';
+    if (process.platform !== 'win32') {
+      ptyEnv.LANG ||= 'en_US.UTF-8';
+      ptyEnv.LC_ALL ||= ptyEnv.LANG;
+    }
 
-    return {
-      success: true,
-      data: {
-        ptyId,
-        shellId: selectedShell.id,
-        shellName: selectedShell.name
+    const processHandle = pty.spawn(selectedShell.path, [], { name: 'xterm-256color', cols, rows, cwd, env: ptyEnv });
+    const session: ActivePty = { process: processHandle, shellPath: selectedShell.path, window: mainWindow, outputBuffer: '', attached: false, subscriptions: [] };
+    activePtys.set(ptyId, session);
+    session.subscriptions.push(processHandle.onData((data) => {
+      if (session.attached) {
+        if (!session.window.isDestroyed() && !session.window.webContents.isDestroyed()) session.window.webContents.send(`pty:data:${ptyId}`, data);
+      } else {
+        session.outputBuffer = (session.outputBuffer + data).slice(-MAX_UNATTACHED_OUTPUT);
       }
-    };
+    }));
+    session.subscriptions.push(processHandle.onExit(({ exitCode }) => {
+      session.exited = exitCode;
+      if (session.attached) {
+        if (!session.window.isDestroyed() && !session.window.webContents.isDestroyed()) session.window.webContents.send(`pty:exit:${ptyId}`, exitCode);
+        activePtys.delete(ptyId);
+      }
+    }));
+    return { success: true, data: { ptyId, shellId: selectedShell.id, shellName: selectedShell.name } };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error('[PTY] Error spawning PTY:', msg);
@@ -154,129 +122,95 @@ export function spawnPtySession(
   }
 }
 
-/**
- * Send user keystrokes / input to PTY process
- */
-export function writePty(ptyId: string, data: string): void {
-  const ptyProcess = activePtys.get(ptyId);
-  if (ptyProcess) {
-    ptyProcess.write(data);
+/** Flush PTY output generated before the renderer registered its per-session listeners. */
+export function attachPty(ptyId: string): IpcResponse<void> {
+  const session = activePtys.get(ptyId);
+  if (!session) return { success: false, error: 'PTY session not found.' };
+  if (session.attached) return { success: true };
+  session.attached = true;
+  if (session.outputBuffer && !session.window.isDestroyed() && !session.window.webContents.isDestroyed()) {
+    session.window.webContents.send(`pty:data:${ptyId}`, session.outputBuffer);
   }
-}
-
-/**
- * Synchronize terminal working directory with active file directory
- */
-export function syncPtyCwd(ptyId: string, targetCwd: string, shellId: string): void {
-  const ptyProcess = activePtys.get(ptyId);
-  if (!ptyProcess) return;
-
-  if (shellId === 'cmd') {
-    ptyProcess.write(`cd /d "${targetCwd}"\r\n`);
-  } else if (shellId === 'powershell') {
-    ptyProcess.write(`Set-Location -LiteralPath '${targetCwd}'\r\n`);
-  } else {
-    ptyProcess.write(`cd '${targetCwd}'\r\n`);
-  }
-}
-
-
-/**
- * Resize PTY dimensions
- */
-export function resizePty(ptyId: string, cols: number, rows: number): void {
-  const ptyProcess = activePtys.get(ptyId);
-  if (ptyProcess && cols > 0 && rows > 0) {
-    try {
-      ptyProcess.resize(cols, rows);
-    } catch {
-      // ignore resize error on process death
-    }
-  }
-}
-
-/**
- * Terminate PTY session
- */
-export function killPty(ptyId: string): IpcResponse<void> {
-  const ptyProcess = activePtys.get(ptyId);
-  if (ptyProcess) {
-    ptyProcess.kill();
+  session.outputBuffer = '';
+  if (session.exited !== undefined) {
+    if (!session.window.isDestroyed() && !session.window.webContents.isDestroyed()) session.window.webContents.send(`pty:exit:${ptyId}`, session.exited);
     activePtys.delete(ptyId);
-    return { success: true };
   }
-  return { success: false, error: 'PTY session not found' };
+  return { success: true };
 }
 
-/**
- * Clean up all active PTYs on app shutdown
- */
+export function writePty(ptyId: string, data: string): void {
+  if (data.length > 64_000) return;
+  try { activePtys.get(ptyId)?.process.write(data); } catch { /* Process exited. */ }
+}
+
+export function syncPtyCwd(ptyId: string, targetCwd: string, shellId: string): void {
+  const session = activePtys.get(ptyId);
+  if (!session || !path.isAbsolute(targetCwd)) return;
+  try { if (!fs.statSync(targetCwd).isDirectory()) return; } catch { return; }
+  const customShellName = path.basename(session.shellPath).toLowerCase();
+  const actualShell = shellId === 'custom' && process.platform === 'win32'
+    ? customShellName === 'cmd.exe' ? 'cmd' : customShellName.startsWith('powershell') || customShellName.startsWith('pwsh') ? 'powershell' : 'posix'
+    : shellId;
+  let command: string;
+  if (actualShell === 'cmd') command = `cd /d "${targetCwd.replace(/"/g, '""')}"\r`;
+  else if (actualShell === 'powershell' || actualShell === 'pwsh') command = `Set-Location -LiteralPath '${targetCwd.replace(/'/g, "''")}'\r`;
+  else command = `cd -- '${targetCwd.replace(/'/g, "'\\''")}'\r`;
+  try { session.process.write(command); } catch { /* Process exited. */ }
+}
+
+export function resizePty(ptyId: string, cols: number, rows: number): void {
+  const session = activePtys.get(ptyId);
+  if (!session || !Number.isInteger(cols) || !Number.isInteger(rows) || cols < 1 || rows < 1) return;
+  try { session.process.resize(Math.min(cols, 500), Math.min(rows, 300)); } catch { /* Process exited. */ }
+}
+
+export function killPty(ptyId: string): IpcResponse<void> {
+  const session = activePtys.get(ptyId);
+  if (!session) return { success: false, error: 'PTY session not found' };
+  try { session.process.kill(); } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { success: false, error: message };
+  } finally {
+    session.subscriptions.forEach((subscription) => subscription.dispose());
+    activePtys.delete(ptyId);
+  }
+  return { success: true };
+}
+
 export function cleanupAllPtys(): void {
-  for (const [_, ptyProcess] of activePtys) {
-    try {
-      ptyProcess.kill();
-    } catch {
-      // ignore
-    }
+  for (const session of activePtys.values()) {
+    session.subscriptions.forEach((subscription) => subscription.dispose());
+    try { session.process.kill(); } catch { /* Process already exited. */ }
   }
   activePtys.clear();
 }
 
-/**
- * Non-interactive one-shot command runner for Agent tools
- */
 export async function runCommand(options: CommandExecutionOptions): Promise<IpcResponse<CommandResult>> {
   return new Promise((resolve) => {
     const isWin = process.platform === 'win32';
     const shell = isWin ? 'powershell.exe' : '/bin/bash';
     const args = isWin ? ['-NoProfile', '-Command', options.command] : ['-c', options.command];
-
     const cwd = options.cwd || process.cwd();
     const timeout = options.timeoutMs || 45000;
-
     let stdout = '';
     let stderr = '';
     let timedOut = false;
-
-    const child = childSpawn(shell, args, {
-      cwd,
-      env: { ...process.env, PAGER: 'cat' },
-      windowsHide: true
-    });
-
-    const timer = setTimeout(() => {
-      timedOut = true;
-      child.kill('SIGTERM');
-    }, timeout);
-
-    child.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
-    child.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
-
-    child.on('error', (err) => {
+    let settled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const finish = (response: IpcResponse<CommandResult>) => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timer);
-      resolve({
-        success: false,
-        error: `Failed to spawn shell process: ${err.message}`
-      });
-    });
-
-    child.on('close', (code) => {
-      clearTimeout(timer);
-      if (timedOut) {
-        resolve({
-          success: false,
-          error: `Command execution timed out after ${timeout}ms`
-        });
-      } else {
-        resolve({
-          success: true,
-          data: {
-            stdout,
-            stderr,
-            exitCode: code ?? 0
-          }
-        });
-      }
-    });
+      resolve(response);
+    };
+    const child = childSpawn(shell, args, { cwd, env: { ...process.env, PAGER: 'cat' }, windowsHide: true });
+    timer = setTimeout(() => { timedOut = true; child.kill('SIGTERM'); }, timeout);
+    child.stdout.on('data', (chunk: Buffer | string) => { stdout += chunk.toString(); });
+    child.stderr.on('data', (chunk: Buffer | string) => { stderr += chunk.toString(); });
+    child.on('error', (err) => finish({ success: false, error: `Failed to spawn shell process: ${err.message}` }));
+    child.on('close', (code) => timedOut
+      ? finish({ success: false, error: `Command execution timed out after ${timeout}ms` })
+      : finish({ success: true, data: { stdout, stderr, exitCode: code ?? 0 } }));
   });
 }

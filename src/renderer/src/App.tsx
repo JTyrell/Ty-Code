@@ -2,13 +2,18 @@ import React, { useEffect, useState, useRef } from 'react';
 import { TitleBar } from './components/TitleBar';
 import { ActivityBar, type ActivityTab } from './components/ActivityBar';
 import { Sidebar } from './components/Sidebar';
+import { SearchPanel } from './components/SearchPanel';
+import { SourceControlPanel } from './components/SourceControlPanel';
 import { ExtensionsPanel } from './components/ExtensionsPanel';
 import { SkillsPanel } from './components/SkillsPanel';
+import { OutlineView } from './components/OutlineView';
 import { EditorArea } from './components/EditorArea';
+import { DiffViewer } from './components/DiffViewer';
 import { ChatSidecar } from './components/ChatSidecar';
 import { TerminalDrawer } from './components/TerminalDrawer';
 import { StatusBar } from './components/StatusBar';
-import { QuickOpenModal } from './components/QuickOpenModal';
+import { QuickOpen } from './components/QuickOpen';
+import { CommandPalette } from './components/CommandPalette';
 import { SettingsModal } from './components/SettingsModal';
 import { useChatStore } from './state/chat-store';
 import { useWorkspaceStore } from './state/workspace-store';
@@ -16,6 +21,7 @@ import { useWorkspaceStore } from './state/workspace-store';
 export const App: React.FC = () => {
   const [activityTab, setActivityTab] = useState<ActivityTab>('explorer');
   const [isQuickOpenOpen, setIsQuickOpenOpen] = useState(false);
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
 
   // Resizable Sidebars State
   const [leftWidth, setLeftWidth] = useState(260);
@@ -43,12 +49,21 @@ export const App: React.FC = () => {
     })();
   }, [initSettings, setWorkspacePath, setFileTree]);
 
-  // Global Keyboard Shortcuts (Ctrl+P for Quick Open, Ctrl+` for Terminal)
+  // Global Keyboard Shortcuts (Ctrl+P, Ctrl+Shift+P, Ctrl+Shift+F, Ctrl+Shift+G, Ctrl+`)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'p') {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'p') {
+        e.preventDefault();
+        setIsCommandPaletteOpen((prev) => !prev);
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'p') {
         e.preventDefault();
         setIsQuickOpenOpen((prev) => !prev);
+      } else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        setActivityTab('search');
+      } else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'g') {
+        e.preventDefault();
+        setActivityTab('source-control');
       } else if ((e.ctrlKey || e.metaKey) && e.key === '`') {
         e.preventDefault();
         toggleTerminal();
@@ -133,11 +148,14 @@ export const App: React.FC = () => {
         {/* Leftmost Activity Bar */}
         <ActivityBar activeTab={activityTab} onTabChange={setActivityTab} />
 
-        {/* Dynamic Primary Left Panel (Explorer / Extensions / Skills) */}
+        {/* Dynamic Primary Left Panel (Explorer / Search / Source Control / Extensions / Skills / Outline) */}
         <div style={{ width: `${leftWidth}px`, height: '100%', flexShrink: 0, overflow: 'hidden' }}>
           {activityTab === 'explorer' && <Sidebar />}
+          {activityTab === 'search' && <SearchPanel />}
+          {activityTab === 'source-control' && <SourceControlPanel />}
           {activityTab === 'extensions' && <ExtensionsPanel />}
           {activityTab === 'skills' && <SkillsPanel />}
+          {activityTab === 'outline' && <OutlineView />}
         </div>
 
         {/* Left Splitter Resizer Handle */}
@@ -147,9 +165,10 @@ export const App: React.FC = () => {
           title="Drag to resize sidebar"
         />
 
-        {/* Central Monaco Editor Workspace */}
-        <div style={{ flex: 1, height: '100%', minWidth: 200, overflow: 'hidden' }}>
+        {/* Central Monaco Editor Workspace + Git Diff Viewer */}
+        <div style={{ flex: 1, height: '100%', minWidth: 200, overflow: 'hidden', position: 'relative' }}>
           <EditorArea />
+          <DiffViewer />
         </div>
 
         {/* Right Splitter Resizer Handle */}
@@ -171,10 +190,18 @@ export const App: React.FC = () => {
       {/* VS Code Style Status Bar */}
       <StatusBar />
 
-      {/* Quick Open Modal (Ctrl+P) */}
-      <QuickOpenModal
+      {/* Quick Open File (Ctrl+P, :line, @symbol) */}
+      <QuickOpen
         isOpen={isQuickOpenOpen}
         onClose={() => setIsQuickOpenOpen(false)}
+        onSwitchToCommandPalette={() => setIsCommandPaletteOpen(true)}
+      />
+
+      {/* Command Palette (Ctrl+Shift+P) */}
+      <CommandPalette
+        isOpen={isCommandPaletteOpen}
+        onClose={() => setIsCommandPaletteOpen(false)}
+        onNavigateToView={(view) => setActivityTab(view as any)}
       />
 
       {/* Settings Modal */}

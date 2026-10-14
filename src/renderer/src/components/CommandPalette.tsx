@@ -1,0 +1,395 @@
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  Terminal,
+  FileCode,
+  Settings,
+  GitBranch,
+  Search,
+  SplitSquareVertical,
+  SplitSquareHorizontal,
+  LayoutTemplate,
+  Code2,
+  RefreshCw,
+  FolderOpen,
+  Check,
+  Zap,
+  Bookmark
+} from 'lucide-react';
+import { useWorkspaceStore } from '../state/workspace-store';
+import { useChatStore } from '../state/chat-store';
+import { useExtensionStore } from '../state/extension-store';
+import { extensionHost } from '../services/extension-host';
+
+export interface CommandItem {
+  id: string;
+  title: string;
+  category: 'File' | 'Editor' | 'View' | 'Git' | 'Terminal' | 'LSP' | 'Extension' | 'General';
+  shortcut?: string;
+  icon?: React.ReactNode;
+  action: () => void;
+}
+
+interface CommandPaletteProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onNavigateToView?: (view: string) => void;
+  onToggleMinimap?: () => void;
+  onToggleWordWrap?: () => void;
+  onToggleZenMode?: () => void;
+  onSplitEditor?: (orientation: 'horizontal' | 'vertical') => void;
+}
+
+export const CommandPalette: React.FC<CommandPaletteProps> = ({
+  isOpen,
+  onClose,
+  onNavigateToView,
+  onToggleMinimap,
+  onToggleWordWrap,
+  onToggleZenMode,
+  onSplitEditor
+}) => {
+  const [query, setQuery] = useState('');
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const { saveActiveFile, activeTabPath, openTabs } = useWorkspaceStore();
+  const { toggleTerminal, toggleSettings } = useChatStore();
+  const { installed: installedExtensions } = useExtensionStore();
+
+  useEffect(() => {
+    if (isOpen) {
+      setQuery('');
+      setSelectedIndex(0);
+      setTimeout(() => inputRef.current?.focus(), 50);
+    }
+  }, [isOpen]);
+
+  // Generate complete command list
+  const getCommands = (): CommandItem[] => {
+    const commands: CommandItem[] = [
+      {
+        id: 'editor.save',
+        title: 'Save Active File',
+        category: 'File',
+        shortcut: 'Ctrl+S',
+        icon: <Check size={14} color="var(--accent-green)" />,
+        action: () => {
+          void saveActiveFile();
+          onClose();
+        }
+      },
+      {
+        id: 'editor.toggleMinimap',
+        title: 'Toggle Minimap',
+        category: 'View',
+        shortcut: 'Ctrl+Shift+M',
+        icon: <LayoutTemplate size={14} color="var(--accent-primary)" />,
+        action: () => {
+          onToggleMinimap?.();
+          onClose();
+        }
+      },
+      {
+        id: 'editor.toggleWordWrap',
+        title: 'Toggle Word Wrap',
+        category: 'View',
+        shortcut: 'Alt+Z',
+        icon: <FileCode size={14} color="var(--accent-cyan)" />,
+        action: () => {
+          onToggleWordWrap?.();
+          onClose();
+        }
+      },
+      {
+        id: 'editor.toggleZenMode',
+        title: 'Toggle Zen Mode (Distraction-Free)',
+        category: 'View',
+        shortcut: 'Ctrl+K Z',
+        icon: <Zap size={14} color="var(--accent-amber)" />,
+        action: () => {
+          onToggleZenMode?.();
+          onClose();
+        }
+      },
+      {
+        id: 'workbench.splitVertical',
+        title: 'Split Editor Right (Vertical)',
+        category: 'Editor',
+        shortcut: 'Ctrl+\\',
+        icon: <SplitSquareVertical size={14} color="var(--accent-primary)" />,
+        action: () => {
+          onSplitEditor?.('vertical');
+          onClose();
+        }
+      },
+      {
+        id: 'workbench.splitHorizontal',
+        title: 'Split Editor Down (Horizontal)',
+        category: 'Editor',
+        shortcut: 'Ctrl+K Ctrl+\\',
+        icon: <SplitSquareHorizontal size={14} color="var(--accent-primary)" />,
+        action: () => {
+          onSplitEditor?.('horizontal');
+          onClose();
+        }
+      },
+      {
+        id: 'workbench.searchInFiles',
+        title: 'Find in Files (Global Search)',
+        category: 'View',
+        shortcut: 'Ctrl+Shift+F',
+        icon: <Search size={14} color="var(--accent-primary)" />,
+        action: () => {
+          onNavigateToView?.('search');
+          onClose();
+        }
+      },
+      {
+        id: 'workbench.sourceControl',
+        title: 'Open Source Control (Git)',
+        category: 'Git',
+        shortcut: 'Ctrl+Shift+G',
+        icon: <GitBranch size={14} color="var(--accent-amber)" />,
+        action: () => {
+          onNavigateToView?.('source-control');
+          onClose();
+        }
+      },
+      {
+        id: 'workbench.extensions',
+        title: 'Open Extensions Marketplace',
+        category: 'General',
+        shortcut: 'Ctrl+Shift+X',
+        icon: <FolderOpen size={14} color="var(--accent-cyan)" />,
+        action: () => {
+          onNavigateToView?.('extensions');
+          onClose();
+        }
+      },
+      {
+        id: 'workbench.terminal',
+        title: 'Toggle Terminal Emulator',
+        category: 'Terminal',
+        shortcut: 'Ctrl+`',
+        icon: <Terminal size={14} color="var(--accent-green)" />,
+        action: () => {
+          toggleTerminal();
+          onClose();
+        }
+      },
+      {
+        id: 'workbench.settings',
+        title: 'Open User Settings & API Keys',
+        category: 'General',
+        shortcut: 'Ctrl+,',
+        icon: <Settings size={14} color="var(--text-secondary)" />,
+        action: () => {
+          toggleSettings();
+          onClose();
+        }
+      },
+      {
+        id: 'lsp.restartServers',
+        title: 'Restart All Language Servers (LSP)',
+        category: 'LSP',
+        icon: <RefreshCw size={14} color="var(--accent-cyan)" />,
+        action: async () => {
+          if (window.electronAPI) {
+            const servers = await window.electronAPI.lspGetServers();
+            if (servers.success && servers.data) {
+              for (const s of servers.data) {
+                if (s.status === 'running') {
+                  void window.electronAPI.lspRestartServer(s.languageId);
+                }
+              }
+            }
+          }
+          onClose();
+        }
+      }
+    ];
+
+    // Add dynamic contributed commands from installed & enabled extensions
+    for (const ext of installedExtensions) {
+      if (!ext.enabled || !ext.manifest.contributes?.commands) continue;
+      for (const cmd of ext.manifest.contributes.commands) {
+        commands.push({
+          id: cmd.command,
+          title: cmd.title,
+          category: 'Extension',
+          icon: <Bookmark size={14} color="var(--accent-primary)" />,
+          action: () => {
+            void extensionHost.executeCommand(cmd.command);
+            onClose();
+          }
+        });
+      }
+    }
+
+    return commands;
+  };
+
+  const allCommands = getCommands();
+  const filteredCommands = allCommands.filter((cmd) => {
+    if (!query.trim()) return true;
+    const q = query.toLowerCase();
+    return (
+      cmd.title.toLowerCase().includes(q) ||
+      cmd.category.toLowerCase().includes(q) ||
+      cmd.id.toLowerCase().includes(q)
+    );
+  });
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      onClose();
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setSelectedIndex((prev) => (prev < filteredCommands.length - 1 ? prev + 1 : prev));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setSelectedIndex((prev) => (prev > 0 ? prev - 1 : 0));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const target = filteredCommands[selectedIndex];
+      if (target) {
+        target.action();
+      }
+    }
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        backgroundColor: 'rgba(0, 0, 0, 0.65)',
+        backdropFilter: 'blur(4px)',
+        display: 'flex',
+        alignItems: 'flex-start',
+        justifyContent: 'center',
+        paddingTop: '70px',
+        zIndex: 11000
+      }}
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: '620px',
+          backgroundColor: 'var(--bg-secondary)',
+          border: '1px solid var(--border-subtle)',
+          borderRadius: '8px',
+          boxShadow: '0 20px 48px rgba(0,0,0,0.7)',
+          overflow: 'hidden',
+          display: 'flex',
+          flexDirection: 'column'
+        }}
+      >
+        {/* Command Search Bar */}
+        <div
+          style={{
+            padding: '10px 14px',
+            backgroundColor: 'var(--bg-tertiary)',
+            borderBottom: '1px solid var(--border-subtle)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px'
+          }}
+        >
+          <Code2 size={16} color="var(--accent-primary)" />
+          <input
+            ref={inputRef}
+            type="text"
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setSelectedIndex(0);
+            }}
+            onKeyDown={handleKeyDown}
+            placeholder="Type a command or action (e.g. format, minimap, terminal)..."
+            style={{
+              flex: 1,
+              background: 'transparent',
+              border: 'none',
+              padding: 0,
+              fontSize: '13px',
+              outline: 'none',
+              color: 'var(--text-primary)'
+            }}
+          />
+        </div>
+
+        {/* Command List */}
+        <div style={{ maxHeight: '360px', overflowY: 'auto', padding: '6px' }}>
+          {filteredCommands.length === 0 ? (
+            <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '12px' }}>
+              No commands found matching "{query}".
+            </div>
+          ) : (
+            filteredCommands.map((cmd, idx) => {
+              const isSelected = idx === selectedIndex;
+              return (
+                <div
+                  key={cmd.id}
+                  onClick={() => cmd.action()}
+                  style={{
+                    padding: '8px 12px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    cursor: 'pointer',
+                    borderRadius: '5px',
+                    backgroundColor: isSelected ? 'var(--bg-active)' : 'transparent',
+                    color: isSelected ? 'var(--text-primary)' : 'var(--text-secondary)',
+                    fontSize: '12px',
+                    gap: '12px'
+                  }}
+                  onMouseEnter={() => setSelectedIndex(idx)}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden' }}>
+                    <div style={{ flexShrink: 0 }}>{cmd.icon}</div>
+                    <span style={{ fontWeight: isSelected ? 600 : 400, whiteSpace: 'nowrap' }}>
+                      {cmd.title}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: '10px',
+                        padding: '1px 5px',
+                        borderRadius: '3px',
+                        backgroundColor: 'var(--bg-tertiary)',
+                        color: 'var(--text-muted)',
+                        fontWeight: 600
+                      }}
+                    >
+                      {cmd.category}
+                    </span>
+                  </div>
+
+                  {cmd.shortcut && (
+                    <span
+                      style={{
+                        fontSize: '11px',
+                        fontFamily: "'JetBrains Mono', monospace",
+                        color: 'var(--text-muted)',
+                        backgroundColor: 'var(--bg-tertiary)',
+                        padding: '2px 6px',
+                        borderRadius: '3px',
+                        border: '1px solid var(--border-subtle)',
+                        flexShrink: 0
+                      }}
+                    >
+                      {cmd.shortcut}
+                    </span>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};

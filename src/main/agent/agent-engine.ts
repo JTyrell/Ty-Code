@@ -1,9 +1,4 @@
-import type {
-  AgentStreamChunk,
-  ChatMessage,
-  ProviderSettings,
-  ProposedDiff
-} from '../../preload/types';
+import type { AgentStreamChunk, ChatMessage, ProviderSettings } from '../../preload/types';
 import { ProviderGateway, type ChatCompletionMessage } from '../providers/provider-gateway';
 import { buildSystemPrompt, AGENT_TOOLS_DEFINITIONS } from './system-prompt';
 import { ToolExecutor } from './tool-executor';
@@ -27,126 +22,86 @@ export class AgentEngine {
   }
 
   async run(params: RunAgentParams): Promise<void> {
-    const { prompt, workspacePath, history, settings, activeFilePath, onChunk, abortSignal } = params;
-
-    const systemPrompt = buildSystemPrompt(workspacePath, activeFilePath);
-
-    // Build chat completion messages
-    const messages: ChatCompletionMessage[] = [
-      { role: 'system', content: systemPrompt }
-    ];
-
-    // Append prior history (compacted)
-    for (const msg of history.slice(-10)) {
-      if (msg.role === 'user' || msg.role === 'assistant') {
-        messages.push({
-          role: msg.role,
-          content: msg.content
-        });
+    const { prompt, workspacePath, history, settings, activeFilePath, activeFileContent, onChunk, abortSignal } = params;
+    const systemPrompt = buildSystemPrompt(workspacePath, activeFilePath, activeFileContent);
+    const messages: ChatCompletionMessage[] = [{ role: 'system', content: systemPrompt }];
+    for (const message of history.slice(-10)) {
+      if (message.role === 'user' || message.role === 'assistant') {
+        messages.push({ role: message.role, content: message.content });
       }
     }
+    messages.push({ role: 'user', content: prompt });
 
-    // Append current user prompt
-    messages.push({
-      role: 'user',
-      content: prompt
-    });
+    const maxSteps = 10;
+    onChunk({ type: 'status', content: 'Agent thinking…' });
 
-    const MAX_STEPS = 10;
-    let stepCount = 0;
-
-    onChunk({ type: 'status', content: 'Agent thinking...' });
-
-    while (stepCount < MAX_STEPS) {
+    for (let step = 0; step < maxSteps; step++) {
       if (abortSignal?.aborted) {
-        onChunk({ type: 'status', content: 'Task aborted by user.' });
+        onChunk({ type: 'cancelled' });
         return;
       }
-
-      stepCount++;
-
       try {
         const streamResult = await ProviderGateway.streamChat(
           settings,
           messages,
           AGENT_TOOLS_DEFINITIONS,
           {
-            onToken: (token) => onChunk({ type: 'token', content: token }),
-            onThought: (thought) => onChunk({ type: 'thought', content: thought })
+            onToken: (content) => onChunk({ type: 'token', content }),
+            onThought: (content) => onChunk({ type: 'thought', content })
           },
           abortSignal
         );
 
-        // If the model did not make any tool calls, the task turn is complete
-        if (!streamResult.toolCalls || streamResult.toolCalls.length === 0) {
+        if (!streamResult.toolCalls.length) {
           onChunk({ type: 'done' });
           return;
         }
 
-        // Add assistant turn with tool calls to conversation history
         messages.push({
           role: 'assistant',
           content: streamResult.fullText || '',
-          tool_calls: streamResult.toolCalls.map((tc) => ({
-            id: tc.id,
+          tool_calls: streamResult.toolCalls.map((toolCall) => ({
+            id: toolCall.id,
             type: 'function',
-            function: {
-              name: tc.name,
-              arguments: JSON.stringify(tc.arguments)
-            }
+            function: { name: toolCall.name, arguments: JSON.stringify(toolCall.arguments) }
           }))
         });
 
-        // Execute each tool call sequentially
-        for (const tc of streamResult.toolCalls) {
-          if (abortSignal?.aborted) return;
-
+        for (const toolCall of streamResult.toolCalls) {
+          if (abortSignal?.aborted) {
+            onChunk({ type: 'cancelled' });
+            return;
+          }
           onChunk({
             type: 'tool_call',
-            toolCall: {
-              id: tc.id,
-              name: tc.name,
-              arguments: tc.arguments
-            }
+            toolCall: { id: toolCall.id, name: toolCall.name, arguments: toolCall.arguments }
           });
+          onChunk({ type: 'status', content: `Running ${toolCall.name}…` });
 
-          onChunk({ type: 'status', content: `Running ${tc.name}...` });
-
-          const execResult = await this.toolExecutor.execute(tc.name, tc.arguments);
-
+          const result = await this.toolExecutor.execute(toolCall.name, toolCall.arguments, abortSignal);
           onChunk({
             type: 'tool_result',
             toolResult: {
-              toolCallId: tc.id,
-              name: tc.name,
-              output: execResult.output,
-              isError: execResult.isError
+              toolCallId: toolCall.id,
+              name: toolCall.name,
+              output: result.output,
+              isError: result.isError
             }
           });
-
-          if (execResult.proposedDiff) {
-            onChunk({
-              type: 'diff',
-              diff: execResult.proposedDiff
-            });
-          }
-
-          // Append tool response to message history for next model step
-          messages.push({
-            role: 'tool',
-            name: tc.name,
-            tool_call_id: tc.id,
-            content: execResult.output
-          });
+          if (result.proposedDiff) onChunk({ type: 'diff', diff: result.proposedDiff });
+          messages.push({ role: 'tool', name: toolCall.name, tool_call_id: toolCall.id, content: result.output });
         }
       } catch (err: unknown) {
-        if (abortSignal?.aborted) return;
-        const msg = err instanceof Error ? err.message : String(err);
-        onChunk({ type: 'error', error: msg });
+        if (abortSignal?.aborted) {
+          onChunk({ type: 'cancelled' });
+          return;
+        }
+        const message = err instanceof Error ? err.message : String(err);
+        onChunk({ type: 'error', error: message });
         return;
       }
     }
-
+    onChunk({ type: 'status', content: 'Reached the maximum number of tool steps.' });
     onChunk({ type: 'done' });
   }
 }

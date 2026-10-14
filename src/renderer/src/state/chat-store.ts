@@ -1,13 +1,5 @@
 import { create } from 'zustand';
-import type {
-  ChatMessage,
-  ProviderSettings,
-  ProviderType,
-  ToolCall,
-  ToolResult,
-  ProposedDiff,
-  AgentStreamChunk
-} from '../../preload/types';
+import type { AgentStreamChunk, ChatMessage, ProviderSettings, ProviderType, ToolExecutionStatus } from '../../../preload/types';
 
 interface ChatState {
   messages: ChatMessage[];
@@ -19,246 +11,191 @@ interface ChatState {
   settings: ProviderSettings | null;
   isSettingsOpen: boolean;
   isTerminalOpen: boolean;
-
-  // Actions
   initSettings: () => Promise<void>;
-  saveSettings: (updates: Partial<ProviderSettings>) => Promise<void>;
-  sendMessage: (prompt: string, workspacePath: string, activeFilePath?: string, activeFileContent?: string) => Promise<void>;
+  saveSettings: (updates: Partial<ProviderSettings>) => Promise<boolean>;
+  sendMessage: (prompt: string, workspacePath: string, activeFilePath?: string, activeFileContent?: string, appendUserMessage?: boolean) => Promise<void>;
   stopTask: () => Promise<void>;
   clearChat: () => void;
   toggleSettings: () => void;
   toggleTerminal: () => void;
 }
 
+let activeStreamUnsubscribe: (() => void) | null = null;
+function createId(prefix: string): string { return `${prefix}_${globalThis.crypto.randomUUID()}`; }
+function finalizePartialMessage(messages: ChatMessage[], text: string, reasoning: string): ChatMessage[] {
+  if (!text && !reasoning) return messages;
+  return [...messages, { id: createId('assistant'), role: 'assistant', content: text, reasoning: reasoning || undefined, timestamp: Date.now() }];
+}
+function cancelRunningTools(messages: ChatMessage[]): ChatMessage[] {
+  return messages.map((message) => message.role === 'tool' && message.toolStatus === 'running'
+    ? { ...message, toolStatus: 'cancelled' }
+    : message);
+}
+function updateToolStatus(messages: ChatMessage[], toolCallId: string, status: ToolExecutionStatus, output?: string, isError?: boolean): ChatMessage[] {
+  return messages.map((message) => {
+    if (message.role !== 'tool' || message.toolCall?.id !== toolCallId || !message.toolCall) return message;
+    return {
+      ...message,
+      content: output ?? message.content,
+      toolStatus: status,
+      ...(output === undefined ? {} : { toolResult: { toolCallId, name: message.toolCall.name, output, isError } })
+    };
+  });
+}
+
 export const useChatStore = create<ChatState>((set, get) => ({
-  messages: [],
-  isRunning: false,
-  currentTaskId: null,
-  currentStatus: '',
-  currentThought: '',
-  streamingText: '',
-  settings: null,
-  isSettingsOpen: false,
-  isTerminalOpen: false,
+  messages: [], isRunning: false, currentTaskId: null, currentStatus: '', currentThought: '', streamingText: '',
+  settings: null, isSettingsOpen: false, isTerminalOpen: false,
 
   initSettings: async () => {
     try {
-      const res = await window.electronAPI.getSettings();
-      if (res.success && res.data) {
-        set({ settings: res.data });
-      }
-    } catch (err) {
-      console.error('Failed to load settings:', err);
-    }
+      const response = await window.electronAPI.getSettings();
+      if (response.success && response.data) set({ settings: response.data });
+      else if (response.error) console.error('Failed to load settings:', response.error);
+    } catch (err) { console.error('Failed to load settings:', err); }
   },
 
-  saveSettings: async (updates: Partial<ProviderSettings>) => {
+  saveSettings: async (updates) => {
     try {
-      const res = await window.electronAPI.saveSettings(updates);
-      if (res.success) {
-        const { settings } = get();
-        if (settings) {
-          set({ settings: { ...settings, ...updates } });
+      const response = await window.electronAPI.saveSettings(updates);
+      if (!response.success) { console.error('Failed to save settings:', response.error); return false; }
+      const current = get().settings;
+      if (current) {
+        const apiKeysConfigured = { ...current.apiKeysConfigured };
+        for (const [provider, value] of Object.entries(updates.apiKeys || {})) {
+          if (typeof value === 'string' && value.trim()) apiKeysConfigured[provider as ProviderType] = true;
         }
+        set({ settings: { ...current, ...updates, apiKeys: {}, apiKeysConfigured, customEndpoints: { ...current.customEndpoints, ...updates.customEndpoints } } });
       }
-    } catch (err) {
-      console.error('Failed to save settings:', err);
-    }
+      return true;
+    } catch (err) { console.error('Failed to save settings:', err); return false; }
   },
 
-  sendMessage: async (
-    prompt: string,
-    workspacePath: string,
-    activeFilePath?: string,
-    activeFileContent?: string
-  ) => {
-    const { messages, isRunning } = get();
-    if (isRunning || !prompt.trim()) return;
-
-    const userMessage: ChatMessage = {
-      id: `msg_${Date.now()}`,
-      role: 'user',
-      content: prompt,
-      timestamp: Date.now()
-    };
-
+  sendMessage: async (prompt, workspacePath, activeFilePath, activeFileContent, appendUserMessage = true) => {
+    if (get().isRunning || !prompt.trim()) return;
+    activeStreamUnsubscribe?.();
+    activeStreamUnsubscribe = null;
+    const currentMessages = get().messages;
+    let lastUserIndex = -1;
+    for (let index = currentMessages.length - 1; index >= 0; index--) {
+      if (currentMessages[index].role === 'user') { lastUserIndex = index; break; }
+    }
+    const requestHistory = !appendUserMessage && lastUserIndex >= 0
+      ? currentMessages.slice(0, lastUserIndex)
+      : currentMessages;
+    const userMessage: ChatMessage = { id: createId('user'), role: 'user', content: prompt, timestamp: Date.now() };
+    const regeneratedMessages = !appendUserMessage && lastUserIndex >= 0
+      ? currentMessages.slice(0, lastUserIndex + 1)
+      : currentMessages;
+    const taskId = createId('task');
     set({
-      messages: [...messages, userMessage],
+      messages: appendUserMessage ? [...currentMessages, userMessage] : regeneratedMessages,
       isRunning: true,
-      currentStatus: 'Starting task...',
+      currentTaskId: taskId,
+      currentStatus: 'Starting task…',
       currentThought: '',
       streamingText: ''
     });
 
-    try {
-      // Listen for agent streams
-      const unsubscribe = window.electronAPI.onAgentStream((chunk: AgentStreamChunk) => {
-        const state = get();
-
-        switch (chunk.type) {
-          case 'token':
-            set({ streamingText: state.streamingText + (chunk.content || '') });
-            break;
-
-          case 'thought':
-            set({ currentThought: state.currentThought + (chunk.content || '') });
-            break;
-
-          case 'status':
-            set({ currentStatus: chunk.content || '' });
-            break;
-
-          case 'tool_call': {
-            if (chunk.toolCall) {
-              const tc = chunk.toolCall;
-              // If there was streaming text before the tool call, commit it to history
-              const currentMessages = get().messages;
-              const lastMsg = currentMessages[currentMessages.length - 1];
-
-              if (lastMsg && lastMsg.role === 'assistant') {
-                const updated = {
-                  ...lastMsg,
-                  toolCalls: [...(lastMsg.toolCalls || []), tc]
-                };
-                set({
-                  messages: [...currentMessages.slice(0, -1), updated]
-                });
-              } else {
-                const assistantMsg: ChatMessage = {
-                  id: `asst_${Date.now()}`,
-                  role: 'assistant',
-                  content: state.streamingText,
-                  toolCalls: [tc],
-                  timestamp: Date.now()
-                };
-                set({
-                  messages: [...currentMessages, assistantMsg],
-                  streamingText: ''
-                });
-              }
-            }
-            break;
-          }
-
-          case 'tool_result': {
-            if (chunk.toolResult) {
-              const tr = chunk.toolResult;
-              const currentMessages = get().messages;
-              const lastMsg = currentMessages[currentMessages.length - 1];
-
-              // Attach result to the assistant message or as a tool message
-              const toolMsg: ChatMessage = {
-                id: `tool_${Date.now()}`,
-                role: 'tool',
-                content: tr.output,
-                toolResult: tr,
-                timestamp: Date.now()
-              };
-              set({
-                messages: [...currentMessages, toolMsg]
-              });
-            }
-            break;
-          }
-
-          case 'diff': {
-            if (chunk.diff) {
-              const diff = chunk.diff;
-              const currentMessages = get().messages;
-              const lastMsg = currentMessages[currentMessages.length - 1];
-              if (lastMsg) {
-                const updated = {
-                  ...lastMsg,
-                  proposedDiffs: [...(lastMsg.proposedDiffs || []), diff]
-                };
-                set({
-                  messages: [...currentMessages.slice(0, -1), updated]
-                });
-              }
-            }
-            break;
-          }
-
-          case 'done': {
-            unsubscribe();
-            const currentMessages = get().messages;
-            if (get().streamingText) {
-              const finalMsg: ChatMessage = {
-                id: `asst_${Date.now()}`,
-                role: 'assistant',
-                content: get().streamingText,
-                timestamp: Date.now()
-              };
-              set({
-                messages: [...currentMessages, finalMsg]
-              });
-            }
-            set({
-              isRunning: false,
-              currentStatus: '',
-              streamingText: '',
-              currentThought: ''
-            });
-            break;
-          }
-
-          case 'error': {
-            unsubscribe();
-            const currentMessages = get().messages;
-            const errMsg: ChatMessage = {
-              id: `err_${Date.now()}`,
-              role: 'assistant',
-              content: `⚠️ **Agent Error**: ${chunk.error}`,
-              timestamp: Date.now()
-            };
-            set({
-              messages: [...currentMessages, errMsg],
-              isRunning: false,
-              currentStatus: '',
-              streamingText: '',
-              currentThought: ''
-            });
-            break;
-          }
+    const finishTask = (status = '') => {
+      activeStreamUnsubscribe?.();
+      activeStreamUnsubscribe = null;
+      set({ isRunning: false, currentTaskId: null, currentStatus: status, streamingText: '', currentThought: '' });
+    };
+    const handleChunk = (chunk: AgentStreamChunk) => {
+      if (chunk.taskId !== taskId || get().currentTaskId !== taskId) return;
+      switch (chunk.type) {
+        case 'token': set((state) => ({ streamingText: state.streamingText + (chunk.content || '') })); break;
+        case 'thought': set((state) => ({ currentThought: state.currentThought + (chunk.content || '') })); break;
+        case 'status': set({ currentStatus: chunk.content || '' }); break;
+        case 'tool_call': {
+          if (!chunk.toolCall) break;
+          const state = get();
+          const messages = finalizePartialMessage(state.messages, state.streamingText, state.currentThought);
+          const toolMessage: ChatMessage = { id: createId('tool'), role: 'tool', content: '', toolCall: chunk.toolCall, toolStatus: 'running', timestamp: Date.now() };
+          set({ messages: [...messages, toolMessage], streamingText: '', currentThought: '' });
+          break;
         }
-      });
-
-      const res = await window.electronAPI.startAgentTask({
-        prompt,
-        workspacePath,
-        history: get().messages,
-        activeFilePath,
-        activeFileContent
-      });
-
-      if (res.success && res.data) {
-        set({ currentTaskId: res.data });
-      } else {
-        set({
-          isRunning: false,
-          currentStatus: '',
-          streamingText: ''
-        });
-        console.error('Failed to start agent task:', res.error);
+        case 'tool_result': {
+          const result = chunk.toolResult;
+          if (result) set((state) => ({ messages: updateToolStatus(state.messages, result.toolCallId, result.isError ? 'error' : 'success', result.output, result.isError) }));
+          break;
+        }
+        case 'diff': {
+          if (!chunk.diff) break;
+          set((state) => {
+            const index = state.messages.length - 1;
+            if (index < 0) return { messages: [...state.messages, { id: createId('diff'), role: 'assistant', content: '', proposedDiffs: [chunk.diff as NonNullable<ChatMessage['proposedDiffs']>[number]], timestamp: Date.now() }] };
+            const messages = [...state.messages];
+            const target = messages[index];
+            messages[index] = { ...target, proposedDiffs: [...(target.proposedDiffs || []), chunk.diff as NonNullable<ChatMessage['proposedDiffs']>[number]] };
+            return { messages };
+          });
+          break;
+        }
+        case 'done': {
+          const state = get();
+          set({ messages: finalizePartialMessage(state.messages, state.streamingText, state.currentThought) });
+          finishTask();
+          break;
+        }
+        case 'cancelled': {
+          const state = get();
+          const messages = cancelRunningTools(state.messages);
+          set({ messages: finalizePartialMessage(messages, state.streamingText, state.currentThought) });
+          finishTask('Task stopped.');
+          break;
+        }
+        case 'error': {
+          const state = get();
+          const partial = finalizePartialMessage(state.messages, state.streamingText, state.currentThought);
+          set({ messages: [...partial, { id: createId('error'), role: 'assistant', content: `**Agent error:** ${chunk.error || 'The task could not be completed.'}`, timestamp: Date.now() }] });
+          finishTask('Task failed.');
+          break;
+        }
       }
-    } catch (err) {
-      set({ isRunning: false, currentStatus: '', streamingText: '' });
-      console.error('Exception starting task:', err);
+    };
+
+    activeStreamUnsubscribe = window.electronAPI.onAgentStream(handleChunk);
+    try {
+      const response = await window.electronAPI.startAgentTask({ taskId, prompt, workspacePath, history: requestHistory, activeFilePath, activeFileContent });
+      if (get().currentTaskId !== taskId) return;
+      if (!response.success || !response.data) {
+        const state = get();
+        const partial = finalizePartialMessage(state.messages, state.streamingText, state.currentThought);
+        set({ messages: [...partial, { id: createId('error'), role: 'assistant', content: `**Could not start agent:** ${response.error || 'Unknown error'}`, timestamp: Date.now() }] });
+        finishTask('Could not start agent.');
+      }
+    } catch (err: unknown) {
+      if (get().currentTaskId !== taskId) return;
+      const state = get();
+      const partial = finalizePartialMessage(state.messages, state.streamingText, state.currentThought);
+      const message = err instanceof Error ? err.message : String(err);
+      set({ messages: [...partial, { id: createId('error'), role: 'assistant', content: `**Could not start agent:** ${message}`, timestamp: Date.now() }] });
+      finishTask('Could not start agent.');
     }
   },
 
   stopTask: async () => {
-    const { currentTaskId } = get();
-    if (currentTaskId) {
-      await window.electronAPI.stopAgentTask(currentTaskId);
-      set({ isRunning: false, currentStatus: 'Task stopped.', currentTaskId: null });
-    }
+    const taskId = get().currentTaskId;
+    if (!taskId) return;
+    const state = get();
+    const messages = finalizePartialMessage(cancelRunningTools(state.messages), state.streamingText, state.currentThought);
+    activeStreamUnsubscribe?.();
+    activeStreamUnsubscribe = null;
+    set({ messages, isRunning: false, currentTaskId: null, currentStatus: 'Stopping task…', streamingText: '', currentThought: '' });
+    try { await window.electronAPI.stopAgentTask(taskId); }
+    catch (err) { console.error('Failed to stop agent task:', err); }
+    finally { set({ currentStatus: 'Task stopped.' }); }
   },
 
   clearChat: () => {
-    set({ messages: [], streamingText: '', currentThought: '', currentStatus: '' });
+    const taskId = get().currentTaskId;
+    activeStreamUnsubscribe?.();
+    activeStreamUnsubscribe = null;
+    if (taskId) void window.electronAPI.stopAgentTask(taskId);
+    set({ messages: [], isRunning: false, currentTaskId: null, streamingText: '', currentThought: '', currentStatus: '' });
   },
-
   toggleSettings: () => set((state) => ({ isSettingsOpen: !state.isSettingsOpen })),
   toggleTerminal: () => set((state) => ({ isTerminalOpen: !state.isTerminalOpen }))
 }));

@@ -1,4 +1,4 @@
-import { dialog, BrowserWindow } from 'electron';
+import type { BrowserWindow } from 'electron';
 import fs from 'fs/promises';
 import path from 'path';
 import type { FileNode, IpcResponse } from '../../preload/types';
@@ -11,17 +11,22 @@ function isInsideWorkspace(targetPath: string, workspaceRoot: string): boolean {
   return !relative.startsWith('..') && !path.isAbsolute(relative);
 }
 
-export async function selectWorkspaceFolder(mainWindow: BrowserWindow): Promise<IpcResponse<string>> {
-  const result = await dialog.showOpenDialog(mainWindow, {
-    properties: ['openDirectory', 'createDirectory'],
-    title: 'Select Project Directory'
-  });
+export async function selectWorkspaceFolder(mainWindow?: BrowserWindow): Promise<IpcResponse<string>> {
+  try {
+    const { dialog } = require('electron');
+    const result = await dialog.showOpenDialog(mainWindow!, {
+      properties: ['openDirectory', 'createDirectory'],
+      title: 'Select Project Directory'
+    });
 
-  if (result.canceled || result.filePaths.length === 0) {
-    return { success: false, error: 'User canceled directory selection' };
+    if (result.canceled || result.filePaths.length === 0) {
+      return { success: false, error: 'User canceled directory selection' };
+    }
+
+    return { success: true, data: result.filePaths[0] };
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
   }
-
-  return { success: true, data: result.filePaths[0] };
 }
 
 export async function getWorkspaceTree(rootPath: string): Promise<IpcResponse<FileNode>> {
@@ -183,4 +188,241 @@ export async function searchWorkspaceFiles(workspaceRoot: string, query: string)
     return { success: false, error: errorMsg };
   }
 }
+
+export interface SearchInFilesOptions {
+  query: string;
+  isRegex?: boolean;
+  isCaseSensitive?: boolean;
+  matchWholeWord?: boolean;
+  includePattern?: string;
+  excludePattern?: string;
+  maxResults?: number;
+}
+
+export interface SearchMatch {
+  lineNumber: number;
+  lineContent: string;
+  matchStart: number;
+  matchLength: number;
+  preview: string;
+}
+
+export interface FileSearchResult {
+  filePath: string;
+  relativePath: string;
+  matches: SearchMatch[];
+}
+
+export interface ReplaceInFilesOptions extends SearchInFilesOptions {
+  replacement: string;
+  dryRun?: boolean;
+  filePaths?: string[];
+}
+
+export interface ReplaceResult {
+  filePath: string;
+  relativePath: string;
+  replacedCount: number;
+  previewDiff?: string;
+}
+
+function simpleGlobMatch(targetPath: string, pattern: string): boolean {
+  const norm = targetPath.replace(/\\/g, '/');
+  const cleanPat = pattern.trim();
+  if (!cleanPat) return true;
+
+  // Simple wildcard to regex translation
+  const escaped = cleanPat
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    .replace(/\*\*/g, '___DOUBLE_STAR___')
+    .replace(/\*/g, '[^/]*')
+    .replace(/___DOUBLE_STAR___/g, '.*')
+    .replace(/\?/g, '.');
+
+  try {
+    const regex = new RegExp(`(^|/)${escaped}($|/)`, 'i');
+    return regex.test(norm) || norm.endsWith(cleanPat.replace(/^\*/, ''));
+  } catch {
+    return norm.includes(cleanPat);
+  }
+}
+
+function matchesPatternFilter(relPath: string, include?: string, exclude?: string): boolean {
+  if (exclude && exclude.trim()) {
+    const excludes = exclude.split(',').map((p) => p.trim()).filter(Boolean);
+    for (const pat of excludes) {
+      if (simpleGlobMatch(relPath, pat)) return false;
+    }
+  }
+
+  if (include && include.trim()) {
+    const includes = include.split(',').map((p) => p.trim()).filter(Boolean);
+    let matched = false;
+    for (const pat of includes) {
+      if (simpleGlobMatch(relPath, pat)) {
+        matched = true;
+        break;
+      }
+    }
+    if (!matched) return false;
+  }
+
+  return true;
+}
+
+function buildSearchRegex(options: SearchInFilesOptions): RegExp {
+  let pattern = options.query;
+  if (!options.isRegex) {
+    pattern = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+  if (options.matchWholeWord) {
+    pattern = `\\b${pattern}\\b`;
+  }
+  const flags = options.isCaseSensitive ? 'g' : 'gi';
+  return new RegExp(pattern, flags);
+}
+
+export async function searchInWorkspaceFiles(
+  workspaceRoot: string,
+  options: SearchInFilesOptions
+): Promise<IpcResponse<FileSearchResult[]>> {
+  if (!options.query) {
+    return { success: true, data: [] };
+  }
+
+  try {
+    const regex = buildSearchRegex(options);
+    const results: FileSearchResult[] = [];
+    const maxResults = options.maxResults || 500;
+    let totalMatches = 0;
+
+    async function walk(dir: string) {
+      if (totalMatches >= maxResults) return;
+      const entries = await fs.readdir(dir, { withFileTypes: true });
+
+      for (const entry of entries) {
+        if (totalMatches >= maxResults) break;
+        if (IGNORED_DIRS.has(entry.name)) continue;
+
+        const fullPath = path.join(dir, entry.name);
+        const relPath = path.relative(workspaceRoot, fullPath).replace(/\\/g, '/');
+
+        if (entry.isDirectory()) {
+          await walk(fullPath);
+        } else if (entry.isFile()) {
+          if (!matchesPatternFilter(relPath, options.includePattern, options.excludePattern)) {
+            continue;
+          }
+
+          try {
+            const stat = await fs.stat(fullPath);
+            if (stat.size > 5 * 1024 * 1024) continue; // Skip files > 5MB
+
+            const content = await fs.readFile(fullPath, 'utf-8');
+            if (content.includes('\0')) continue; // Skip binary files
+
+            const lines = content.split(/\r?\n/);
+            const fileMatches: SearchMatch[] = [];
+
+            for (let i = 0; i < lines.length; i++) {
+              const line = lines[i];
+              regex.lastIndex = 0;
+              let match: RegExpExecArray | null;
+
+              while ((match = regex.exec(line)) !== null) {
+                fileMatches.push({
+                  lineNumber: i + 1,
+                  lineContent: line,
+                  matchStart: match.index,
+                  matchLength: match[0].length,
+                  preview: line.trim()
+                });
+                totalMatches++;
+                if (!regex.global) break;
+                if (match[0].length === 0) regex.lastIndex++;
+                if (totalMatches >= maxResults) break;
+              }
+              if (totalMatches >= maxResults) break;
+            }
+
+            if (fileMatches.length > 0) {
+              results.push({
+                filePath: fullPath,
+                relativePath: relPath,
+                matches: fileMatches
+              });
+            }
+          } catch {
+            // Ignore unreadable files
+          }
+        }
+      }
+    }
+
+    await walk(workspaceRoot);
+    return { success: true, data: results };
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    return { success: false, error: errorMsg };
+  }
+}
+
+export async function replaceInWorkspaceFiles(
+  workspaceRoot: string,
+  options: ReplaceInFilesOptions
+): Promise<IpcResponse<{ replacedCount: number; filesChanged: number; results: ReplaceResult[] }>> {
+  try {
+    const searchRes = await searchInWorkspaceFiles(workspaceRoot, options);
+    if (!searchRes.success || !searchRes.data) {
+      return { success: false, error: searchRes.error || 'Search failed before replace' };
+    }
+
+    const regex = buildSearchRegex(options);
+    const replaceResults: ReplaceResult[] = [];
+    let totalReplacements = 0;
+    let filesChanged = 0;
+
+    for (const fileResult of searchRes.data) {
+      if (options.filePaths && !options.filePaths.includes(fileResult.filePath)) {
+        continue;
+      }
+
+      const originalContent = await fs.readFile(fileResult.filePath, 'utf-8');
+      let count = 0;
+      const modifiedContent = originalContent.replace(regex, () => {
+        count++;
+        return options.replacement;
+      });
+
+      if (count > 0) {
+        totalReplacements += count;
+        filesChanged++;
+
+        if (!options.dryRun) {
+          await fs.writeFile(fileResult.filePath, modifiedContent, 'utf-8');
+        }
+
+        replaceResults.push({
+          filePath: fileResult.filePath,
+          relativePath: fileResult.relativePath,
+          replacedCount: count,
+          previewDiff: `Replaced ${count} occurrence(s) with '${options.replacement}'`
+        });
+      }
+    }
+
+    return {
+      success: true,
+      data: {
+        replacedCount: totalReplacements,
+        filesChanged,
+        results: replaceResults
+      }
+    };
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    return { success: false, error: errorMsg };
+  }
+}
+
 
