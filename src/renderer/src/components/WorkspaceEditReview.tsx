@@ -82,6 +82,7 @@ export const WorkspaceEditReview: React.FC = () => {
       if (!response.success || !response.data) throw new Error(response.error || 'The edit transaction could not be applied.');
       const result = response.data;
       applyResultToOpenTabs(result, workspacePath);
+      window.dispatchEvent(new CustomEvent('workspace-files-mutated', { detail: result.files.map((file) => file.filePath) }));
       clearRequest();
       await refreshFileTree();
       await refreshRecentEdits();
@@ -103,6 +104,7 @@ export const WorkspaceEditReview: React.FC = () => {
       return;
     }
     applyResultToOpenTabs(response.data, workspacePath);
+    window.dispatchEvent(new CustomEvent('workspace-files-mutated', { detail: response.data.files.map((file) => file.filePath) }));
     useWorkspaceEditStore.getState().removeRecentEdit(transactionId);
     await refreshFileTree();
     toast.success('Edit undone', `${response.data.fileCount} file${response.data.fileCount === 1 ? '' : 's'} restored.`);

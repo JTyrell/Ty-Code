@@ -333,12 +333,17 @@ export class WorkspaceEditPreviewService {
     if (!entry || (transactionId && entry.transactionId !== transactionId)) throw new Error('There is no current workspace edit transaction to undo.');
     this.transactionInFlight = true;
     try {
-      for (const file of entry.files) {
-        const current = await fs.readFile(file.absolutePath, 'utf8');
-        if (hashContent(current) !== file.afterHash) throw new Error(`Cannot undo the entire operation because ${file.filePath} changed after it was applied. No files were changed.`);
-      }
+      const validateUndo = async () => {
+        for (const file of entry.files) {
+          const current = await fs.readFile(file.absolutePath, 'utf8');
+          if (hashContent(current) !== file.afterHash) throw new Error(`Cannot undo the entire operation because ${file.filePath} changed after it was applied. No files were changed.`);
+          const tracked = this.lspManager.getTrackedDocument(file.absolutePath);
+          if (file.afterDocumentVersion !== undefined && tracked?.version !== file.afterDocumentVersion) throw new Error(`Cannot undo the entire operation because the open document ${file.filePath} changed after it was applied. No files were changed.`);
+        }
+      };
+      await validateUndo();
       const undoId = randomUUID();
-      await this.commitContents(entry.files.map((file) => ({ absolutePath: file.absolutePath, content: file.originalDiskContent, rollbackContent: file.afterContent, mode: file.mode })), undoId);
+      await this.commitContents(entry.files.map((file) => ({ absolutePath: file.absolutePath, content: file.originalDiskContent, rollbackContent: file.afterContent, mode: file.mode })), undoId, validateUndo);
       this.undoEntries.pop();
       for (const file of entry.files) this.lspManager.applyDocumentContent(file.absolutePath, file.originalBufferContent, file.originalDiskContent);
       return {
