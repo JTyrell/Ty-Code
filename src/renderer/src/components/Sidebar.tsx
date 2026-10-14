@@ -128,7 +128,7 @@ export const Sidebar: React.FC = () => {
   return (
     <div
       style={{
-        width: '240px',
+        width: '100%',
         height: '100%',
         backgroundColor: 'var(--bg-secondary)',
         borderRight: '1px solid var(--border-subtle)',

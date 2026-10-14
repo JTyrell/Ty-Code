@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { TitleBar } from './components/TitleBar';
 import { ActivityBar, type ActivityTab } from './components/ActivityBar';
 import { Sidebar } from './components/Sidebar';
@@ -16,6 +16,12 @@ import { useWorkspaceStore } from './state/workspace-store';
 export const App: React.FC = () => {
   const [activityTab, setActivityTab] = useState<ActivityTab>('explorer');
   const [isQuickOpenOpen, setIsQuickOpenOpen] = useState(false);
+
+  // Resizable Sidebars State
+  const [leftWidth, setLeftWidth] = useState(260);
+  const [rightWidth, setRightWidth] = useState(380);
+  const [isDraggingLeft, setIsDraggingLeft] = useState(false);
+  const [isDraggingRight, setIsDraggingRight] = useState(false);
 
   const { initSettings, toggleTerminal } = useChatStore();
   const { setWorkspacePath, setFileTree } = useWorkspaceStore();
@@ -53,6 +59,61 @@ export const App: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [toggleTerminal]);
 
+  // Handle Left Sidebar Resizing
+  const handleLeftMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsDraggingLeft(true);
+    const startX = e.clientX;
+    const startWidth = leftWidth;
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const delta = moveEvent.clientX - startX;
+      const newWidth = Math.max(180, Math.min(550, startWidth + delta));
+      setLeftWidth(newWidth);
+    };
+
+    const handleMouseUp = () => {
+      setIsDraggingLeft(false);
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = 'default';
+      document.body.style.userSelect = 'auto';
+    };
+
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  };
+
+  // Handle Right Sidebar (AI Chat) Resizing
+  const handleRightMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsDraggingRight(true);
+    const startX = e.clientX;
+    const startWidth = rightWidth;
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      // Dragging leftwards increases the width of the right sidebar
+      const delta = startX - moveEvent.clientX;
+      const newWidth = Math.max(280, Math.min(750, startWidth + delta));
+      setRightWidth(newWidth);
+    };
+
+    const handleMouseUp = () => {
+      setIsDraggingRight(false);
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = 'default';
+      document.body.style.userSelect = 'auto';
+    };
+
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  };
+
   return (
     <div
       style={{
@@ -67,21 +128,41 @@ export const App: React.FC = () => {
       {/* Top Application Title Bar */}
       <TitleBar />
 
-      {/* Main Workspace Area */}
-      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+      {/* Main Workspace Area (3-Column Layout with Resizers) */}
+      <div style={{ flex: 1, display: 'flex', overflow: 'hidden', position: 'relative' }}>
         {/* Leftmost Activity Bar */}
         <ActivityBar activeTab={activityTab} onTabChange={setActivityTab} />
 
-        {/* Dynamic Primary Panel (Explorer / Extensions / Skills) */}
-        {activityTab === 'explorer' && <Sidebar />}
-        {activityTab === 'extensions' && <ExtensionsPanel />}
-        {activityTab === 'skills' && <SkillsPanel />}
+        {/* Dynamic Primary Left Panel (Explorer / Extensions / Skills) */}
+        <div style={{ width: `${leftWidth}px`, height: '100%', flexShrink: 0, overflow: 'hidden' }}>
+          {activityTab === 'explorer' && <Sidebar />}
+          {activityTab === 'extensions' && <ExtensionsPanel />}
+          {activityTab === 'skills' && <SkillsPanel />}
+        </div>
+
+        {/* Left Splitter Resizer Handle */}
+        <div
+          className={`resizer-col ${isDraggingLeft ? 'dragging' : ''}`}
+          onMouseDown={handleLeftMouseDown}
+          title="Drag to resize sidebar"
+        />
 
         {/* Central Monaco Editor Workspace */}
-        <EditorArea />
+        <div style={{ flex: 1, height: '100%', minWidth: 200, overflow: 'hidden' }}>
+          <EditorArea />
+        </div>
+
+        {/* Right Splitter Resizer Handle */}
+        <div
+          className={`resizer-col ${isDraggingRight ? 'dragging' : ''}`}
+          onMouseDown={handleRightMouseDown}
+          title="Drag to resize assistant panel"
+        />
 
         {/* Right AI Assistant Sidecar */}
-        <ChatSidecar />
+        <div style={{ width: `${rightWidth}px`, height: '100%', flexShrink: 0, overflow: 'hidden' }}>
+          <ChatSidecar />
+        </div>
       </div>
 
       {/* Bottom Interactive Terminal Drawer */}

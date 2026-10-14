@@ -164,3 +164,34 @@ input:focus, select:focus, textarea:focus {
   padding: 10px;
   margin: 8px 0;
 }
+
+/* Resizable Splitter Handles */
+.resizer-col {
+  width: 5px;
+  cursor: col-resize;
+  background-color: transparent;
+  transition: background-color 0.15s ease;
+  position: relative;
+  z-index: 20;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.resizer-col::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 2px;
+  width: 1px;
+  background-color: var(--border-subtle);
+  transition: background-color 0.15s ease, width 0.15s ease, left 0.15s ease;
+}
+
+.resizer-col:hover::after,
+.resizer-col.dragging::after {
+  left: 1px;
+  width: 3px;
+  background-color: var(--accent-primary);
+}
+
