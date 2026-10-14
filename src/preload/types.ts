@@ -379,6 +379,11 @@ export interface ElectronAPI {
   // Search & Replace APIs
   searchInFiles: (options: SearchInFilesOptions) => Promise<IpcResponse<FileSearchResult[]>>;
   replaceInFiles: (options: ReplaceInFilesOptions) => Promise<IpcResponse<{ replacedCount: number; filesChanged: number; results: ReplaceResult[] }>>;
+  previewReplace: (options: ReplaceInFilesOptions) => Promise<IpcResponse<WorkspaceEditPreview>>;
+  applyWorkspaceEdit: (previewId: string) => Promise<IpcResponse<WorkspaceEditTransactionResult>>;
+  cancelWorkspaceEdit: (previewId: string) => Promise<IpcResponse<void>>;
+  undoWorkspaceEdit: (transactionId?: string) => Promise<IpcResponse<WorkspaceEditTransactionResult>>;
+  getRecentWorkspaceEdits: () => Promise<IpcResponse<Array<{ transactionId: string; origin: WorkspaceEditOrigin; createdAt: number; fileCount: number }>>>;
 
   // Language Server Protocol (LSP) APIs
   lspGetServers: () => Promise<IpcResponse<LanguageServerStatus[]>>;
@@ -397,6 +402,7 @@ export interface ElectronAPI {
   lspImplementation: (params: { filePath: string; line: number; character: number }) => Promise<IpcResponse<any>>;
   lspReferences: (params: { filePath: string; line: number; character: number; includeDeclaration?: boolean }) => Promise<IpcResponse<any>>;
   lspRename: (params: { filePath: string; line: number; character: number; newName: string }) => Promise<IpcResponse<any>>;
+  lspRenamePreview: (params: { filePath: string; line: number; character: number; newName: string }) => Promise<IpcResponse<WorkspaceEditPreview>>;
   lspDocumentSymbols: (params: { filePath: string }) => Promise<IpcResponse<any>>;
   lspWorkspaceSymbols: (params: { query: string }) => Promise<IpcResponse<any>>;
   lspCodeActions: (params: { filePath: string; range: any; context?: any }) => Promise<IpcResponse<any>>;
@@ -522,6 +528,7 @@ export interface WorkspaceEditPreview {
 
 export interface WorkspaceEditTransactionResult {
   transactionId: string;
+  origin: WorkspaceEditOrigin;
   files: Array<{ filePath: string; content: string; isDirty: boolean }>;
   fileCount: number;
   editCount: number;

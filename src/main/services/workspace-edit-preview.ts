@@ -299,6 +299,7 @@ export class WorkspaceEditPreviewService {
       for (const file of undoFiles) this.lspManager.applyDocumentContent(file.absolutePath, file.modifiedContent, file.modifiedContent);
       return {
         transactionId,
+        origin: stored.publicPreview.origin,
         files: undoFiles.map((file) => ({ filePath: file.filePath, content: file.modifiedContent, isDirty: false })),
         fileCount: undoFiles.length,
         editCount: undoFiles.reduce((total, file) => total + file.editCount, 0)
@@ -324,6 +325,7 @@ export class WorkspaceEditPreviewService {
       for (const file of entry.files) this.lspManager.applyDocumentContent(file.absolutePath, file.originalBufferContent, file.originalDiskContent);
       return {
         transactionId: entry.transactionId,
+        origin: entry.origin,
         files: entry.files.map((file) => ({ filePath: file.filePath, content: file.originalBufferContent, isDirty: file.originalBufferWasDirty || file.originalBufferContent !== file.originalDiskContent })),
         fileCount: entry.files.length,
         editCount: entry.files.reduce((total, file) => total + file.editCount, 0)

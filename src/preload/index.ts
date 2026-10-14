@@ -93,6 +93,11 @@ const api: ElectronAPI = {
   // Search & Replace APIs
   searchInFiles: (options: any) => ipcRenderer.invoke('fs:search-in-files', options),
   replaceInFiles: (options: any) => ipcRenderer.invoke('fs:replace-in-files', options),
+  previewReplace: (options: any) => ipcRenderer.invoke('fs:preview-replace', options),
+  applyWorkspaceEdit: (previewId: string) => ipcRenderer.invoke('workspace-edit:apply', previewId),
+  cancelWorkspaceEdit: (previewId: string) => ipcRenderer.invoke('workspace-edit:cancel', previewId),
+  undoWorkspaceEdit: (transactionId?: string) => ipcRenderer.invoke('workspace-edit:undo', transactionId),
+  getRecentWorkspaceEdits: () => ipcRenderer.invoke('workspace-edit:recent-undo'),
 
   // Language Server Protocol (LSP) APIs
   lspGetServers: () => ipcRenderer.invoke('lsp:get-servers'),
@@ -111,6 +116,7 @@ const api: ElectronAPI = {
   lspImplementation: (params: { filePath: string; line: number; character: number }) => ipcRenderer.invoke('lsp:implementation', params),
   lspReferences: (params: { filePath: string; line: number; character: number; includeDeclaration?: boolean }) => ipcRenderer.invoke('lsp:references', params),
   lspRename: (params: { filePath: string; line: number; character: number; newName: string }) => ipcRenderer.invoke('lsp:rename', params),
+  lspRenamePreview: (params: { filePath: string; line: number; character: number; newName: string }) => ipcRenderer.invoke('lsp:rename-preview', params),
   lspDocumentSymbols: (params: { filePath: string }) => ipcRenderer.invoke('lsp:document-symbols', params),
   lspWorkspaceSymbols: (params: { query: string }) => ipcRenderer.invoke('lsp:workspace-symbols', params),
   lspCodeActions: (params: { filePath: string; range: any; context?: any }) => ipcRenderer.invoke('lsp:code-actions', params),

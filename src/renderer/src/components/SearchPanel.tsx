@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { useWorkspaceStore } from '../state/workspace-store';
 import type { FileSearchResult, SearchInFilesOptions, ReplaceInFilesOptions } from '../../../preload/types';
+import { useWorkspaceEditStore } from '../state/workspace-edit-store';
 
 export const SearchPanel: React.FC = () => {
   const [query, setQuery] = useState('');

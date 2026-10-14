@@ -15,6 +15,7 @@ import { StatusBar } from './components/StatusBar';
 import { QuickOpen } from './components/QuickOpen';
 import { CommandPalette } from './components/CommandPalette';
 import { SettingsModal } from './components/SettingsModal';
+import { WorkspaceEditReview } from './components/WorkspaceEditReview';
 import { ToastContainer } from './components/ToastContainer';
 import { ExtensionInputDialog } from './components/ExtensionInputDialog';
 import { useChatStore } from './state/chat-store';
@@ -172,6 +173,7 @@ export const App: React.FC = () => {
           <div style={{ flex: 1, minHeight: 0, position: 'relative', overflow: 'hidden' }}>
             <EditorArea />
             <DiffViewer />
+            <WorkspaceEditReview />
           </div>
           {/* Integrated Terminal docked and locked within editor width bounds */}
           <TerminalDrawer />
