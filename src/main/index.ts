@@ -110,7 +110,10 @@ function registerIpcHandlers(): void {
   ipcMain.handle('fs:rename-path', (_event, oldPath: string, newPath: string) => renamePath(oldPath, newPath, currentWorkspacePath));
   ipcMain.handle('fs:search-files', (_event, query: string) => searchWorkspaceFiles(currentWorkspacePath, query));
   ipcMain.handle('fs:search-in-files', (_event, options: SearchInFilesOptions) => searchInWorkspaceFiles(currentWorkspacePath, options));
-  ipcMain.handle('fs:replace-in-files', (_event, options: ReplaceInFilesOptions) => replaceInWorkspaceFiles(currentWorkspacePath, options));
+  ipcMain.handle('fs:replace-in-files', (_event, options: ReplaceInFilesOptions) => {
+    if (!options?.dryRun) return { success: false, error: 'Workspace replacements must be previewed and explicitly applied.' };
+    return replaceInWorkspaceFiles(currentWorkspacePath, options);
+  });
   ipcMain.handle('fs:preview-replace', async (_event, options: ReplaceInFilesOptions) => {
     try {
       return { success: true, data: await getWorkspaceEditPreviewService().createSearchReplacePreview(options) };

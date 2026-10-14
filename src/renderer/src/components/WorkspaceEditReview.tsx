@@ -28,7 +28,7 @@ function applyResultToOpenTabs(result: WorkspaceEditTransactionResult, workspace
 }
 
 export const WorkspaceEditReview: React.FC = () => {
-  const { request, clearRequest, updatePreview, recordRecentEdit, refreshRecentEdits } = useWorkspaceEditStore();
+  const { request, clearRequest, updatePreview, refreshRecentEdits } = useWorkspaceEditStore();
   const { workspacePath, openTabs, refreshFileTree } = useWorkspaceStore();
   const [selectedFile, setSelectedFile] = useState(0);
   const [isApplying, setIsApplying] = useState(false);
@@ -47,7 +47,7 @@ export const WorkspaceEditReview: React.FC = () => {
   const preview = request.preview;
   const selected = preview.files[selectedFile];
   const isMultiFile = preview.files.length > 1;
-  const isStale = error.toLowerCase().includes('stale') || error.toLowerCase().includes('changed since');
+  const isStale = request.isStale || error.toLowerCase().includes('stale') || error.toLowerCase().includes('changed since');
   const applyLabel = preview.origin === 'lsp-rename' ? 'Apply rename' : preview.origin === 'refactor' ? 'Apply refactor' : 'Apply replacements';
   const blockedDirtySearch = preview.origin === 'search-replace' && preview.files.some((file) => {
     const tab = openTabs.find((item) => normalizePath(item.path) === normalizePath(fullPath(workspacePath, file.filePath)));

@@ -5,6 +5,7 @@
  */
 
 import type * as monacoType from 'monaco-editor';
+import { useWorkspaceEditStore } from '../state/workspace-edit-store';
 
 type Monaco = typeof monacoType;
 
@@ -247,39 +248,29 @@ export function registerMonacoLspProviders(monaco: Monaco): void {
       }
     });
 
-    // 5. Rename Provider (F2)
+    // 5. Rename Provider (F2): return no Monaco edits. All writes go through the review surface.
     monaco.languages.registerRenameProvider(lang, {
       provideRenameEdits: async (model, position, newName) => {
         try {
-          const filePath = getModelPath(model);
-          const res = await window.electronAPI.lspRename({
-            filePath,
+          const request = {
+            filePath: getModelPath(model),
             line: position.lineNumber - 1,
             character: position.column - 1,
             newName
-          });
-
-          if (!res.success || !res.data) return null;
-
-          const workspaceEdit = res.data;
-          const edits: monacoType.languages.IWorkspaceTextEdit[] = [];
-
-          if (workspaceEdit.changes) {
-            for (const [uriStr, textEdits] of Object.entries(workspaceEdit.changes)) {
-              for (const edit of textEdits as any[]) {
-                edits.push({
-                  resource: parseUri(monaco, uriStr),
-                  textEdit: {
-                    range: toMonacoRange(edit.range),
-                    text: edit.newText
-                  },
-                  versionId: undefined
-                });
-              }
+          };
+          const response = await window.electronAPI.lspRenamePreview(request);
+          if (!response.success || !response.data) return null;
+          const preview = response.data;
+          useWorkspaceEditStore.getState().setRequest({
+            preview,
+            isStale: false,
+            refresh: async () => {
+              const refreshed = await window.electronAPI.lspRenamePreview(request);
+              if (!refreshed.success || !refreshed.data) throw new Error(refreshed.error || 'Could not refresh rename preview.');
+              return refreshed.data;
             }
-          }
-
-          return { edits };
+          });
+          return null;
         } catch {
           return null;
         }

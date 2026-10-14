@@ -6,6 +6,7 @@ export interface WorkspaceEditRequest {
   refresh: () => Promise<WorkspaceEditPreview>;
   isStale: boolean;
   sourceKey?: string;
+  filePaths?: string[];
 }
 
 export interface RecentWorkspaceEdit {

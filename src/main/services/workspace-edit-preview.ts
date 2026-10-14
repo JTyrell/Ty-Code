@@ -35,7 +35,7 @@ type UndoEntry = {
   transactionId: string;
   origin: WorkspaceEditOrigin;
   createdAt: number;
-  files: Array<PreviewFileSnapshot & { afterContent: string; afterHash: string }>;
+  files: Array<PreviewFileSnapshot & { afterContent: string; afterHash: string; afterDocumentVersion?: number }>;
 };
 
 function hashContent(content: string): string {
@@ -106,7 +106,9 @@ export class WorkspaceEditPreviewService {
   private async resolveTarget(filePathOrUri: string): Promise<{ absolutePath: string; relativePath: string }> {
     const root = await fs.realpath(this.workspacePath);
     const filePath = filePathOrUri.startsWith('file:') ? fromFileUri(filePathOrUri) : filePathOrUri;
-    const absolutePath = path.resolve(filePath);
+    const absolutePath = path.isAbsolute(filePath) || path.win32.isAbsolute(filePath)
+      ? path.resolve(filePath)
+      : path.resolve(root, filePath);
     if (!isContained(root, absolutePath) || absolutePath === root) throw new Error(`Edit target is outside the active workspace: ${filePathOrUri}`);
     const realPath = await fs.realpath(absolutePath);
     if (!isContained(root, realPath) || realPath === root) throw new Error(`Edit target resolves outside the active workspace: ${filePathOrUri}`);
@@ -116,7 +118,7 @@ export class WorkspaceEditPreviewService {
     return { absolutePath: realPath, relativePath: path.relative(root, realPath).split(path.sep).join('/') };
   }
 
-  private async makeSnapshot(relativePath: string, modifiedContent: string, editCount: number, origin: WorkspaceEditOrigin): Promise<PreviewFileSnapshot> {
+  private async makeSnapshot(relativePath: string, modifiedContent: string, editCount: number, origin: WorkspaceEditOrigin, documentVersion?: number): Promise<PreviewFileSnapshot> {
     const { absolutePath, relativePath: safeRelativePath } = await this.resolveTarget(relativePath);
     const [originalDiskContent, stats] = await Promise.all([fs.readFile(absolutePath, 'utf8'), fs.stat(absolutePath)]);
     const tracked = this.lspManager.getTrackedDocument(absolutePath);
@@ -133,7 +135,7 @@ export class WorkspaceEditPreviewService {
       modifiedContent,
       diff,
       editCount: Math.max(editCount, countEdits(diff)),
-      documentVersion: tracked?.version,
+      documentVersion: documentVersion ?? tracked?.version,
       isDirty: originalBufferWasDirty,
       originalDiskContent,
       originalBufferContent,
@@ -168,6 +170,7 @@ export class WorkspaceEditPreviewService {
     if (!workspaceEdit || typeof workspaceEdit !== 'object') throw new Error('The language server returned an invalid workspace edit.');
     const edit = workspaceEdit as { changes?: Record<string, LspTextEdit[]>; documentChanges?: unknown[] };
     const editsByUri = new Map<string, LspTextEdit[]>();
+    const expectedVersions = new Map<string, number>();
     for (const [uri, edits] of Object.entries(edit.changes || {})) {
       if (!Array.isArray(edits)) throw new Error('The language server returned an invalid text edit list.');
       editsByUri.set(uri, [...(editsByUri.get(uri) || []), ...edits]);
@@ -178,6 +181,7 @@ export class WorkspaceEditPreviewService {
       }
       const textChange = change as { textDocument: { uri: string; version?: number | null }; edits: LspTextEdit[] };
       if (typeof textChange.textDocument?.uri !== 'string' || !Array.isArray(textChange.edits)) throw new Error('The language server returned an invalid document change.');
+      if (typeof textChange.textDocument.version === 'number') expectedVersions.set(textChange.textDocument.uri, textChange.textDocument.version);
       editsByUri.set(textChange.textDocument.uri, [...(editsByUri.get(textChange.textDocument.uri) || []), ...textChange.edits]);
     }
 
@@ -185,9 +189,11 @@ export class WorkspaceEditPreviewService {
     for (const [uri, edits] of editsByUri) {
       const { absolutePath, relativePath } = await this.resolveTarget(uri);
       const tracked = this.lspManager.getTrackedDocument(absolutePath);
+      const expectedVersion = expectedVersions.get(uri);
+      if (expectedVersion !== undefined && tracked?.version !== expectedVersion) throw new Error(`The language server edit for ${relativePath} is stale. Request a new rename preview.`);
       const original = tracked?.text ?? await fs.readFile(absolutePath, 'utf8');
       const modified = applyTextEdits(original, edits);
-      files.push(await this.makeSnapshot(relativePath, modified, edits.length, 'lsp-rename'));
+      files.push(await this.makeSnapshot(relativePath, modified, edits.length, 'lsp-rename', tracked?.version));
     }
     return this.savePreview('lsp-rename', title, files);
   }
@@ -252,10 +258,15 @@ export class WorkspaceEditPreviewService {
     }
   }
 
-  private async commitContents(files: Array<{ absolutePath: string; content: string; rollbackContent: string; mode: number }>, transactionId: string): Promise<void> {
+  private async commitContents(
+    files: Array<{ absolutePath: string; content: string; rollbackContent: string; mode: number }>,
+    transactionId: string,
+    beforeCommit?: () => Promise<void>
+  ): Promise<void> {
     const staged = await this.stageFiles(files, transactionId);
     const committed: number[] = [];
     try {
+      await beforeCommit?.();
       for (let index = 0; index < files.length; index++) {
         await fs.rename(staged[index], files[index].absolutePath);
         committed.push(index);
@@ -292,11 +303,18 @@ export class WorkspaceEditPreviewService {
       for (const file of stored.files) await this.validateFreshness(file, stored.publicPreview.origin);
       const transactionId = randomUUID();
       const writeFiles = stored.files.map((file) => ({ absolutePath: file.absolutePath, content: file.modifiedContent, rollbackContent: file.originalDiskContent, mode: file.mode }));
-      await this.commitContents(writeFiles, transactionId);
-      const undoFiles = stored.files.map((file) => ({ ...file, afterContent: file.modifiedContent, afterHash: hashContent(file.modifiedContent) }));
+      await this.commitContents(writeFiles, transactionId, async () => {
+        for (const file of stored.files) await this.validateFreshness(file, stored.publicPreview.origin);
+      });
+      for (const file of stored.files) this.lspManager.applyDocumentContent(file.absolutePath, file.modifiedContent, file.modifiedContent);
+      const undoFiles = stored.files.map((file) => ({
+        ...file,
+        afterContent: file.modifiedContent,
+        afterHash: hashContent(file.modifiedContent),
+        afterDocumentVersion: this.lspManager.getTrackedDocument(file.absolutePath)?.version
+      }));
       this.undoEntries.push({ transactionId, origin: stored.publicPreview.origin, createdAt: Date.now(), files: undoFiles });
       this.previews.delete(previewId);
-      for (const file of undoFiles) this.lspManager.applyDocumentContent(file.absolutePath, file.modifiedContent, file.modifiedContent);
       return {
         transactionId,
         origin: stored.publicPreview.origin,

@@ -43,8 +43,29 @@ export const SearchPanel: React.FC = () => {
   const totalMatches = results.reduce((acc, file) => acc + file.matches.length, 0);
 
   useEffect(() => {
-    const current = useWorkspaceEditStore.getState().request;
-    if (current?.sourceKey && current.sourceKey !== replacementSourceKey) useWorkspaceEditStore.getState().markRequestStale();
+    const state = useWorkspaceEditStore.getState();
+    const current = state.request;
+    if (!current?.sourceKey || current.sourceKey === replacementSourceKey) return;
+    const options: ReplaceInFilesOptions = {
+      query,
+      replacement,
+      isCaseSensitive,
+      matchWholeWord,
+      isRegex,
+      includePattern: includePattern.trim() || undefined,
+      excludePattern: excludePattern.trim() || undefined,
+      filePaths: current.filePaths
+    };
+    state.setRequest({
+      ...current,
+      sourceKey: replacementSourceKey,
+      isStale: true,
+      refresh: async () => {
+        const response = await window.electronAPI.previewReplace(options);
+        if (!response.success || !response.data) throw new Error(response.error || 'Could not refresh replacement preview.');
+        return response.data;
+      }
+    });
   }, [replacementSourceKey]);
 
   useEffect(() => {
@@ -126,6 +147,7 @@ export const SearchPanel: React.FC = () => {
         preview,
         isStale: false,
         sourceKey: replacementSourceKey,
+        filePaths,
         refresh: async () => {
           const refreshed = await window.electronAPI.previewReplace(options);
           if (!refreshed.success || !refreshed.data) throw new Error(refreshed.error || 'Could not refresh replacement preview.');
