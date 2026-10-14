@@ -3,6 +3,7 @@ import * as esbuild from 'esbuild';
 import { spawn } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import electron from 'electron';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -43,12 +44,7 @@ async function runDev() {
   });
 
   console.log('[Dev] Launching Electron...');
-  // Find electron binary from node_modules
-  const electronBinary = process.platform === 'win32'
-    ? path.resolve(rootDir, 'node_modules', '.bin', 'electron.cmd')
-    : path.resolve(rootDir, 'node_modules', '.bin', 'electron');
-
-  const electronProcess = spawn(electronBinary, ['.'], {
+  const electronProcess = spawn(electron, ['.'], {
     cwd: rootDir,
     env: {
       ...process.env,
