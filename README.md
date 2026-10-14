@@ -54,7 +54,7 @@ Ty-Code enforces strict separation between presentation, native system access, a
 ## Directory Layout
 
 ```
-ty-claude/
+ty-code/
 ├── context/                        # Persistent project memory & architecture specs
 │   ├── AGENTS.md                   # AI roles, permissions & escalation paths
 │   ├── ai-workflow-rules.md        # 5-phase roadmap & security constraints
