@@ -3,7 +3,7 @@ import path from 'path';
 import {
   selectWorkspaceFolder, getWorkspaceTree, readFile, writeFile, createFile,
   createDirectory, deletePath, renamePath, searchWorkspaceFiles,
-  searchInWorkspaceFiles, replaceInWorkspaceFiles, type SearchInFilesOptions, type ReplaceInFilesOptions
+  searchInWorkspaceFiles, replaceInWorkspaceFiles, type ReplaceInFilesOptions
 } from './ipc/fs-handlers';
 import {
   handleGetLspServers, handleStartLspServer, handleStopLspServer,
@@ -41,12 +41,23 @@ import { WindowStateManager } from './services/window-state';
 import { getUpdateManager, type UpdateChannel } from './services/update-manager';
 import { getRecentWorkspacesManager } from './services/recent-workspaces';
 import { MyersDiff } from './services/myers-diff';
-import type { CommandExecutionOptions, ProposedDiff, PtySpawnOptions } from '../preload/types';
+import { WorkspaceEditPreviewService } from './services/workspace-edit-preview';
+import type { CommandExecutionOptions, ProposedDiff, PtySpawnOptions, SearchInFilesOptions, WorkspaceEditOrigin } from '../preload/types';
 import { fileURLToPath } from 'url';
 
 let mainWindow: BrowserWindow | null = null;
 let currentWorkspacePath = process.cwd();
+let workspaceEditPreviewService: WorkspaceEditPreviewService | null = null;
+let workspaceEditPreviewWorkspace = '';
 let ipcRegistered = false;
+
+function getWorkspaceEditPreviewService(): WorkspaceEditPreviewService {
+  if (!workspaceEditPreviewService || workspaceEditPreviewWorkspace !== currentWorkspacePath) {
+    workspaceEditPreviewWorkspace = currentWorkspacePath;
+    workspaceEditPreviewService = new WorkspaceEditPreviewService(currentWorkspacePath, getLspManager(currentWorkspacePath));
+  }
+  return workspaceEditPreviewService;
+}
 const windowStateManager = new WindowStateManager();
 
 function isTrustedExtensionFrame(event: IpcMainInvokeEvent): boolean {
@@ -100,6 +111,26 @@ function registerIpcHandlers(): void {
   ipcMain.handle('fs:search-files', (_event, query: string) => searchWorkspaceFiles(currentWorkspacePath, query));
   ipcMain.handle('fs:search-in-files', (_event, options: SearchInFilesOptions) => searchInWorkspaceFiles(currentWorkspacePath, options));
   ipcMain.handle('fs:replace-in-files', (_event, options: ReplaceInFilesOptions) => replaceInWorkspaceFiles(currentWorkspacePath, options));
+  ipcMain.handle('fs:preview-replace', async (_event, options: ReplaceInFilesOptions) => {
+    try {
+      return { success: true, data: await getWorkspaceEditPreviewService().createSearchReplacePreview(options) };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+  ipcMain.handle('workspace-edit:apply', async (_event, previewId: string) => {
+    try { return { success: true, data: await getWorkspaceEditPreviewService().applyPreview(previewId) }; }
+    catch (error) { return { success: false, error: error instanceof Error ? error.message : String(error) }; }
+  });
+  ipcMain.handle('workspace-edit:cancel', (_event, previewId: string) => {
+    getWorkspaceEditPreviewService().cancelPreview(previewId);
+    return { success: true };
+  });
+  ipcMain.handle('workspace-edit:undo', async (_event, transactionId?: string) => {
+    try { return { success: true, data: await getWorkspaceEditPreviewService().undoTransaction(transactionId) }; }
+    catch (error) { return { success: false, error: error instanceof Error ? error.message : String(error) }; }
+  });
+  ipcMain.handle('workspace-edit:recent-undo', () => ({ success: true, data: getWorkspaceEditPreviewService().getRecentUndo() }));
   ipcMain.handle('settings:get', () => getSettings());
   ipcMain.handle('settings:save', (_event, updates) => saveSettings(updates));
 
@@ -264,6 +295,16 @@ function registerIpcHandlers(): void {
   ipcMain.handle('lsp:rename', (_event, payload: { filePath: string; line: number; character: number; newName: string }) =>
     handleLspRename(payload, currentWorkspacePath)
   );
+  ipcMain.handle('lsp:rename-preview', async (_event, payload: { filePath: string; line: number; character: number; newName: string }) => {
+    try {
+      const result = await handleLspRename(payload, currentWorkspacePath);
+      if (!result.success || !result.data) return { success: false, error: result.error || 'The language server returned no rename edits.' };
+      const preview = await getWorkspaceEditPreviewService().createLspPreview(result.data, `Rename to “${payload.newName}”`);
+      return { success: true, data: preview };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
   ipcMain.handle('lsp:document-symbols', (_event, payload: { filePath: string }) =>
     handleLspDocumentSymbols(payload, currentWorkspacePath)
   );
