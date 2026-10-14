@@ -5,7 +5,7 @@
   "main": "dist/main/index.js",
   "scripts": {
     "dev": "node scripts/dev.mjs",
-    "build:main": "esbuild src/main/index.ts --bundle --platform=node --target=node20 --format=cjs --external:electron --external:node-pty --external:simple-git --outfile=dist/main/index.js",
+    "build:main": "esbuild src/main/index.ts --bundle --platform=node --target=node20 --format=cjs --external:electron --external:node-pty --external:simple-git --external:electron-updater --outfile=dist/main/index.js",
     "build:preload": "esbuild src/preload/index.ts --bundle --platform=node --target=node20 --format=cjs --external:electron --outfile=dist/preload/index.js",
     "build:renderer": "vite build",
     "build": "npm run build:main && npm run build:preload && npm run build:renderer",
@@ -13,9 +13,16 @@
     "test:git": "node scripts/validate-phase3.mjs",
     "test:extensions": "node scripts/validate-phase4.mjs",
     "test:lsp": "node scripts/validate-phase5.mjs",
-    "test": "npm run test:agent && npm run test:git && npm run test:extensions && npm run test:lsp",
+    "test:polish": "node scripts/validate-phase6.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run typecheck && npm run test:agent && npm run test:git && npm run test:extensions && npm run test:lsp && npm run test:polish",
     "preview": "electron dist/main/index.js",
-    "package": "npm run build && electron-builder"
+    "package": "npm run build && electron-builder",
+    "package:win": "npm run build && electron-builder --win",
+    "package:mac": "npm run build && electron-builder --mac",
+    "package:linux": "npm run build && electron-builder --linux",
+    "package:all": "npm run build && electron-builder -mwl",
+    "release:notes": "node scripts/generate-release-notes.mjs"
   },
   "keywords": [
     "electron",
@@ -35,6 +42,7 @@
     "@xterm/addon-serialize": "^0.14.0",
     "@xterm/addon-web-links": "^0.12.0",
     "@xterm/xterm": "^6.0.0",
+    "electron-updater": "^6.8.9",
     "highlight.js": "^11.12.0",
     "lucide-react": "^1.16.0",
     "monaco-editor": "^0.52.2",
@@ -43,6 +51,7 @@
     "simple-git": "^4.0.2",
     "vscode-languageserver-protocol": "^3.18.4",
     "vscode-languageserver-types": "^3.18.4",
+    "zod": "^4.6.7",
     "zustand": "^5.0.3"
   },
   "devDependencies": {

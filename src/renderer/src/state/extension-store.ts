@@ -2,12 +2,15 @@ import { create } from 'zustand';
 import type { InstalledExtension, ExtensionMetadata, ExtensionCommand } from '../../../preload/types';
 import { extensionHost } from '../services/extension-host';
 
+let marketplaceRequestVersion = 0;
+
 interface ExtensionStoreState {
   installed: InstalledExtension[];
   marketplace: ExtensionMetadata[];
   activeDetail: InstalledExtension | ExtensionMetadata | null;
   activeSettings: InstalledExtension | null;
   isLoading: boolean;
+  isMarketplaceLoading: boolean;
   activeTab: 'installed' | 'marketplace';
   selectedCategory: string;
   query: string;
@@ -21,6 +24,7 @@ interface ExtensionStoreState {
   setActiveSettings: (item: InstalledExtension | null) => void;
   loadInstalled: () => Promise<void>;
   searchMarketplace: (query?: string) => Promise<void>;
+  cancelMarketplaceSearch: () => void;
   installExtension: (metadata: ExtensionMetadata) => Promise<boolean>;
   uninstallExtension: (id: string) => Promise<boolean>;
   toggleExtension: (id: string, enabled: boolean) => Promise<boolean>;
@@ -36,6 +40,7 @@ export const useExtensionStore = create<ExtensionStoreState>((set, get) => ({
   activeDetail: null,
   activeSettings: null,
   isLoading: false,
+  isMarketplaceLoading: false,
   activeTab: 'installed',
   selectedCategory: 'All',
   query: '',
@@ -52,9 +57,9 @@ export const useExtensionStore = create<ExtensionStoreState>((set, get) => ({
       set({ isLoading: true, error: null });
       const res = await window.electronAPI.getInstalledExtensions();
       if (res.success && res.data) {
+        // Activate only trusted built-ins in the isolated Worker runtime before exposing commands.
+        await extensionHost.initializeExtensions(res.data);
         set({ installed: res.data, isLoading: false });
-        // Initialize ExtensionHost
-        extensionHost.initializeExtensions(res.data);
       } else {
         set({ error: res.error || 'Failed to load extensions', isLoading: false });
       }
@@ -65,17 +70,24 @@ export const useExtensionStore = create<ExtensionStoreState>((set, get) => ({
 
   searchMarketplace: async (customQuery?: string) => {
     const q = customQuery !== undefined ? customQuery : get().query;
+    const requestVersion = ++marketplaceRequestVersion;
     try {
-      set({ isLoading: true, error: null });
+      set({ isMarketplaceLoading: true, error: null });
       const res = await window.electronAPI.searchExtensions(q || 'popular');
+      if (requestVersion !== marketplaceRequestVersion) return;
       if (res.success && res.data) {
-        set({ marketplace: res.data, isLoading: false });
+        set({ marketplace: res.data, isMarketplaceLoading: false });
       } else {
-        set({ error: res.error || 'Marketplace search failed', isLoading: false });
+        set({ error: res.error || 'Marketplace search failed', isMarketplaceLoading: false });
       }
     } catch (err: unknown) {
-      set({ error: err instanceof Error ? err.message : String(err), isLoading: false });
+      if (requestVersion === marketplaceRequestVersion) set({ error: err instanceof Error ? err.message : String(err), isMarketplaceLoading: false });
     }
+  },
+
+  cancelMarketplaceSearch: () => {
+    marketplaceRequestVersion += 1;
+    set({ isMarketplaceLoading: false });
   },
 
   installExtension: async (metadata) => {
@@ -118,11 +130,7 @@ export const useExtensionStore = create<ExtensionStoreState>((set, get) => ({
       set({ isLoading: true, error: null });
       const res = await window.electronAPI.toggleExtension(id, enabled);
       if (res.success && res.data) {
-        if (enabled) {
-          extensionHost.activateBuiltInExtension(res.data);
-        } else {
-          extensionHost.deactivateExtension(id);
-        }
+        extensionHost.deactivateExtension(id);
         await get().loadInstalled();
         return true;
       } else {
@@ -172,23 +180,5 @@ export const useExtensionStore = create<ExtensionStoreState>((set, get) => ({
     return await extensionHost.executeCommand(commandId, ...args);
   },
 
-  getAvailableCommands: () => {
-    const commands: ExtensionCommand[] = [];
-    const { installed } = get();
-
-    for (const ext of installed) {
-      if (!ext.enabled || !ext.manifest.contributes?.commands) continue;
-      for (const cmd of ext.manifest.contributes.commands) {
-        commands.push({
-          id: cmd.command,
-          title: cmd.title,
-          category: cmd.category,
-          extensionId: ext.id,
-          isBuiltIn: ext.isBuiltIn
-        });
-      }
-    }
-
-    return commands;
-  }
+  getAvailableCommands: () => extensionHost.getRegisteredCommands()
 }));

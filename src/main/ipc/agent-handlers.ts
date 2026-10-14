@@ -1,7 +1,7 @@
 import { BrowserWindow } from 'electron';
 import fs from 'fs/promises';
 import path from 'path';
-import type { AgentStreamChunk, ChatMessage, IpcResponse, ProposedDiff, ProviderSettings } from '../../preload/types';
+import type { AgentStreamChunk, AgentToolApproval, ChatMessage, IpcResponse, ProposedDiff, ProviderSettings } from '../../preload/types';
 import { getProviderSettings } from './settings-handlers';
 import { AgentEngine } from '../agent/agent-engine';
 
@@ -12,6 +12,54 @@ interface ActiveTask {
 }
 
 const activeTasks = new Map<string, ActiveTask>();
+interface PendingAgentApproval {
+  taskId: string;
+  resolve: (approved: boolean) => void;
+  timer: ReturnType<typeof setTimeout>;
+  signal: AbortSignal;
+  abortHandler: () => void;
+}
+const pendingApprovals = new Map<string, PendingAgentApproval>();
+
+function requestTaskApproval(taskId: string, approval: AgentToolApproval, signal: AbortSignal): Promise<boolean> {
+  if (signal.aborted) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    const finish = (approved: boolean) => {
+      const pending = pendingApprovals.get(approval.id);
+      if (!pending) return;
+      clearTimeout(pending.timer);
+      signal.removeEventListener('abort', pending.abortHandler);
+      pendingApprovals.delete(approval.id);
+      pending.resolve(approved);
+    };
+    const abortHandler = () => finish(false);
+    const timer = setTimeout(() => finish(false), 120_000);
+    pendingApprovals.set(approval.id, { taskId, resolve, timer, signal, abortHandler });
+    signal.addEventListener('abort', abortHandler, { once: true });
+  });
+}
+
+export function respondAgentApproval(approvalId: string, approved: boolean): IpcResponse<void> {
+  const pending = pendingApprovals.get(approvalId);
+  if (!pending) return { success: false, error: 'Approval request expired or is no longer active.' };
+  const task = activeTasks.get(pending.taskId);
+  if (!task || task.finished) return { success: false, error: 'The agent task has already finished.' };
+  pending.resolve(approved);
+  clearTimeout(pending.timer);
+  pending.signal.removeEventListener('abort', pending.abortHandler);
+  pendingApprovals.delete(approvalId);
+  return { success: true };
+}
+
+function cancelTaskApprovals(taskId: string): void {
+  for (const [approvalId, pending] of pendingApprovals) {
+    if (pending.taskId !== taskId) continue;
+    pending.resolve(false);
+    clearTimeout(pending.timer);
+    pending.signal.removeEventListener('abort', pending.abortHandler);
+    pendingApprovals.delete(approvalId);
+  }
+}
 
 export async function startAgentTask(
   mainWindow: BrowserWindow,
@@ -52,12 +100,14 @@ export async function startAgentTask(
         activeFilePath: params.activeFilePath,
         activeFileContent: params.activeFileContent,
         abortSignal: abortController.signal,
+        requestApproval: (approval) => requestTaskApproval(taskId, approval, abortController.signal),
         onChunk: emit
       });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       emit({ type: abortController.signal.aborted ? 'cancelled' : 'error', error: message });
     } finally {
+      cancelTaskApprovals(taskId);
       activeTasks.delete(taskId);
     }
   })();

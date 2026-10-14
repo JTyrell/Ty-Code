@@ -84,7 +84,7 @@ graph TD
 
 ### Out of Scope (Initial Phase)
 - Cloud account sync / hosted SaaS database (everything runs 100% locally on the user's desktop).
-- Proprietary proprietary extension marketplace (leverages Monaco native features rather than full VS Code `.vsix` ecosystem initially).
+- Third-party executable extension packages and VSIX runtime (the current extension phase supports built-in Worker modules and community registry metadata only).
 - Multi-user real-time collaborative editing (single-developer desktop paradigm).
 
 ---

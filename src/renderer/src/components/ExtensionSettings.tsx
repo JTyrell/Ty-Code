@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { X, Settings, Check, RotateCcw } from 'lucide-react';
 import type { InstalledExtension } from '../../../preload/types';
 import { useExtensionStore } from '../state/extension-store';
+import { toast } from '../state/toast-store';
 
 interface ExtensionSettingsProps {
   extension: InstalledExtension;
@@ -24,7 +25,12 @@ export const ExtensionSettings: React.FC<ExtensionSettingsProps> = ({ extension,
   const [isSaved, setIsSaved] = useState(false);
 
   const handleSave = async () => {
-    await updateSettings(extension.id, formState);
+    const saved = await updateSettings(extension.id, formState);
+    if (!saved) {
+      toast.error('Failed to save extension settings', extension.manifest.displayName || extension.manifest.name);
+      return;
+    }
+    toast.success('Extension settings saved', extension.manifest.displayName || extension.manifest.name);
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 2000);
   };

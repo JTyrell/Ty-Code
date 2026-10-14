@@ -5,9 +5,12 @@ import type { GitBlameHunk } from '../../../preload/types';
 interface GitBlameProps {
   filePath: string;
   currentLine?: number;
+  isDirty?: boolean;
+  refreshKey?: number;
+  onBlameLoaded?: (hunks: GitBlameHunk[]) => void;
 }
 
-export const GitBlameGutter: React.FC<GitBlameProps> = ({ filePath, currentLine = 1 }) => {
+export const GitBlameGutter: React.FC<GitBlameProps> = ({ filePath, currentLine = 1, isDirty = false, refreshKey = 0, onBlameLoaded }) => {
   const [blameHunks, setBlameHunks] = useState<GitBlameHunk[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedHunk, setSelectedHunk] = useState<GitBlameHunk | null>(null);
@@ -15,28 +18,37 @@ export const GitBlameGutter: React.FC<GitBlameProps> = ({ filePath, currentLine 
 
   useEffect(() => {
     let isMounted = true;
-    if (!filePath) return;
+    setBlameHunks([]);
+    setSelectedHunk(null);
+    if (!filePath || !window.electronAPI?.gitGetBlame) {
+      onBlameLoaded?.([]);
+      return;
+    }
 
-    (async () => {
+    void (async () => {
       try {
         setIsLoading(true);
         const res = await window.electronAPI.gitGetBlame(filePath);
-        if (isMounted && res.success && res.data) {
-          setBlameHunks(res.data);
+        const nextHunks = res.success ? res.data || [] : [];
+        if (isMounted) {
+          setBlameHunks(nextHunks);
+          onBlameLoaded?.(nextHunks);
         }
       } catch (err) {
-        console.error('Failed to load blame:', err);
+        if (isMounted) {
+          setBlameHunks([]);
+          onBlameLoaded?.([]);
+          console.error('Failed to load blame:', err);
+        }
       } finally {
         if (isMounted) setIsLoading(false);
       }
     })();
 
-    return () => {
-      isMounted = false;
-    };
-  }, [filePath]);
+    return () => { isMounted = false; };
+  }, [filePath, refreshKey, onBlameLoaded]);
 
-  const activeHunk = blameHunks.find((h) => h.lineStart === currentLine) || blameHunks[0];
+  const activeHunk = isDirty ? undefined : blameHunks.find((hunk) => currentLine >= hunk.lineStart && currentLine < hunk.lineStart + hunk.lineCount);
 
   const handleCopyHash = (hash: string) => {
     void navigator.clipboard.writeText(hash);

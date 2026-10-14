@@ -1,127 +1,57 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
-  ChevronRight,
-  ChevronDown,
-  Folder,
-  FolderOpen,
-  FileCode,
-  FileText,
   RefreshCw,
   Plus,
   FolderPlus
 } from 'lucide-react';
 import { useWorkspaceStore } from '../state/workspace-store';
-import type { FileNode } from '../../../preload/types';
-
-interface FileTreeItemProps {
-  node: FileNode;
-  depth: number;
-}
-
-const FileTreeItem: React.FC<FileTreeItemProps> = ({ node, depth }) => {
-  const [isOpen, setIsOpen] = useState(depth === 0);
-  const { openFile, activeTabPath } = useWorkspaceStore();
-
-  const isSelected = activeTabPath === node.path;
-
-  const handleClick = () => {
-    if (node.isDirectory) {
-      setIsOpen(!isOpen);
-    } else {
-      openFile(node.path, node.name);
-    }
-  };
-
-  const getFileIcon = (ext?: string) => {
-    switch (ext) {
-      case '.ts':
-      case '.tsx':
-      case '.js':
-      case '.jsx':
-      case '.py':
-      case '.html':
-      case '.css':
-      case '.json':
-        return <FileCode size={14} color="var(--accent-cyan)" />;
-      default:
-        return <FileText size={14} color="var(--text-secondary)" />;
-    }
-  };
-
-  return (
-    <div>
-      <div
-        onClick={handleClick}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '4px',
-          padding: '3px 8px',
-          paddingLeft: `${depth * 14 + 8}px`,
-          cursor: 'pointer',
-          backgroundColor: isSelected ? 'var(--bg-active)' : 'transparent',
-          color: isSelected ? 'var(--text-primary)' : 'var(--text-secondary)',
-          borderRadius: '3px',
-          fontSize: '12px'
-        }}
-        onMouseEnter={(e) => {
-          if (!isSelected) e.currentTarget.style.backgroundColor = 'var(--bg-hover)';
-        }}
-        onMouseLeave={(e) => {
-          if (!isSelected) e.currentTarget.style.backgroundColor = 'transparent';
-        }}
-      >
-        {node.isDirectory ? (
-          <>
-            {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-            {isOpen ? (
-              <FolderOpen size={14} color="var(--accent-primary)" />
-            ) : (
-              <Folder size={14} color="var(--accent-primary)" />
-            )}
-          </>
-        ) : (
-          <>
-            <span style={{ width: '14px', display: 'inline-block' }} />
-            {getFileIcon(node.extension)}
-          </>
-        )}
-        <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {node.name}
-        </span>
-      </div>
-
-      {node.isDirectory && isOpen && node.children && (
-        <div>
-          {node.children.map((child) => (
-            <FileTreeItem key={child.path} node={child} depth={depth + 1} />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-};
+import { VirtualFileTree } from './VirtualFileTree';
+import { toast } from '../state/toast-store';
 
 export const Sidebar: React.FC = () => {
   const { fileTree, refreshFileTree, workspacePath } = useWorkspaceStore();
 
   const handleCreateFile = async () => {
-    if (!workspacePath) return;
+    if (!workspacePath) {
+      toast.warning('No workspace open', 'Please open a folder first.');
+      return;
+    }
     const fileName = prompt('Enter new file name (relative to workspace):');
     if (fileName) {
       const fullPath = `${workspacePath}/${fileName}`.replace(/\/+/g, '/');
-      await window.electronAPI.createFile(fullPath);
-      await refreshFileTree();
+      try {
+        const res = await window.electronAPI.createFile(fullPath);
+        if (res.success) {
+          toast.success('File created', fileName);
+          await refreshFileTree();
+        } else {
+          toast.error('Could not create file', res.error);
+        }
+      } catch (err) {
+        toast.error('Create error', String(err));
+      }
     }
   };
 
   const handleCreateFolder = async () => {
-    if (!workspacePath) return;
+    if (!workspacePath) {
+      toast.warning('No workspace open', 'Please open a folder first.');
+      return;
+    }
     const folderName = prompt('Enter new folder name (relative to workspace):');
     if (folderName) {
       const fullPath = `${workspacePath}/${folderName}`.replace(/\/+/g, '/');
-      await window.electronAPI.createDirectory(fullPath);
-      await refreshFileTree();
+      try {
+        const res = await window.electronAPI.createDirectory(fullPath);
+        if (res.success) {
+          toast.success('Folder created', folderName);
+          await refreshFileTree();
+        } else {
+          toast.error('Could not create folder', res.error);
+        }
+      } catch (err) {
+        toast.error('Create error', String(err));
+      }
     }
   };
 
@@ -167,24 +97,14 @@ export const Sidebar: React.FC = () => {
         </div>
       </div>
 
-      {/* Directory Tree */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '4px 0' }}>
-        {fileTree ? (
-          fileTree.children && fileTree.children.length > 0 ? (
-            fileTree.children.map((child) => (
-              <FileTreeItem key={child.path} node={child} depth={0} />
-            ))
-          ) : (
-            <div style={{ padding: '16px', color: 'var(--text-muted)', textAlign: 'center' }}>
-              Directory is empty.
-            </div>
-          )
-        ) : (
-          <div style={{ padding: '24px 16px', color: 'var(--text-muted)', textAlign: 'center' }}>
-            No workspace folder opened.
-          </div>
-        )}
-      </div>
+      {/* Directory Tree with Virtual Scrolling */}
+      {fileTree ? (
+        <VirtualFileTree rootNode={fileTree} onRefresh={refreshFileTree} />
+      ) : (
+        <div style={{ padding: '24px 16px', color: 'var(--text-muted)', textAlign: 'center', fontSize: '12px' }}>
+          No workspace folder opened.
+        </div>
+      )}
     </div>
   );
 };

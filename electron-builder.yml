@@ -1,0 +1,102 @@
+appId: com.tyclaude.app
+productName: Ty-Claude
+copyright: Copyright © 2026 Ty-Claude Team
+
+directories:
+  output: dist-release
+  buildResources: build
+
+files:
+  - dist/**/*
+  - package.json
+  - node_modules/**/*
+  - "!node_modules/**/*.map"
+  - "!node_modules/*-test*/**"
+
+asar: true
+asarUnpack:
+  - "**/*.node"
+  - "**/node-pty/**"
+
+extraMetadata:
+  main: dist/main/index.js
+
+protocols:
+  - name: Ty-Claude Protocol
+    schemes:
+      - ty-claude
+
+fileAssociations:
+  - ext:
+      - ts
+      - tsx
+      - js
+      - jsx
+      - py
+      - json
+      - md
+    name: Code Document
+    role: Editor
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+    - target: portable
+      arch:
+        - x64
+  legalTrademarks: Ty-Claude
+  requestedExecutionLevel: asInvoker
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  shortcutName: Ty-Claude
+  deleteAppDataOnUninstall: false
+  runAfterFinish: true
+
+mac:
+  target:
+    - target: dmg
+      arch:
+        - universal
+    - target: zip
+      arch:
+        - universal
+  category: public.app-category.developer-tools
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.inherit.plist
+
+dmg:
+  background: null
+  backgroundColor: "#121316"
+  window:
+    width: 540
+    height: 380
+
+linux:
+  target:
+    - target: AppImage
+      arch:
+        - x64
+    - target: deb
+      arch:
+        - x64
+    - target: rpm
+      arch:
+        - x64
+  category: Development
+  desktop:
+    StartupWMClass: ty-claude
+    MimeType: text/plain;text/x-typescript;text/x-javascript;text/x-python;application/json;
+
+publish:
+  provider: github
+  owner: ty-claude
+  repo: ty-claude
+  releaseType: release

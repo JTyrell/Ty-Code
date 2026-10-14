@@ -1,4 +1,4 @@
-import type { AgentStreamChunk, ChatMessage, ProviderSettings } from '../../preload/types';
+import type { AgentStreamChunk, AgentToolApproval, ChatMessage, ProviderSettings, ToolCall } from '../../preload/types';
 import { ProviderGateway, type ChatCompletionMessage } from '../providers/provider-gateway';
 import { buildSystemPrompt, AGENT_TOOLS_DEFINITIONS } from './system-prompt';
 import { ToolExecutor } from './tool-executor';
@@ -11,6 +11,7 @@ export interface RunAgentParams {
   activeFilePath?: string;
   activeFileContent?: string;
   onChunk: (chunk: AgentStreamChunk) => void;
+  requestApproval?: (approval: AgentToolApproval) => Promise<boolean>;
   abortSignal?: AbortSignal;
 }
 
@@ -22,7 +23,7 @@ export class AgentEngine {
   }
 
   async run(params: RunAgentParams): Promise<void> {
-    const { prompt, workspacePath, history, settings, activeFilePath, activeFileContent, onChunk, abortSignal } = params;
+    const { prompt, workspacePath, history, settings, activeFilePath, activeFileContent, onChunk, requestApproval, abortSignal } = params;
     const systemPrompt = buildSystemPrompt(workspacePath, activeFilePath, activeFileContent);
     const messages: ChatCompletionMessage[] = [{ role: 'system', content: systemPrompt }];
     for (const message of history.slice(-10)) {
@@ -72,12 +73,63 @@ export class AgentEngine {
             onChunk({ type: 'cancelled' });
             return;
           }
-          onChunk({
-            type: 'tool_call',
-            toolCall: { id: toolCall.id, name: toolCall.name, arguments: toolCall.arguments }
-          });
-          onChunk({ type: 'status', content: `Running ${toolCall.name}…` });
+          const tool: ToolCall = { id: toolCall.id, name: toolCall.name, arguments: toolCall.arguments };
+          onChunk({ type: 'tool_call', toolCall: tool });
 
+          const action = String(toolCall.arguments.action || '');
+          const command = String(toolCall.arguments.command || '');
+          const containsGitCommand = /\bgit(?:\.exe)?\b/i.test(command);
+          const singleReadOnlyGitCommand = !/[;&|`$]/.test(command)
+            && /^\s*git(?:\.exe)?\s+(?:status|diff|log|show|blame|rev-parse|remote(?:\s+-v)?|config\s+--get|branch(?:\s+(?:-l|--list|--all|-a|--remotes|-r|--show-current|-vv))?)\b/i.test(command);
+          const mutatingGitCommand = toolCall.name === 'run_command' && containsGitCommand && !singleReadOnlyGitCommand;
+          const destructiveShellCommand = toolCall.name === 'run_command'
+            && /\brm\s+-(?:rf|fr)\b|\bremove-item\b[^\n]*-recurse|\bdel\s+\/s\s+\/q\b|\bformat\s+[a-z]:/i.test(command);
+          const approvalReason = toolCall.name === 'git_commit'
+            ? 'Create a Git commit; review whether this request stages specified paths or all visible changes.'
+            : toolCall.name === 'git_merge'
+              ? 'Merge another branch into the active branch.'
+              : toolCall.name === 'git_branch' && (action === 'create' || action === 'switch')
+                ? `${action === 'create' ? 'Create and check out' : 'Switch to'} a Git branch.`
+                : mutatingGitCommand
+                  ? 'Run a shell command that changes Git state.'
+                  : destructiveShellCommand
+                    ? 'Run a destructive filesystem or disk command.'
+                    : null;
+          if (approvalReason) {
+            onChunk({ type: 'status', content: 'Waiting for your approval…' });
+            let affectedPaths: string[] | undefined;
+            if (toolCall.name === 'git_commit') {
+              const status = await this.toolExecutor.execute('git_status', {});
+              const stageAll = toolCall.arguments.stageAll === true;
+              const specifiedPaths = Array.isArray(toolCall.arguments.filePaths) ? toolCall.arguments.filePaths.map(String) : [];
+              affectedPaths = specifiedPaths.length
+                ? specifiedPaths
+                : stageAll
+                  ? [...status.output.matchAll(/^  \[[^\]]+\] (.+)$/gm)].map((match) => match[1])
+                  : [];
+            }
+            if (mutatingGitCommand || destructiveShellCommand) affectedPaths = [command];
+            const approval: AgentToolApproval = {
+              id: `approval_${toolCall.id}`,
+              toolCall: tool,
+              reason: approvalReason,
+              affectedPaths
+            };
+            onChunk({ type: 'approval_request', approvalRequest: approval });
+            const approved = await requestApproval?.(approval);
+            if (abortSignal?.aborted) {
+              onChunk({ type: 'cancelled' });
+              return;
+            }
+            if (!approved) {
+              const output = 'The user did not approve this operation. It was not executed.';
+              onChunk({ type: 'tool_result', toolResult: { toolCallId: toolCall.id, name: toolCall.name, output, isError: true } });
+              messages.push({ role: 'tool', name: toolCall.name, tool_call_id: toolCall.id, content: output });
+              continue;
+            }
+          }
+
+          onChunk({ type: 'status', content: `Running ${toolCall.name}…` });
           const result = await this.toolExecutor.execute(toolCall.name, toolCall.arguments, abortSignal);
           onChunk({
             type: 'tool_result',

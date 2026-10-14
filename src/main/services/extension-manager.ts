@@ -1,6 +1,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
+import { ExtensionIdSchema, ExtensionManifestSchema, ExtensionMetadataSchema, validateExtensionSettings } from '../../preload/extension-schemas';
 import type { ExtensionManifest, InstalledExtension, ExtensionMetadata } from '../../preload/types';
 
 function getElectronUserData(): string | undefined {
@@ -21,6 +22,22 @@ export class ExtensionManager {
   private installedExtensions: Map<string, InstalledExtension> = new Map();
   private initialized = false;
 
+  private extensionPathForId(id: string): string {
+    const safeId = ExtensionIdSchema.parse(id);
+    const base = path.resolve(this.extensionsDir);
+    const target = path.resolve(base, safeId);
+    if (!target.startsWith(`${base}${path.sep}`)) throw new Error('Extension storage path escapes the extension directory.');
+    return target;
+  }
+
+  private validateSettings(manifest: ExtensionManifest, settings: unknown): Record<string, unknown> {
+    if (!settings || typeof settings !== 'object' || Array.isArray(settings)) throw new Error('Extension settings must be an object.');
+    const values = settings as Record<string, unknown>;
+    const validation = validateExtensionSettings(manifest, values);
+    if (!validation.valid) throw new Error(validation.errors.join(' '));
+    return values;
+  }
+
   constructor(customBaseDir?: string) {
     const base = customBaseDir || getElectronUserData() || os.homedir();
     this.extensionsDir = path.join(base, '.ty-claude', 'extensions');
@@ -38,11 +55,12 @@ export class ExtensionManager {
           displayName: 'Python Language Support & Linter',
           description: 'Rich Python syntax awareness, PEP8 formatting checks, docstring generator, and AST diagnostics.',
           categories: ['Languages', 'Linters'],
+          capabilities: ['commands.register', 'editor.read', 'editor.edit', 'window.messages', 'terminal.open'],
           contributes: {
             commands: [
-              { command: 'python.createDocstring', title: 'Python: Generate Docstring Template', category: 'Python' },
-              { command: 'python.lintFile', title: 'Python: Run Linter & Static Analysis', category: 'Python' },
-              { command: 'python.runFile', title: 'Python: Execute Current File in Terminal', category: 'Python' }
+              { command: 'ty-claude.python-support.createDocstring', title: 'Python: Generate Docstring Template', category: 'Python' },
+              { command: 'ty-claude.python-support.lintFile', title: 'Python: Run Linter & Static Analysis', category: 'Python' },
+              { command: 'ty-claude.python-support.runFile', title: 'Python: Execute Current File in Terminal', category: 'Python' }
             ],
             languages: [
               { id: 'python', aliases: ['Python', 'py'], extensions: ['.py', '.pyw'] }
@@ -70,11 +88,12 @@ export class ExtensionManager {
           displayName: 'TypeScript & JavaScript Essentials',
           description: 'Type definitions lookup, ESLint checks, import organizer, and TSConfig helper.',
           categories: ['Languages', 'Tools'],
+          capabilities: ['commands.register', 'editor.read', 'editor.edit', 'window.messages'],
           contributes: {
             commands: [
-              { command: 'typescript.organizeImports', title: 'TypeScript: Organize & Clean Imports', category: 'TypeScript' },
-              { command: 'typescript.addMissingTypes', title: 'TypeScript: Annotate Inferred Types', category: 'TypeScript' },
-              { command: 'typescript.runLint', title: 'JavaScript/TypeScript: Run ESLint Check', category: 'TypeScript' }
+              { command: 'ty-claude.typescript-support.organizeImports', title: 'TypeScript: Organize & Clean Imports', category: 'TypeScript' },
+              { command: 'ty-claude.typescript-support.addMissingTypes', title: 'TypeScript: Annotate Inferred Types', category: 'TypeScript' },
+              { command: 'ty-claude.typescript-support.runLint', title: 'JavaScript/TypeScript: Run ESLint Check', category: 'TypeScript' }
             ],
             languages: [
               { id: 'typescript', aliases: ['TypeScript', 'ts'], extensions: ['.ts', '.tsx'] },
@@ -103,11 +122,12 @@ export class ExtensionManager {
           displayName: 'GitLens Lite - Code Annotation & History',
           description: 'Inline file blame annotations, commit heatmaps, branch comparison, and commit SHA inspector.',
           categories: ['Git & SCM', 'Tools'],
+          capabilities: ['commands.register', 'window.messages', 'git.read'],
           contributes: {
             commands: [
-              { command: 'gitlens.toggleLineBlame', title: 'GitLens: Toggle Line Blame Annotations', category: 'GitLens' },
-              { command: 'gitlens.viewFileHistory', title: 'GitLens: View File Commit History', category: 'GitLens' },
-              { command: 'gitlens.copyCommitUrl', title: 'GitLens: Copy Remote Commit URL', category: 'GitLens' }
+              { command: 'ty-claude.gitlens-lite.toggleLineBlame', title: 'GitLens: Toggle Line Blame Annotations', category: 'GitLens' },
+              { command: 'ty-claude.gitlens-lite.viewFileHistory', title: 'GitLens: View File Commit History', category: 'GitLens' },
+              { command: 'ty-claude.gitlens-lite.copyCommitUrl', title: 'GitLens: Copy Remote Commit URL', category: 'GitLens' }
             ],
             configuration: {
               title: 'GitLens Configuration',
@@ -132,10 +152,11 @@ export class ExtensionManager {
           displayName: 'Prettier & Code Formatter',
           description: 'Multi-language code formatting on save and selection for JS, TS, HTML, CSS, JSON, and Markdown.',
           categories: ['Linters', 'Tools'],
+          capabilities: ['commands.register', 'editor.read', 'editor.edit', 'window.messages'],
           contributes: {
             commands: [
-              { command: 'prettier.formatDocument', title: 'Format Document (Prettier)', category: 'Prettier' },
-              { command: 'prettier.formatSelection', title: 'Format Selection', category: 'Prettier' }
+              { command: 'ty-claude.prettier-formatter.formatDocument', title: 'Format Document (Prettier)', category: 'Prettier' },
+              { command: 'ty-claude.prettier-formatter.formatSelection', title: 'Format Selection', category: 'Prettier' }
             ],
             configuration: {
               title: 'Prettier Configuration',
@@ -161,11 +182,12 @@ export class ExtensionManager {
           displayName: 'Ty-Claude AI Copilot (Inline Assistant)',
           description: 'Context-aware code completion, prompt-to-code generation, and automated refactoring in Monaco editor.',
           categories: ['AI', 'Tools'],
+          capabilities: ['commands.register', 'editor.read', 'editor.edit', 'window.messages', 'window.input', 'agent.request'],
           contributes: {
             commands: [
-              { command: 'copilot.generateCode', title: 'AI Copilot: Generate Code at Cursor', category: 'AI Copilot' },
-              { command: 'copilot.explainSelection', title: 'AI Copilot: Explain Selected Code', category: 'AI Copilot' },
-              { command: 'copilot.generateTests', title: 'AI Copilot: Generate Unit Tests', category: 'AI Copilot' }
+              { command: 'ty-claude.ai-copilot.generateCode', title: 'AI Copilot: Generate Code at Cursor', category: 'AI Copilot' },
+              { command: 'ty-claude.ai-copilot.explainSelection', title: 'AI Copilot: Explain Selected Code', category: 'AI Copilot' },
+              { command: 'ty-claude.ai-copilot.generateTests', title: 'AI Copilot: Generate Unit Tests', category: 'AI Copilot' }
             ],
             configuration: {
               title: 'AI Copilot Configuration',
@@ -191,34 +213,51 @@ export class ExtensionManager {
     // 1. Populate built-in extensions
     const builtIns = this.getBuiltInExtensions();
     for (const b of builtIns) {
+      b.executionState = 'built-in';
       this.installedExtensions.set(b.id, b);
     }
 
     // 2. Load persisted user extensions
     try {
       const data = await fs.readFile(this.installedFile, 'utf-8');
-      const parsed = JSON.parse(data) as Record<string, { enabled?: boolean; settings?: Record<string, unknown>; manifest?: ExtensionManifest }>;
-      for (const [id, record] of Object.entries(parsed)) {
-        if (this.installedExtensions.has(id)) {
-          // Merge enabled state and settings for built-ins
-          const existing = this.installedExtensions.get(id)!;
-          existing.enabled = record.enabled ?? existing.enabled;
-          existing.settings = record.settings || existing.settings;
-        } else if (record.manifest) {
-          // User installed extension
+      const parsed: unknown = JSON.parse(data);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Stored extensions must be an object.');
+      for (const [id, rawRecord] of Object.entries(parsed as Record<string, unknown>)) {
+        try {
+          const safePath = this.extensionPathForId(id);
+          if (!rawRecord || typeof rawRecord !== 'object' || Array.isArray(rawRecord)) continue;
+          const record = rawRecord as { enabled?: unknown; settings?: unknown; manifest?: unknown };
+          const builtIn = this.installedExtensions.get(id);
+          if (builtIn) {
+            const settings = record.settings === undefined ? builtIn.settings : this.validateSettings(builtIn.manifest, record.settings);
+            builtIn.enabled = typeof record.enabled === 'boolean' ? record.enabled : builtIn.enabled;
+            builtIn.settings = settings;
+            continue;
+          }
+          if (!record.manifest) continue;
+          const manifest = ExtensionManifestSchema.parse(record.manifest);
+          if (`${manifest.publisher}.${manifest.name}` !== id) continue;
+          const settings = record.settings === undefined ? {} : this.validateSettings(manifest, record.settings);
           this.installedExtensions.set(id, {
             id,
-            manifest: record.manifest,
-            enabled: record.enabled ?? true,
+            manifest,
+            enabled: false,
             isBuiltIn: false,
-            installPath: path.join(this.extensionsDir, id),
+            installPath: safePath,
             installedAt: Date.now(),
-            settings: record.settings || {}
+            settings,
+            executionState: 'metadata-only'
           });
+        } catch (error) {
+          console.warn(`[Extensions] Ignoring invalid stored extension "${id}":`, error);
         }
       }
-    } catch {
-      // First boot or no installed.json yet
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        const backupPath = `${this.installedFile}.corrupt-${Date.now()}.bak`;
+        await fs.rename(this.installedFile, backupPath).catch(() => undefined);
+        console.error(`[Extensions] Preserved invalid extension registry at ${backupPath}.`, error);
+      }
       await this.persist();
     }
 
@@ -234,7 +273,9 @@ export class ExtensionManager {
         manifest: ext.isBuiltIn ? undefined : ext.manifest
       };
     }
-    await fs.writeFile(this.installedFile, JSON.stringify(records, null, 2), 'utf-8');
+    const tempFile = `${this.installedFile}.${process.pid}.${Date.now()}.tmp`;
+    await fs.writeFile(tempFile, JSON.stringify(records, null, 2), 'utf-8');
+    await fs.rename(tempFile, this.installedFile);
   }
 
   getInstalledExtensions(): InstalledExtension[] {
@@ -243,16 +284,25 @@ export class ExtensionManager {
 
   async installExtension(metadata: ExtensionMetadata | ExtensionManifest): Promise<InstalledExtension> {
     await this.init();
-    const id = 'id' in metadata && metadata.id ? metadata.id : `${(metadata as ExtensionManifest).publisher}.${(metadata as ExtensionManifest).name}`;
+    if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) throw new Error('Extension metadata must be an object.');
+    const fromMarketplace = 'namespace' in metadata;
+    const validMetadata = fromMarketplace ? ExtensionMetadataSchema.parse(metadata) : undefined;
+    let manifestInput: unknown;
+    const id = fromMarketplace
+      ? validMetadata!.id
+      : `${(metadata as ExtensionManifest).publisher}.${(metadata as ExtensionManifest).name}`;
+    ExtensionIdSchema.parse(id);
+    if (this.installedExtensions.get(id)?.isBuiltIn) throw new Error(`Built-in extension "${id}" cannot be replaced.`);
+    if (this.installedExtensions.has(id)) throw new Error(`Extension "${id}" is already installed.`);
 
     let manifest: ExtensionManifest;
     if ('manifest' in metadata) {
-      manifest = (metadata as unknown as { manifest: ExtensionManifest }).manifest;
+      manifestInput = (metadata as unknown as { manifest: unknown }).manifest;
     } else if ('contributes' in metadata) {
-      manifest = metadata as ExtensionManifest;
+      manifestInput = metadata;
     } else {
-      const m = metadata as ExtensionMetadata;
-      manifest = {
+      const m = validMetadata!;
+      manifestInput = {
         name: m.name,
         publisher: m.namespace,
         version: m.version,
@@ -260,26 +310,24 @@ export class ExtensionManager {
         description: m.description,
         icon: m.iconUrl,
         categories: m.categories || ['Tools'],
-        contributes: {
-          commands: [
-            { command: `${m.name}.activate`, title: `${m.displayName || m.name}: Launch Action`, category: m.displayName || m.name }
-          ]
-        }
+        contributes: {}
       };
     }
 
-    const extPath = path.join(this.extensionsDir, id);
-    await fs.mkdir(extPath, { recursive: true });
-    await fs.writeFile(path.join(extPath, 'package.json'), JSON.stringify(manifest, null, 2), 'utf-8');
+    manifest = ExtensionManifestSchema.parse(manifestInput);
+    if (`${manifest.publisher}.${manifest.name}` !== id) throw new Error('Extension ID must match the manifest publisher and name.');
+    // Marketplace records are discovery metadata only; no files or executable package code are installed.
+    const extPath = this.extensionPathForId(id);
 
     const installed: InstalledExtension = {
       id,
       manifest,
-      enabled: true,
+      enabled: false,
       isBuiltIn: false,
       installPath: extPath,
       installedAt: Date.now(),
-      settings: {}
+      settings: {},
+      executionState: 'metadata-only'
     };
 
     this.installedExtensions.set(id, installed);
@@ -289,19 +337,23 @@ export class ExtensionManager {
 
   async uninstallExtension(id: string): Promise<void> {
     await this.init();
-    const ext = this.installedExtensions.get(id);
+    const ext = this.installedExtensions.get(ExtensionIdSchema.parse(id));
     if (!ext) throw new Error(`Extension "${id}" is not installed.`);
     if (ext.isBuiltIn) throw new Error(`Built-in extension "${id}" cannot be uninstalled. Disable it instead.`);
 
+    const safePath = this.extensionPathForId(id);
+    if (path.resolve(ext.installPath) !== safePath) throw new Error('Stored extension path failed containment validation.');
     this.installedExtensions.delete(id);
-    await fs.rm(ext.installPath, { recursive: true, force: true }).catch(() => undefined);
+    // Metadata-only records have no extension files. Never recursively delete paths from registry state.
     await this.persist();
   }
 
   async toggleExtension(id: string, enabled: boolean): Promise<InstalledExtension> {
     await this.init();
-    const ext = this.installedExtensions.get(id);
+    const ext = this.installedExtensions.get(ExtensionIdSchema.parse(id));
     if (!ext) throw new Error(`Extension "${id}" not found.`);
+    if (enabled && !ext.isBuiltIn) throw new Error('Community extension execution is disabled until the third-party runtime completes security review.');
+    if (typeof enabled !== 'boolean') throw new Error('Extension enabled state must be boolean.');
 
     ext.enabled = enabled;
     await this.persist();
@@ -310,36 +362,18 @@ export class ExtensionManager {
 
   async updateSettings(id: string, settings: Record<string, unknown>): Promise<void> {
     await this.init();
-    const ext = this.installedExtensions.get(id);
+    const ext = this.installedExtensions.get(ExtensionIdSchema.parse(id));
     if (!ext) throw new Error(`Extension "${id}" not found.`);
+    if (!settings || typeof settings !== 'object' || Array.isArray(settings)) throw new Error('Extension settings must be an object.');
 
-    ext.settings = { ...ext.settings, ...settings };
+    const merged = { ...(ext.settings || {}), ...settings };
+    ext.settings = this.validateSettings(ext.manifest, merged);
     await this.persist();
   }
 
-  async installFromVsix(filePath: string): Promise<InstalledExtension> {
+  async installFromVsix(_filePath: string): Promise<InstalledExtension> {
     await this.init();
-    // Validate file exists
-    await fs.access(filePath);
-    const fileName = path.basename(filePath, '.vsix');
-    const [publisher, name] = fileName.includes('.') ? fileName.split('.') : ['custom', fileName];
-
-    // Read or construct package manifest
-    const manifest: ExtensionManifest = {
-      name: name || fileName,
-      publisher: publisher || 'local',
-      version: '1.0.0',
-      displayName: name || fileName,
-      description: `Installed locally from VSIX package (${path.basename(filePath)})`,
-      categories: ['Tools'],
-      contributes: {
-        commands: [
-          { command: `${name}.open`, title: `${name}: Execute Command`, category: name }
-        ]
-      }
-    };
-
-    return await this.installExtension(manifest);
+    throw new Error('VSIX installation is unavailable until package extraction, manifest validation, and artifact review are implemented.');
   }
 }
 

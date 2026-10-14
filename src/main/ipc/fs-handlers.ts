@@ -8,7 +8,33 @@ const IGNORED_DIRS = new Set(['.git', '.kombai', 'node_modules', 'dist', 'dist-e
 
 function isInsideWorkspace(targetPath: string, workspaceRoot: string): boolean {
   const relative = path.relative(workspaceRoot, targetPath);
-  return !relative.startsWith('..') && !path.isAbsolute(relative);
+  return relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
+}
+
+async function resolveWorkspaceTarget(targetPath: string, workspaceRoot: string, allowMissing = false): Promise<string> {
+  if (!targetPath || typeof targetPath !== 'string') throw new Error('A valid workspace path is required.');
+  const root = await fs.realpath(path.resolve(workspaceRoot));
+  const resolved = path.resolve(root, targetPath);
+  if (!isInsideWorkspace(resolved, root) || resolved === root) throw new Error('File operations must target a path inside the active workspace.');
+  try {
+    const real = await fs.realpath(resolved);
+    if (!isInsideWorkspace(real, root)) throw new Error('File path resolves outside the active workspace.');
+    return real;
+  } catch (error) {
+    if (!allowMissing || (error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    let parent = path.dirname(resolved);
+    while (parent !== root && isInsideWorkspace(parent, root)) {
+      try {
+        const realParent = await fs.realpath(parent);
+        if (!isInsideWorkspace(realParent, root)) throw new Error('File parent resolves outside the active workspace.');
+        break;
+      } catch (parentError) {
+        if ((parentError as NodeJS.ErrnoException).code !== 'ENOENT') throw parentError;
+        parent = path.dirname(parent);
+      }
+    }
+    return resolved;
+  }
 }
 
 export async function selectWorkspaceFolder(mainWindow?: BrowserWindow): Promise<IpcResponse<string>> {
@@ -95,9 +121,10 @@ export async function getWorkspaceTree(rootPath: string): Promise<IpcResponse<Fi
   }
 }
 
-export async function readFile(filePath: string): Promise<IpcResponse<string>> {
+export async function readFile(filePath: string, workspaceRoot = process.cwd()): Promise<IpcResponse<string>> {
   try {
-    const content = await fs.readFile(filePath, 'utf-8');
+    const safePath = await resolveWorkspaceTarget(filePath, workspaceRoot);
+    const content = await fs.readFile(safePath, 'utf-8');
     return { success: true, data: content };
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : String(err);
@@ -105,10 +132,12 @@ export async function readFile(filePath: string): Promise<IpcResponse<string>> {
   }
 }
 
-export async function writeFile(filePath: string, content: string): Promise<IpcResponse<void>> {
+export async function writeFile(filePath: string, content: string, workspaceRoot = process.cwd()): Promise<IpcResponse<void>> {
   try {
-    await fs.mkdir(path.dirname(filePath), { recursive: true });
-    await fs.writeFile(filePath, content, 'utf-8');
+    const safePath = await resolveWorkspaceTarget(filePath, workspaceRoot, true);
+    await fs.mkdir(path.dirname(safePath), { recursive: true });
+    const verifiedPath = await resolveWorkspaceTarget(safePath, workspaceRoot, true);
+    await fs.writeFile(verifiedPath, content, 'utf-8');
     return { success: true };
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : String(err);
@@ -116,10 +145,12 @@ export async function writeFile(filePath: string, content: string): Promise<IpcR
   }
 }
 
-export async function createFile(filePath: string): Promise<IpcResponse<void>> {
+export async function createFile(filePath: string, workspaceRoot = process.cwd()): Promise<IpcResponse<void>> {
   try {
-    await fs.mkdir(path.dirname(filePath), { recursive: true });
-    await fs.writeFile(filePath, '', { flag: 'wx' }); // Error if file exists
+    const safePath = await resolveWorkspaceTarget(filePath, workspaceRoot, true);
+    await fs.mkdir(path.dirname(safePath), { recursive: true });
+    const verifiedPath = await resolveWorkspaceTarget(safePath, workspaceRoot, true);
+    await fs.writeFile(verifiedPath, '', { flag: 'wx' }); // Error if file exists
     return { success: true };
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : String(err);
@@ -127,9 +158,10 @@ export async function createFile(filePath: string): Promise<IpcResponse<void>> {
   }
 }
 
-export async function createDirectory(dirPath: string): Promise<IpcResponse<void>> {
+export async function createDirectory(dirPath: string, workspaceRoot = process.cwd()): Promise<IpcResponse<void>> {
   try {
-    await fs.mkdir(dirPath, { recursive: true });
+    const safePath = await resolveWorkspaceTarget(dirPath, workspaceRoot, true);
+    await fs.mkdir(safePath, { recursive: true });
     return { success: true };
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : String(err);
@@ -137,9 +169,10 @@ export async function createDirectory(dirPath: string): Promise<IpcResponse<void
   }
 }
 
-export async function deletePath(targetPath: string): Promise<IpcResponse<void>> {
+export async function deletePath(targetPath: string, workspaceRoot = process.cwd()): Promise<IpcResponse<void>> {
   try {
-    await fs.rm(targetPath, { recursive: true, force: true });
+    const safePath = await resolveWorkspaceTarget(targetPath, workspaceRoot);
+    await fs.rm(safePath, { recursive: true, force: true });
     return { success: true };
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : String(err);
@@ -147,9 +180,11 @@ export async function deletePath(targetPath: string): Promise<IpcResponse<void>>
   }
 }
 
-export async function renamePath(oldPath: string, newPath: string): Promise<IpcResponse<void>> {
+export async function renamePath(oldPath: string, newPath: string, workspaceRoot = process.cwd()): Promise<IpcResponse<void>> {
   try {
-    await fs.rename(oldPath, newPath);
+    const safeOldPath = await resolveWorkspaceTarget(oldPath, workspaceRoot);
+    const safeNewPath = await resolveWorkspaceTarget(newPath, workspaceRoot, true);
+    await fs.rename(safeOldPath, safeNewPath);
     return { success: true };
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : String(err);

@@ -110,6 +110,32 @@
 .chat-reasoning > div { max-height: 180px; overflow: auto; padding-top: 6px; }
 .chat-reasoning.is-live { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; color: var(--text-secondary); background: rgba(6, 182, 212, 0.05); border-left: 2px solid var(--accent-cyan); font-size: 11px; font-style: italic; white-space: pre-wrap; }
 .chat-reasoning.is-live strong { color: var(--accent-cyan); font-style: normal; }
+.agent-approval {
+  width: 100%;
+  padding: 10px;
+  color: var(--text-secondary);
+  background: rgba(245, 158, 11, .06);
+  border: 1px solid rgba(245, 158, 11, .3);
+  border-radius: 6px;
+  font-size: 11px;
+}
+.agent-approval-heading { display: flex; align-items: flex-start; gap: 7px; color: var(--accent-amber); }
+.agent-approval-heading > div { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.agent-approval-heading strong { color: var(--text-primary); font-size: 11px; }
+.agent-approval-heading span { color: var(--text-secondary); line-height: 1.45; }
+.agent-approval-tool { margin: 8px 0; padding: 7px; background: rgba(0, 0, 0, .18); border-radius: 4px; }
+.agent-approval-tool > strong { color: var(--accent-cyan); font: 10px var(--font-mono); }
+.agent-approval-tool pre { max-height: 130px; overflow: auto; margin-top: 5px; color: var(--text-secondary); font: 9px/1.45 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
+.agent-approval-paths { margin: 7px 0; color: var(--text-secondary); font-size: 10px; }
+.agent-approval-paths ul { max-height: 96px; overflow: auto; margin: 4px 0 0; padding-left: 18px; color: var(--text-muted); font: 9px/1.45 var(--font-mono); }
+.agent-approval-paths li { overflow-wrap: anywhere; }
+.agent-approval-actions { display: flex; justify-content: flex-end; gap: 6px; }
+.agent-approval-actions button { min-height: 27px; padding: 4px 8px; font-size: 10px; font-weight: 550; }
+.agent-approval-decline { color: var(--text-secondary); background: var(--bg-hover); }
+.agent-approval-decline:hover { color: var(--text-primary); }
+.agent-approval-accept { color: #fff; background: var(--accent-primary); }
+.agent-approval-accept:hover:not(:disabled) { background: var(--accent-primary-hover); }
+.agent-approval-note { display: block; margin-top: 6px; color: var(--text-muted); font-size: 9px; line-height: 1.4; }
 .tool-status { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; }
 .tool-status.is-running { color: var(--accent-primary); }
 .tool-status.is-success { color: var(--accent-green); }

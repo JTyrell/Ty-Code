@@ -15,6 +15,8 @@ import { StatusBar } from './components/StatusBar';
 import { QuickOpen } from './components/QuickOpen';
 import { CommandPalette } from './components/CommandPalette';
 import { SettingsModal } from './components/SettingsModal';
+import { ToastContainer } from './components/ToastContainer';
+import { ExtensionInputDialog } from './components/ExtensionInputDialog';
 import { useChatStore } from './state/chat-store';
 import { useWorkspaceStore } from './state/workspace-store';
 
@@ -165,10 +167,14 @@ export const App: React.FC = () => {
           title="Drag to resize sidebar"
         />
 
-        {/* Central Monaco Editor Workspace + Git Diff Viewer */}
-        <div style={{ flex: 1, height: '100%', minWidth: 200, overflow: 'hidden', position: 'relative' }}>
-          <EditorArea />
-          <DiffViewer />
+        {/* Central Monaco Editor Workspace + Git Diff Viewer + Integrated Terminal */}
+        <div style={{ flex: 1, height: '100%', minWidth: 200, overflow: 'hidden', position: 'relative', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ flex: 1, minHeight: 0, position: 'relative', overflow: 'hidden' }}>
+            <EditorArea />
+            <DiffViewer />
+          </div>
+          {/* Integrated Terminal docked and locked within editor width bounds */}
+          <TerminalDrawer />
         </div>
 
         {/* Right Splitter Resizer Handle */}
@@ -184,10 +190,7 @@ export const App: React.FC = () => {
         </div>
       </div>
 
-      {/* Bottom Interactive Terminal Drawer */}
-      <TerminalDrawer />
-
-      {/* VS Code Style Status Bar */}
+      {/* Editor status bar */}
       <StatusBar />
 
       {/* Quick Open File (Ctrl+P, :line, @symbol) */}
@@ -206,6 +209,10 @@ export const App: React.FC = () => {
 
       {/* Settings Modal */}
       <SettingsModal />
+      <ExtensionInputDialog />
+
+      {/* Global Toast Notifications */}
+      <ToastContainer />
     </div>
   );
 };

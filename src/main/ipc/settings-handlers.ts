@@ -14,7 +14,8 @@ const DEFAULT_SETTINGS: ProviderSettings = {
   temperature: 0.2,
   maxTokens: 4096,
   terminalProfiles: [],
-  defaultTerminalProfileId: ''
+  defaultTerminalProfileId: '',
+  thirdPartyRuntimeEnabled: false
 };
 
 type StoredSettings = Partial<Omit<ProviderSettings, 'apiKeys' | 'apiKeysConfigured'>> & {
@@ -52,6 +53,7 @@ async function readDecryptedSettings(): Promise<ProviderSettings> {
       ...DEFAULT_SETTINGS,
       ...parsed,
       apiKeys,
+      thirdPartyRuntimeEnabled: parsed.thirdPartyRuntimeEnabled === true,
       apiKeysConfigured: undefined
     };
   } catch {
@@ -86,6 +88,9 @@ export async function getProviderSettings(): Promise<IpcResponse<ProviderSetting
 
 export async function saveSettings(updates: Partial<ProviderSettings>): Promise<IpcResponse<void>> {
   try {
+    if (updates.thirdPartyRuntimeEnabled !== undefined && typeof updates.thirdPartyRuntimeEnabled !== 'boolean') {
+      throw new Error('Third-party extension runtime preference must be boolean.');
+    }
     const current = await readDecryptedSettings();
     const apiKeys = { ...current.apiKeys };
     for (const [provider, rawKey] of Object.entries(updates.apiKeys || {})) {

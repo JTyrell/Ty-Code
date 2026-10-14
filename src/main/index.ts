@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, session, type IpcMainInvokeEvent } from 'electron';
 import path from 'path';
 import {
   selectWorkspaceFolder, getWorkspaceTree, readFile, writeFile, createFile,
@@ -15,7 +15,7 @@ import {
   handleLspCodeActions, handleLspSignatureHelp, getLspManager
 } from './ipc/lsp-handlers';
 import { getSettings, saveSettings } from './ipc/settings-handlers';
-import { startAgentTask, stopAgentTask, applyDiff } from './ipc/agent-handlers';
+import { startAgentTask, stopAgentTask, respondAgentApproval, applyDiff } from './ipc/agent-handlers';
 import {
   runCommand, getAvailableShells, spawnPtySession, attachPty, writePty,
   resizePty, syncPtyCwd, killPty, cleanupAllPtys
@@ -23,7 +23,7 @@ import {
 import {
   searchOpenVsxExtensions, getOpenVsxExtensionDetails, handleGetInstalledExtensions,
   handleInstallExtension, handleUninstallExtension, handleToggleExtension,
-  handleUpdateExtensionSettings, handleInstallExtensionFromVsix
+  handleUpdateExtensionSettings, handleInstallExtensionFromVsix, handleExtensionCapability
 } from './ipc/extensions-handlers';
 import { getAvailableSkills } from './ipc/skills-handlers';
 import {
@@ -37,11 +37,32 @@ import {
   handleGitFetch, handleGitPull, handleGitPush, handleGitGetLog,
   handleGitGetBlame, handleGitStash, handleGitGetRemotes
 } from './ipc/git-handlers';
-import type { CommandExecutionOptions, ExtensionMetadata, ProposedDiff, PtySpawnOptions } from '../preload/types';
+import { WindowStateManager } from './services/window-state';
+import { getUpdateManager, type UpdateChannel } from './services/update-manager';
+import { getRecentWorkspacesManager } from './services/recent-workspaces';
+import { MyersDiff } from './services/myers-diff';
+import type { CommandExecutionOptions, ProposedDiff, PtySpawnOptions } from '../preload/types';
+import { fileURLToPath } from 'url';
 
 let mainWindow: BrowserWindow | null = null;
 let currentWorkspacePath = process.cwd();
 let ipcRegistered = false;
+const windowStateManager = new WindowStateManager();
+
+function isTrustedExtensionFrame(event: IpcMainInvokeEvent): boolean {
+  const frame = event.senderFrame;
+  if (!frame || frame.parent !== null) return false;
+  const devServerUrl = process.env.VITE_DEV_SERVER_URL;
+  if (devServerUrl) {
+    try { return new URL(frame.url).origin === new URL(devServerUrl).origin; }
+    catch { return false; }
+  }
+  try {
+    return path.resolve(fileURLToPath(frame.url)).toLowerCase() === path.resolve(__dirname, '../renderer/index.html').toLowerCase();
+  } catch {
+    return false;
+  }
+}
 
 function registerIpcHandlers(): void {
   if (ipcRegistered) return;
@@ -57,19 +78,25 @@ function registerIpcHandlers(): void {
   ipcMain.handle('fs:select-workspace', async () => {
     if (!mainWindow) return { success: false, error: 'No main window' };
     const response = await selectWorkspaceFolder(mainWindow);
-    if (response.success && response.data) currentWorkspacePath = response.data;
+    if (response.success && response.data) {
+      currentWorkspacePath = response.data;
+      getRecentWorkspacesManager().addRecent(response.data);
+    }
     return response;
   });
-  ipcMain.handle('fs:get-tree', async (_event, rootPath: string) => {
-    currentWorkspacePath = rootPath || currentWorkspacePath;
-    return getWorkspaceTree(currentWorkspacePath);
+  ipcMain.handle('fs:set-workspace', async (_event, folderPath: string) => {
+    if (!folderPath) return { success: false, error: 'Invalid folder path' };
+    currentWorkspacePath = folderPath;
+    getRecentWorkspacesManager().addRecent(folderPath);
+    return getWorkspaceTree(folderPath);
   });
-  ipcMain.handle('fs:read-file', (_event, filePath: string) => readFile(filePath));
-  ipcMain.handle('fs:write-file', (_event, filePath: string, content: string) => writeFile(filePath, content));
-  ipcMain.handle('fs:create-file', (_event, filePath: string) => createFile(filePath));
-  ipcMain.handle('fs:create-directory', (_event, dirPath: string) => createDirectory(dirPath));
-  ipcMain.handle('fs:delete-path', (_event, targetPath: string) => deletePath(targetPath));
-  ipcMain.handle('fs:rename-path', (_event, oldPath: string, newPath: string) => renamePath(oldPath, newPath));
+  ipcMain.handle('fs:get-tree', async () => getWorkspaceTree(currentWorkspacePath));
+  ipcMain.handle('fs:read-file', (_event, filePath: string) => readFile(filePath, currentWorkspacePath));
+  ipcMain.handle('fs:write-file', (_event, filePath: string, content: string) => writeFile(filePath, content, currentWorkspacePath));
+  ipcMain.handle('fs:create-file', (_event, filePath: string) => createFile(filePath, currentWorkspacePath));
+  ipcMain.handle('fs:create-directory', (_event, dirPath: string) => createDirectory(dirPath, currentWorkspacePath));
+  ipcMain.handle('fs:delete-path', (_event, targetPath: string) => deletePath(targetPath, currentWorkspacePath));
+  ipcMain.handle('fs:rename-path', (_event, oldPath: string, newPath: string) => renamePath(oldPath, newPath, currentWorkspacePath));
   ipcMain.handle('fs:search-files', (_event, query: string) => searchWorkspaceFiles(currentWorkspacePath, query));
   ipcMain.handle('fs:search-in-files', (_event, options: SearchInFilesOptions) => searchInWorkspaceFiles(currentWorkspacePath, options));
   ipcMain.handle('fs:replace-in-files', (_event, options: ReplaceInFilesOptions) => replaceInWorkspaceFiles(currentWorkspacePath, options));
@@ -78,9 +105,10 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle('agent:start-task', (_event, params) => {
     if (!mainWindow) return { success: false, error: 'No main window' };
-    return startAgentTask(mainWindow, params);
+    return startAgentTask(mainWindow, { ...params, workspacePath: currentWorkspacePath });
   });
   ipcMain.handle('agent:stop-task', (_event, taskId: string) => stopAgentTask(taskId));
+  ipcMain.handle('agent:respond-approval', (_event, payload: { approvalId: string; approved: boolean }) => respondAgentApproval(payload.approvalId, payload.approved));
   ipcMain.handle('agent:apply-diff', (_event, diff: ProposedDiff) => applyDiff(currentWorkspacePath, diff));
 
   ipcMain.handle('pty:run-command', (_event, options: CommandExecutionOptions) => runCommand({
@@ -104,14 +132,39 @@ function registerIpcHandlers(): void {
   ipcMain.on('pty:sync-cwd', (_event, payload: { ptyId: string; targetCwd: string; shellId: string }) => syncPtyCwd(payload.ptyId, payload.targetCwd, payload.shellId));
   ipcMain.handle('pty:kill', (_event, ptyId: string) => killPty(ptyId));
 
-  ipcMain.handle('extensions:search', (_event, query: string) => searchOpenVsxExtensions(query));
-  ipcMain.handle('extensions:details', (_event, { namespace, name }) => getOpenVsxExtensionDetails(namespace, name));
-  ipcMain.handle('extensions:get-installed', () => handleGetInstalledExtensions());
-  ipcMain.handle('extensions:install', (_event, ext: ExtensionMetadata) => handleInstallExtension(ext));
-  ipcMain.handle('extensions:uninstall', (_event, id: string) => handleUninstallExtension(id));
-  ipcMain.handle('extensions:toggle', (_event, { id, enabled }: { id: string; enabled: boolean }) => handleToggleExtension(id, enabled));
-  ipcMain.handle('extensions:update-settings', (_event, { id, settings }: { id: string; settings: Record<string, unknown> }) => handleUpdateExtensionSettings(id, settings));
-  ipcMain.handle('extensions:install-vsix', () => handleInstallExtensionFromVsix(mainWindow || undefined));
+  ipcMain.handle('extensions:search', (event, query: unknown) => isTrustedExtensionFrame(event)
+    ? searchOpenVsxExtensions(typeof query === 'string' ? query : '')
+    : { success: false, error: 'Untrusted renderer frame.' });
+  ipcMain.handle('extensions:details', (event, payload: unknown) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    const value = payload && typeof payload === 'object' ? payload as Record<string, unknown> : {};
+    return getOpenVsxExtensionDetails(typeof value.namespace === 'string' ? value.namespace : '', typeof value.name === 'string' ? value.name : '');
+  });
+  ipcMain.handle('extensions:get-installed', (event) => isTrustedExtensionFrame(event)
+    ? handleGetInstalledExtensions()
+    : { success: false, error: 'Untrusted renderer frame.' });
+  ipcMain.handle('extensions:install', (event, ext: unknown) => isTrustedExtensionFrame(event)
+    ? handleInstallExtension(ext)
+    : { success: false, error: 'Untrusted renderer frame.' });
+  ipcMain.handle('extensions:uninstall', (event, id: unknown) => isTrustedExtensionFrame(event)
+    ? handleUninstallExtension(id)
+    : { success: false, error: 'Untrusted renderer frame.' });
+  ipcMain.handle('extensions:toggle', (event, payload: unknown) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    const value = payload && typeof payload === 'object' ? payload as Record<string, unknown> : {};
+    return handleToggleExtension(value.id, value.enabled);
+  });
+  ipcMain.handle('extensions:update-settings', (event, payload: unknown) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    const value = payload && typeof payload === 'object' ? payload as Record<string, unknown> : {};
+    return handleUpdateExtensionSettings(value.id, value.settings);
+  });
+  ipcMain.handle('extensions:install-vsix', (event) => isTrustedExtensionFrame(event)
+    ? handleInstallExtensionFromVsix(mainWindow || undefined)
+    : { success: false, error: 'Untrusted renderer frame.' });
+  ipcMain.handle('extensions:capability', (event, payload: unknown) => isTrustedExtensionFrame(event)
+    ? handleExtensionCapability(payload, currentWorkspacePath)
+    : { success: false, error: 'Untrusted renderer frame.' });
   ipcMain.handle('antigravity:get-skills', (_event, workspacePath: string) => getAvailableSkills(workspacePath || currentWorkspacePath));
 
   // Git operations always target the active workspace selected in the main process.
@@ -223,6 +276,42 @@ function registerIpcHandlers(): void {
   ipcMain.handle('lsp:signature-help', (_event, payload: { filePath: string; line: number; character: number }) =>
     handleLspSignatureHelp(payload, currentWorkspacePath)
   );
+
+  // Auto-Update IPC Handlers
+  ipcMain.handle('update:check', () => getUpdateManager().checkForUpdates());
+  ipcMain.handle('update:download', () => getUpdateManager().downloadUpdate());
+  ipcMain.handle('update:install', () => getUpdateManager().quitAndInstall());
+  ipcMain.handle('update:get-channel', () => ({ success: true, data: getUpdateManager().getChannel() }));
+  ipcMain.handle('update:set-channel', (_event, channel: UpdateChannel) => {
+    getUpdateManager().setChannel(channel);
+    return { success: true };
+  });
+
+  // Recent Workspaces IPC Handlers
+  ipcMain.handle('workspace:get-recent', () => ({ success: true, data: getRecentWorkspacesManager().getRecent() }));
+  ipcMain.handle('workspace:add-recent', (_event, folderPath: string) => ({ success: true, data: getRecentWorkspacesManager().addRecent(folderPath) }));
+  ipcMain.handle('workspace:clear-recent', () => {
+    getRecentWorkspacesManager().clearRecent();
+    return { success: true };
+  });
+
+  // High-performance Myers Diff IPC Handler
+  ipcMain.handle('diff:compute-myers', (_event, payload: { original: string; modified: string; contextLines?: number }) => {
+    const result = MyersDiff.diff(payload.original || '', payload.modified || '', payload.contextLines ?? 3);
+    return { success: true, data: result };
+  });
+
+  // System & Application Information
+  ipcMain.handle('app:get-info', () => ({
+    success: true,
+    data: {
+      name: 'Ty-Claude',
+      version: app?.getVersion ? app.getVersion() : '0.1.0',
+      platform: process.platform,
+      arch: process.arch,
+      isPackaged: Boolean(app?.isPackaged)
+    }
+  }));
 }
 
 function cleanupAllResources(): void {
@@ -235,12 +324,17 @@ function cleanupAllResources(): void {
 }
 
 function createWindow(): void {
+  const savedState = windowStateManager.getState();
+
   const window = new BrowserWindow({
-    width: 1450,
-    height: 920,
+    x: savedState.x,
+    y: savedState.y,
+    width: savedState.width,
+    height: savedState.height,
     minWidth: 1020,
     minHeight: 680,
     title: 'Ty-Claude - Desktop AI Coding Assistant',
+    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     backgroundColor: '#121316',
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
@@ -250,6 +344,20 @@ function createWindow(): void {
     }
   });
   mainWindow = window;
+  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  window.webContents.on('will-navigate', (event, targetUrl) => {
+    let trusted = false;
+    const devServerUrl = process.env.VITE_DEV_SERVER_URL;
+    if (devServerUrl) {
+      try { trusted = new URL(targetUrl).origin === new URL(devServerUrl).origin; } catch { trusted = false; }
+    } else {
+      try { trusted = path.resolve(fileURLToPath(targetUrl)).toLowerCase() === path.resolve(__dirname, '../renderer/index.html').toLowerCase(); } catch { trusted = false; }
+    }
+    if (!trusted) event.preventDefault();
+  });
+  windowStateManager.manage(window);
+  getUpdateManager().setWindow(window);
+
   const devServerUrl = process.env.VITE_DEV_SERVER_URL;
   if (devServerUrl) void window.loadURL(devServerUrl);
   else void window.loadFile(path.join(__dirname, '../renderer/index.html'));
@@ -257,6 +365,7 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
   registerIpcHandlers();
   createWindow();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });

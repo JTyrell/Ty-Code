@@ -171,6 +171,14 @@ sequenceDiagram
 
 ---
 
+## Extension Runtime Boundary
+
+- Built-in extensions execute as statically bundled Vite module Workers (`src/renderer/src/workers/extension-worker.ts`); the Worker receives no DOM, Node APIs, `require`, `process`, or full Electron bridge.
+- Worker messages use shared Zod schemas, versioned UUID-correlated request/response envelopes, per-session nonces, a 256 KiB payload cap, a 32-call concurrency limit, bounded timeouts, and a watchdog with at most one restart.
+- Only built-in manifests may activate. Marketplace listings persist as metadata-only, remain disabled, and do not download package contents. VSIX installation is refused until archive validation and review are implemented. The third-party preference is stored but is not an execution switch in this release.
+- Electron capability provider mediates declared `workspace.fs`, editor, window, terminal, agent, and Git read operations. Main checks workspace containment, symlink resolution and sensitive paths. Mutating shell/Git actions are not extension capabilities.
+- Future webview UI must be separate from the Worker and use an opaque-origin iframe (`sandbox="allow-scripts"`, no `allow-same-origin`) with nonce-verified `MessageChannel`; webviews are disabled today. See [EXTENSION-API-MATRIX.md](../docs/EXTENSION-API-MATRIX.md).
+
 ## Critical Invariants
 
 1. **Strict Context Isolation**: `contextIsolation: true` and `nodeIntegration: false` must always be enforced in Electron's `BrowserWindow` webPreferences. All communication must pass strictly through `contextBridge` with validated payload schemas.

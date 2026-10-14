@@ -1,3 +1,6 @@
+import type { z } from 'zod';
+import type { ExtensionCapabilitySchema, ExtensionManifestSchema } from './extension-schemas';
+
 export interface IpcResponse<T = unknown> {
   success: boolean;
   data?: T;
@@ -45,6 +48,7 @@ export interface ProviderSettings {
   maxTokens: number;
   terminalProfiles?: TerminalProfile[];
   defaultTerminalProfileId?: string;
+  thirdPartyRuntimeEnabled?: boolean;
 }
 
 export interface ToolCall {
@@ -82,13 +86,21 @@ export interface ProposedDiff {
   status: 'pending' | 'applied' | 'rejected';
 }
 
+export interface AgentToolApproval {
+  id: string;
+  toolCall: ToolCall;
+  reason: string;
+  affectedPaths?: string[];
+}
+
 export interface AgentStreamChunk {
-  type: 'token' | 'thought' | 'tool_call' | 'tool_result' | 'diff' | 'status' | 'done' | 'cancelled' | 'error';
+  type: 'token' | 'thought' | 'tool_call' | 'tool_result' | 'diff' | 'status' | 'approval_request' | 'done' | 'cancelled' | 'error';
   taskId?: string;
   content?: string;
   toolCall?: ToolCall;
   toolResult?: ToolResult;
   diff?: ProposedDiff;
+  approvalRequest?: AgentToolApproval;
   error?: string;
 }
 
@@ -125,50 +137,9 @@ export interface PtySessionInfo {
   shellName: string;
 }
 
-export interface ExtensionManifest {
-  name: string;
-  publisher: string;
-  version: string;
-  displayName?: string;
-  description?: string;
-  main?: string;
-  icon?: string;
-  categories?: string[];
-  engines?: {
-    vscode?: string;
-    'ty-claude'?: string;
-  };
-  activationEvents?: string[];
-  contributes?: {
-    commands?: Array<{
-      command: string;
-      title: string;
-      category?: string;
-      icon?: string;
-    }>;
-    languages?: Array<{
-      id: string;
-      aliases?: string[];
-      extensions?: string[];
-      configuration?: string;
-    }>;
-    configuration?: {
-      title?: string;
-      properties?: Record<string, {
-        type: string;
-        default?: unknown;
-        description?: string;
-        enum?: unknown[];
-      }>;
-    };
-    keybindings?: Array<{
-      command: string;
-      key: string;
-      mac?: string;
-      when?: string;
-    }>;
-  };
-}
+export type ExtensionManifest = z.infer<typeof ExtensionManifestSchema>;
+export type ExtensionCapability = z.infer<typeof ExtensionCapabilitySchema>;
+export type ExtensionExecutionState = 'built-in' | 'metadata-only';
 
 export interface InstalledExtension {
   id: string;
@@ -178,6 +149,7 @@ export interface InstalledExtension {
   installPath: string;
   installedAt: number;
   settings?: Record<string, unknown>;
+  executionState?: ExtensionExecutionState;
 }
 
 export interface ExtensionCommand {
@@ -186,6 +158,14 @@ export interface ExtensionCommand {
   category?: string;
   extensionId: string;
   isBuiltIn?: boolean;
+}
+
+export interface ExtensionCapabilityRequest {
+  extensionId: string;
+  capability: ExtensionCapability;
+  method: 'workspace.read-file' | 'workspace.write-file';
+  relativePath: string;
+  content?: string;
 }
 
 export interface ExtensionMetadata {
@@ -222,6 +202,7 @@ export interface GitFileChange {
 
 export interface GitStatusResult {
   isRepo: boolean;
+  repositoryRoot?: string;
   currentBranch: string;
   trackingBranch?: string;
   ahead: number;
@@ -336,6 +317,7 @@ export interface ElectronAPI {
     skills?: SkillDefinition[];
   }) => Promise<IpcResponse<string>>;
   stopAgentTask: (taskId: string) => Promise<IpcResponse<void>>;
+  respondAgentApproval: (approvalId: string, approved: boolean) => Promise<IpcResponse<void>>;
   onAgentStream: (callback: (chunk: AgentStreamChunk) => void) => () => void;
   applyDiff: (diff: ProposedDiff) => Promise<IpcResponse<void>>;
   runCommand: (options: CommandExecutionOptions) => Promise<IpcResponse<CommandResult>>;
@@ -359,28 +341,29 @@ export interface ElectronAPI {
   toggleExtension: (id: string, enabled: boolean) => Promise<IpcResponse<InstalledExtension>>;
   updateExtensionSettings: (id: string, settings: Record<string, unknown>) => Promise<IpcResponse<void>>;
   installExtensionFromVsix: () => Promise<IpcResponse<InstalledExtension>>;
+  extensionCapability: (request: ExtensionCapabilityRequest) => Promise<IpcResponse<unknown>>;
 
   // Git Source Control APIs
-  gitIsRepo: (workspacePath?: string) => Promise<IpcResponse<boolean>>;
-  gitInit: (workspacePath?: string) => Promise<IpcResponse<void>>;
-  gitGetStatus: (workspacePath?: string) => Promise<IpcResponse<GitStatusResult>>;
-  gitGetDiff: (filePath?: string, staged?: boolean, workspacePath?: string) => Promise<IpcResponse<string>>;
-  gitGetOriginalContent: (filePath: string, staged?: boolean, workspacePath?: string) => Promise<IpcResponse<string>>;
-  gitStage: (filePaths: string | string[], workspacePath?: string) => Promise<IpcResponse<void>>;
-  gitUnstage: (filePaths: string | string[], workspacePath?: string) => Promise<IpcResponse<void>>;
-  gitDiscardChanges: (filePath: string, isUntracked?: boolean, workspacePath?: string) => Promise<IpcResponse<void>>;
-  gitCommit: (message: string, options?: { amend?: boolean }, workspacePath?: string) => Promise<IpcResponse<string>>;
-  gitGetBranches: (workspacePath?: string) => Promise<IpcResponse<GitBranchInfo>>;
-  gitSwitchBranch: (branchName: string, workspacePath?: string) => Promise<IpcResponse<void>>;
-  gitCreateBranch: (branchName: string, workspacePath?: string) => Promise<IpcResponse<void>>;
-  gitDeleteBranch: (branchName: string, force?: boolean, workspacePath?: string) => Promise<IpcResponse<void>>;
-  gitFetch: (workspacePath?: string) => Promise<IpcResponse<void>>;
-  gitPull: (workspacePath?: string) => Promise<IpcResponse<string>>;
-  gitPush: (remote?: string, branch?: string, workspacePath?: string) => Promise<IpcResponse<string>>;
-  gitGetLog: (maxCount?: number, search?: string, workspacePath?: string) => Promise<IpcResponse<GitCommitInfo[]>>;
-  gitGetBlame: (filePath: string, workspacePath?: string) => Promise<IpcResponse<GitBlameHunk[]>>;
-  gitStash: (action: 'list' | 'save' | 'pop' | 'drop', message?: string, index?: number, workspacePath?: string) => Promise<IpcResponse<GitStashInfo[] | string>>;
-  gitGetRemotes: (workspacePath?: string) => Promise<IpcResponse<GitRemoteInfo[]>>;
+  gitIsRepo: () => Promise<IpcResponse<boolean>>;
+  gitInit: () => Promise<IpcResponse<void>>;
+  gitGetStatus: () => Promise<IpcResponse<GitStatusResult>>;
+  gitGetDiff: (filePath?: string, staged?: boolean) => Promise<IpcResponse<string>>;
+  gitGetOriginalContent: (filePath: string, staged?: boolean) => Promise<IpcResponse<string>>;
+  gitStage: (filePaths: string | string[]) => Promise<IpcResponse<void>>;
+  gitUnstage: (filePaths: string | string[]) => Promise<IpcResponse<void>>;
+  gitDiscardChanges: (filePath: string, isUntracked?: boolean) => Promise<IpcResponse<void>>;
+  gitCommit: (message: string, options?: { amend?: boolean }) => Promise<IpcResponse<string>>;
+  gitGetBranches: () => Promise<IpcResponse<GitBranchInfo>>;
+  gitSwitchBranch: (branchName: string) => Promise<IpcResponse<void>>;
+  gitCreateBranch: (branchName: string) => Promise<IpcResponse<void>>;
+  gitDeleteBranch: (branchName: string, force?: boolean) => Promise<IpcResponse<void>>;
+  gitFetch: () => Promise<IpcResponse<void>>;
+  gitPull: () => Promise<IpcResponse<string>>;
+  gitPush: (remote?: string, branch?: string) => Promise<IpcResponse<string>>;
+  gitGetLog: (maxCount?: number, search?: string) => Promise<IpcResponse<GitCommitInfo[]>>;
+  gitGetBlame: (filePath: string) => Promise<IpcResponse<GitBlameHunk[]>>;
+  gitStash: (action: 'list' | 'save' | 'pop' | 'drop', message?: string, index?: number) => Promise<IpcResponse<GitStashInfo[] | string>>;
+  gitGetRemotes: () => Promise<IpcResponse<GitRemoteInfo[]>>;
   gitGetFileDiff: (filePath: string, staged?: boolean) => Promise<IpcResponse<GitFileDiff>>;
   gitGetCommitDetail: (hash: string) => Promise<IpcResponse<GitCommitDetail>>;
   gitGetTags: () => Promise<IpcResponse<GitTagInfo[]>>;
@@ -418,6 +401,64 @@ export interface ElectronAPI {
   lspWorkspaceSymbols: (params: { query: string }) => Promise<IpcResponse<any>>;
   lspCodeActions: (params: { filePath: string; range: any; context?: any }) => Promise<IpcResponse<any>>;
   lspSignatureHelp: (params: { filePath: string; line: number; character: number }) => Promise<IpcResponse<any>>;
+
+  // Workspace & Navigation
+  setWorkspaceFolder: (folderPath: string) => Promise<IpcResponse<FileNode>>;
+  getRecentWorkspaces: () => Promise<IpcResponse<RecentWorkspace[]>>;
+  addRecentWorkspace: (folderPath: string) => Promise<IpcResponse<RecentWorkspace[]>>;
+  clearRecentWorkspaces: () => Promise<IpcResponse<void>>;
+
+  // Auto-Update APIs
+  checkForUpdates: () => Promise<UpdateCheckResult>;
+  downloadUpdate: () => Promise<{ success: boolean; error?: string }>;
+  installUpdate: () => Promise<{ success: boolean; error?: string }>;
+  getUpdateChannel: () => Promise<IpcResponse<string>>;
+  setUpdateChannel: (channel: string) => Promise<IpcResponse<void>>;
+  onUpdateStatus: (callback: (status: { type: string; [key: string]: any }) => void) => () => void;
+  onUpdateProgress: (callback: (progress: UpdateProgress) => void) => () => void;
+
+  // Myers Diff & App Info
+  computeMyersDiff: (params: { original: string; modified: string; contextLines?: number }) => Promise<IpcResponse<MyersDiffResult>>;
+  getAppInfo: () => Promise<IpcResponse<AppInfo>>;
+}
+
+export interface RecentWorkspace {
+  path: string;
+  name: string;
+  lastOpened: number;
+}
+
+export interface UpdateProgress {
+  percent: number;
+  bytesPerSecond: number;
+  transferred: number;
+  total: number;
+}
+
+export interface UpdateCheckResult {
+  updateAvailable: boolean;
+  currentVersion: string;
+  latestVersion?: string;
+  releaseNotes?: string;
+  releaseDate?: string;
+  error?: string;
+}
+
+export interface AppInfo {
+  name: string;
+  version: string;
+  platform: string;
+  arch: string;
+  isPackaged: boolean;
+}
+
+export interface MyersDiffResult {
+  edits: Array<{ operation: 'equal' | 'insert' | 'delete'; text: string; oldLineNumber?: number; newLineNumber?: number }>;
+  unifiedDiff: string;
+  hunks: Array<{ oldStart: number; oldCount: number; newStart: number; newCount: number; header: string; lines: string[] }>;
+  additions: number;
+  deletions: number;
+  isIdentical: boolean;
 }
 
 export interface SearchInFilesOptions {

@@ -1,7 +1,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { spawn } from 'child_process';
-import type { ProposedDiff } from '../../preload/types';
+import type { AgentToolApproval, ProposedDiff, ToolCall } from '../../preload/types';
 import { gitService } from '../services/git-service';
 
 export interface ToolExecutionResponse {
@@ -277,10 +277,17 @@ export class ToolExecutor {
     const filePath = args.filePath ? String(args.filePath) : undefined;
     const staged = Boolean(args.staged);
     const diff = await gitService.getDiff(this.workspaceRoot, filePath, staged);
+    const truncated = diff.length > 30_000 ? `${diff.slice(0, 30_000)}\n\n[Diff truncated at 30,000 characters]` : diff;
+    return { output: truncated || '(No diff output; working tree matching HEAD or no changes in specified scope)' };
+  }
 
-    return {
-      output: diff ? diff : '(No diff output; working tree matching HEAD or no changes in specified scope)'
-    };
+  private isSensitiveGitPath(filePath: string): boolean {
+    const normalized = filePath.replace(/\\/g, '/').toLowerCase();
+    const name = normalized.split('/').pop() || normalized;
+    return (name.startsWith('.env') && name !== '.env.example' && name !== '.env.sample')
+      || ['.npmrc', '.netrc', '.pypirc', '.git-credentials', 'id_rsa', 'id_ed25519', 'id_dsa'].includes(name)
+      || /(^|\/)([^/]*credentials[^/]*|secrets?\.(json|ya?ml))$/.test(normalized)
+      || /\.(pem|key|p8|p12|pfx|keystore)$/i.test(name);
   }
 
   private async gitCommit(args: Record<string, unknown>): Promise<ToolExecutionResponse> {
@@ -292,8 +299,19 @@ export class ToolExecutor {
     const message = String(args.message || '').trim();
     if (!message) return { output: 'Error: commit message is required', isError: true };
 
-    const filePaths = Array.isArray(args.filePaths) ? (args.filePaths as string[]) : undefined;
-    const stageAll = args.stageAll !== false;
+    const filePaths = Array.isArray(args.filePaths) ? (args.filePaths as string[]).map(String) : undefined;
+    const stageAll = args.stageAll === true;
+    const status = await gitService.getStatus(this.workspaceRoot);
+    const visibleChanges = [...status.stagedFiles, ...status.unstagedFiles, ...status.untrackedFiles].map((file) => file.path);
+    const stagedAfterOperation = filePaths?.length
+      ? visibleChanges.filter((candidate) => filePaths.some((target) => target === '.' || candidate === target || candidate.startsWith(`${target.replace(/[\\/]+$/, '')}/`)))
+      : stageAll
+        ? visibleChanges
+        : status.stagedFiles.map((file) => file.path);
+    const sensitivePaths = [...new Set(stagedAfterOperation)].filter((filePath) => this.isSensitiveGitPath(filePath));
+    if (sensitivePaths.length > 0) {
+      return { output: `Refusing to stage likely secret files: ${sensitivePaths.join(', ')}. Stage these manually after reviewing them.`, isError: true };
+    }
 
     if (filePaths && filePaths.length > 0) {
       await gitService.stage(this.workspaceRoot, filePaths);
@@ -340,8 +358,9 @@ export class ToolExecutor {
       return { output: 'Current workspace is not a Git repository.', isError: true };
     }
 
-    const maxCount = typeof args.maxCount === 'number' ? args.maxCount : 15;
-    const search = args.search ? String(args.search) : undefined;
+    const requestedCount = typeof args.maxCount === 'number' ? Math.floor(args.maxCount) : 15;
+    const maxCount = Math.max(1, Math.min(requestedCount, 50));
+    const search = args.search ? String(args.search).slice(0, 200) : undefined;
     const commits = await gitService.getLog(this.workspaceRoot, maxCount, search);
 
     if (commits.length === 0) {

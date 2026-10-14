@@ -19,6 +19,7 @@ const api: ElectronAPI = {
   saveSettings: (settings) => ipcRenderer.invoke('settings:save', settings),
   startAgentTask: (params) => ipcRenderer.invoke('agent:start-task', params),
   stopAgentTask: (taskId: string) => ipcRenderer.invoke('agent:stop-task', taskId),
+  respondAgentApproval: (approvalId: string, approved: boolean) => ipcRenderer.invoke('agent:respond-approval', { approvalId, approved }),
   onAgentStream: (callback) => {
     const listener = (_event: IpcRendererEvent, chunk: AgentStreamChunk) => callback(chunk);
     ipcRenderer.on('agent:stream', listener);
@@ -54,40 +55,28 @@ const api: ElectronAPI = {
   toggleExtension: (id: string, enabled: boolean) => ipcRenderer.invoke('extensions:toggle', { id, enabled }),
   updateExtensionSettings: (id: string, settings: Record<string, unknown>) => ipcRenderer.invoke('extensions:update-settings', { id, settings }),
   installExtensionFromVsix: () => ipcRenderer.invoke('extensions:install-vsix'),
+  extensionCapability: (request) => ipcRenderer.invoke('extensions:capability', request),
 
-  // Git Source Control API implementations
-  gitIsRepo: (workspacePath?: string) => ipcRenderer.invoke('git:is-repo', workspacePath),
-  gitInit: (workspacePath?: string) => ipcRenderer.invoke('git:init', workspacePath),
-  gitGetStatus: (workspacePath?: string) => ipcRenderer.invoke('git:status', workspacePath),
-  gitGetDiff: (filePath?: string, staged?: boolean, workspacePath?: string) =>
-    ipcRenderer.invoke('git:diff', { filePath, staged, workspacePath }),
-  gitGetOriginalContent: (filePath: string, staged?: boolean, workspacePath?: string) =>
-    ipcRenderer.invoke('git:original-content', { filePath, staged, workspacePath }),
-  gitStage: (filePaths: string | string[], workspacePath?: string) =>
-    ipcRenderer.invoke('git:stage', { filePaths, workspacePath }),
-  gitUnstage: (filePaths: string | string[], workspacePath?: string) =>
-    ipcRenderer.invoke('git:unstage', { filePaths, workspacePath }),
-  gitDiscardChanges: (filePath: string, isUntracked?: boolean, workspacePath?: string) =>
-    ipcRenderer.invoke('git:discard', { filePath, isUntracked, workspacePath }),
-  gitCommit: (message: string, options?: { amend?: boolean }, workspacePath?: string) =>
-    ipcRenderer.invoke('git:commit', { message, options, workspacePath }),
-  gitGetBranches: (workspacePath?: string) => ipcRenderer.invoke('git:branches', workspacePath),
-  gitSwitchBranch: (branchName: string, workspacePath?: string) =>
-    ipcRenderer.invoke('git:switch-branch', { branchName, workspacePath }),
-  gitCreateBranch: (branchName: string, workspacePath?: string) =>
-    ipcRenderer.invoke('git:create-branch', { branchName, workspacePath }),
-  gitDeleteBranch: (branchName: string, force?: boolean, workspacePath?: string) =>
-    ipcRenderer.invoke('git:delete-branch', { branchName, force, workspacePath }),
-  gitFetch: (workspacePath?: string) => ipcRenderer.invoke('git:fetch', workspacePath),
-  gitPull: (workspacePath?: string) => ipcRenderer.invoke('git:pull', workspacePath),
-  gitPush: (remote?: string, branch?: string, workspacePath?: string) =>
-    ipcRenderer.invoke('git:push', { remote, branch, workspacePath }),
-  gitGetLog: (maxCount?: number, search?: string, workspacePath?: string) =>
-    ipcRenderer.invoke('git:log', { maxCount, search, workspacePath }),
-  gitGetBlame: (filePath: string, workspacePath?: string) =>
-    ipcRenderer.invoke('git:blame', { filePath, workspacePath }),
-  gitStash: (action: 'list' | 'save' | 'pop' | 'drop', message?: string, index?: number) =>
-    ipcRenderer.invoke('git:stash', { action, message, index }),
+  // Git APIs always use the active workspace selected in the main process.
+  gitIsRepo: () => ipcRenderer.invoke('git:is-repo'),
+  gitInit: () => ipcRenderer.invoke('git:init'),
+  gitGetStatus: () => ipcRenderer.invoke('git:status'),
+  gitGetDiff: (filePath?: string, staged?: boolean) => ipcRenderer.invoke('git:diff', { filePath, staged }),
+  gitGetOriginalContent: (filePath: string, staged?: boolean) => ipcRenderer.invoke('git:original-content', { filePath, staged }),
+  gitStage: (filePaths: string | string[]) => ipcRenderer.invoke('git:stage', { filePaths }),
+  gitUnstage: (filePaths: string | string[]) => ipcRenderer.invoke('git:unstage', { filePaths }),
+  gitDiscardChanges: (filePath: string, isUntracked?: boolean) => ipcRenderer.invoke('git:discard', { filePath, isUntracked }),
+  gitCommit: (message: string, options?: { amend?: boolean }) => ipcRenderer.invoke('git:commit', { message, options }),
+  gitGetBranches: () => ipcRenderer.invoke('git:branches'),
+  gitSwitchBranch: (branchName: string) => ipcRenderer.invoke('git:switch-branch', { branchName }),
+  gitCreateBranch: (branchName: string) => ipcRenderer.invoke('git:create-branch', { branchName }),
+  gitDeleteBranch: (branchName: string, force?: boolean) => ipcRenderer.invoke('git:delete-branch', { branchName, force }),
+  gitFetch: () => ipcRenderer.invoke('git:fetch'),
+  gitPull: () => ipcRenderer.invoke('git:pull'),
+  gitPush: (remote?: string, branch?: string) => ipcRenderer.invoke('git:push', { remote, branch }),
+  gitGetLog: (maxCount?: number, search?: string) => ipcRenderer.invoke('git:log', { maxCount, search }),
+  gitGetBlame: (filePath: string) => ipcRenderer.invoke('git:blame', { filePath }),
+  gitStash: (action: 'list' | 'save' | 'pop' | 'drop', message?: string, index?: number) => ipcRenderer.invoke('git:stash', { action, message, index }),
   gitGetRemotes: () => ipcRenderer.invoke('git:remotes'),
   gitGetFileDiff: (filePath: string, staged?: boolean) => ipcRenderer.invoke('git:file-diff', { filePath, staged }),
   gitGetCommitDetail: (hash: string) => ipcRenderer.invoke('git:commit-detail', hash),
@@ -125,7 +114,45 @@ const api: ElectronAPI = {
   lspDocumentSymbols: (params: { filePath: string }) => ipcRenderer.invoke('lsp:document-symbols', params),
   lspWorkspaceSymbols: (params: { query: string }) => ipcRenderer.invoke('lsp:workspace-symbols', params),
   lspCodeActions: (params: { filePath: string; range: any; context?: any }) => ipcRenderer.invoke('lsp:code-actions', params),
-  lspSignatureHelp: (params: { filePath: string; line: number; character: number }) => ipcRenderer.invoke('lsp:signature-help', params)
+  lspSignatureHelp: (params: { filePath: string; line: number; character: number }) => ipcRenderer.invoke('lsp:signature-help', params),
+
+  // Workspace & Navigation
+  setWorkspaceFolder: (folderPath: string) => ipcRenderer.invoke('fs:set-workspace', folderPath),
+  getRecentWorkspaces: () => ipcRenderer.invoke('workspace:get-recent'),
+  addRecentWorkspace: (folderPath: string) => ipcRenderer.invoke('workspace:add-recent', folderPath),
+  clearRecentWorkspaces: () => ipcRenderer.invoke('workspace:clear-recent'),
+
+  // Auto-Update APIs
+  checkForUpdates: () => ipcRenderer.invoke('update:check'),
+  downloadUpdate: () => ipcRenderer.invoke('update:download'),
+  installUpdate: () => ipcRenderer.invoke('update:install'),
+  getUpdateChannel: () => ipcRenderer.invoke('update:get-channel'),
+  setUpdateChannel: (channel: string) => ipcRenderer.invoke('update:set-channel', channel),
+  onUpdateStatus: (callback: (status: any) => void) => {
+    const channels = ['update:checking', 'update:available', 'update:not-available', 'update:downloaded', 'update:error'];
+    const listeners: Array<{ channel: string; listener: (event: any, data: any) => void }> = [];
+    for (const ch of channels) {
+      const type = ch.replace('update:', '');
+      const listener = (_event: any, data: any) => callback({ type, ...data });
+      ipcRenderer.on(ch, listener);
+      listeners.push({ channel: ch, listener });
+    }
+    return () => {
+      for (const { channel, listener } of listeners) {
+        ipcRenderer.removeListener(channel, listener);
+      }
+    };
+  },
+  onUpdateProgress: (callback: (progress: any) => void) => {
+    const listener = (_event: any, data: any) => callback(data);
+    ipcRenderer.on('update:download-progress', listener);
+    return () => ipcRenderer.removeListener('update:download-progress', listener);
+  },
+
+  // Myers Diff & App Info
+  computeMyersDiff: (params: { original: string; modified: string; contextLines?: number }) =>
+    ipcRenderer.invoke('diff:compute-myers', params),
+  getAppInfo: () => ipcRenderer.invoke('app:get-info')
 };
 
 contextBridge.exposeInMainWorld('electronAPI', api);

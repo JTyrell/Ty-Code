@@ -16,7 +16,10 @@ import type {
 export interface ActiveGitDiff extends GitFileDiff {
   title: string;
   isStaged: boolean;
+  isUntracked: boolean;
 }
+
+let historyRequestId = 0;
 
 interface GitStoreState {
   status: GitStatusResult | null;
@@ -41,7 +44,7 @@ interface GitStoreState {
   setHistorySearch: (search: string) => void;
   setDiffInline: (inline: boolean) => void;
   clearError: () => void;
-  refreshStatus: () => Promise<void>;
+  refreshStatus: (loadMetadata?: boolean) => Promise<void>;
   initRepo: () => Promise<boolean>;
   stageFile: (filePath: string | string[]) => Promise<boolean>;
   unstageFile: (filePath: string | string[]) => Promise<boolean>;
@@ -69,6 +72,7 @@ interface GitStoreState {
   refreshActiveDiff: () => Promise<void>;
   applyHunk: (hunkId: string, operation: 'stage' | 'unstage' | 'revert') => Promise<boolean>;
   loadConflict: (filePath: string) => Promise<void>;
+  closeConflict: () => void;
   resolveConflict: (filePath: string, action: 'ours' | 'theirs' | 'mark-resolved') => Promise<boolean>;
   abortMerge: () => Promise<boolean>;
   closeDiff: () => void;
@@ -88,6 +92,15 @@ const emptyStatus = (): GitStatusResult => ({
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function isSensitiveGitPath(filePath: string): boolean {
+  const normalized = filePath.replace(/\\/g, '/').toLowerCase();
+  const name = normalized.split('/').pop() || normalized;
+  return (name.startsWith('.env') && name !== '.env.example' && name !== '.env.sample')
+    || ['.npmrc', '.netrc', '.pypirc', '.git-credentials', 'id_rsa', 'id_ed25519', 'id_dsa'].includes(name)
+    || /(^|\/)([^/]*credentials[^/]*|secrets?\.(json|ya?ml))$/.test(normalized)
+    || /\.(pem|key|p8|p12|pfx|keystore)$/i.test(name);
 }
 
 export const useGitStore = create<GitStoreState>((set, get) => ({
@@ -114,19 +127,23 @@ export const useGitStore = create<GitStoreState>((set, get) => ({
   setDiffInline: (diffInline) => set({ diffInline }),
   clearError: () => set({ error: null }),
 
-  refreshStatus: async () => {
+  refreshStatus: async (loadMetadata = false) => {
+    if (!window.electronAPI?.gitGetStatus) {
+      set({ status: emptyStatus(), error: 'Git source control is available in the Ty-Claude desktop app.' });
+      return;
+    }
     try {
       const statusRes = await window.electronAPI.gitGetStatus();
       if (!statusRes.success || !statusRes.data) throw new Error(statusRes.error || 'Unable to read Git status.');
-      set({ status: statusRes.data, error: null });
-      if (statusRes.data.isRepo) {
+      set({ status: statusRes.data });
+      if (statusRes.data.isRepo && loadMetadata) {
         void get().fetchBranches();
         void get().loadTags();
         void get().loadStashes();
         void window.electronAPI.gitGetRemotes().then((res) => {
           if (res.success && res.data) set({ remotes: res.data });
         });
-      } else {
+      } else if (!statusRes.data.isRepo) {
         set({ branches: null, tags: [], stashes: [], remotes: [] });
       }
     } catch (error: unknown) {
@@ -139,7 +156,7 @@ export const useGitStore = create<GitStoreState>((set, get) => ({
     try {
       const response = await window.electronAPI.gitInit();
       if (!response.success) throw new Error(response.error || 'Failed to initialize Git repository.');
-      await get().refreshStatus();
+      await get().refreshStatus(true);
       return true;
     } catch (error: unknown) {
       set({ error: getErrorMessage(error) });
@@ -150,12 +167,24 @@ export const useGitStore = create<GitStoreState>((set, get) => ({
   },
 
   stageFile: async (filePath) => {
+    set({ error: null });
     try {
+      const statusResponse = await window.electronAPI.gitGetStatus();
+      if (!statusResponse.success || !statusResponse.data) throw new Error(statusResponse.error || 'Could not refresh Git status before staging.');
+      const status = statusResponse.data;
+      set({ status });
+      const candidates = Array.isArray(filePath)
+        ? filePath
+        : filePath === '.'
+          ? [...(status?.stagedFiles || []), ...(status?.unstagedFiles || []), ...(status?.untrackedFiles || [])].map((file) => file.path)
+          : [filePath];
+      const sensitive = candidates.filter(isSensitiveGitPath);
+      if (sensitive.length) throw new Error(`Refusing to stage likely secret file(s): ${sensitive.join(', ')}. Stage manually after reviewing.`);
       const response = await window.electronAPI.gitStage(filePath);
       if (!response.success) throw new Error(response.error || 'Could not stage changes.');
       const diff = get().activeDiff;
       await get().refreshStatus();
-      if (diff && (filePath === diff.filePath || (Array.isArray(filePath) && filePath.includes(diff.filePath)))) {
+      if (diff && (filePath === '.' || filePath === diff.filePath || (Array.isArray(filePath) && filePath.includes(diff.filePath)))) {
         await get().openFileDiff(diff.filePath, true);
       }
       return true;
@@ -166,11 +195,15 @@ export const useGitStore = create<GitStoreState>((set, get) => ({
   },
 
   unstageFile: async (filePath) => {
+    set({ error: null });
     try {
       const response = await window.electronAPI.gitUnstage(filePath);
       if (!response.success) throw new Error(response.error || 'Could not unstage changes.');
+      const diff = get().activeDiff;
       await get().refreshStatus();
-      await get().refreshActiveDiff();
+      if (diff && (filePath === '.' || filePath === diff.filePath || (Array.isArray(filePath) && filePath.includes(diff.filePath)))) {
+        await get().openFileDiff(diff.filePath, false);
+      }
       return true;
     } catch (error: unknown) {
       set({ error: getErrorMessage(error) });
@@ -179,6 +212,7 @@ export const useGitStore = create<GitStoreState>((set, get) => ({
   },
 
   discardChanges: async (filePath, isUntracked = false) => {
+    set({ error: null });
     try {
       const response = await window.electronAPI.gitDiscardChanges(filePath, isUntracked);
       if (!response.success) throw new Error(response.error || 'Could not discard changes.');
@@ -196,16 +230,17 @@ export const useGitStore = create<GitStoreState>((set, get) => ({
     if (!message) return false;
     set({ isLoading: true, error: null });
     try {
-      let status = get().status;
-      if (!status) {
-        await get().refreshStatus();
-        status = get().status;
-      }
-      if (!status?.isRepo) throw new Error('Initialize a Git repository before committing.');
+      const statusResponse = await window.electronAPI.gitGetStatus();
+      if (!statusResponse.success || !statusResponse.data) throw new Error(statusResponse.error || 'Unable to refresh Git status before committing.');
+      const status = statusResponse.data;
+      set({ status });
+      if (!status.isRepo) throw new Error('Initialize a Git repository before committing.');
       if (status.conflictedFiles.length) throw new Error('Resolve merge conflicts before committing.');
+      const sensitiveStaged = status.stagedFiles.map((file) => file.path).filter(isSensitiveGitPath);
+      if (sensitiveStaged.length) throw new Error(`Refusing to commit likely secret file(s): ${sensitiveStaged.join(', ')}. Review and unstage them first.`);
       if (status.stagedFiles.length === 0 && (status.unstagedFiles.length || status.untrackedFiles.length)) {
-        const stageResponse = await window.electronAPI.gitStage('.');
-        if (!stageResponse.success) throw new Error(stageResponse.error || 'Could not stage changes.');
+        const staged = await get().stageFile('.');
+        if (!staged) throw new Error(get().error || 'Could not stage changes.');
       }
       const response = await window.electronAPI.gitCommit(message);
       if (!response.success) throw new Error(response.error || 'Commit failed.');
@@ -236,7 +271,7 @@ export const useGitStore = create<GitStoreState>((set, get) => ({
     try {
       const response = await window.electronAPI.gitCreateBranch(branchName);
       if (!response.success) throw new Error(response.error || `Failed to create branch ${branchName}.`);
-      await get().refreshStatus();
+      await Promise.all([get().refreshStatus(), get().fetchBranches()]);
       return true;
     } catch (error: unknown) {
       set({ error: getErrorMessage(error) });
@@ -252,7 +287,7 @@ export const useGitStore = create<GitStoreState>((set, get) => ({
       const response = await window.electronAPI.gitSwitchBranch(branchName);
       if (!response.success) throw new Error(response.error || `Failed to switch to ${branchName}.`);
       set({ activeDiff: null, activeHunks: [] });
-      await get().refreshStatus();
+      await Promise.all([get().refreshStatus(), get().fetchBranches()]);
       return true;
     } catch (error: unknown) {
       set({ error: getErrorMessage(error) });
@@ -358,15 +393,16 @@ export const useGitStore = create<GitStoreState>((set, get) => ({
 
   loadHistory: async (search) => {
     const term = search ?? get().historySearch;
+    const request = ++historyRequestId;
     try {
       set({ isLoading: true, error: null, historySearch: term });
       const response = await window.electronAPI.gitGetLog(100, term || undefined);
       if (!response.success) throw new Error(response.error || 'Could not load commit history.');
-      set({ commits: response.data || [] });
+      if (request === historyRequestId) set({ commits: response.data || [] });
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error) });
+      if (request === historyRequestId) set({ error: getErrorMessage(error) });
     } finally {
-      set({ isLoading: false });
+      if (request === historyRequestId) set({ isLoading: false });
     }
   },
 
@@ -390,6 +426,7 @@ export const useGitStore = create<GitStoreState>((set, get) => ({
   },
 
   createTag: async (name, message) => {
+    set({ error: null });
     try {
       const response = await window.electronAPI.gitCreateTag(name, message);
       if (!response.success) throw new Error(response.error || 'Could not create tag.');
@@ -402,6 +439,7 @@ export const useGitStore = create<GitStoreState>((set, get) => ({
   },
 
   deleteTag: async (name) => {
+    set({ error: null });
     try {
       const response = await window.electronAPI.gitDeleteTag(name);
       if (!response.success) throw new Error(response.error || 'Could not delete tag.');
@@ -420,10 +458,11 @@ export const useGitStore = create<GitStoreState>((set, get) => ({
   },
 
   stashChanges: async (message) => {
+    set({ error: null });
     try {
       const response = await window.electronAPI.gitStash('save', message);
       if (!response.success) throw new Error(response.error || 'Could not save stash.');
-      await get().refreshStatus();
+      await Promise.all([get().refreshStatus(), get().loadStashes()]);
       return true;
     } catch (error: unknown) {
       set({ error: getErrorMessage(error) });
@@ -432,6 +471,7 @@ export const useGitStore = create<GitStoreState>((set, get) => ({
   },
 
   popStash: async (index) => {
+    set({ error: null });
     try {
       const response = await window.electronAPI.gitStash('pop', undefined, index);
       if (!response.success) throw new Error(response.error || 'Could not apply stash.');
@@ -446,6 +486,7 @@ export const useGitStore = create<GitStoreState>((set, get) => ({
   },
 
   dropStash: async (index) => {
+    set({ error: null });
     try {
       const response = await window.electronAPI.gitStash('drop', undefined, index);
       if (!response.success) throw new Error(response.error || 'Could not drop stash.');
@@ -470,7 +511,8 @@ export const useGitStore = create<GitStoreState>((set, get) => ({
         activeDiff: {
           ...diffResponse.data,
           title: `${diffResponse.data.filePath} (${isStaged ? 'Index ↔ HEAD' : 'Working Tree ↔ Index'})`,
-          isStaged
+          isStaged,
+          isUntracked: get().status?.untrackedFiles.some((file) => file.path === diffResponse.data?.filePath) || false
         },
         activeHunks: hunkResponse.data || []
       });
@@ -492,14 +534,8 @@ export const useGitStore = create<GitStoreState>((set, get) => ({
     try {
       const response = await window.electronAPI.gitApplyHunk(current.filePath, hunkId, operation);
       if (!response.success) throw new Error(response.error || 'Could not apply hunk action.');
-      if (operation === 'revert') {
-        const fileResponse = await window.electronAPI.gitGetFileDiff(current.filePath, false);
-        if (fileResponse.success && fileResponse.data) {
-          set({ activeDiff: { ...fileResponse.data, title: current.title, isStaged: false } });
-        }
-      }
       await get().refreshStatus();
-      await get().refreshActiveDiff();
+      await get().openFileDiff(current.filePath, operation === 'stage' ? true : operation === 'unstage' ? false : current.isStaged);
       return true;
     } catch (error: unknown) {
       set({ error: getErrorMessage(error) });
@@ -516,6 +552,8 @@ export const useGitStore = create<GitStoreState>((set, get) => ({
       set({ error: getErrorMessage(error) });
     }
   },
+
+  closeConflict: () => set({ activeConflict: null }),
 
   resolveConflict: async (filePath, action) => {
     try {

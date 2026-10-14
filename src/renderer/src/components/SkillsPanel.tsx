@@ -94,7 +94,7 @@ export const SkillsPanel: React.FC = () => {
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '10px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-        {/* Antigravity Slash Commands */}
+        {/* Workspace Skills */}
         <div>
           <div style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' }}>
             AGENTIC SLASH COMMANDS

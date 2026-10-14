@@ -46,6 +46,9 @@ export const TerminalDrawer: React.FC = () => {
   const [showShellMenu, setShowShellMenu] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; tabId: string } | null>(null);
   const [terminalError, setTerminalError] = useState('');
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [menuCoords, setMenuCoords] = useState<{ top?: number; bottom?: number; left: number }>({ left: 0 });
   const terminalRefs = useRef<Map<string, TerminalRuntime>>(new Map());
   const tabsRef = useRef<TerminalTab[]>([]);
   const activeTabRef = useRef<string | null>(null);
@@ -258,6 +261,64 @@ export const TerminalDrawer: React.FC = () => {
     updateTabs((current) => current.map((item) => item.id === tab.id ? { ...item, cwd } : item));
     queuePersist();
   };
+
+  const updateMenuCoords = useCallback(() => {
+    if (!menuButtonRef.current) return;
+    const rect = menuButtonRef.current.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const estimatedMenuHeight = 280;
+    const placeAbove = spaceBelow < estimatedMenuHeight && rect.top > estimatedMenuHeight;
+    const left = Math.max(8, Math.min(rect.left, window.innerWidth - 260));
+
+    if (placeAbove) {
+      setMenuCoords({
+        bottom: window.innerHeight - rect.top + 4,
+        left
+      });
+    } else {
+      setMenuCoords({
+        top: rect.bottom + 4,
+        left
+      });
+    }
+  }, []);
+
+  const handleToggleMenu = useCallback(() => {
+    setShowShellMenu((prev) => {
+      if (!prev) {
+        updateMenuCoords();
+      }
+      return !prev;
+    });
+  }, [updateMenuCoords]);
+
+  useEffect(() => {
+    if (!showShellMenu) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (menuRef.current?.contains(target) || menuButtonRef.current?.contains(target)) {
+        return;
+      }
+      setShowShellMenu(false);
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setShowShellMenu(false);
+        menuButtonRef.current?.focus();
+      }
+    };
+    const handleResize = () => {
+      updateMenuCoords();
+    };
+    window.addEventListener('pointerdown', handlePointerDown);
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('resize', handleResize);
+    return () => {
+      window.removeEventListener('pointerdown', handlePointerDown);
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('resize', handleResize);
+    };
+  }, [showShellMenu, updateMenuCoords]);
   const handleToggleSplit = () => {
     if (splitTabRef.current) {
       splitTabRef.current = null; setSplitTabId(null);
@@ -368,7 +429,8 @@ export const TerminalDrawer: React.FC = () => {
   };
 
   const activeTab = tabs.find((tab) => tab.id === activeTabId);
-  return <section className="terminal-drawer" style={{ display: isTerminalOpen ? 'flex' : 'none', height: isMaximized ? '75vh' : `${terminalHeight}px` }} aria-label="Integrated terminal">
+
+  return <section className="terminal-drawer" style={{ display: isTerminalOpen ? 'flex' : 'none', width: '100%', height: isMaximized ? '100%' : `${terminalHeight}px`, maxHeight: isMaximized ? '100%' : '85%' }} aria-label="Integrated terminal">
     <div className="terminal-resize-handle" role="separator" aria-orientation="horizontal" aria-label="Resize terminal panel" aria-valuenow={terminalHeight} tabIndex={0} onPointerDown={handleTerminalResizePointerDown}
       onKeyDown={(event) => {
         const delta = event.key === 'ArrowUp' ? 16 : event.key === 'ArrowDown' ? -16 : 0;
@@ -380,23 +442,30 @@ export const TerminalDrawer: React.FC = () => {
         queuePersist();
       }} />
     <header className="terminal-toolbar">
-      <div className="terminal-tab-strip" role="tablist" aria-label="Terminal sessions">
-        {tabs.map((tab, index) => <div key={tab.id} className={`terminal-tab${tab.id === activeTabId ? ' is-active' : ''}`} role="tab" aria-selected={tab.id === activeTabId} tabIndex={tab.id === activeTabId ? 0 : -1}
-          onClick={() => { setActiveTabId(tab.id); activeTabRef.current = tab.id; terminalRefs.current.get(tab.id)?.term.focus(); }}
-          onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setActiveTabId(tab.id); } }}
-          onContextMenu={(event) => { event.preventDefault(); setContextMenu({ x: event.clientX, y: event.clientY, tabId: tab.id }); }} title={`${tab.shellName} · ${tab.cwd}`}>
-          <TerminalIcon size={12} aria-hidden="true" /><span className="terminal-tab-label">{index + 1}: {tab.shellName}</span>
-          {tab.hasExited && <span className="terminal-exited-dot" title="Shell exited" />}
-          <button className="terminal-tab-close" onClick={(event) => handleCloseTab(tab.id, event)} title="Close terminal" aria-label={`Close ${tab.shellName} terminal`}><X size={11} /></button>
-        </div>)}
+      <div className="terminal-tabs-section">
+        <div className="terminal-tab-strip" role="tablist" aria-label="Terminal sessions">
+          {tabs.map((tab, index) => <div key={tab.id} className={`terminal-tab${tab.id === activeTabId ? ' is-active' : ''}`} role="tab" aria-selected={tab.id === activeTabId} tabIndex={tab.id === activeTabId ? 0 : -1}
+            onClick={() => { setActiveTabId(tab.id); activeTabRef.current = tab.id; terminalRefs.current.get(tab.id)?.term.focus(); }}
+            onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setActiveTabId(tab.id); } }}
+            onContextMenu={(event) => { event.preventDefault(); setContextMenu({ x: event.clientX, y: event.clientY, tabId: tab.id }); }} title={`${tab.shellName} · ${tab.cwd}`}>
+            <TerminalIcon size={12} aria-hidden="true" /><span className="terminal-tab-label">{index + 1}: {tab.shellName}</span>
+            {tab.hasExited && <span className="terminal-exited-dot" title="Shell exited" />}
+            <button className="terminal-tab-close" onClick={(event) => handleCloseTab(tab.id, event)} title="Close terminal" aria-label={`Close ${tab.shellName} terminal`}><X size={11} /></button>
+          </div>)}
+        </div>
         <div className="terminal-new-menu-wrap">
-          <button className="terminal-icon-button" onClick={() => setShowShellMenu((open) => !open)} title="New terminal" aria-label="New terminal" aria-expanded={showShellMenu}><Plus size={13} /><ChevronDown size={11} /></button>
-          {showShellMenu && <div className="terminal-profile-menu" role="menu">
-            <div className="terminal-menu-label">SHELL PROFILES</div>
-            {settings?.terminalProfiles?.map((profile) => <button key={profile.id} role="menuitem" onClick={() => void handleSpawnTerminal({ profileId: profile.id, shellId: profile.shellId })}><TerminalIcon size={12} /><span>{profile.name}</span>{profile.id === settings.defaultTerminalProfileId && <span className="terminal-default-label">Default</span>}</button>)}
-            {availableShells.map((shell) => <button key={shell.id} role="menuitem" onClick={() => void handleSpawnTerminal({ shellId: shell.id })}><TerminalIcon size={12} /><span>{shell.name}</span>{shell.isDefault && <span className="terminal-default-label">System</span>}</button>)}
-            <button className="terminal-settings-link" role="menuitem" onClick={() => { setShowShellMenu(false); toggleSettings(); }}><Settings2 size={12} /><span>Configure profiles…</span></button>
-          </div>}
+          <button
+            ref={menuButtonRef}
+            className="terminal-icon-button terminal-new-btn"
+            onClick={handleToggleMenu}
+            title="New terminal (choose shell profile)"
+            aria-label="New terminal"
+            aria-expanded={showShellMenu}
+            aria-haspopup="menu"
+          >
+            <Plus size={13} />
+            <ChevronDown size={11} className={showShellMenu ? 'terminal-chevron-open' : ''} />
+          </button>
         </div>
       </div>
       <div className="terminal-actions">
@@ -435,6 +504,88 @@ export const TerminalDrawer: React.FC = () => {
           </React.Fragment>;
         })}
     </div>
+    {showShellMenu && (
+      <div
+        ref={menuRef}
+        className="terminal-profile-menu"
+        style={{
+          top: menuCoords.top !== undefined ? `${menuCoords.top}px` : undefined,
+          bottom: menuCoords.bottom !== undefined ? `${menuCoords.bottom}px` : undefined,
+          left: `${menuCoords.left}px`
+        }}
+        role="menu"
+        aria-label="Terminal Shell Profiles"
+      >
+        <div className="terminal-menu-header">
+          <span className="terminal-menu-label">SHELL PROFILES</span>
+          <span className="terminal-menu-count">
+            {(settings?.terminalProfiles?.length || 0) + availableShells.length} available
+          </span>
+        </div>
+        <div className="terminal-menu-scrollable" role="group">
+          {settings?.terminalProfiles && settings.terminalProfiles.length > 0 && (
+            <div className="terminal-menu-group">
+              <div className="terminal-menu-subheader">CONFIGURED PROFILES</div>
+              {settings.terminalProfiles.map((profile) => (
+                <button
+                  key={profile.id}
+                  role="menuitem"
+                  className="terminal-menu-item"
+                  onClick={() => {
+                    setShowShellMenu(false);
+                    void handleSpawnTerminal({ profileId: profile.id, shellId: profile.shellId });
+                  }}
+                >
+                  <TerminalIcon size={12} className="terminal-menu-icon" />
+                  <span className="terminal-menu-name" title={profile.name}>{profile.name}</span>
+                  {profile.id === settings.defaultTerminalProfileId && (
+                    <span className="terminal-default-label">Default</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="terminal-menu-group">
+            {settings?.terminalProfiles && settings.terminalProfiles.length > 0 && (
+              <div className="terminal-menu-subheader">DETECTED SYSTEM SHELLS</div>
+            )}
+            {availableShells.map((shell) => (
+              <button
+                key={shell.id}
+                role="menuitem"
+                className="terminal-menu-item"
+                onClick={() => {
+                  setShowShellMenu(false);
+                  void handleSpawnTerminal({ shellId: shell.id });
+                }}
+              >
+                <TerminalIcon size={12} className="terminal-menu-icon" />
+                <span className="terminal-menu-name" title={shell.name}>{shell.name}</span>
+                {shell.isDefault && (
+                  <span className="terminal-default-label">System</span>
+                )}
+              </button>
+            ))}
+          </div>
+          {availableShells.length === 0 && (!settings?.terminalProfiles || settings.terminalProfiles.length === 0) && (
+            <div className="terminal-menu-empty">No shell profiles detected</div>
+          )}
+        </div>
+        <div className="terminal-menu-footer">
+          <button
+            className="terminal-settings-link"
+            role="menuitem"
+            onClick={() => {
+              setShowShellMenu(false);
+              toggleSettings();
+            }}
+          >
+            <Settings2 size={12} />
+            <span>Configure profiles…</span>
+          </button>
+        </div>
+      </div>
+    )}
     {contextMenu && <div className="terminal-context-menu" style={{ left: contextMenu.x, top: contextMenu.y }} role="menu" onClick={(event) => event.stopPropagation()}>
       <button role="menuitem" onClick={() => void copySelection(contextMenu.tabId)}><Copy size={12} />Copy selection</button>
       <button role="menuitem" onClick={() => void pasteClipboard(contextMenu.tabId)}><ClipboardPaste size={12} />Paste</button>

@@ -27,7 +27,17 @@ export class GitService {
       baseDir: path.resolve(workspacePath),
       binary: 'git',
       maxConcurrentProcesses: 6,
-      trimmed: true
+      trimmed: true,
+      allowEnvironment: [
+        'GIT_OPTIONAL_LOCKS',
+        'GIT_SSH_COMMAND',
+        'GIT_TERMINAL_PROMPT',
+        'GIT_TRACE',
+        'GIT_AUTHOR_NAME',
+        'GIT_AUTHOR_EMAIL',
+        'GIT_COMMITTER_NAME',
+        'GIT_COMMITTER_EMAIL'
+      ]
     };
     return simpleGit(options);
   }
@@ -43,16 +53,26 @@ export class GitService {
     return { git: this.getGit(root), root };
   }
 
+  private literalPathspec(repoPath: string): string {
+    return `:(literal)${repoPath.replace(/\\/g, '/')}`;
+  }
+
+  private getWorkspaceOffset(workspacePath: string, root: string): string {
+    const workspaceRoot = path.resolve(workspacePath);
+    const workspaceOffset = path.relative(root, workspaceRoot);
+    if (workspaceOffset === '..' || workspaceOffset.startsWith(`..${path.sep}`) || path.isAbsolute(workspaceOffset)) {
+      throw new Error('The selected workspace is outside its Git repository.');
+    }
+    return workspaceOffset;
+  }
+
   private async resolveRepoPath(workspacePath: string, filePath: string): Promise<{ root: string; absolutePath: string; relativePath: string; workspaceRelativePath: string }> {
     if (!filePath || path.isAbsolute(filePath) || path.win32.isAbsolute(filePath)) {
       throw new Error('Git file paths must be non-empty paths relative to the workspace.');
     }
     const root = await this.getRepoRoot(workspacePath);
     const workspaceRoot = path.resolve(workspacePath);
-    const workspaceOffset = path.relative(root, workspaceRoot);
-    if (workspaceOffset === '..' || workspaceOffset.startsWith(`..${path.sep}`) || path.isAbsolute(workspaceOffset)) {
-      throw new Error('The selected workspace is outside its Git repository.');
-    }
+    this.getWorkspaceOffset(workspaceRoot, root);
     const absolutePath = path.resolve(workspaceRoot, filePath);
     const workspaceRelativePath = path.relative(workspaceRoot, absolutePath);
     if (!workspaceRelativePath || workspaceRelativePath === '..' || workspaceRelativePath.startsWith(`..${path.sep}`) || path.isAbsolute(workspaceRelativePath)) {
@@ -70,13 +90,15 @@ export class GitService {
     };
   }
 
-  private async safeReadFile(root: string, absolutePath: string): Promise<string> {
+  private async safeReadFile(root: string, workspaceRoot: string, absolutePath: string): Promise<string> {
     try {
       const realRoot = await fs.realpath(root);
+      const realWorkspace = await fs.realpath(workspaceRoot);
       const realTarget = await fs.realpath(absolutePath);
-      const relative = path.relative(realRoot, realTarget);
-      if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
-        throw new Error('Git file resolves outside the repository.');
+      const repoRelative = path.relative(realRoot, realTarget);
+      const workspaceRelative = path.relative(realWorkspace, realTarget);
+      if ([repoRelative, workspaceRelative].some((relative) => relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative))) {
+        throw new Error('Git file resolves outside the active workspace.');
       }
       return await fs.readFile(realTarget, 'utf-8');
     } catch (err: unknown) {
@@ -95,10 +117,17 @@ export class GitService {
 
   private assertTagName(git: SimpleGit, name: string): Promise<string> {
     const normalized = name.trim();
-    if (!normalized || normalized.length > 240 || normalized.startsWith('-')) {
+    if (!normalized || normalized.length > 240 || normalized.startsWith('-') || normalized.startsWith('refs/')) {
       throw new Error('Enter a valid tag name.');
     }
     return git.raw(['check-ref-format', `refs/tags/${normalized}`]).then(() => normalized);
+  }
+
+  private redactSensitiveText(value: string): string {
+    return value
+      .replace(/([a-z][a-z0-9+.-]*:\/\/)[^/\s@]+@/gi, '$1[redacted]@')
+      .replace(/^[^@\s]+@/gm, '[redacted]@')
+      .replace(/([?&](?:token|access_token|password|auth)=)[^&\s]*/gi, '$1[redacted]');
   }
 
   private safeRemoteUrl(url?: string): string | undefined {
@@ -110,17 +139,12 @@ export class GitService {
       for (const key of ['token', 'access_token', 'password', 'auth']) {
         if (parsed.searchParams.has(key)) parsed.searchParams.set(key, '[redacted]');
       }
-      return parsed.toString().replace(/\/$/, '');
+      return this.redactSensitiveText(parsed.toString()).replace(/\/$/, '');
     } catch {
-      return url.replace(/([?&](?:token|access_token|password|auth)=)[^&]*/gi, '$1[redacted]');
+      return this.redactSensitiveText(url);
     }
   }
 
-  private getNonInteractiveGit(workspacePath: string): SimpleGit {
-    return this.getGit(workspacePath)
-      .env('GIT_TERMINAL_PROMPT', '0')
-      .env('GCM_INTERACTIVE', 'Never');
-  }
 
   private async runRemoteOperation(root: string, args: string[]): Promise<string> {
     return await new Promise<string>((resolve, reject) => {
@@ -149,7 +173,7 @@ export class GitService {
         settled = true;
         clearTimeout(timer);
         if (code === 0) resolve(stdout.trim());
-        else reject(new Error(stderr.trim() || `git ${args[0]} exited with code ${code ?? 'unknown'}.`));
+        else reject(new Error(this.redactSensitiveText(stderr.trim()) || `git ${args[0]} exited with code ${code ?? 'unknown'}.`));
       });
     });
   }
@@ -182,8 +206,8 @@ export class GitService {
     }
 
     const { git, root } = await this.getRepoGit(workspacePath);
-    const status: StatusResult = await git.status();
-    const workspaceOffset = path.relative(root, path.resolve(workspacePath)).split(path.sep).join('/');
+    const status: StatusResult = await git.env('GIT_OPTIONAL_LOCKS', '0').status();
+    const workspaceOffset = this.getWorkspaceOffset(workspacePath, root).split(path.sep).join('/');
     const statusPath = (repoPath: string): string | null => {
       if (!workspaceOffset) return repoPath;
       const prefix = `${workspaceOffset}/`;
@@ -233,11 +257,12 @@ export class GitService {
 
     return {
       isRepo: true,
+      repositoryRoot: root,
       currentBranch: status.current || 'HEAD (detached)',
       trackingBranch: status.tracking || undefined,
       ahead: status.ahead,
       behind: status.behind,
-      isClean: status.isClean(),
+      isClean: stagedFiles.length + unstagedFiles.length + untrackedFiles.length + conflictedFiles.length === 0,
       stagedFiles,
       unstagedFiles,
       untrackedFiles,
@@ -252,10 +277,11 @@ export class GitService {
     const { git, root } = await this.getRepoGit(workspacePath);
     const args: string[] = ['--no-ext-diff'];
     if (staged) args.push('--cached');
-    if (filePath) {
-      const resolved = await this.resolveRepoPath(workspacePath, filePath);
-      args.push('--', resolved.relativePath);
-    }
+    const workspaceOffset = this.getWorkspaceOffset(workspacePath, root).split(path.sep).join('/');
+    const pathspec = filePath
+      ? (await this.resolveRepoPath(workspacePath, filePath)).relativePath
+      : workspaceOffset || '.';
+    args.push('--', this.literalPathspec(pathspec));
     return git.diff(args);
   }
 
@@ -272,7 +298,7 @@ export class GitService {
 
   async getFileDiff(workspacePath: string, filePath: string, staged = false): Promise<GitFileDiff> {
     const { git, root } = await this.getRepoGit(workspacePath);
-    const { absolutePath, relativePath } = await this.resolveRepoPath(workspacePath, filePath);
+    const { absolutePath, relativePath, workspaceRelativePath } = await this.resolveRepoPath(workspacePath, filePath);
     const originalContent = await this.getFileOriginalContent(root, relativePath, staged);
     let modifiedContent = '';
     if (staged) {
@@ -282,10 +308,10 @@ export class GitService {
         modifiedContent = '';
       }
     } else {
-      modifiedContent = await this.safeReadFile(root, absolutePath);
+      modifiedContent = await this.safeReadFile(root, path.resolve(workspacePath), absolutePath);
     }
     const patch = await this.getDiff(root, relativePath, staged);
-    return { filePath: relativePath, originalContent, modifiedContent, patch };
+    return { filePath: workspaceRelativePath, originalContent, modifiedContent, patch };
   }
 
   async stage(workspacePath: string, filePaths: string | string[]): Promise<void> {
@@ -293,10 +319,10 @@ export class GitService {
     const targets = Array.isArray(filePaths) ? filePaths : [filePaths];
     if (targets.length === 0 || (targets.length === 1 && targets[0] === '.')) {
       const workspaceOffset = path.relative(root, path.resolve(workspacePath)).split(path.sep).join('/');
-      await git.raw(['add', '--', workspaceOffset || '.']);
+      await git.raw(['add', '--', this.literalPathspec(workspaceOffset || '.')]);
       return;
     }
-    const safePaths = await Promise.all(targets.map(async (target) => (await this.resolveRepoPath(workspacePath, target)).relativePath));
+    const safePaths = await Promise.all(targets.map(async (target) => this.literalPathspec((await this.resolveRepoPath(workspacePath, target)).relativePath)));
     await git.raw(['add', '--', ...safePaths]);
   }
 
@@ -308,14 +334,13 @@ export class GitService {
     const workspaceOffset = path.relative(root, path.resolve(workspacePath)).split(path.sep).join('/');
     const prefix = workspaceOffset ? `${workspaceOffset}/` : '';
     const safePaths = all
-      ? status.files.filter((file) => file.index !== ' ' && file.index !== '?' && (!prefix || file.path.startsWith(prefix))).map((file) => file.path)
-      : await Promise.all(targets.map(async (target) => (await this.resolveRepoPath(workspacePath, target)).relativePath));
+      ? status.files.filter((file) => file.index !== ' ' && file.index !== '?' && (!prefix || file.path.startsWith(prefix))).map((file) => this.literalPathspec(file.path))
+      : await Promise.all(targets.map(async (target) => this.literalPathspec((await this.resolveRepoPath(workspacePath, target)).relativePath)));
     if (safePaths.length === 0) return;
 
     const hasHead = await git.raw(['rev-parse', '--verify', 'HEAD']).then(() => true, () => false);
     if (hasHead) {
-      if (all) await git.reset(['HEAD']);
-      else await git.reset(['HEAD', '--', ...safePaths]);
+      await git.reset(['HEAD', '--', ...safePaths]);
     } else {
       await git.raw(['rm', '--cached', '--ignore-unmatch', '-r', '--', ...safePaths]);
     }
@@ -325,23 +350,46 @@ export class GitService {
     const { git, root } = await this.getRepoGit(workspacePath);
     const { absolutePath, relativePath } = await this.resolveRepoPath(workspacePath, filePath);
     const status = await git.status();
-    const file = status.files.find((entry) => entry.path === relativePath || entry.path.startsWith(`${relativePath}/`));
-    if (!file) throw new Error(`No Git changes found for "${relativePath}".`);
+    const affected = status.files.filter((entry) => entry.path === relativePath || entry.path.startsWith(`${relativePath}/`));
+    if (affected.length === 0) throw new Error(`No Git changes found for "${relativePath}".`);
 
     if (isUntracked) {
-      if (file.index !== '?' && file.working_dir !== '?') throw new Error('Only untracked files can be removed with this action.');
+      if (!affected.every((entry) => entry.index === '?' || entry.working_dir === '?')) {
+        throw new Error('Refusing to delete a path containing tracked or staged changes. Discard untracked files individually.');
+      }
+      const targetStats = await fs.lstat(absolutePath);
+      if (targetStats.isDirectory()) throw new Error('Refusing to recursively remove untracked directories. Discard their files individually.');
+      const activeWorkspace = await fs.realpath(workspacePath);
+      const realParent = await fs.realpath(path.dirname(absolutePath));
+      const parentRelative = path.relative(activeWorkspace, realParent);
+      if (parentRelative === '..' || parentRelative.startsWith(`..${path.sep}`) || path.isAbsolute(parentRelative)) {
+        throw new Error('Refusing to delete an untracked path outside the active workspace.');
+      }
+      const realRoot = await fs.realpath(root);
+      const repoRelative = path.relative(realRoot, realParent);
+      if (repoRelative === '..' || repoRelative.startsWith(`..${path.sep}`) || path.isAbsolute(repoRelative)) {
+        throw new Error('Refusing to delete an untracked path outside the Git repository.');
+      }
       await fs.rm(absolutePath, { recursive: true, force: true });
       return;
     }
-    if (file.index === '?' || file.working_dir === '?') throw new Error('This path is untracked; use the untracked-file discard action.');
-    await git.raw(['restore', '--worktree', '--', relativePath]);
+    if (affected.some((entry) => entry.index === '?' || entry.working_dir === '?')) throw new Error('This path contains untracked files; discard them individually.');
+    await git.raw(['restore', '--worktree', '--', this.literalPathspec(relativePath)]);
   }
 
   async commit(workspacePath: string, message: string, options?: { amend?: boolean }): Promise<string> {
     if (!message.trim()) throw new Error('Commit message cannot be empty.');
-    const { git } = await this.getRepoGit(workspacePath);
+    const { git, root } = await this.getRepoGit(workspacePath);
     const status = await git.status();
     if (status.conflicted.length > 0) throw new Error('Resolve all merge conflicts before committing.');
+    const workspaceOffset = this.getWorkspaceOffset(workspacePath, root).split(path.sep).join('/');
+    if (workspaceOffset) {
+      const prefix = `${workspaceOffset}/`;
+      const stagedOutsideWorkspace = status.files.filter((file) => file.index !== ' ' && file.index !== '?' && file.path !== workspaceOffset && !file.path.startsWith(prefix));
+      if (stagedOutsideWorkspace.length > 0) {
+        throw new Error(`The Git index contains staged changes outside this workspace (${stagedOutsideWorkspace.map((file) => file.path).join(', ')}). Commit those separately first.`);
+      }
+    }
     const commitOptions = options?.amend ? ['--amend'] : [];
     const result = await git.commit(message.trim(), commitOptions);
     return result.commit || 'committed';
@@ -364,6 +412,8 @@ export class GitService {
 
   async switchBranch(workspacePath: string, branchName: string): Promise<void> {
     const { git } = await this.getRepoGit(workspacePath);
+    const status = await git.status();
+    if (!status.isClean()) throw new Error('Commit or stash working-tree changes before switching branches.');
     await git.checkout(await this.assertBranchName(git, branchName));
   }
 
@@ -390,33 +440,46 @@ export class GitService {
 
   async push(workspacePath: string, remote?: string, branch?: string): Promise<string> {
     const root = await this.getRepoRoot(workspacePath);
-    const status = await this.getGit(root).status();
-    const targetBranch = branch || status.current;
+    const git = this.getGit(root);
+    const status = await git.status();
+    const targetBranch = branch ? await this.assertBranchName(git, branch) : status.current;
     if (!targetBranch || targetBranch === 'HEAD') throw new Error('Cannot push while HEAD is detached.');
-    const args = remote
-      ? ['push', remote, targetBranch]
-      : status.tracking
-        ? ['push']
-        : ['push', '--set-upstream', 'origin', targetBranch];
+    const remotes = await git.getRemotes(true);
+    const targetRemote = remote || (branch ? status.tracking?.split('/')[0] : undefined) || status.tracking?.split('/')[0] || 'origin';
+    if (targetRemote.startsWith('-') || !remotes.some((item) => item.name === targetRemote)) {
+      throw new Error(`Git remote "${targetRemote}" is not configured.`);
+    }
+    const args = branch || remote || !status.tracking
+      ? ['push', ...(!status.tracking && !remote ? ['--set-upstream'] : []), targetRemote, targetBranch]
+      : ['push'];
     const output = await this.runRemoteOperation(root, args);
     return output || 'Pushed to remote successfully.';
   }
 
   async getLog(workspacePath: string, maxCount = 50, search?: string): Promise<GitCommitInfo[]> {
-    const { git } = await this.getRepoGit(workspacePath);
+    const { git, root } = await this.getRepoGit(workspacePath);
     const options: Record<string, unknown> = { maxCount: Math.max(1, Math.min(100, Math.floor(maxCount) || 50)) };
+    const workspaceOffset = this.getWorkspaceOffset(workspacePath, root).split(path.sep).join('/');
+    if (workspaceOffset) options.file = this.literalPathspec(workspaceOffset);
     const normalizedSearch = search?.trim().slice(0, 200);
     if (normalizedSearch) options['--grep'] = normalizedSearch;
-    const summary = await git.log(options);
-    return summary.all.map((commit) => ({
-      hash: commit.hash,
-      shortHash: commit.hash.slice(0, 7),
-      authorName: commit.author_name,
-      authorEmail: commit.author_email,
-      date: commit.date,
-      message: commit.message,
-      refs: commit.refs
-    }));
+    const summary = await git.log(options).catch((err: unknown) => {
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.includes('does not have any commits yet') || message.includes('bad default revision')) return { all: [] as Array<Awaited<ReturnType<typeof git.log>>['all'][number]> };
+      throw err;
+    });
+    return summary.all.map((commit) => {
+      const record = commit as unknown as { hash: string; author_name: string; author_email: string; date: string; message: string; refs?: string };
+      return {
+        hash: record.hash,
+        shortHash: record.hash.slice(0, 7),
+        authorName: record.author_name,
+        authorEmail: record.author_email,
+        date: record.date,
+        message: record.message,
+        refs: record.refs
+      };
+    });
   }
 
   async getCommitDetail(workspacePath: string, hash: string): Promise<GitCommitDetail> {
@@ -433,39 +496,33 @@ export class GitService {
       message: record[5] || '',
       refs: record[6]?.trim() || undefined
     };
-    const names = await git.raw(['diff-tree', '--no-commit-id', '--name-status', '-r', item.hash]);
-    const files: GitFileChange[] = names.split(/\r?\n/).filter(Boolean).map((line) => {
+    const root = await this.getRepoRoot(workspacePath);
+    const workspaceOffset = this.getWorkspaceOffset(workspacePath, root).split(path.sep).join('/');
+    const names = await git.raw(['diff-tree', '--root', '--first-parent', '--no-commit-id', '--name-status', '-r', item.hash]);
+    const prefix = workspaceOffset ? `${workspaceOffset}/` : '';
+    const files: GitFileChange[] = names.split(/\r?\n/).filter(Boolean).flatMap((line) => {
       const [code = 'M', first = '', second] = line.split('\t');
       const renamed = code.startsWith('R') && Boolean(second);
-      return {
-        path: renamed ? second as string : first,
+      const sourcePath = renamed ? second as string : first;
+      if (prefix && sourcePath !== workspaceOffset && !sourcePath.startsWith(prefix)) return [];
+      return [{
+        path: prefix ? sourcePath.slice(prefix.length) : sourcePath,
         originalPath: renamed ? first : undefined,
         status: code.startsWith('A') ? 'A' : code.startsWith('D') ? 'D' : code.startsWith('R') ? 'R' : 'M',
         staged: false,
         workingTree: false
-      };
+      }];
     });
-    const diff = (await git.show([item.hash])).slice(0, MAX_DIFF_CHARS);
-    return {
-      commit: {
-        hash: item.hash,
-        shortHash: item.hash.slice(0, 7),
-        authorName: item.author_name,
-        authorEmail: item.author_email,
-        date: item.date,
-        message: item.message,
-        refs: item.refs
-      },
-      files,
-      diff
-    };
+    const showArgs = workspaceOffset ? [item.hash, '--', this.literalPathspec(workspaceOffset)] : [item.hash];
+    const diff = (await git.show(showArgs)).slice(0, MAX_DIFF_CHARS);
+    return { commit: item, files, diff };
   }
 
   async getBlame(workspacePath: string, filePath: string): Promise<GitBlameHunk[]> {
     const { git } = await this.getRepoGit(workspacePath);
     const { relativePath } = await this.resolveRepoPath(workspacePath, filePath);
     try {
-      const raw = await git.raw(['blame', '--line-porcelain', '--', relativePath]);
+      const raw = await git.raw(['blame', '--line-porcelain', '--', this.literalPathspec(relativePath)]);
       const hunks: GitBlameHunk[] = [];
       const lines = raw.split('\n');
       let currentHash = '';
@@ -501,8 +558,18 @@ export class GitService {
     }
     if (index !== undefined && (!Number.isInteger(index) || index < 0)) throw new Error('Stash index must be a non-negative integer.');
     if (action === 'save') {
-      await git.stash(message?.trim() ? ['push', '-m', message.trim().slice(0, 200)] : ['push']);
-      return 'Changes stashed.';
+      const root = await this.getRepoRoot(workspacePath);
+      const workspaceOffset = this.getWorkspaceOffset(workspacePath, root).split(path.sep).join('/');
+      const prefix = workspaceOffset ? `${workspaceOffset}/` : '';
+      const status = await git.status();
+      const workspaceChanges = status.files.filter((file) => !prefix || file.path === workspaceOffset || file.path.startsWith(prefix));
+      if (workspaceChanges.length === 0) throw new Error('There are no changes in the active workspace to stash.');
+      const pathspec = workspaceOffset ? ['--', this.literalPathspec(workspaceOffset)] : [];
+      const args = message?.trim()
+        ? ['push', '--include-untracked', '-m', message.trim().slice(0, 200), ...pathspec]
+        : ['push', '--include-untracked', ...pathspec];
+      await git.stash(args);
+      return 'Workspace changes stashed.';
     }
     const stashRef = index !== undefined ? `stash@{${index}}` : 'stash@{0}';
     if (action === 'pop') await git.stash(['pop', stashRef]);
@@ -547,23 +614,29 @@ export class GitService {
 
   async getConflictContent(workspacePath: string, filePath: string): Promise<GitConflictContent> {
     const { git, root } = await this.getRepoGit(workspacePath);
-    const { absolutePath, relativePath } = await this.resolveRepoPath(workspacePath, filePath);
+    const { absolutePath, relativePath, workspaceRelativePath } = await this.resolveRepoPath(workspacePath, filePath);
     const showStage = async (stage: number): Promise<string | undefined> => {
       try { return await git.show([`:${stage}:${relativePath}`]); } catch { return undefined; }
     };
     const [baseContent, oursContent, theirsContent, workingContent] = await Promise.all([
-      showStage(1), showStage(2), showStage(3), this.safeReadFile(root, absolutePath)
+      showStage(1), showStage(2), showStage(3), this.safeReadFile(root, path.resolve(workspacePath), absolutePath)
     ]);
-    return { filePath: relativePath, baseContent, oursContent, theirsContent, workingContent };
+    return { filePath: workspaceRelativePath, baseContent, oursContent, theirsContent, workingContent };
   }
 
   async resolveConflict(workspacePath: string, filePath: string, action: 'ours' | 'theirs' | 'mark-resolved'): Promise<void> {
+    if (!['ours', 'theirs', 'mark-resolved'].includes(action)) throw new Error('Invalid conflict resolution action.');
     const { git } = await this.getRepoGit(workspacePath);
     const { relativePath } = await this.resolveRepoPath(workspacePath, filePath);
     const status = await git.status();
     if (!status.conflicted.includes(relativePath)) throw new Error(`"${relativePath}" is not currently conflicted.`);
-    if (action === 'ours' || action === 'theirs') await git.raw(['checkout', `--${action}`, '--', relativePath]);
-    await git.raw(['add', '--', relativePath]);
+    if (action === 'ours' || action === 'theirs') await git.raw(['checkout', `--${action}`, '--', this.literalPathspec(relativePath)]);
+    if (action === 'mark-resolved') {
+      const { root, absolutePath } = await this.resolveRepoPath(workspacePath, filePath);
+      const content = await this.safeReadFile(root, path.resolve(workspacePath), absolutePath);
+      if (/^(<{7}|={7}|>{7})/m.test(content)) throw new Error('Conflict markers remain in the working file. Edit the file before marking it resolved.');
+    }
+    await git.raw(['add', '--', this.literalPathspec(relativePath)]);
   }
 
   async abortMerge(workspacePath: string): Promise<void> {
@@ -576,7 +649,7 @@ export class GitService {
     const { relativePath } = await this.resolveRepoPath(workspacePath, filePath);
     const args = ['--no-ext-diff', '--unified=3'];
     if (staged) args.push('--cached');
-    args.push('--', relativePath);
+    args.push('--', this.literalPathspec(relativePath));
     const patch = await git.diff(args);
     const firstHunkIndex = patch.indexOf('@@ -');
     if (firstHunkIndex < 0) return [];
@@ -596,6 +669,7 @@ export class GitService {
   }
 
   async applyHunk(workspacePath: string, filePath: string, hunkId: string, operation: 'stage' | 'unstage' | 'revert'): Promise<void> {
+    if (!['stage', 'unstage', 'revert'].includes(operation)) throw new Error('Invalid hunk operation.');
     const staged = operation === 'unstage';
     const hunk = (await this.getHunks(workspacePath, filePath, staged)).find((item) => item.id === hunkId);
     if (!hunk) throw new Error('The selected hunk is no longer current. Refresh the diff and try again.');
@@ -640,6 +714,8 @@ export class GitService {
   async merge(workspacePath: string, branchName: string): Promise<{ success: boolean; conflicts?: string[]; message?: string }> {
     const { git } = await this.getRepoGit(workspacePath);
     const name = await this.assertBranchName(git, branchName);
+    const beforeMerge = await git.status();
+    if (!beforeMerge.isClean()) throw new Error('Commit or stash working-tree changes before merging branches.');
     try {
       const result = await git.merge([name]);
       if (result.conflicts?.length) {

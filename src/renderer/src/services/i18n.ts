@@ -1,0 +1,306 @@
+import { create } from 'zustand';
+
+export type SupportedLocale = 'en' | 'es' | 'ja' | 'zh' | 'de' | 'fr';
+
+export interface LocaleInfo {
+  code: SupportedLocale;
+  name: string;
+  nativeName: string;
+}
+
+export const AVAILABLE_LOCALES: LocaleInfo[] = [
+  { code: 'en', name: 'English', nativeName: 'English' },
+  { code: 'es', name: 'Spanish', nativeName: 'Español' },
+  { code: 'ja', name: 'Japanese', nativeName: '日本語' },
+  { code: 'zh', name: 'Chinese', nativeName: '简体中文' },
+  { code: 'de', name: 'German', nativeName: 'Deutsch' },
+  { code: 'fr', name: 'French', nativeName: 'Français' }
+];
+
+const TRANSLATIONS: Record<SupportedLocale, Record<string, string>> = {
+  en: {
+    'app.title': 'Ty-Claude - Desktop AI Coding Assistant',
+    'common.open': 'Open',
+    'common.close': 'Close',
+    'common.save': 'Save',
+    'common.cancel': 'Cancel',
+    'common.delete': 'Delete',
+    'common.rename': 'Rename',
+    'common.refresh': 'Refresh',
+    'common.settings': 'Settings',
+    'common.search': 'Search',
+    'welcome.title': 'Welcome to Ty-Claude',
+    'welcome.subtitle': 'Autonomous AI-powered coding editor with Monaco intelligence',
+    'welcome.openFolder': 'Open Folder',
+    'welcome.newFile': 'New File',
+    'welcome.cloneRepo': 'Clone Repository',
+    'welcome.recentWorkspaces': 'Recent Workspaces',
+    'welcome.noRecentWorkspaces': 'No recent workspaces found',
+    'welcome.quickStart': 'Getting Started',
+    'welcome.keyboardShortcuts': 'Keyboard Shortcuts',
+    'welcome.startTour': 'Take Interactive Tour',
+    'sidebar.explorer': 'Explorer',
+    'sidebar.search': 'Search',
+    'sidebar.sourceControl': 'Source Control',
+    'sidebar.extensions': 'Extensions',
+    'sidebar.skills': 'Skills',
+    'sidebar.outline': 'Outline',
+    'terminal.title': 'Integrated Terminal',
+    'terminal.new': 'New Terminal',
+    'terminal.clear': 'Clear',
+    'update.check': 'Check for Updates',
+    'update.checking': 'Checking for updates…',
+    'update.available': 'Update available: v{version}',
+    'update.upToDate': 'Ty-Claude is up to date',
+    'update.download': 'Download Update',
+    'update.downloading': 'Downloading update ({percent}%)…',
+    'update.downloaded': 'Update downloaded! Restart to apply.',
+    'update.restart': 'Restart Now',
+    'theme.dark': 'Dark Theme',
+    'theme.light': 'Light Theme',
+    'theme.highContrast': 'High Contrast'
+  },
+  es: {
+    'app.title': 'Ty-Claude - Asistente de Código IA de Escritorio',
+    'common.open': 'Abrir',
+    'common.close': 'Cerrar',
+    'common.save': 'Guardar',
+    'common.cancel': 'Cancelar',
+    'common.delete': 'Eliminar',
+    'common.rename': 'Renombrar',
+    'common.refresh': 'Actualizar',
+    'common.settings': 'Configuración',
+    'common.search': 'Buscar',
+    'welcome.title': 'Bienvenido a Ty-Claude',
+    'welcome.subtitle': 'Editor de código impulsado por IA con inteligencia Monaco',
+    'welcome.openFolder': 'Abrir Carpeta',
+    'welcome.newFile': 'Nuevo Archivo',
+    'welcome.cloneRepo': 'Clonar Repositorio',
+    'welcome.recentWorkspaces': 'Espacios de Trabajo Recientes',
+    'welcome.noRecentWorkspaces': 'No hay proyectos recientes',
+    'welcome.quickStart': 'Comenzando',
+    'welcome.keyboardShortcuts': 'Atajos de Teclado',
+    'welcome.startTour': 'Hacer el Recorrido Interactivo',
+    'sidebar.explorer': 'Explorador',
+    'sidebar.search': 'Buscar',
+    'sidebar.sourceControl': 'Control de Código',
+    'sidebar.extensions': 'Extensiones',
+    'sidebar.skills': 'Habilidades',
+    'sidebar.outline': 'Esquema',
+    'terminal.title': 'Terminal Integrada',
+    'terminal.new': 'Nueva Terminal',
+    'terminal.clear': 'Limpiar',
+    'update.check': 'Buscar Actualizaciones',
+    'update.checking': 'Buscando actualizaciones…',
+    'update.available': 'Actualización disponible: v{version}',
+    'update.upToDate': 'Ty-Claude está actualizado',
+    'update.download': 'Descargar Actualización',
+    'update.downloading': 'Descargando ({percent}%)…',
+    'update.downloaded': '¡Descarga completa! Reinicie para instalar.',
+    'update.restart': 'Reiniciar Ahora',
+    'theme.dark': 'Tema Oscuro',
+    'theme.light': 'Tema Claro',
+    'theme.highContrast': 'Alto Contraste'
+  },
+  ja: {
+    'app.title': 'Ty-Claude - デスクトップAIコーディングアシスタント',
+    'common.open': '開く',
+    'common.close': '閉じる',
+    'common.save': '保存',
+    'common.cancel': 'キャンセル',
+    'common.delete': '削除',
+    'common.rename': '名前の変更',
+    'common.refresh': '更新',
+    'common.settings': '設定',
+    'common.search': '検索',
+    'welcome.title': 'Ty-Claude へようこそ',
+    'welcome.subtitle': 'Monacoエディタと自律型AIを融合した次世代コーディング環境',
+    'welcome.openFolder': 'フォルダーを開く',
+    'welcome.newFile': '新しいファイル',
+    'welcome.cloneRepo': 'リポジトリを複製',
+    'welcome.recentWorkspaces': '最近開いたワークスペース',
+    'welcome.noRecentWorkspaces': '最近開いた項目はありません',
+    'welcome.quickStart': 'はじめに',
+    'welcome.keyboardShortcuts': 'キーボードショートカット',
+    'welcome.startTour': '機能ツアーを開始',
+    'sidebar.explorer': 'エクスプローラー',
+    'sidebar.search': '検索',
+    'sidebar.sourceControl': 'ソース管理',
+    'sidebar.extensions': '拡張機能',
+    'sidebar.skills': 'スキル',
+    'sidebar.outline': 'アウトライン',
+    'terminal.title': '統合ターミナル',
+    'terminal.new': '新しいターミナル',
+    'terminal.clear': 'クリア',
+    'update.check': '更新を確認',
+    'update.checking': 'アップデートを確認中…',
+    'update.available': 'アップデート利用可能: v{version}',
+    'update.upToDate': '最新バージョンです',
+    'update.download': 'アップデートをダウンロード',
+    'update.downloading': 'ダウンロード中 ({percent}%)…',
+    'update.downloaded': 'ダウンロード完了。再起動して適用してください。',
+    'update.restart': '今すぐ再起動',
+    'theme.dark': 'ダークテーマ',
+    'theme.light': 'ライトテーマ',
+    'theme.highContrast': 'ハイコントラスト'
+  },
+  zh: {
+    'app.title': 'Ty-Claude - 桌面AI编程助手',
+    'common.open': '打开',
+    'common.close': '关闭',
+    'common.save': '保存',
+    'common.cancel': '取消',
+    'common.delete': '删除',
+    'common.rename': '重命名',
+    'common.refresh': '刷新',
+    'common.settings': '设置',
+    'common.search': '搜索',
+    'welcome.title': '欢迎使用 Ty-Claude',
+    'welcome.subtitle': '搭载 Monaco 编辑器与自律型 AI 的现代编码平台',
+    'welcome.openFolder': '打开文件夹',
+    'welcome.newFile': '新建文件',
+    'welcome.cloneRepo': '克隆仓库',
+    'welcome.recentWorkspaces': '最近的工作区',
+    'welcome.noRecentWorkspaces': '暂无最近的项目',
+    'welcome.quickStart': '新手入门',
+    'welcome.keyboardShortcuts': '快捷键指南',
+    'welcome.startTour': '功能导览',
+    'sidebar.explorer': '资源管理器',
+    'sidebar.search': '搜索',
+    'sidebar.sourceControl': '源代码管理',
+    'sidebar.extensions': '扩展插件',
+    'sidebar.skills': '技能',
+    'sidebar.outline': '大纲',
+    'terminal.title': '集成终端',
+    'terminal.new': '新建终端',
+    'terminal.clear': '清屏',
+    'update.check': '检查更新',
+    'update.checking': '正在检查更新…',
+    'update.available': '发现新版本: v{version}',
+    'update.upToDate': '已是最新版本',
+    'update.download': '下载更新',
+    'update.downloading': '下载进度 ({percent}%)…',
+    'update.downloaded': '更新已下载，重启以应用。',
+    'update.restart': '立即重启',
+    'theme.dark': '深色模式',
+    'theme.light': '浅色模式',
+    'theme.highContrast': '高对比度模式'
+  },
+  de: {
+    'app.title': 'Ty-Claude - Desktop-KI-Programmierassistent',
+    'common.open': 'Öffnen',
+    'common.close': 'Schließen',
+    'common.save': 'Speichern',
+    'common.cancel': 'Abbrechen',
+    'common.delete': 'Löschen',
+    'common.rename': 'Umbenennen',
+    'common.refresh': 'Aktualisieren',
+    'common.settings': 'Einstellungen',
+    'common.search': 'Suchen',
+    'welcome.title': 'Willkommen bei Ty-Claude',
+    'welcome.subtitle': 'KI-gestützter Code-Editor mit Monaco-Intelligenz',
+    'welcome.openFolder': 'Ordner öffnen',
+    'welcome.newFile': 'Neue Datei',
+    'welcome.cloneRepo': 'Repository klonen',
+    'welcome.recentWorkspaces': 'Zuletzt geöffnete Projekte',
+    'welcome.noRecentWorkspaces': 'Keine letzten Projekte vorhanden',
+    'welcome.quickStart': 'Erste Schritte',
+    'welcome.keyboardShortcuts': 'Tastenkombinationen',
+    'welcome.startTour': 'Interaktive Einführung',
+    'sidebar.explorer': 'Explorer',
+    'sidebar.search': 'Suche',
+    'sidebar.sourceControl': 'Quellcodeverwaltung',
+    'sidebar.extensions': 'Erweiterungen',
+    'sidebar.skills': 'Fähigkeiten',
+    'sidebar.outline': 'Gliederung',
+    'terminal.title': 'Integriertes Terminal',
+    'terminal.new': 'Neues Terminal',
+    'terminal.clear': 'Leeren',
+    'update.check': 'Nach Updates suchen',
+    'update.checking': 'Suche nach Updates…',
+    'update.available': 'Update verfügbar: v{version}',
+    'update.upToDate': 'Ty-Claude ist auf dem neuesten Stand',
+    'update.download': 'Update herunterladen',
+    'update.downloading': 'Download läuft ({percent}%)…',
+    'update.downloaded': 'Update heruntergeladen! Neustarten zum Installieren.',
+    'update.restart': 'Jetzt neustarten',
+    'theme.dark': 'Dunkles Design',
+    'theme.light': 'Helles Design',
+    'theme.highContrast': 'Hoher Kontrast'
+  },
+  fr: {
+    'app.title': 'Ty-Claude - Assistant de codage IA de bureau',
+    'common.open': 'Ouvrir',
+    'common.close': 'Fermer',
+    'common.save': 'Enregistrer',
+    'common.cancel': 'Annuler',
+    'common.delete': 'Supprimer',
+    'common.rename': 'Renommer',
+    'common.refresh': 'Actualiser',
+    'common.settings': 'Paramètres',
+    'common.search': 'Rechercher',
+    'welcome.title': 'Bienvenue sur Ty-Claude',
+    'welcome.subtitle': 'Éditeur de code alimenté par l’IA avec Monaco Editor',
+    'welcome.openFolder': 'Ouvrir un dossier',
+    'welcome.newFile': 'Nouveau fichier',
+    'welcome.cloneRepo': 'Cloner un dépôt',
+    'welcome.recentWorkspaces': 'Projets récents',
+    'welcome.noRecentWorkspaces': 'Aucun projet récent trouvé',
+    'welcome.quickStart': 'Guide de démarrage',
+    'welcome.keyboardShortcuts': 'Raccourcis clavier',
+    'welcome.startTour': 'Visite interactive',
+    'sidebar.explorer': 'Explorateur',
+    'sidebar.search': 'Recherche',
+    'sidebar.sourceControl': 'Gestion de version',
+    'sidebar.extensions': 'Extensions',
+    'sidebar.skills': 'Compétences',
+    'sidebar.outline': 'Structure',
+    'terminal.title': 'Terminal Intégré',
+    'terminal.new': 'Nouveau Terminal',
+    'terminal.clear': 'Effacer',
+    'update.check': 'Vérifier les mises à jour',
+    'update.checking': 'Vérification en cours…',
+    'update.available': 'Mise à jour disponible: v{version}',
+    'update.upToDate': 'Ty-Claude est à jour',
+    'update.download': 'Télécharger la mise à jour',
+    'update.downloading': 'Téléchargement ({percent}%)…',
+    'update.downloaded': 'Téléchargement terminé ! Redémarrez pour appliquer.',
+    'update.restart': 'Redémarrer maintenant',
+    'theme.dark': 'Thème Sombre',
+    'theme.light': 'Thème Clair',
+    'theme.highContrast': 'Contraste Élevé'
+  }
+};
+
+const STORAGE_KEY = 'ty_claude_locale';
+
+interface I18nState {
+  locale: SupportedLocale;
+  setLocale: (locale: SupportedLocale) => void;
+  t: (key: string, params?: Record<string, string | number>) => string;
+}
+
+export const useI18nStore = create<I18nState>((set, get) => ({
+  locale: (typeof localStorage !== 'undefined' && (localStorage.getItem(STORAGE_KEY) as SupportedLocale)) || 'en',
+  setLocale: (locale) => {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(STORAGE_KEY, locale);
+    }
+    set({ locale });
+  },
+  t: (key, params) => {
+    const { locale } = get();
+    const dictionary = TRANSLATIONS[locale] || TRANSLATIONS.en;
+    let text = dictionary[key] || TRANSLATIONS.en[key] || key;
+    if (params) {
+      for (const [k, v] of Object.entries(params)) {
+        text = text.replace(new RegExp(`\\{${k}\\}`, 'g'), String(v));
+      }
+    }
+    return text;
+  }
+}));
+
+export function t(key: string, params?: Record<string, string | number>): string {
+  return useI18nStore.getState().t(key, params);
+}

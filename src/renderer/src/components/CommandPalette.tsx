@@ -17,7 +17,6 @@ import {
 } from 'lucide-react';
 import { useWorkspaceStore } from '../state/workspace-store';
 import { useChatStore } from '../state/chat-store';
-import { useExtensionStore } from '../state/extension-store';
 import { extensionHost } from '../services/extension-host';
 
 export interface CommandItem {
@@ -54,7 +53,6 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
 
   const { saveActiveFile, activeTabPath, openTabs } = useWorkspaceStore();
   const { toggleTerminal, toggleSettings } = useChatStore();
-  const { installed: installedExtensions } = useExtensionStore();
 
   useEffect(() => {
     if (isOpen) {
@@ -209,21 +207,20 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       }
     ];
 
-    // Add dynamic contributed commands from installed & enabled extensions
-    for (const ext of installedExtensions) {
-      if (!ext.enabled || !ext.manifest.contributes?.commands) continue;
-      for (const cmd of ext.manifest.contributes.commands) {
-        commands.push({
-          id: cmd.command,
-          title: cmd.title,
-          category: 'Extension',
-          icon: <Bookmark size={14} color="var(--accent-primary)" />,
-          action: () => {
-            void extensionHost.executeCommand(cmd.command);
-            onClose();
-          }
-        });
-      }
+    // Only expose commands that have actually been registered by an active Worker.
+    for (const command of extensionHost.getRegisteredCommands()) {
+      commands.push({
+        id: command.id,
+        title: command.title,
+        category: 'Extension',
+        icon: <Bookmark size={14} color="var(--accent-primary)" />,
+        action: () => {
+          void extensionHost.executeCommand(command.id).catch((error: unknown) => {
+            console.error('Extension command failed:', error);
+          });
+          onClose();
+        }
+      });
     }
 
     return commands;

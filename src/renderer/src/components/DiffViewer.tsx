@@ -1,257 +1,113 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { DiffEditor } from '@monaco-editor/react';
 import type * as Monaco from 'monaco-editor';
-import {
-  X,
-  Plus,
-  Minus,
-  RotateCcw,
-  Split,
-  Columns,
-  ChevronUp,
-  ChevronDown,
-  FileCode,
-  Check
-} from 'lucide-react';
+import { Check, ChevronDown, ChevronUp, Columns, Minus, Plus, RotateCcw, Split, X } from 'lucide-react';
 import { useGitStore } from '../state/git-store';
 
 export const DiffViewer: React.FC = () => {
   const {
-    activeDiff,
-    diffInline,
-    setDiffInline,
-    closeDiff,
-    stageFile,
-    unstageFile,
-    discardChanges
+    activeDiff, activeHunks, diffInline, setDiffInline, closeDiff,
+    stageFile, unstageFile, discardChanges, applyHunk
   } = useGitStore();
-
   const [hunkIndex, setHunkIndex] = useState(0);
   const diffEditorRef = useRef<Monaco.editor.IStandaloneDiffEditor | null>(null);
 
+  useEffect(() => {
+    setHunkIndex(0);
+  }, [activeDiff?.filePath, activeDiff?.isStaged]);
+
+  useEffect(() => {
+    setHunkIndex((current) => Math.max(0, Math.min(current, activeHunks.length - 1)));
+  }, [activeHunks.length]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && activeDiff) closeDiff();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [activeDiff, closeDiff]);
+
   if (!activeDiff) return null;
 
-  const detectLanguage = (filePath: string): string => {
-    const ext = filePath.split('.').pop()?.toLowerCase();
-    switch (ext) {
-      case 'ts':
-      case 'tsx':
-        return 'typescript';
-      case 'js':
-      case 'jsx':
-        return 'javascript';
-      case 'json':
-        return 'json';
-      case 'md':
-        return 'markdown';
-      case 'css':
-        return 'css';
-      case 'html':
-        return 'html';
-      case 'py':
-        return 'python';
-      case 'go':
-        return 'go';
-      case 'rs':
-        return 'rust';
-      default:
-        return 'plaintext';
+  const languageByExtension: Record<string, string> = {
+    ts: 'typescript', tsx: 'typescript', js: 'javascript', jsx: 'javascript',
+    json: 'json', md: 'markdown', css: 'css', html: 'html', py: 'python',
+    go: 'go', rs: 'rust', yml: 'yaml', yaml: 'yaml', sh: 'shell'
+  };
+  const extension = activeDiff.filePath.split('.').pop()?.toLowerCase() || '';
+  const language = languageByExtension[extension] || 'plaintext';
+  const activeHunk = activeHunks[hunkIndex];
+
+  const revealHunk = (index: number) => {
+    if (!activeHunks.length) return;
+    const nextIndex = (index + activeHunks.length) % activeHunks.length;
+    setHunkIndex(nextIndex);
+    const selected = activeHunks[nextIndex];
+    const lineNumber = selected.newStart || selected.oldStart || 1;
+    diffEditorRef.current?.getModifiedEditor().revealLineInCenter(lineNumber);
+  };
+
+  const handleDiscard = () => {
+    const description = activeDiff.isUntracked ? 'Delete untracked file' : 'Discard all unstaged working-tree changes';
+    if (window.confirm(`${description} “${activeDiff.filePath}”? This cannot be undone.`)) {
+      void discardChanges(activeDiff.filePath, activeDiff.isUntracked);
     }
   };
 
-  const language = detectLanguage(activeDiff.filePath);
-
-  const handleDiffMount = (editor: Monaco.editor.IStandaloneDiffEditor) => {
-    diffEditorRef.current = editor;
-  };
-
-  const handleNextHunk = () => {
-    if (!diffEditorRef.current) return;
-    const navigator = diffEditorRef.current.getLineChanges();
-    if (navigator && navigator.length > 0) {
-      const nextIndex = (hunkIndex + 1) % navigator.length;
-      setHunkIndex(nextIndex);
-      const change = navigator[nextIndex];
-      diffEditorRef.current.getModifiedEditor().revealLineInCenter(change.modifiedStartLineNumber);
-    }
-  };
-
-  const handlePrevHunk = () => {
-    if (!diffEditorRef.current) return;
-    const navigator = diffEditorRef.current.getLineChanges();
-    if (navigator && navigator.length > 0) {
-      const prevIndex = (hunkIndex - 1 + navigator.length) % navigator.length;
-      setHunkIndex(prevIndex);
-      const change = navigator[prevIndex];
-      diffEditorRef.current.getModifiedEditor().revealLineInCenter(change.modifiedStartLineNumber);
-    }
-  };
-
-  return (
-    <div
-      style={{
-        position: 'absolute',
-        inset: 0,
-        zIndex: 40,
-        display: 'flex',
-        flexDirection: 'column',
-        backgroundColor: 'var(--bg-primary)'
-      }}
-    >
-      {/* Top Diff Review Action Bar */}
-      <div
-        style={{
-          height: '38px',
-          backgroundColor: '#1b1c22',
-          borderBottom: '1px solid var(--border-subtle)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '0 12px',
-          fontSize: '12px'
+  return <div style={{ position: 'absolute', inset: 0, zIndex: 40, display: 'flex', flexDirection: 'column', background: 'var(--bg-primary)' }}>
+    <header style={{ minHeight: 38, padding: '0 10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-subtle)', fontSize: 11 }}>
+      <div style={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: 7 }}>
+        <span style={{ color: 'var(--accent-primary)' }}><Split size={13} /></span>
+        <strong style={{ minWidth: 0, overflow: 'hidden', color: 'var(--text-primary)', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activeDiff.filePath}</strong>
+        <span style={{ flexShrink: 0, color: 'var(--text-muted)' }}>{activeDiff.isStaged ? 'Staged · HEAD ↔ Index' : 'Working Tree ↔ Index'}</span>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 2, marginRight: 5 }}>
+          <button aria-label="Previous diff hunk" title="Previous hunk" disabled={!activeHunks.length} onClick={() => revealHunk(hunkIndex - 1)} style={{ width: 23, height: 24, color: 'var(--text-secondary)' }}><ChevronUp size={13} /></button>
+          <span aria-live="polite" style={{ minWidth: 35, color: 'var(--text-muted)', fontSize: 9, textAlign: 'center' }}>{activeHunks.length ? `${hunkIndex + 1} / ${activeHunks.length}` : '0 hunks'}</span>
+          <button aria-label="Next diff hunk" title="Next hunk" disabled={!activeHunks.length} onClick={() => revealHunk(hunkIndex + 1)} style={{ width: 23, height: 24, color: 'var(--text-secondary)' }}><ChevronDown size={13} /></button>
+        </div>
+        {activeHunk && <>
+          {activeDiff.isStaged ? <button className="source-control-subtle-button" onClick={() => void applyHunk(activeHunk.id, 'unstage')} title="Unstage selected hunk"><Minus size={11} />Unstage hunk</button>
+            : <>
+              <button className="source-control-subtle-button" onClick={() => void applyHunk(activeHunk.id, 'stage')} title="Stage selected hunk"><Plus size={11} />Stage hunk</button>
+              <button className="source-control-danger-button" onClick={() => {
+                if (window.confirm(`Revert only this hunk in “${activeDiff.filePath}”?`)) void applyHunk(activeHunk.id, 'revert');
+              }} title="Revert selected hunk"><RotateCcw size={11} />Revert hunk</button>
+            </>}
+        </>}
+        <button onClick={() => setDiffInline(!diffInline)} title={diffInline ? 'Switch to side-by-side diff' : 'Switch to inline diff'} aria-label={diffInline ? 'Switch to side-by-side diff' : 'Switch to inline diff'} style={{ height: 25, padding: '0 7px', display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--text-secondary)', background: 'var(--bg-tertiary)', fontSize: 9 }}>
+          {diffInline ? <Columns size={12} /> : <Split size={12} />}{diffInline ? 'Side-by-side' : 'Inline'}
+        </button>
+        {activeDiff.isStaged ? <button className="source-control-subtle-button" onClick={() => void unstageFile(activeDiff.filePath)}><Minus size={11} />Unstage file</button>
+          : <>
+            <button className="source-control-danger-button" onClick={handleDiscard} title="Discard unstaged file changes"><RotateCcw size={11} />Discard</button>
+            <button className="source-control-primary-button" onClick={() => void stageFile(activeDiff.filePath)}><Check size={11} />Stage file</button>
+          </>}
+        <button onClick={closeDiff} title="Close diff (Esc)" aria-label="Close diff" style={{ width: 25, height: 25, color: 'var(--text-muted)' }}><X size={14} /></button>
+      </div>
+    </header>
+    <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
+      <DiffEditor
+        original={activeDiff.originalContent}
+        modified={activeDiff.modifiedContent}
+        language={language}
+        theme="vs-dark"
+        onMount={(editor) => { diffEditorRef.current = editor; }}
+        options={{
+          renderSideBySide: !diffInline,
+          fontSize: 13,
+          fontFamily: 'var(--font-mono)',
+          automaticLayout: true,
+          scrollBeyondLastLine: false,
+          readOnly: true,
+          renderWhitespace: 'selection',
+          diffWordWrap: 'off',
+          originalEditable: false,
+          minimap: { enabled: false }
         }}
-      >
-        {/* Left: File and Status */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <FileCode size={14} color="var(--accent-primary)" />
-          <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
-            {activeDiff.filePath}
-          </span>
-          <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
-            ({activeDiff.isStaged ? 'Staged (Index ↔ HEAD)' : 'Working Changes ↔ Index'})
-          </span>
-        </div>
-
-        {/* Right: Controls (Hunk Navigation, Inline/Split Toggle, Stage, Close) */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          {/* Hunk Navigation */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '2px', marginRight: '6px' }}>
-            <button
-              onClick={handlePrevHunk}
-              style={{ padding: '3px 6px', borderRadius: '4px', color: 'var(--text-secondary)' }}
-              title="Previous Hunk"
-            >
-              <ChevronUp size={14} />
-            </button>
-            <button
-              onClick={handleNextHunk}
-              style={{ padding: '3px 6px', borderRadius: '4px', color: 'var(--text-secondary)' }}
-              title="Next Hunk"
-            >
-              <ChevronDown size={14} />
-            </button>
-          </div>
-
-          {/* Inline vs Side-by-Side Toggle */}
-          <button
-            onClick={() => setDiffInline(!diffInline)}
-            style={{
-              padding: '3px 8px',
-              borderRadius: '4px',
-              backgroundColor: 'var(--bg-tertiary)',
-              color: 'var(--text-secondary)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-              fontSize: '11px'
-            }}
-            title={diffInline ? 'Switch to Side-by-Side View' : 'Switch to Inline Diff View'}
-          >
-            {diffInline ? <Columns size={13} /> : <Split size={13} />}
-            <span>{diffInline ? 'Side-by-Side' : 'Inline'}</span>
-          </button>
-
-          {/* Stage / Unstage Action */}
-          {activeDiff.isStaged ? (
-            <button
-              onClick={() => void unstageFile(activeDiff.filePath)}
-              style={{
-                padding: '3px 10px',
-                borderRadius: '4px',
-                backgroundColor: 'var(--bg-tertiary)',
-                color: 'var(--text-primary)',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-                fontSize: '11px'
-              }}
-            >
-              <Minus size={12} />
-              <span>Unstage</span>
-            </button>
-          ) : (
-            <>
-              <button
-                onClick={() => void discardChanges(activeDiff.filePath)}
-                style={{
-                  padding: '3px 10px',
-                  borderRadius: '4px',
-                  backgroundColor: 'rgba(239, 68, 68, 0.15)',
-                  color: 'var(--accent-red)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  fontSize: '11px'
-                }}
-              >
-                <RotateCcw size={12} />
-                <span>Discard</span>
-              </button>
-              <button
-                onClick={() => void stageFile(activeDiff.filePath)}
-                style={{
-                  padding: '3px 10px',
-                  borderRadius: '4px',
-                  backgroundColor: 'var(--accent-primary)',
-                  color: '#fff',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  fontSize: '11px',
-                  fontWeight: 500
-                }}
-              >
-                <Plus size={12} />
-                <span>Stage File</span>
-              </button>
-            </>
-          )}
-
-          {/* Close Diff Button */}
-          <button
-            onClick={closeDiff}
-            style={{
-              padding: '4px',
-              borderRadius: '4px',
-              color: 'var(--text-muted)'
-            }}
-            title="Close Diff View (Esc)"
-          >
-            <X size={15} />
-          </button>
-        </div>
-      </div>
-
-      {/* Monaco DiffEditor */}
-      <div style={{ flex: 1, position: 'relative' }}>
-        <DiffEditor
-          original={activeDiff.originalContent}
-          modified={activeDiff.modifiedContent}
-          language={language}
-          theme="vs-dark"
-          onMount={handleDiffMount}
-          options={{
-            renderSideBySide: !diffInline,
-            fontSize: 13,
-            fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
-            automaticLayout: true,
-            scrollBeyondLastLine: false,
-            readOnly: true,
-            renderWhitespace: 'selection',
-            diffWordWrap: 'off'
-          }}
-        />
-      </div>
+      />
     </div>
-  );
+  </div>;
 };

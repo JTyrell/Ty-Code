@@ -1,10 +1,12 @@
 import { create } from 'zustand';
-import type { AgentStreamChunk, ChatMessage, ProviderSettings, ProviderType, ToolExecutionStatus } from '../../../preload/types';
+import type { AgentStreamChunk, AgentToolApproval, ChatMessage, ProviderSettings, ProviderType, ToolExecutionStatus } from '../../../preload/types';
+import { useGitStore } from './git-store';
 
 interface ChatState {
   messages: ChatMessage[];
   isRunning: boolean;
   currentTaskId: string | null;
+  pendingApproval: AgentToolApproval | null;
   currentStatus: string;
   currentThought: string;
   streamingText: string;
@@ -15,6 +17,7 @@ interface ChatState {
   saveSettings: (updates: Partial<ProviderSettings>) => Promise<boolean>;
   sendMessage: (prompt: string, workspacePath: string, activeFilePath?: string, activeFileContent?: string, appendUserMessage?: boolean) => Promise<void>;
   stopTask: () => Promise<void>;
+  respondToApproval: (approved: boolean) => Promise<void>;
   clearChat: () => void;
   toggleSettings: () => void;
   toggleTerminal: () => void;
@@ -44,7 +47,7 @@ function updateToolStatus(messages: ChatMessage[], toolCallId: string, status: T
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
-  messages: [], isRunning: false, currentTaskId: null, currentStatus: '', currentThought: '', streamingText: '',
+  messages: [], isRunning: false, currentTaskId: null, pendingApproval: null, currentStatus: '', currentThought: '', streamingText: '',
   settings: null, isSettingsOpen: false, isTerminalOpen: false,
 
   initSettings: async () => {
@@ -92,6 +95,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       messages: appendUserMessage ? [...currentMessages, userMessage] : regeneratedMessages,
       isRunning: true,
       currentTaskId: taskId,
+      pendingApproval: null,
       currentStatus: 'Starting task…',
       currentThought: '',
       streamingText: ''
@@ -100,7 +104,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const finishTask = (status = '') => {
       activeStreamUnsubscribe?.();
       activeStreamUnsubscribe = null;
-      set({ isRunning: false, currentTaskId: null, currentStatus: status, streamingText: '', currentThought: '' });
+      set({ isRunning: false, currentTaskId: null, pendingApproval: null, currentStatus: status, streamingText: '', currentThought: '' });
     };
     const handleChunk = (chunk: AgentStreamChunk) => {
       if (chunk.taskId !== taskId || get().currentTaskId !== taskId) return;
@@ -108,6 +112,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
         case 'token': set((state) => ({ streamingText: state.streamingText + (chunk.content || '') })); break;
         case 'thought': set((state) => ({ currentThought: state.currentThought + (chunk.content || '') })); break;
         case 'status': set({ currentStatus: chunk.content || '' }); break;
+        case 'approval_request': {
+          if (chunk.approvalRequest) set({ pendingApproval: chunk.approvalRequest, currentStatus: 'Waiting for your approval…' });
+          break;
+        }
         case 'tool_call': {
           if (!chunk.toolCall) break;
           const state = get();
@@ -118,7 +126,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
         case 'tool_result': {
           const result = chunk.toolResult;
-          if (result) set((state) => ({ messages: updateToolStatus(state.messages, result.toolCallId, result.isError ? 'error' : 'success', result.output, result.isError) }));
+          if (result) {
+            set((state) => ({
+              messages: updateToolStatus(state.messages, result.toolCallId, result.isError ? 'error' : 'success', result.output, result.isError),
+              pendingApproval: state.pendingApproval?.toolCall.id === result.toolCallId ? null : state.pendingApproval
+            }));
+            if (result.name.startsWith('git_')) void useGitStore.getState().refreshStatus();
+          }
           break;
         }
         case 'diff': {
@@ -176,6 +190,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
+  respondToApproval: async (approved) => {
+    const request = get().pendingApproval;
+    if (!request) return;
+    set({ pendingApproval: null, currentStatus: approved ? 'Approval granted.' : 'Approval denied.' });
+    try {
+      const response = await window.electronAPI.respondAgentApproval(request.id, approved);
+      if (!response.success) set({ currentStatus: response.error || 'Approval request expired.' });
+    } catch (err: unknown) {
+      set({ currentStatus: err instanceof Error ? err.message : String(err) });
+    }
+  },
+
   stopTask: async () => {
     const taskId = get().currentTaskId;
     if (!taskId) return;
@@ -183,7 +209,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const messages = finalizePartialMessage(cancelRunningTools(state.messages), state.streamingText, state.currentThought);
     activeStreamUnsubscribe?.();
     activeStreamUnsubscribe = null;
-    set({ messages, isRunning: false, currentTaskId: null, currentStatus: 'Stopping task…', streamingText: '', currentThought: '' });
+    set({ messages, isRunning: false, currentTaskId: null, pendingApproval: null, currentStatus: 'Stopping task…', streamingText: '', currentThought: '' });
     try { await window.electronAPI.stopAgentTask(taskId); }
     catch (err) { console.error('Failed to stop agent task:', err); }
     finally { set({ currentStatus: 'Task stopped.' }); }
@@ -194,7 +220,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     activeStreamUnsubscribe?.();
     activeStreamUnsubscribe = null;
     if (taskId) void window.electronAPI.stopAgentTask(taskId);
-    set({ messages: [], isRunning: false, currentTaskId: null, streamingText: '', currentThought: '', currentStatus: '' });
+    set({ messages: [], isRunning: false, currentTaskId: null, pendingApproval: null, streamingText: '', currentThought: '', currentStatus: '' });
   },
   toggleSettings: () => set((state) => ({ isSettingsOpen: !state.isSettingsOpen })),
   toggleTerminal: () => set((state) => ({ isTerminalOpen: !state.isTerminalOpen }))

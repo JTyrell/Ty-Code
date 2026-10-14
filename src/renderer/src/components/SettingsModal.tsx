@@ -20,7 +20,7 @@ import { useChatStore } from '../state/chat-store';
 import type { ProviderType, ShellInfo, TerminalProfile, LanguageServerStatus } from '../../../preload/types';
 import { DEFAULT_KEYBINDINGS, type KeybindingItem } from '../../../main/services/config-schemas';
 
-type SettingsTab = 'keys' | 'endpoints' | 'params' | 'terminal' | 'lsp' | 'editor' | 'shortcuts';
+type SettingsTab = 'keys' | 'endpoints' | 'params' | 'terminal' | 'lsp' | 'editor' | 'shortcuts' | 'extensions';
 
 function createProfileId(): string {
   return `profile_${globalThis.crypto.randomUUID()}`;
@@ -58,6 +58,7 @@ export const SettingsModal: React.FC = () => {
 
   // Keybindings state
   const [keybindingSearch, setKeybindingSearch] = useState('');
+  const [thirdPartyRuntimeEnabled, setThirdPartyRuntimeEnabled] = useState(false);
 
   useEffect(() => {
     if (!settings) return;
@@ -70,6 +71,7 @@ export const SettingsModal: React.FC = () => {
     setMaxTokens(settings.maxTokens ?? 4096);
     setProfiles(settings.terminalProfiles || []);
     setDefaultProfileId(settings.defaultTerminalProfileId || '');
+    setThirdPartyRuntimeEnabled(settings.thirdPartyRuntimeEnabled ?? false);
   }, [settings]);
 
   useEffect(() => {
@@ -193,7 +195,8 @@ export const SettingsModal: React.FC = () => {
       temperature: Number(temperature),
       maxTokens: Number(maxTokens),
       terminalProfiles: profiles,
-      defaultTerminalProfileId: defaultProfileId || undefined
+      defaultTerminalProfileId: defaultProfileId || undefined,
+      thirdPartyRuntimeEnabled
     });
     if (!saved) {
       setError('Failed to save settings. See the application log for details.');
@@ -258,6 +261,7 @@ export const SettingsModal: React.FC = () => {
           <button className={activeTab === 'lsp' ? 'is-active' : ''} onClick={() => setActiveTab('lsp')}><Code2 size={13} />Language Servers (LSP)</button>
           <button className={activeTab === 'editor' ? 'is-active' : ''} onClick={() => setActiveTab('editor')}><Sliders size={13} />Editor Polish</button>
           <button className={activeTab === 'shortcuts' ? 'is-active' : ''} onClick={() => setActiveTab('shortcuts')}><Keyboard size={13} />Keybindings</button>
+          <button className={activeTab === 'extensions' ? 'is-active' : ''} onClick={() => setActiveTab('extensions')}><ShieldCheck size={13} />Extensions</button>
         </nav>
 
         <div className="settings-body" style={{ maxHeight: '420px', overflowY: 'auto' }}>
@@ -491,6 +495,23 @@ export const SettingsModal: React.FC = () => {
                 />
               </div>
             </div>
+          )}
+
+          {activeTab === 'extensions' && (
+            <section className="extension-runtime-settings" aria-labelledby="extension-runtime-heading">
+              <h3 id="extension-runtime-heading" className="settings-field-label">Extension runtime</h3>
+              <div className="settings-secure-note">
+                <ShieldCheck size={14} />
+                <span>Built-in packages run in an isolated Worker with mediated Ty-Claude Extension API capabilities.</span>
+              </div>
+              <label className="extension-runtime-toggle" htmlFor="third-party-extension-runtime">
+                <input id="third-party-extension-runtime" type="checkbox" checked={thirdPartyRuntimeEnabled} onChange={(event) => setThirdPartyRuntimeEnabled(event.target.checked)} aria-describedby="extension-runtime-help" />
+                <span>Enable third-party extension runtime</span>
+              </label>
+              <p id="extension-runtime-help" className="settings-hint">
+This preference is off by default. Enabling it records your intent only; community packages remain metadata-only until package verification and the runtime complete security review.
+              </p>
+            </section>
           )}
 
           {/* Keybindings Tab */}

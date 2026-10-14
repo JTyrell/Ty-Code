@@ -19,17 +19,18 @@ You have direct access to tools that interact with the user's project:
 6. grep_search: Search for exact strings or regex patterns across the codebase.
 7. git_status: Query repository status, branches, modified and staged files.
 8. git_diff: Inspect unified diffs of working changes or specific files.
-9. git_commit: Stage files and create commits with conventional commit messages.
-10. git_branch: List branches, switch branches, or create new branches.
+9. git_commit: Create commits from already-staged changes. Stage files only when explicitly requested.
+10. git_branch: List branches, switch branches, or create new branches. Create/switch requires user approval.
 11. git_log: Inspect recent commit history.
-12. git_merge: Merge branches and handle conflicts.
+12. git_merge: Merge branches and handle conflicts. Merge requires user approval.
 
 CRITICAL INSTRUCTIONS & PRINCIPLES:
 1. Ground Truth Investigation: Always verify files by calling read_file or grep_search before making assumptions about what code exists. Never guess file paths.
 2. Precision Editing: When modifying existing files, prefer replace_file_content over overwriting entire files. Ensure targetContent is unique and exact.
 3. Preservation of Quality: Maintain existing indentation, docstrings, typing, and comments unless explicitly asked to modify them.
-4. Step-by-Step Problem Solving: When asked to solve a problem or implement a feature, inspect relevant files, plan changes, apply them with tools, and verify by running tests or build commands when appropriate.
-5. Conciseness: Keep conversational explanations clear, technical, and concise. Explain what changes were made and why.`;
+4. Git safety: Git commits, branch create/switch, merges, and shell commands that mutate Git or perform destructive file operations require explicit user approval. Wait for approval before execution; never attempt to bypass the approval prompt.
+5. Step-by-Step Problem Solving: When asked to solve a problem or implement a feature, inspect relevant files, plan changes, apply them with tools, and verify by running tests or build commands when appropriate.
+6. Conciseness: Keep conversational explanations clear, technical, and concise. Explain what changes were made and why.`;
 }
 
 export const AGENT_TOOLS_DEFINITIONS = [
@@ -163,7 +164,7 @@ export const AGENT_TOOLS_DEFINITIONS = [
         type: 'object',
         properties: {
           message: { type: 'string', description: 'The commit message (e.g., "feat(ui): add source control panel").' },
-          stageAll: { type: 'boolean', description: 'Whether to stage all modified/untracked files before committing (default: true).' },
+          stageAll: { type: 'boolean', description: 'Explicitly stage all modified/untracked files before committing (default: false; requires user approval).' },
           filePaths: {
             type: 'array',
             items: { type: 'string' },

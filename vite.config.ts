@@ -5,7 +5,17 @@ import path from 'path';
 export default defineConfig({
   root: path.resolve(__dirname, 'src/renderer'),
   base: './',
-  plugins: [react()],
+  plugins: [
+    react(),
+    {
+      name: 'ty-claude-development-csp',
+      transformIndexHtml(html, context) {
+        if (!context.server) return html;
+        const policy = "default-src 'self'; script-src 'self' 'unsafe-inline'; worker-src 'self'; child-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https://open-vsx.org; connect-src 'self' http://localhost:5173 ws://localhost:5173";
+        return html.replace(/(<meta http-equiv=\"Content-Security-Policy\" content=\")[^\"]*(\"\s*\/?>)/i, `$1${policy}$2`);
+      }
+    }
+  ],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, 'src/renderer/src'),
@@ -15,6 +25,9 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true
+  },
+  worker: {
+    format: 'es'
   },
   build: {
     outDir: path.resolve(__dirname, 'dist/renderer'),

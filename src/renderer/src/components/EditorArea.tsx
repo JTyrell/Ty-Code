@@ -13,9 +13,14 @@ import {
   Minimize2,
   Save,
   ChevronRight,
-  Sparkles
+  Sparkles,
+  Copy
 } from 'lucide-react';
 import { useWorkspaceStore } from '../state/workspace-store';
+import { toast } from '../state/toast-store';
+import { WelcomePage } from './WelcomePage';
+import { OnboardingTour } from './OnboardingTour';
+import type { GitBlameHunk } from '../../../preload/types';
 import { GitBlameGutter } from './GitBlameGutter';
 import {
   registerMonacoLspProviders,
@@ -35,6 +40,7 @@ export const EditorArea: React.FC = () => {
   const {
     openTabs,
     activeTabPath,
+    workspacePath,
     setActiveTab,
     closeTab,
     updateTabContent,
@@ -48,15 +54,40 @@ export const EditorArea: React.FC = () => {
   const [minimapEnabled, setMinimapEnabled] = useState(true);
   const [wordWrap, setWordWrap] = useState<'off' | 'on'>('off');
   const [isZenMode, setIsZenMode] = useState(false);
+  const [currentLine, setCurrentLine] = useState(1);
+  const [blameHunks, setBlameHunks] = useState<GitBlameHunk[]>([]);
+  const [blameRefreshKey, setBlameRefreshKey] = useState(0);
+  const cursorListenerRef = useRef<{ dispose: () => void } | null>(null);
   const [splitState, setSplitState] = useState<SplitPaneState>({
     isSplit: false,
     orientation: 'vertical',
     secondaryTabPath: null
   });
+  const [isTourOpen, setIsTourOpen] = useState(false);
+  const [tabContextMenu, setTabContextMenu] = useState<{ x: number; y: number; path: string } | null>(null);
 
   const editorRef = useRef<any>(null);
   const activeTab = openTabs.find((t) => t.path === activeTabPath);
   const secondaryTab = openTabs.find((t) => t.path === splitState.secondaryTabPath) || openTabs[1] || null;
+
+  useEffect(() => () => cursorListenerRef.current?.dispose(), []);
+
+  const handleBlameLoaded = React.useCallback((hunks: GitBlameHunk[]) => {
+    setBlameHunks(hunks);
+  }, []);
+
+  useEffect(() => {
+    if (!monaco || !editorRef.current || !activeTab || activeTab.isDirty || blameHunks.length === 0) return;
+    const decorations = editorRef.current.createDecorationsCollection(blameHunks.map((hunk) => ({
+      range: new monaco.Range(hunk.lineStart, 1, hunk.lineStart, 1),
+      options: {
+        isWholeLine: false,
+        glyphMarginClassName: 'git-blame-glyph',
+        glyphMarginHoverMessage: { value: [`**${hunk.author}** · ${hunk.dateString}`, hunk.summary, `Commit ${hunk.commitHash.slice(0, 7)}`].join('\n\n') }
+      }
+    })));
+    return () => decorations.clear();
+  }, [activeTab, blameHunks, monaco]);
 
   // Register LSP providers once Monaco is loaded
   useEffect(() => {
@@ -80,7 +111,7 @@ export const EditorArea: React.FC = () => {
         if (activeTab) {
           notifyDocumentSaved(activeTab.path, activeTab.content);
         }
-        void saveActiveFile();
+        void saveActiveFile().then(() => setBlameRefreshKey((value) => value + 1));
       } else if ((e.ctrlKey || e.metaKey) && e.key === '\\') {
         e.preventDefault();
         toggleSplit('vertical');
@@ -108,7 +139,12 @@ export const EditorArea: React.FC = () => {
   };
 
   const handleEditorMount = (editor: any) => {
+    cursorListenerRef.current?.dispose();
     editorRef.current = editor;
+    setCurrentLine(editor.getPosition()?.lineNumber || 1);
+    cursorListenerRef.current = editor.onDidChangeCursorPosition((event: { position: { lineNumber: number } }) => {
+      setCurrentLine(event.position.lineNumber);
+    });
 
     // Enable multi-cursor modifier
     editor.updateOptions({
@@ -133,11 +169,47 @@ export const EditorArea: React.FC = () => {
 
   const handleCloseTab = (path: string) => {
     notifyDocumentClosed(path);
+    if (monaco) {
+      try {
+        const uri = monaco.Uri.file(path);
+        const model = monaco.editor.getModel(uri);
+        model?.dispose();
+      } catch {
+        // Safe disposal fallback
+      }
+    }
     closeTab(path);
     if (splitState.secondaryTabPath === path) {
       setSplitState((prev) => ({ ...prev, secondaryTabPath: null, isSplit: false }));
     }
   };
+
+  const handleCloseOtherTabs = (currentPath: string) => {
+    for (const tab of openTabs) {
+      if (tab.path !== currentPath) {
+        handleCloseTab(tab.path);
+      }
+    }
+    setTabContextMenu(null);
+  };
+
+  const handleCloseRightTabs = (currentPath: string) => {
+    const idx = openTabs.findIndex((t) => t.path === currentPath);
+    if (idx !== -1) {
+      const toClose = openTabs.slice(idx + 1);
+      for (const tab of toClose) {
+        handleCloseTab(tab.path);
+      }
+    }
+    setTabContextMenu(null);
+  };
+
+  useEffect(() => {
+    if (!tabContextMenu) return;
+    const handleClose = () => setTabContextMenu(null);
+    window.addEventListener('click', handleClose);
+    return () => window.removeEventListener('click', handleClose);
+  }, [tabContextMenu]);
 
   // Breadcrumbs path split
   const pathParts = activeTab ? activeTab.path.replace(/\\/g, '/').split('/').filter(Boolean) : [];
@@ -232,6 +304,10 @@ export const EditorArea: React.FC = () => {
                 <div
                   key={tab.path}
                   onClick={() => setActiveTab(tab.path)}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    setTabContextMenu({ x: e.clientX, y: e.clientY, path: tab.path });
+                  }}
                   style={{
                     height: '100%',
                     padding: '0 12px',
@@ -351,7 +427,13 @@ export const EditorArea: React.FC = () => {
             {/* Git Blame Gutter Info */}
             {activeTab && (
               <div style={{ marginLeft: '6px' }}>
-                <GitBlameGutter filePath={activeTab.path} />
+                <GitBlameGutter
+                  filePath={activeTab.path.slice(workspacePath.length).replace(/^[\\/]+/, '')}
+                  currentLine={currentLine}
+                  isDirty={activeTab.isDirty}
+                  refreshKey={blameRefreshKey}
+                  onBlameLoaded={handleBlameLoaded}
+                />
               </div>
             )}
           </div>
@@ -433,6 +515,7 @@ export const EditorArea: React.FC = () => {
                   minimap: { enabled: minimapEnabled, side: 'right' },
                   wordWrap,
                   lineNumbers: 'on',
+                  glyphMargin: true,
                   renderWhitespace: 'selection',
                   tabSize: 2,
                   bracketPairColorization: { enabled: true },
@@ -507,30 +590,100 @@ export const EditorArea: React.FC = () => {
             )}
           </>
         ) : (
-          <div
-            style={{
-              height: '100%',
-              width: '100%',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '12px',
-              color: 'var(--text-muted)'
-            }}
-          >
-            <Code2 size={48} strokeWidth={1.5} color="var(--border-strong)" />
-            <div style={{ fontSize: '14px', fontWeight: 500, color: 'var(--text-secondary)' }}>
-              No file is currently open
-            </div>
-            <div style={{ fontSize: '12px', display: 'flex', flexDirection: 'column', gap: '4px', textAlign: 'center' }}>
-              <span>Press <strong>Ctrl+P</strong> to quickly open any file in your project</span>
-              <span>Press <strong>Ctrl+Shift+P</strong> to open the Command Palette</span>
-              <span>Press <strong>Ctrl+Shift+F</strong> for global search and replace</span>
-            </div>
-          </div>
+          <WelcomePage onStartTour={() => setIsTourOpen(true)} />
         )}
       </div>
+
+      {/* Tab Context Menu */}
+      {tabContextMenu && (
+        <div
+          role="menu"
+          style={{
+            position: 'fixed',
+            top: tabContextMenu.y,
+            left: tabContextMenu.x,
+            zIndex: 999999,
+            backgroundColor: 'var(--bg-tertiary)',
+            border: '1px solid var(--border-strong)',
+            borderRadius: '6px',
+            boxShadow: '0 12px 32px rgba(0, 0, 0, 0.5)',
+            padding: '4px',
+            minWidth: '160px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '1px'
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            onClick={() => {
+              handleCloseTab(tabContextMenu.path);
+              setTabContextMenu(null);
+            }}
+            style={{
+              padding: '6px 8px',
+              fontSize: '11px',
+              color: 'var(--text-primary)',
+              borderRadius: '4px',
+              textAlign: 'left',
+              cursor: 'pointer'
+            }}
+          >
+            Close
+          </button>
+          <button
+            onClick={() => handleCloseOtherTabs(tabContextMenu.path)}
+            style={{
+              padding: '6px 8px',
+              fontSize: '11px',
+              color: 'var(--text-primary)',
+              borderRadius: '4px',
+              textAlign: 'left',
+              cursor: 'pointer'
+            }}
+          >
+            Close Others
+          </button>
+          <button
+            onClick={() => handleCloseRightTabs(tabContextMenu.path)}
+            style={{
+              padding: '6px 8px',
+              fontSize: '11px',
+              color: 'var(--text-primary)',
+              borderRadius: '4px',
+              textAlign: 'left',
+              cursor: 'pointer'
+            }}
+          >
+            Close to the Right
+          </button>
+          <div style={{ height: '1px', backgroundColor: 'var(--border-subtle)', margin: '3px 0' }} />
+          <button
+            onClick={async () => {
+              await navigator.clipboard.writeText(tabContextMenu.path);
+              toast.success('Path copied', tabContextMenu.path);
+              setTabContextMenu(null);
+            }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '6px 8px',
+              fontSize: '11px',
+              color: 'var(--text-primary)',
+              borderRadius: '4px',
+              textAlign: 'left',
+              cursor: 'pointer'
+            }}
+          >
+            <Copy size={12} />
+            Copy Path
+          </button>
+        </div>
+      )}
+
+      {/* Onboarding Tour Modal */}
+      <OnboardingTour isOpen={isTourOpen} onClose={() => setIsTourOpen(false)} />
     </div>
   );
 };

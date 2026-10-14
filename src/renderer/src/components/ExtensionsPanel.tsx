@@ -27,6 +27,8 @@ export const ExtensionsPanel: React.FC = () => {
     selectedCategory,
     query,
     isLoading,
+    isMarketplaceLoading,
+    error,
     activeDetail,
     activeSettings,
     setActiveTab,
@@ -45,6 +47,15 @@ export const ExtensionsPanel: React.FC = () => {
     void loadInstalled();
     void searchMarketplace('popular');
   }, [loadInstalled, searchMarketplace]);
+
+  useEffect(() => {
+    if (activeTab !== 'marketplace' || query.trim().length < 3) return;
+    const timer = window.setTimeout(() => { void searchMarketplace(query); }, 300);
+    return () => {
+      window.clearTimeout(timer);
+      useExtensionStore.getState().cancelMarketplaceSearch();
+    };
+  }, [activeTab, query, searchMarketplace]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -105,8 +116,10 @@ export const ExtensionsPanel: React.FC = () => {
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
           <button
             onClick={() => void installFromVsix()}
-            style={{ padding: '3px 6px', borderRadius: '4px', color: 'var(--text-secondary)' }}
-            title="Install from VSIX Package"
+            disabled
+            style={{ padding: '3px 6px', borderRadius: '4px', color: 'var(--text-muted)', cursor: 'not-allowed' }}
+            title="VSIX installation is unavailable until package validation is implemented"
+            aria-label="VSIX installation unavailable"
           >
             <FolderOpen size={13} />
           </button>
@@ -118,7 +131,7 @@ export const ExtensionsPanel: React.FC = () => {
             style={{ padding: '3px 6px', borderRadius: '4px', color: 'var(--text-secondary)' }}
             title="Refresh Extensions"
           >
-            <RefreshCw size={13} className={isLoading ? 'spin' : ''} />
+            <RefreshCw size={13} className={isLoading ? 'animate-spin' : ''} />
           </button>
         </div>
       </div>
@@ -176,13 +189,8 @@ export const ExtensionsPanel: React.FC = () => {
           <input
             type="text"
             value={query}
-            onChange={(e) => {
-              setQuery(e.target.value);
-              if (activeTab === 'marketplace' && e.target.value.length >= 3) {
-                void searchMarketplace(e.target.value);
-              }
-            }}
-            placeholder={activeTab === 'installed' ? 'Filter installed extensions…' : 'Search Open VSX marketplace…'}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={activeTab === 'installed' ? 'Filter installed extensions…' : 'Search extension registry…'}
             style={{
               width: '100%',
               fontSize: '11px',
@@ -230,6 +238,7 @@ export const ExtensionsPanel: React.FC = () => {
 
       {/* Main Extension List */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '6px' }}>
+        {error && <div role="alert" className="settings-error" style={{ margin: '4px 2px 8px' }}>{error}</div>}
         {activeTab === 'installed' ? (
           /* INSTALLED VIEW */
           filteredInstalled.length === 0 ? (
@@ -289,13 +298,16 @@ export const ExtensionsPanel: React.FC = () => {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          void toggleExtension(ext.id, !isEnabled);
+                          if (ext.isBuiltIn) void toggleExtension(ext.id, !isEnabled);
                         }}
+                        disabled={!ext.isBuiltIn}
                         style={{
                           padding: '2px',
-                          color: isEnabled ? 'var(--accent-green)' : 'var(--text-muted)'
+                          color: isEnabled ? 'var(--accent-green)' : 'var(--text-muted)',
+                          cursor: ext.isBuiltIn ? 'pointer' : 'not-allowed'
                         }}
-                        title={isEnabled ? 'Click to Disable' : 'Click to Enable'}
+                        title={ext.isBuiltIn ? (isEnabled ? 'Click to Disable' : 'Click to Enable') : 'Community package is metadata-only'}
+                        aria-label={ext.isBuiltIn ? (isEnabled ? 'Disable extension' : 'Enable extension') : 'Community extension cannot run'}
                       >
                         {isEnabled ? <ToggleRight size={22} /> : <ToggleLeft size={22} />}
                       </button>
@@ -321,9 +333,9 @@ export const ExtensionsPanel: React.FC = () => {
           )
         ) : (
           /* MARKETPLACE VIEW */
-          isLoading ? (
+          isMarketplaceLoading ? (
             <div style={{ padding: '30px 16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '12px' }}>
-              Searching Open VSX registry…
+Searching extension registry…
             </div>
           ) : marketplace.length === 0 ? (
             <div style={{ padding: '30px 16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '12px' }}>
@@ -363,8 +375,8 @@ export const ExtensionsPanel: React.FC = () => {
                       flexShrink: 0
                     }}
                   >
-                    {ext.iconUrl ? (
-                      <img src={ext.iconUrl} alt={ext.displayName} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                        {ext.iconUrl ? (
+                      <img src={ext.iconUrl} alt={`${ext.displayName} extension icon`} referrerPolicy="no-referrer" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
                     ) : (
                       <Boxes size={20} color="var(--accent-primary)" />
                     )}
@@ -412,7 +424,7 @@ export const ExtensionsPanel: React.FC = () => {
                           cursor: isAlreadyInstalled ? 'default' : 'pointer'
                         }}
                       >
-                        {isAlreadyInstalled ? 'Installed' : 'Install'}
+                        {isAlreadyInstalled ? 'Saved' : 'Save metadata'}
                       </button>
                     </div>
                   </div>

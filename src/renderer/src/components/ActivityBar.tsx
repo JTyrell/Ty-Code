@@ -25,7 +25,8 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({ activeTab, onTabChange
   const totalChanges =
     (status?.stagedFiles.length || 0) +
     (status?.unstagedFiles.length || 0) +
-    (status?.untrackedFiles.length || 0);
+    (status?.untrackedFiles.length || 0) +
+    (status?.conflictedFiles.length || 0);
 
   const navItems: Array<{ id: ActivityTab; label: string; icon: React.ReactNode; badge?: number }> = [
     { id: 'explorer', label: 'File Explorer (Ctrl+Shift+E)', icon: <Files size={18} /> },

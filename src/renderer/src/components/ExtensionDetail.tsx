@@ -53,14 +53,10 @@ export const ExtensionDetail: React.FC<ExtensionDetailProps> = ({ item, onClose 
         displayName: (item as ExtensionMetadata).displayName,
         description: (item as ExtensionMetadata).description,
         categories: (item as ExtensionMetadata).categories || ['Tools'],
-        contributes: {
-          commands: [
-            { command: `${(item as ExtensionMetadata).name}.activate`, title: `${(item as ExtensionMetadata).displayName || (item as ExtensionMetadata).name}: Launch Action` }
-          ]
-        }
+        contributes: {}
       };
 
-  const commands = installedRecord?.manifest.contributes?.commands || manifest.contributes?.commands || [];
+  const commands = installedRecord?.isBuiltIn ? installedRecord.manifest.contributes?.commands || [] : [];
   const hasSettings = Boolean(installedRecord?.manifest.contributes?.configuration?.properties);
 
   const handleRunCommand = async (cmdId: string) => {
@@ -131,7 +127,7 @@ export const ExtensionDetail: React.FC<ExtensionDetailProps> = ({ item, onClose 
               }}
             >
               {'iconUrl' in item && item.iconUrl ? (
-                <img src={item.iconUrl} alt={manifest.displayName} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                <img src={item.iconUrl} alt={`${manifest.displayName || manifest.name} extension icon`} referrerPolicy="no-referrer" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
               ) : (
                 <Boxes size={30} color="var(--accent-primary)" />
               )}
@@ -195,20 +191,23 @@ export const ExtensionDetail: React.FC<ExtensionDetailProps> = ({ item, onClose 
               <>
                 <button
                   onClick={() => void toggleExtension(installedRecord!.id, !isEnabled)}
+                  disabled={!isBuiltIn}
                   style={{
                     padding: '6px 14px',
                     borderRadius: '4px',
                     fontSize: '12px',
                     fontWeight: 500,
-                    backgroundColor: isEnabled ? 'rgba(239, 68, 68, 0.15)' : 'var(--accent-green)',
-                    color: isEnabled ? 'var(--accent-red)' : '#fff',
+                    backgroundColor: !isBuiltIn ? 'var(--bg-primary)' : isEnabled ? 'rgba(239, 68, 68, 0.15)' : 'var(--accent-green)',
+                    color: !isBuiltIn ? 'var(--text-muted)' : isEnabled ? 'var(--accent-red)' : '#fff',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '6px'
+                    gap: '6px',
+                    cursor: !isBuiltIn ? 'not-allowed' : 'pointer'
                   }}
+                  title={isBuiltIn ? undefined : 'Community extensions are metadata-only and cannot run yet.'}
                 >
                   <CheckCircle size={13} />
-                  <span>{isEnabled ? 'Disable' : 'Enable'}</span>
+                  <span>{isBuiltIn ? (isEnabled ? 'Disable' : 'Enable') : 'Metadata only'}</span>
                 </button>
 
                 {!isBuiltIn && (
@@ -266,7 +265,7 @@ export const ExtensionDetail: React.FC<ExtensionDetailProps> = ({ item, onClose 
                 }}
               >
                 <Download size={13} />
-                <span>Install Extension</span>
+                <span>Save Metadata</span>
               </button>
             )}
           </div>
@@ -329,9 +328,9 @@ export const ExtensionDetail: React.FC<ExtensionDetailProps> = ({ item, onClose 
               <div style={{ marginTop: '12px', padding: '12px', borderRadius: '6px', backgroundColor: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '11px', color: 'var(--text-secondary)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600, color: 'var(--text-primary)' }}>
                   <ShieldCheck size={14} color="var(--accent-green)" />
-                  <span>Sandboxed Security Environment</span>
+                  <span>{isBuiltIn ? 'Ty-Claude Extension API' : 'Metadata only'}</span>
                 </div>
-                <span>This extension executes within Ty-Claude's sandboxed ExtensionHost without unrestricted Node.js file system privileges. All editor manipulations route through verified VS Code-compatible IPC bridges.</span>
+                <span>{isBuiltIn ? 'Trusted built-in commands run in an isolated Worker and receive only declared, mediated capabilities. Community code is not executed.' : 'This package is stored as metadata only. Its code and contributed commands are not installed or executed.'}</span>
               </div>
             </div>
           )}
