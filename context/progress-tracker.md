@@ -1,4 +1,4 @@
-# Progress Tracker: Ty-Claude Desktop
+# Progress Tracker: Ty-Code Desktop
 
 ## Current Phase
 - **Phase 6: Polish, Performance Optimization & Cross-Platform Packaging (COMPLETED)**
@@ -61,4 +61,4 @@
 - Native Windows PTY emitted/received a command in a standalone Node smoke test; node-pty printed an `AttachConsole failed` teardown trace after the process exited. Validate PTY shutdown inside the packaged Electron runtime and on macOS/Linux before claiming cross-platform release readiness.
 - A headless browser without Electron's preload bridge can verify renderer labels/fallback states only; it cannot validate IPC-backed terminal spawning or persisted sessions.
 - Phase 4 extension hardening verified on 2026-10-14: marketplace cancellation/typecheck blocker fixed; Worker RPC, workspace path boundary, inert metadata installs, settings validation, and registry recovery tests pass. Full `npm test` and `npm run build` pass. Phase 5 planning audit found existing LSP/services/UI are present but identified untested Windows server spawning, routing/lifecycle gaps, missing Monaco result navigation, and editor/LSP settings not persisted.
-- All 8 context files in `/context/` are updated and in sync with the Ty-Claude desktop application architecture.
+- All 8 context files in `/context/` are updated and in sync with the Ty-Code desktop application architecture.

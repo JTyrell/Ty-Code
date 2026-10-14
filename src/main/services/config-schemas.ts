@@ -1,5 +1,5 @@
 /**
- * Ty-Claude Editor Settings & Keybindings Schemas
+ * Ty-Code Editor Settings & Keybindings Schemas
  * Standard JSON schema definitions and defaults matching VS Code specifications.
  */
 
@@ -97,7 +97,7 @@ export const DEFAULT_KEYBINDINGS: KeybindingItem[] = [
 
 export const SETTINGS_JSON_SCHEMA = {
   $schema: 'http://json-schema.org/draft-07/schema#',
-  title: 'Ty-Claude Editor Settings',
+  title: 'Ty-Code Editor Settings',
   type: 'object',
   properties: {
     'editor.fontSize': {
@@ -186,7 +186,7 @@ export const SETTINGS_JSON_SCHEMA = {
 
 export const KEYBINDINGS_JSON_SCHEMA = {
   $schema: 'http://json-schema.org/draft-07/schema#',
-  title: 'Ty-Claude Keybindings',
+  title: 'Ty-Code Keybindings',
   type: 'array',
   items: {
     type: 'object',

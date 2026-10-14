@@ -1,7 +1,7 @@
-# Architecture Context: Ty-Claude Desktop
+# Architecture Context: Ty-Code Desktop
 
 ## Architecture Overview
-Ty-Claude is architected as a modular, sandboxed Electron desktop application separating the UI rendering surface, native system operations, and the agentic AI reasoning loop. Inspired by the proxy architecture of [`free-claude-code`](https://github.com/Alishahryar1/free-claude-code) and the high-performance desktop workflow of VS Code / Antigravity, the system ensures non-blocking UI responsiveness, strict security sandboxing, and pluggable LLM integrations.
+Ty-Code is architected as a modular, sandboxed Electron desktop application separating the UI rendering surface, native system operations, and the agentic AI reasoning loop. Inspired by the proxy architecture of [`free-claude-code`](https://github.com/Alishahryar1/free-claude-code) and the high-performance desktop workflow of VS Code / Antigravity, the system ensures non-blocking UI responsiveness, strict security sandboxing, and pluggable LLM integrations.
 
 ---
 
@@ -87,7 +87,7 @@ graph TB
 ## System Boundaries & Directory Structure
 
 ```
-ty-claude/
+ty-code/
 ├── src/
 │   ├── main/                           # Electron Main Process (Node.js)
 │   │   ├── index.ts                    # Application lifecycle, window creation

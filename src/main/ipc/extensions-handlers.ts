@@ -76,7 +76,7 @@ export async function searchOpenVsxExtensions(query: string): Promise<IpcRespons
     if (typeof query !== 'string' || query.length > 160) throw new Error('Search text must be 160 characters or fewer.');
     const q = query.trim() || 'popular';
     const url = `https://open-vsx.org/api/-/search?query=${encodeURIComponent(q)}&size=25&sortBy=downloadCount&sortOrder=desc`;
-    const response = await fetch(url, { headers: { 'User-Agent': 'Ty-Claude-Desktop-IDE' }, signal: AbortSignal.timeout(12_000), redirect: 'error' });
+    const response = await fetch(url, { headers: { 'User-Agent': 'Ty-Code-Desktop-IDE' }, signal: AbortSignal.timeout(12_000), redirect: 'error' });
     if (!response.ok) throw new Error(`Extension registry responded with status ${response.status}.`);
     const data = await readBoundedJson(response);
     const rawExtensions = data && typeof data === 'object' && 'extensions' in data && Array.isArray(data.extensions)
@@ -93,7 +93,7 @@ export async function getOpenVsxExtensionDetails(namespace: string, name: string
   try {
     ExtensionIdSchema.parse(`${namespace}.${name}`);
     const response = await fetch(`https://open-vsx.org/api/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`, {
-      headers: { 'User-Agent': 'Ty-Claude-Desktop-IDE' }, signal: AbortSignal.timeout(12_000), redirect: 'error'
+      headers: { 'User-Agent': 'Ty-Code-Desktop-IDE' }, signal: AbortSignal.timeout(12_000), redirect: 'error'
     });
     if (!response.ok) throw new Error(`Failed to load extension details: ${response.status}`);
     const raw = await readBoundedJson(response);
@@ -200,7 +200,7 @@ export async function handleExtensionCapability(input: unknown, workspacePath: s
     const realParent = await fs.realpath(path.dirname(safeTarget));
     if (!isContained(root, realParent)) throw new Error('Workspace write parent resolves outside the active workspace.');
     const finalTarget = path.join(realParent, path.basename(safeTarget));
-    const tempTarget = path.join(realParent, `.ty-claude-extension-${process.pid}-${crypto.randomUUID()}.tmp`);
+    const tempTarget = path.join(realParent, `.ty-code-extension-${process.pid}-${crypto.randomUUID()}.tmp`);
     try {
       await fs.writeFile(tempTarget, request.content!, { encoding: 'utf8', flag: 'wx' });
       await fs.rename(tempTarget, finalTarget);

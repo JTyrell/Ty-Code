@@ -1,4 +1,4 @@
-# Code Standards & Conventions: Ty-Claude
+# Code Standards & Conventions: Ty-Code
 
 ## TypeScript & Language Standards
 

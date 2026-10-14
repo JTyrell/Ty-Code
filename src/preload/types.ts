@@ -498,11 +498,52 @@ export interface ReplaceResult {
   previewDiff?: string;
 }
 
+export type WorkspaceEditOrigin = 'lsp-rename' | 'search-replace' | 'refactor';
+
+export interface WorkspaceEditPreviewFile {
+  filePath: string;
+  originalContent: string;
+  modifiedContent: string;
+  diff: MyersDiffResult;
+  editCount: number;
+  documentVersion?: number;
+  isDirty?: boolean;
+}
+
+export interface WorkspaceEditPreview {
+  previewId: string;
+  origin: WorkspaceEditOrigin;
+  title: string;
+  files: WorkspaceEditPreviewFile[];
+  totalEdits: number;
+  expiresAt: number;
+  blockedReason?: string;
+}
+
+export interface WorkspaceEditTransactionResult {
+  transactionId: string;
+  files: Array<{ filePath: string; content: string; isDirty: boolean }>;
+  fileCount: number;
+  editCount: number;
+}
+
 export interface LanguageServerConfig {
   enabled: boolean;
-  command?: string;
   args?: string[];
+  path?: string;
   customPath?: string;
+}
+
+export interface LanguageServerInstallCommand {
+  platform: 'win32' | 'darwin' | 'linux';
+  command?: string;
+  guidance: string;
+  sourceUrl: string;
+}
+
+export interface WorkspaceServerCandidate {
+  path: string;
+  source: 'node_modules' | 'cargo-target' | 'python-venv' | 'workspace-bin';
 }
 
 export interface LanguageServerStatus {
@@ -515,6 +556,12 @@ export interface LanguageServerStatus {
   extensions: string[];
   installInstructions: string;
   error?: string;
+  resolvedPath?: string;
+  version?: string;
+  workspaceCandidates?: WorkspaceServerCandidate[];
+  installCommands?: LanguageServerInstallCommand[];
+  isExplicitPath?: boolean;
+  configuredPath?: string;
 }
 
 declare global {

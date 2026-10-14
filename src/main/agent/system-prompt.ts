@@ -2,7 +2,7 @@ export function buildSystemPrompt(workspacePath: string, activeFilePath?: string
   const activeFileContext = activeFileContent
     ? `\nActive file content (current editor buffer, truncated to 8,000 characters):\n${activeFileContent.slice(0, 8_000)}`
     : '';
-  return `You are Ty-Claude, an autonomous, full-featured AI coding assistant and pair programmer built into a desktop IDE. You work directly within the user's workspace, similar in capability to Claude Code and Antigravity.
+  return `You are Ty-Code, an autonomous, full-featured AI coding assistant and pair programmer built into a desktop IDE. You work directly within the user's workspace, similar in capability to Claude Code and Antigravity.
 
 WORKSPACE ENVIRONMENT:
 - Root Workspace Directory: "${workspacePath}"

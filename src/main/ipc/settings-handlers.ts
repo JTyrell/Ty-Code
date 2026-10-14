@@ -3,7 +3,8 @@ import fs from 'fs/promises';
 import path from 'path';
 import type { IpcResponse, ProviderSettings, ProviderType } from '../../preload/types';
 
-const SETTINGS_FILE = path.join(app.getPath('userData'), 'ty-claude-settings.json');
+const SETTINGS_FILE = path.join(app.getPath('userData'), 'ty-code-settings.json');
+const LEGACY_SETTINGS_FILE = path.join(app.getPath('userData'), 'ty-claude-settings.json');
 
 const DEFAULT_SETTINGS: ProviderSettings = {
   activeProvider: 'openrouter',
@@ -43,7 +44,12 @@ function decryptSecret(encryptedBase64: string): string {
 
 async function readDecryptedSettings(): Promise<ProviderSettings> {
   try {
-    const raw = await fs.readFile(SETTINGS_FILE, 'utf-8');
+    let raw: string;
+    try {
+      raw = await fs.readFile(SETTINGS_FILE, 'utf-8');
+    } catch {
+      raw = await fs.readFile(LEGACY_SETTINGS_FILE, 'utf-8');
+    }
     const parsed = JSON.parse(raw) as StoredSettings;
     const apiKeys: Partial<Record<ProviderType, string>> = {};
     for (const [provider, value] of Object.entries(parsed.apiKeys || {})) {

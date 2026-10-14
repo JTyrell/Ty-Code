@@ -1,4 +1,4 @@
-# Ty-Claude 🚀
+# Ty-Code 🚀
 
 > **A Standalone Desktop AI Coding Assistant & Monaco IDE**  
 > Powered by Electron, Monaco Editor (VS Code engine), and a multi-provider LLM gateway inspired by [`free-claude-code`](https://github.com/Alishahryar1/free-claude-code).
@@ -7,7 +7,7 @@
 
 ## Overview
 
-**Ty-Claude** brings the agentic power of **Claude Code** and **Antigravity** into a native desktop application. It integrates the **Monaco Editor** as its primary code editing environment and connects seamlessly to free, low-cost, or local LLMs (OpenRouter, Groq, DeepSeek, Ollama, LM Studio), liberating developers from expensive proprietary API subscriptions.
+**Ty-Code** brings the agentic power of **Claude Code** and **Antigravity** into a native desktop application. It integrates the **Monaco Editor** as its primary code editing environment and connects seamlessly to free, low-cost, or local LLMs (OpenRouter, Groq, DeepSeek, Ollama, LM Studio), liberating developers from expensive proprietary API subscriptions.
 
 ### Key Highlights
 - 🖥️ **Monaco Editor Core**: VS Code's editing engine with syntax highlighting, language servers, multi-file tabs, and side-by-side diff review.
@@ -25,7 +25,7 @@
 
 ## Architecture
 
-Ty-Claude enforces strict separation between presentation, native system access, and the AI agent loop:
+Ty-Code enforces strict separation between presentation, native system access, and the AI agent loop:
 
 ```
 +---------------------------------------------------------------------------------+

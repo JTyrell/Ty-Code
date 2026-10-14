@@ -43,6 +43,8 @@ function detectLanguage(filePath: string): string {
       return 'typescript';
     case 'js':
     case 'jsx':
+    case 'mjs':
+    case 'cjs':
       return 'javascript';
     case 'json':
       return 'json';
@@ -58,6 +60,16 @@ function detectLanguage(filePath: string): string {
       return 'go';
     case 'rs':
       return 'rust';
+    case 'java':
+      return 'java';
+    case 'c':
+      return 'c';
+    case 'cpp':
+    case 'cc':
+    case 'cxx':
+    case 'h':
+    case 'hpp':
+      return 'cpp';
     case 'yml':
     case 'yaml':
       return 'yaml';

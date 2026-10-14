@@ -1,5 +1,5 @@
 /**
- * Ty-Claude Monaco LSP Adapter
+ * Ty-Code Monaco LSP Adapter
  * Bridges Monaco Editor instances with Language Server Protocol IPC endpoints.
  * Registers completion, hover, definition, references, rename, symbols, and signature help.
  */
@@ -89,12 +89,12 @@ function toMonacoSymbolKind(monaco: Monaco, kind: number): monacoType.languages.
   }
 }
 
-function parseUri(uriStr: string): monacoType.Uri {
-  try {
-    return (window as any).monaco.Uri.parse(uriStr);
-  } catch {
-    return { path: uriStr } as any;
-  }
+function parseUri(monaco: Monaco, uriStr: string): monacoType.Uri {
+  return monaco.Uri.parse(uriStr);
+}
+
+function getModelPath(model: monacoType.editor.ITextModel): string {
+  return model.uri.scheme === 'file' ? model.uri.fsPath : model.uri.path;
 }
 
 export function registerMonacoLspProviders(monaco: Monaco): void {
@@ -107,7 +107,7 @@ export function registerMonacoLspProviders(monaco: Monaco): void {
       triggerCharacters: ['.', ':', '/', '@', '"', "'", '<', '$', '_'],
       provideCompletionItems: async (model, position) => {
         try {
-          const filePath = model.uri.fsPath || model.uri.path;
+          const filePath = getModelPath(model);
           const res = await window.electronAPI.lspCompletion({
             filePath,
             line: position.lineNumber - 1,
@@ -151,7 +151,7 @@ export function registerMonacoLspProviders(monaco: Monaco): void {
     monaco.languages.registerHoverProvider(lang, {
       provideHover: async (model, position) => {
         try {
-          const filePath = model.uri.fsPath || model.uri.path;
+          const filePath = getModelPath(model);
           const res = await window.electronAPI.lspHover({
             filePath,
             line: position.lineNumber - 1,
@@ -190,7 +190,7 @@ export function registerMonacoLspProviders(monaco: Monaco): void {
     monaco.languages.registerDefinitionProvider(lang, {
       provideDefinition: async (model, position) => {
         try {
-          const filePath = model.uri.fsPath || model.uri.path;
+          const filePath = getModelPath(model);
           const res = await window.electronAPI.lspDefinition({
             filePath,
             line: position.lineNumber - 1,
@@ -205,12 +205,12 @@ export function registerMonacoLspProviders(monaco: Monaco): void {
           for (const loc of raw) {
             if (loc.uri && loc.range) {
               locations.push({
-                uri: parseUri(loc.uri),
+                uri: parseUri(monaco, loc.uri),
                 range: toMonacoRange(loc.range)
               });
             } else if (loc.targetUri && loc.targetRange) {
               locations.push({
-                uri: parseUri(loc.targetUri),
+                uri: parseUri(monaco, loc.targetUri),
                 range: toMonacoRange(loc.targetRange)
               });
             }
@@ -227,7 +227,7 @@ export function registerMonacoLspProviders(monaco: Monaco): void {
     monaco.languages.registerReferenceProvider(lang, {
       provideReferences: async (model, position, context) => {
         try {
-          const filePath = model.uri.fsPath || model.uri.path;
+          const filePath = getModelPath(model);
           const res = await window.electronAPI.lspReferences({
             filePath,
             line: position.lineNumber - 1,
@@ -238,7 +238,7 @@ export function registerMonacoLspProviders(monaco: Monaco): void {
           if (!res.success || !Array.isArray(res.data)) return [];
 
           return res.data.map((loc: any) => ({
-            uri: parseUri(loc.uri),
+            uri: parseUri(monaco, loc.uri),
             range: toMonacoRange(loc.range)
           }));
         } catch {
@@ -251,7 +251,7 @@ export function registerMonacoLspProviders(monaco: Monaco): void {
     monaco.languages.registerRenameProvider(lang, {
       provideRenameEdits: async (model, position, newName) => {
         try {
-          const filePath = model.uri.fsPath || model.uri.path;
+          const filePath = getModelPath(model);
           const res = await window.electronAPI.lspRename({
             filePath,
             line: position.lineNumber - 1,
@@ -268,7 +268,7 @@ export function registerMonacoLspProviders(monaco: Monaco): void {
             for (const [uriStr, textEdits] of Object.entries(workspaceEdit.changes)) {
               for (const edit of textEdits as any[]) {
                 edits.push({
-                  resource: parseUri(uriStr),
+                  resource: parseUri(monaco, uriStr),
                   textEdit: {
                     range: toMonacoRange(edit.range),
                     text: edit.newText
@@ -290,7 +290,7 @@ export function registerMonacoLspProviders(monaco: Monaco): void {
     monaco.languages.registerDocumentSymbolProvider(lang, {
       provideDocumentSymbols: async (model) => {
         try {
-          const filePath = model.uri.fsPath || model.uri.path;
+          const filePath = getModelPath(model);
           const res = await window.electronAPI.lspDocumentSymbols({ filePath });
 
           if (!res.success || !Array.isArray(res.data)) return [];
@@ -319,7 +319,7 @@ export function registerMonacoLspProviders(monaco: Monaco): void {
       signatureHelpTriggerCharacters: ['(', ','],
       provideSignatureHelp: async (model, position) => {
         try {
-          const filePath = model.uri.fsPath || model.uri.path;
+          const filePath = getModelPath(model);
           const res = await window.electronAPI.lspSignatureHelp({
             filePath,
             line: position.lineNumber - 1,

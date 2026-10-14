@@ -1,4 +1,4 @@
-name: Build & Release Ty-Claude
+name: Build & Release Ty-Code
 
 on:
   push:
@@ -48,15 +48,15 @@ jobs:
         include:
           - os: windows-latest
             platform: win
-            artifact_name: Ty-Claude-Windows
+            artifact_name: Ty-Code-Windows
             artifact_path: dist-release/*.exe
           - os: macos-latest
             platform: mac
-            artifact_name: Ty-Claude-macOS
+            artifact_name: Ty-Code-macOS
             artifact_path: dist-release/*.dmg
           - os: ubuntu-latest
             platform: linux
-            artifact_name: Ty-Claude-Linux
+            artifact_name: Ty-Code-Linux
             artifact_path: dist-release/*.AppImage
 
     steps:
@@ -107,19 +107,19 @@ jobs:
       - name: Download Windows Artifact
         uses: actions/download-artifact@v4
         with:
-          name: Ty-Claude-Windows
+          name: Ty-Code-Windows
           path: release-assets
 
       - name: Download macOS Artifact
         uses: actions/download-artifact@v4
         with:
-          name: Ty-Claude-macOS
+          name: Ty-Code-macOS
           path: release-assets
 
       - name: Download Linux Artifact
         uses: actions/download-artifact@v4
         with:
-          name: Ty-Claude-Linux
+          name: Ty-Code-Linux
           path: release-assets
 
       - name: Generate Checksums

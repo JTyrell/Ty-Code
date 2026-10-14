@@ -7,7 +7,7 @@ import { build } from 'esbuild';
 
 const require = createRequire(import.meta.url);
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const testDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ty-claude-phase6-'));
+const testDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ty-code-phase6-'));
 const bundleDir = path.join(testDir, 'bundle');
 await fs.mkdir(bundleDir, { recursive: true });
 
@@ -76,7 +76,7 @@ function verify(condition, name) {
 
 async function runValidation() {
   console.log('================================================================');
-  console.log('  TY-CLAUDE PHASE 6: POLISH, PERFORMANCE & PACKAGING VALIDATION');
+  console.log('  TY-CODE PHASE 6: POLISH, PERFORMANCE & PACKAGING VALIDATION');
   console.log('================================================================\n');
 
   // --- 1. Window State Manager ---
@@ -237,7 +237,7 @@ async function runValidation() {
   // --- 8. electron-builder Configuration ---
   console.log('\n--- Assertion 8: electron-builder Multi-Platform Configuration ---');
   const builderYaml = await fs.readFile(path.join(projectRoot, 'electron-builder.yml'), 'utf-8');
-  verify(builderYaml.includes('appId: com.tyclaude.app'), 'AppId is configured');
+  verify(builderYaml.includes('appId: com.tycode.app'), 'AppId is configured');
   verify(builderYaml.includes('target: nsis') && builderYaml.includes('target: portable'), 'Windows installer and portable targets configured');
   verify(builderYaml.includes('target: dmg') && builderYaml.includes('target: zip'), 'macOS DMG and ZIP targets configured');
   verify(builderYaml.includes('target: AppImage') && builderYaml.includes('target: deb'), 'Linux AppImage and DEB targets configured');
@@ -252,7 +252,7 @@ async function runValidation() {
   // --- 10. Automated Release Notes Generator ---
   console.log('\n--- Assertion 10: Release Notes Generator & Conventional Commits ---');
   const notes = generateReleaseNotes({ version: '0.1.0', date: '2026-10-14' });
-  verify(notes.includes('# Ty-Claude v0.1.0'), 'Release notes header contains package version');
+  verify(notes.includes('# Ty-Code v0.1.0'), 'Release notes header contains package version');
   verify(notes.includes('Highlights'), 'Highlights section included');
   verify(notes.includes('Download Packages'), 'Download packages section included');
 

@@ -7,7 +7,7 @@ import { build } from 'esbuild';
 
 const require = createRequire(import.meta.url);
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const testDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ty-claude-phase2-'));
+const testDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ty-code-phase2-'));
 const bundleDir = path.join(testDir, 'bundle');
 await fs.mkdir(bundleDir, { recursive: true });
 const bundleConfig = (entry, outfile) => build({
@@ -55,7 +55,7 @@ async function runValidation() {
   const originalFetch = globalThis.fetch;
   try {
     console.log('====================================================');
-    console.log('  Ty-Claude Phase 2: Agent Loop & Tool Validation   ');
+    console.log('  Ty-Code Phase 2: Agent Loop & Tool Validation   ');
     console.log('====================================================\n');
 
     const executor = new ToolExecutor(testDir);

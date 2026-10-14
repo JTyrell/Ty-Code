@@ -141,7 +141,7 @@ export const WelcomePage: React.FC<WelcomePageProps> = ({ onStartTour }) => {
           </div>
           <div>
             <h1 style={{ fontSize: '24px', fontWeight: 700, margin: 0, letterSpacing: '-0.02em' }}>
-              Ty-Claude
+              Ty-Code
             </h1>
             <p style={{ margin: '4px 0 0', fontSize: '13px', color: 'var(--text-secondary)' }}>
               Desktop AI Coding Assistant &amp; High-Performance Monaco IDE

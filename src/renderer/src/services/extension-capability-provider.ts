@@ -33,7 +33,7 @@ export class ElectronCapabilityProvider implements ProviderContract {
   private requireCapability(extensionId: string, capability: ExtensionCapability): InstalledExtension {
     const extension = this.activeExtensions.get(extensionId);
     if (!extension?.isBuiltIn || !extension.enabled || extension.executionState !== 'built-in') {
-      throw new Error('Only enabled built-in extensions may use Ty-Claude Extension API capabilities.');
+      throw new Error('Only enabled built-in extensions may use Ty-Code Extension API capabilities.');
     }
     if (!(extension.manifest.capabilities || []).includes(capability)) {
       throw new Error(`Extension "${extensionId}" has not declared "${capability}".`);

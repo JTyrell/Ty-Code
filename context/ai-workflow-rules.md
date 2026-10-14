@@ -1,4 +1,4 @@
-# AI Workflow Rules: Ty-Claude
+# AI Workflow Rules: Ty-Code
 
 ## Phased Implementation Roadmap
 

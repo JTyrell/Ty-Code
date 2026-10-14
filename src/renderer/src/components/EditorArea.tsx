@@ -499,7 +499,7 @@ export const EditorArea: React.FC = () => {
             <div style={{ flex: 1, height: '100%', position: 'relative', overflow: 'hidden' }}>
               <Editor
                 key={`primary_${activeTab.path}`}
-                path={activeTab.path}
+                path={monaco?.Uri.file(activeTab.path).toString() ?? activeTab.path}
                 language={activeTab.language}
                 value={activeTab.content}
                 theme="vs-dark"
@@ -566,7 +566,7 @@ export const EditorArea: React.FC = () => {
                 <div style={{ height: 'calc(100% - 24px)' }}>
                   <Editor
                     key={`secondary_${secondaryTab.path}`}
-                    path={secondaryTab.path}
+                    path={monaco?.Uri.file(secondaryTab.path).toString() ?? secondaryTab.path}
                     language={secondaryTab.language}
                     value={secondaryTab.content}
                     theme="vs-dark"

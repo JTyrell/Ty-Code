@@ -1,12 +1,13 @@
 /**
- * Ty-Claude Language Server Protocol (LSP) Client
+ * Ty-Code Language Server Protocol (LSP) Client
  * Handles JSON-RPC 2.0 stdio transport framing, message dispatch,
  * request-response matching, document sync, and language intelligence queries.
  */
 
-import { spawn, type ChildProcess } from 'child_process';
-import { EventEmitter } from 'events';
-import path from 'path';
+import type { ChildProcess } from 'node:child_process';
+import { EventEmitter } from 'node:events';
+import crossSpawn from 'cross-spawn';
+import { toFileUri } from './lsp-path-utils';
 
 export interface LspPosition {
   line: number; // 0-based
@@ -187,11 +188,12 @@ export class LspClient extends EventEmitter {
 
     return new Promise<Record<string, unknown>>((resolve, reject) => {
       try {
-        this.process = spawn(this.command, this.args, {
+        this.process = crossSpawn(this.command, this.args, {
           cwd: this.workspacePath,
           shell: false,
           stdio: ['pipe', 'pipe', 'pipe'],
-          env: { ...process.env }
+          env: { ...process.env },
+          windowsHide: true
         });
 
         this.process.stdout?.on('data', (chunk: Buffer) => {
@@ -205,6 +207,7 @@ export class LspClient extends EventEmitter {
         this.process.on('error', (err) => {
           this.emit('error', err);
           if (!this.isInitialized) {
+            this.process = null;
             reject(err);
           }
         });
@@ -217,10 +220,10 @@ export class LspClient extends EventEmitter {
         });
 
         // Send initialize request
-        const rootUri = `file://${this.workspacePath.replace(/\\/g, '/')}`;
+        const rootUri = toFileUri(this.workspacePath);
         const initParams = {
           processId: process.pid,
-          clientInfo: { name: 'Ty-Claude', version: '0.1.0' },
+          clientInfo: { name: 'Ty-Code', version: '0.1.0' },
           rootPath: this.workspacePath,
           rootUri,
           capabilities: {
@@ -532,10 +535,6 @@ export class LspClient extends EventEmitter {
   }
 
   public ensureUri(filePathOrUri: string): string {
-    if (filePathOrUri.startsWith('file://')) {
-      return filePathOrUri;
-    }
-    const normalized = filePathOrUri.replace(/\\/g, '/');
-    return normalized.startsWith('/') ? `file://${normalized}` : `file:///${normalized}`;
+    return toFileUri(filePathOrUri);
   }
 }

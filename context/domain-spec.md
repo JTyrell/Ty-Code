@@ -2,7 +2,7 @@
 
 ## Ground Truth Definitions
 
-In Ty-Claude, "successful agentic coding assistance" is strictly defined by four invariant criteria:
+In Ty-Code, "successful agentic coding assistance" is strictly defined by four invariant criteria:
 1. **Preservation of Intent**: The AI modification must solve the user's prompt without introducing side effects or unrequested refactorings.
 2. **Syntactic & Structural Integrity**: The generated code must parse without syntax errors, adhere to existing codebase indentation/style, and preserve existing comments.
 3. **Atomic Exactness**: Code edits must match exact character sequences in the target file. No partial line corruptions or misplaced code blocks are tolerated.
@@ -95,7 +95,7 @@ Navigates directories and finds text occurrences across files rapidly without po
 
 ## Multi-Provider LLM Gateway Specification
 
-Inspired by the protocol handling in `free-claude-code`, Ty-Claude bridges OpenAI-compatible and Anthropic-compatible message formats into a standardized internal representation:
+Inspired by the protocol handling in `free-claude-code`, Ty-Code bridges OpenAI-compatible and Anthropic-compatible message formats into a standardized internal representation:
 
 ```mermaid
 graph TD

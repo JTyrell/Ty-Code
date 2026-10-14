@@ -1,6 +1,6 @@
-appId: com.tyclaude.app
-productName: Ty-Claude
-copyright: Copyright © 2026 Ty-Claude Team
+appId: com.tycode.app
+productName: Ty-Code
+copyright: Copyright © 2026 Ty-Code Team
 
 directories:
   output: dist-release
@@ -22,9 +22,9 @@ extraMetadata:
   main: dist/main/index.js
 
 protocols:
-  - name: Ty-Claude Protocol
+  - name: Ty-Code Protocol
     schemes:
-      - ty-claude
+      - ty-code
 
 fileAssociations:
   - ext:
@@ -46,7 +46,7 @@ win:
     - target: portable
       arch:
         - x64
-  legalTrademarks: Ty-Claude
+  legalTrademarks: Ty-Code
   requestedExecutionLevel: asInvoker
 
 nsis:
@@ -54,7 +54,7 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: always
   createStartMenuShortcut: true
-  shortcutName: Ty-Claude
+  shortcutName: Ty-Code
   deleteAppDataOnUninstall: false
   runAfterFinish: true
 
@@ -92,11 +92,11 @@ linux:
         - x64
   category: Development
   desktop:
-    StartupWMClass: ty-claude
+    StartupWMClass: ty-code
     MimeType: text/plain;text/x-typescript;text/x-javascript;text/x-python;application/json;
 
 publish:
   provider: github
-  owner: ty-claude
-  repo: ty-claude
+  owner: ty-code
+  repo: ty-code
   releaseType: release

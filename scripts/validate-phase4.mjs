@@ -8,7 +8,7 @@ import { build } from 'esbuild';
 
 const require = createRequire(import.meta.url);
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const testDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ty-claude-phase4-'));
+const testDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ty-code-phase4-'));
 const bundleDir = path.join(testDir, 'bundle');
 await fs.mkdir(bundleDir, { recursive: true });
 
@@ -96,7 +96,7 @@ class FakeTransport {
 
 async function runPhase4Validation() {
   console.log('\n=============================================================');
-  console.log('  TY-CLAUDE PHASE 4: EXTENSION SECURITY & WORKER VALIDATION');
+  console.log('  TY-CODE PHASE 4: EXTENSION SECURITY & WORKER VALIDATION');
   console.log('=============================================================\n');
 
   console.log('--- 1. Manifest and identity validation ---');

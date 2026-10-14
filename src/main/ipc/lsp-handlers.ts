@@ -1,5 +1,5 @@
 /**
- * Ty-Claude LSP IPC Handlers
+ * Ty-Code LSP IPC Handlers
  * Connects renderer IPC calls to LspManager methods
  */
 
@@ -10,8 +10,9 @@ export function getLspManager(workspacePath?: string): LspManager {
   return LspManager.getInstance(workspacePath);
 }
 
-export function handleGetLspServers(workspacePath?: string): IpcResponse<any> {
+export async function handleGetLspServers(workspacePath?: string): Promise<IpcResponse<any>> {
   const manager = getLspManager(workspacePath);
+  await manager.refreshAvailability();
   return { success: true, data: manager.getAllServers() };
 }
 
@@ -33,10 +34,14 @@ export async function handleRestartLspServer(languageId: string, workspacePath?:
   return { success: restarted, data: restarted };
 }
 
-export function handleConfigureLspServer(languageId: string, config: LanguageServerConfig, workspacePath?: string): IpcResponse<void> {
-  const manager = getLspManager(workspacePath);
-  manager.configureServer(languageId, config);
-  return { success: true };
+export async function handleConfigureLspServer(languageId: string, config: LanguageServerConfig, workspacePath?: string): Promise<IpcResponse<void>> {
+  try {
+    const manager = getLspManager(workspacePath);
+    await manager.configureServer(languageId, config);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
+  }
 }
 
 export async function handleLspDidOpen(payload: { filePath: string; languageId: string; text: string }, workspacePath?: string): Promise<IpcResponse<void>> {

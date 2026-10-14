@@ -1,7 +1,7 @@
-# Project Overview: Ty-Claude Desktop
+# Project Overview: Ty-Code Desktop
 
 ## Executive Summary
-**Ty-Claude** is an open-source, cross-platform desktop AI coding assistant and lightweight IDE built with Electron, Monaco Editor (VS Code's editing core), and an agentic tool-execution engine. Inspired by Claude Code and Antigravity, and leveraging the multi-provider routing architecture pioneered by [`free-claude-code`](https://github.com/Alishahryar1/free-claude-code), Ty-Claude allows developers to pair-program with state-of-the-art AI models—using free, low-cost, or local LLMs (OpenRouter, DeepSeek, Groq, NVIDIA NIM, Ollama, LM Studio) without being locked into expensive proprietary subscriptions.
+**Ty-Code** is an open-source, cross-platform desktop AI coding assistant and lightweight IDE built with Electron, Monaco Editor (VS Code's editing core), and an agentic tool-execution engine. Inspired by Claude Code and Antigravity, and leveraging the multi-provider routing architecture pioneered by [`free-claude-code`](https://github.com/Alishahryar1/free-claude-code), Ty-Code allows developers to pair-program with state-of-the-art AI models—using free, low-cost, or local LLMs (OpenRouter, DeepSeek, Groq, NVIDIA NIM, Ollama, LM Studio) without being locked into expensive proprietary subscriptions.
 
 ---
 
@@ -27,7 +27,7 @@ graph TD
     G --> H[Monaco Editor Reloads / Real-time Feedback]
 ```
 
-1. **Workspace Initialization**: The user opens any project directory. Ty-Claude scans the workspace, loads the file tree, respects `.gitignore`, and generates a project index.
+1. **Workspace Initialization**: The user opens any project directory. Ty-Code scans the workspace, loads the file tree, respects `.gitignore`, and generates a project index.
 2. **Editor Engagement**: The user browses, edits, and navigates files in multi-tab Monaco editor sessions with syntax highlighting and code completion.
 3. **Conversational Prompting**: The user queries the AI assistant in the right sidecar drawer (e.g., *"Refactor our auth middleware to support JWT refresh tokens"* or *"Debug why the test suite is failing"*).
 4. **Agentic Investigation**: The AI agent autonomously calls workspace tools (`list_dir`, `read_file`, `grep_search`, `run_command`) to gather ground truth.

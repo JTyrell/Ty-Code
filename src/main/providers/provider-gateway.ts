@@ -65,7 +65,7 @@ export class ProviderGateway {
     if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
     if (provider === 'openrouter') {
       headers['HTTP-Referer'] = 'https://github.com/Alishahryar1/free-claude-code';
-      headers['X-Title'] = 'Ty-Claude Desktop';
+      headers['X-Title'] = 'Ty-Code Desktop';
     }
     const body: Record<string, unknown> = {
       model: settings.activeModel,

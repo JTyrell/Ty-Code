@@ -1,8 +1,8 @@
-# UI & Design System Context: Ty-Claude
+# UI & Design System Context: Ty-Code
 
 ## Design Philosophy & Aesthetics
 
-Ty-Claude embraces a sleek, hyper-focused dark-mode developer aesthetic inspired by VS Code, Linear, and Antigravity. The UI balances information density with visual clarity, providing fluid split-pane resizing, crisp typography, and reactive micro-interactions that make agentic coding feel seamless and instantaneous.
+Ty-Code embraces a sleek, hyper-focused dark-mode developer aesthetic inspired by VS Code, Linear, and Antigravity. The UI balances information density with visual clarity, providing fluid split-pane resizing, crisp typography, and reactive micro-interactions that make agentic coding feel seamless and instantaneous.
 
 ---
 
@@ -50,7 +50,7 @@ The UI is constructed from an adjustable multi-dock split layout:
 
 ```
 +-----------------------------------------------------------------------------------+
-|  TitleBar: [Icon] Ty-Claude - /my-project   [Model: DeepSeek-V3 v] [Settings] [-][+][x]  |
+|  TitleBar: [Icon] Ty-Code - /my-project   [Model: DeepSeek-V3 v] [Settings] [-][+][x]  |
 +----+-------------------+------------------------------------+---------------------+
 | A  | SIDEBAR           | MAIN EDITOR & WORKSPACE            | AI ASSISTANT        |
 | c  |                   |                                    | SIDECAR             |

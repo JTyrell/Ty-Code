@@ -1,4 +1,4 @@
-# Ty-Claude Desktop: Release, Packaging & Operations Guide
+# Ty-Code Desktop: Release, Packaging & Operations Guide
 
 This document covers user documentation, developer workflow, packaging setup, auto-updates, and performance optimizations implemented for **Phase 6: Polish, Performance Optimization & Cross-Platform Packaging**.
 
@@ -7,14 +7,14 @@ This document covers user documentation, developer workflow, packaging setup, au
 ## 1. User Guide
 
 ### 1.1 Welcome Page & Quick Start
-When no editor tabs are open, Ty-Claude displays an interactive **Welcome Page**:
+When no editor tabs are open, Ty-Code displays an interactive **Welcome Page**:
 - **Recent Workspaces**: Quick-access listing of recently opened repositories with relative timestamps and paths.
 - **Quick Actions**: One-click triggers for *Open Folder* (<kbd>Ctrl+O</kbd>), *New File* (<kbd>Ctrl+N</kbd>), *Toggle Terminal* (<kbd>Ctrl+\`</kbd>), and *Command Palette* (<kbd>Ctrl+Shift+P</kbd>).
 - **Interactive Tour**: Start an interactive 6-step walkthrough anytime by clicking **Take the Interactive Tour** or selecting it from the Command Palette.
 - **Keyboard Cheatsheet**: Quick reference of frequent hotkeys.
 
 ### 1.2 Themes & Accessibility
-Ty-Claude supports multiple curated themes accessible via the TitleBar theme picker or Settings:
+Ty-Code supports multiple curated themes accessible via the TitleBar theme picker or Settings:
 - **Dark (Default)**: Deep blue-gray palette optimized for low eye strain.
 - **Light**: Crisp high-legibility theme for bright environments.
 - **High Contrast**: WCAG 2.1 AA compliant theme with bold borders (`#00E5FF` accents) and deep blacks.
@@ -32,7 +32,7 @@ Non-intrusive toast alerts appear in the bottom-right corner for:
 - Full right-click context menus provide options to rename, delete, duplicate, copy path, or reveal in system file explorer.
 
 ### 1.5 Multi-Language Support (i18n)
-Ty-Claude includes built-in localization across 6 languages:
+Ty-Code includes built-in localization across 6 languages:
 - English (`en`)
 - Spanish (`es`)
 - Japanese (`ja`)
@@ -80,7 +80,7 @@ Unified diff generation uses Eugene Myers' $O(ND)$ greedy algorithm to compute s
 - Flattening 10,000 files completes in under 7 milliseconds.
 
 ### 3.3 Storage Cache (`src/renderer/src/services/storage-cache.ts`)
-- Backed by browser IndexedDB (`ty-claude-cache-v1`) with transparent in-memory fallback.
+- Backed by browser IndexedDB (`ty-code-cache-v1`) with transparent in-memory fallback.
 - Configurable TTL (Time-To-Live) for caching remote LSP symbols, marketplace manifests, and git diff summaries.
 - Automatic eviction of stale cache entries.
 

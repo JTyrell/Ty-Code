@@ -305,7 +305,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle('app:get-info', () => ({
     success: true,
     data: {
-      name: 'Ty-Claude',
+      name: 'Ty-Code',
       version: app?.getVersion ? app.getVersion() : '0.1.0',
       platform: process.platform,
       arch: process.arch,
@@ -333,7 +333,7 @@ function createWindow(): void {
     height: savedState.height,
     minWidth: 1020,
     minHeight: 680,
-    title: 'Ty-Claude - Desktop AI Coding Assistant',
+    title: 'Ty-Code - Desktop AI Coding Assistant',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     backgroundColor: '#121316',
     webPreferences: {

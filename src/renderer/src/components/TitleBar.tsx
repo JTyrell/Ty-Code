@@ -59,7 +59,7 @@ export const TitleBar: React.FC = () => {
         setUpdateStatus('idle');
       } else if (status.type === 'downloaded') {
         setUpdateStatus('downloaded');
-        toast.success('Update ready to install!', 'Restart Ty-Claude to apply update.', {
+        toast.success('Update ready to install!', 'Restart Ty-Code to apply update.', {
           label: 'Restart Now',
           onClick: () => window.electronAPI.installUpdate()
         });
@@ -126,7 +126,7 @@ export const TitleBar: React.FC = () => {
         });
       } else {
         setUpdateStatus('idle');
-        toast.success('Up to date', `Ty-Claude v${res.currentVersion} is the latest version.`);
+        toast.success('Up to date', `Ty-Code v${res.currentVersion} is the latest version.`);
       }
     } catch (err) {
       setUpdateStatus('idle');
@@ -155,7 +155,7 @@ export const TitleBar: React.FC = () => {
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', ...appRegion('no-drag') }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600, color: 'var(--text-primary)' }}>
           <Cpu size={16} color="var(--accent-primary)" />
-          <span style={{ fontSize: '12px' }}>Ty-Claude</span>
+          <span style={{ fontSize: '12px' }}>Ty-Code</span>
           {appInfo && (
             <span style={{ fontSize: '10px', color: 'var(--text-muted)', backgroundColor: 'var(--bg-tertiary)', padding: '1px 5px', borderRadius: '4px' }}>
               v{appInfo.version}

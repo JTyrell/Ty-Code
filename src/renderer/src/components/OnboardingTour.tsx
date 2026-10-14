@@ -26,12 +26,12 @@ interface TourStep {
 
 const TOUR_STEPS: TourStep[] = [
   {
-    title: 'Welcome to Ty-Claude',
+    title: 'Welcome to Ty-Code',
     subtitle: 'The Next-Generation AI-Native Desktop IDE',
     badge: 'Introduction',
     icon: <Sparkles size={28} color="var(--accent-primary)" />,
     content:
-      'Ty-Claude combines the performance of Monaco Editor with autonomous AI agent capabilities, cross-platform terminal emulator, and native Git integration. Let’s take a 30-second tour of what’s inside!'
+      'Ty-Code combines the performance of Monaco Editor with autonomous AI agent capabilities, cross-platform terminal emulator, and native Git integration. Let’s take a 30-second tour of what’s inside!'
   },
   {
     title: 'Monaco Editor & Language Server Protocol',

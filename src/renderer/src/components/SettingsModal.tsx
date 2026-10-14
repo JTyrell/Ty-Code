@@ -14,7 +14,8 @@ import {
   Square,
   RotateCw,
   Search,
-  Check
+  Check,
+  Copy
 } from 'lucide-react';
 import { useChatStore } from '../state/chat-store';
 import type { ProviderType, ShellInfo, TerminalProfile, LanguageServerStatus } from '../../../preload/types';
@@ -48,6 +49,7 @@ export const SettingsModal: React.FC = () => {
   const [lspServers, setLspServers] = useState<LanguageServerStatus[]>([]);
   const [lspActionLoading, setLspActionLoading] = useState<Record<string, boolean>>({});
   const [customLspPaths, setCustomLspPaths] = useState<Record<string, string>>({});
+  const [copiedLspCommand, setCopiedLspCommand] = useState<string | null>(null);
 
   // Editor Settings state
   const [fontSize, setFontSize] = useState(13);
@@ -100,7 +102,7 @@ export const SettingsModal: React.FC = () => {
         setLspServers(res.data);
         const paths: Record<string, string> = {};
         for (const s of res.data) {
-          paths[s.languageId] = s.command;
+          paths[s.languageId] = s.configuredPath || '';
         }
         setCustomLspPaths(paths);
       }
@@ -140,14 +142,16 @@ export const SettingsModal: React.FC = () => {
   };
 
   const handleSaveLspConfig = async (languageId: string) => {
-    const custom = customLspPaths[languageId];
-    if (custom) {
-      await window.electronAPI.lspConfigureServer(languageId, {
-        enabled: true,
-        customPath: custom
-      });
-      await refreshLspServers();
+    const custom = customLspPaths[languageId]?.trim() || '';
+    const response = await window.electronAPI.lspConfigureServer(languageId, {
+      enabled: true,
+      path: custom
+    });
+    if (!response.success) {
+      setError(response.error || 'Could not save language-server executable path.');
+      return;
     }
+    await refreshLspServers();
   };
 
   if (!isSettingsOpen) return null;
@@ -185,6 +189,17 @@ export const SettingsModal: React.FC = () => {
     const remaining = profiles.filter((profile) => profile.id !== id);
     setProfiles(remaining);
     if (defaultProfileId === id) setDefaultProfileId(remaining[0]?.id || '');
+  };
+
+  const copyLspInstallCommand = async (languageId: string, platform: string, command: string) => {
+    try {
+      await navigator.clipboard.writeText(command);
+      const key = `${languageId}:${platform}`;
+      setCopiedLspCommand(key);
+      window.setTimeout(() => setCopiedLspCommand((current) => current === key ? null : current), 1600);
+    } catch {
+      setError('Clipboard access failed. Select and copy the install command manually.');
+    }
   };
 
   const handleSave = async () => {
@@ -249,7 +264,7 @@ export const SettingsModal: React.FC = () => {
     <div className="settings-backdrop" onClick={toggleSettings}>
       <section className="settings-modal" onClick={(event) => event.stopPropagation()} aria-modal="true" role="dialog" style={{ maxWidth: '780px' }}>
         <header className="settings-header">
-          <div className="settings-title"><Key size={16} color="var(--accent-primary)" /><span>Ty-Claude Preferences &amp; Configuration</span></div>
+          <div className="settings-title"><Key size={16} color="var(--accent-primary)" /><span>Ty-Code Preferences &amp; Configuration</span></div>
           <button onClick={toggleSettings} className="settings-close" aria-label="Close settings"><X size={14} /></button>
         </header>
 
@@ -320,111 +335,73 @@ export const SettingsModal: React.FC = () => {
           {/* LSP Settings Tab */}
           {activeTab === 'lsp' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                Language servers provide IntelliSense, Go-to-Definition, and Refactoring. If a server is not installed, Ty-Claude seamlessly falls back to Monaco's built-in language engine.
-              </div>
+              <p style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                Install language servers yourself. System PATH executables can start automatically; project-local candidates are detected for information only and never run unless you set an explicit absolute path.
+              </p>
 
               {lspServers.map((server) => {
                 const isLoading = Boolean(lspActionLoading[server.languageId]);
-                const statusColor =
-                  server.status === 'running'
-                    ? 'var(--accent-green)'
-                    : server.isAvailable
-                    ? 'var(--text-muted)'
-                    : 'var(--accent-amber)';
+                const statusColor = server.status === 'running' ? 'var(--accent-green)' : server.isAvailable ? 'var(--accent-cyan)' : 'var(--accent-amber)';
+                const platformName: Record<string, string> = { win32: 'Windows', darwin: 'macOS', linux: 'Linux' };
 
                 return (
-                  <div
-                    key={server.languageId}
-                    style={{
-                      padding: '12px',
-                      backgroundColor: 'var(--bg-tertiary)',
-                      borderRadius: '6px',
-                      border: '1px solid var(--border-subtle)',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '8px'
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text-primary)' }}>
-                          {server.name}
-                        </span>
-                        <span
-                          style={{
-                            fontSize: '10px',
-                            padding: '2px 8px',
-                            borderRadius: '10px',
-                            backgroundColor: 'rgba(255,255,255,0.06)',
-                            color: statusColor,
-                            fontWeight: 700,
-                            textTransform: 'uppercase'
-                          }}
-                        >
-                          {server.status === 'running' ? 'Running' : server.isAvailable ? 'Stopped' : 'Not Installed'}
-                        </span>
-                      </div>
-
+                  <section key={server.languageId} style={{ padding: '12px', backgroundColor: 'var(--bg-tertiary)', borderRadius: '6px', border: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                      <strong style={{ fontSize: '13px', color: 'var(--text-primary)' }}>{server.name}</strong>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        {server.status === 'running' ? (
-                          <>
-                            <button
-                              onClick={() => void handleRestartLsp(server.languageId)}
-                              disabled={isLoading}
-                              style={{ padding: '4px 8px', fontSize: '11px', borderRadius: '4px', backgroundColor: 'var(--bg-hover)', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '4px' }}
-                              title="Restart Server"
-                            >
-                              <RotateCw size={11} className={isLoading ? 'spin' : ''} />
-                              <span>Restart</span>
-                            </button>
-                            <button
-                              onClick={() => void handleStopLsp(server.languageId)}
-                              disabled={isLoading}
-                              style={{ padding: '4px 8px', fontSize: '11px', borderRadius: '4px', backgroundColor: 'var(--bg-hover)', color: 'var(--accent-red)', display: 'flex', alignItems: 'center', gap: '4px' }}
-                              title="Stop Server"
-                            >
-                              <Square size={11} />
-                              <span>Stop</span>
-                            </button>
-                          </>
-                        ) : (
-                          <button
-                            onClick={() => void handleStartLsp(server.languageId)}
-                            disabled={isLoading || !server.isAvailable}
-                            style={{ padding: '4px 8px', fontSize: '11px', borderRadius: '4px', backgroundColor: server.isAvailable ? 'var(--accent-primary)' : 'var(--bg-hover)', color: '#fff', display: 'flex', alignItems: 'center', gap: '4px', opacity: server.isAvailable ? 1 : 0.5 }}
-                            title={server.isAvailable ? 'Start Server' : 'Binary not found'}
-                          >
-                            <Play size={11} />
-                            <span>Start</span>
-                          </button>
-                        )}
+                        <span style={{ fontSize: '11px', color: statusColor }} aria-live="polite">
+                          {server.status === 'running' ? 'Running' : server.isAvailable ? 'Found' : server.status === 'disabled' ? 'Disabled' : 'Not installed'}
+                        </span>
+                        {server.status === 'running' ? <>
+                          <button onClick={() => void handleRestartLsp(server.languageId)} disabled={isLoading} aria-label={`Restart ${server.name}`} title="Restart server"><RotateCw size={13} className={isLoading ? 'spin' : ''} /></button>
+                          <button onClick={() => void handleStopLsp(server.languageId)} disabled={isLoading} aria-label={`Stop ${server.name}`} title="Stop server"><Square size={12} /></button>
+                        </> : <button onClick={() => void handleStartLsp(server.languageId)} disabled={isLoading || !server.isAvailable} title={server.isAvailable ? 'Start server' : 'No runnable executable found'}><Play size={12} />Start</button>}
                       </div>
                     </div>
 
-                    {/* Command / Custom Path input */}
+                    {server.isAvailable && <div className="settings-hint">
+                      Found at <code>{server.resolvedPath}</code>{server.version ? <> · Version {server.version}</> : ' · Version unavailable'}
+                    </div>}
+                    {!server.isAvailable && server.workspaceCandidates?.map((candidate) => (
+                      <div className="settings-hint" key={candidate.path}>
+                        Project-local candidate (not run): <code>{candidate.path}</code>. Configure its absolute path below only if you trust this workspace.
+                      </div>
+                    ))}
+                    {server.error && <div className="settings-error" role="status">{server.error}</div>}
+
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <label className="settings-field-label" htmlFor={`lsp-path-${server.languageId}`} style={{ margin: 0, flexShrink: 0 }}>Executable path</label>
                       <input
+                        id={`lsp-path-${server.languageId}`}
                         type="text"
                         value={customLspPaths[server.languageId] || ''}
-                        onChange={(e) => setCustomLspPaths({ ...customLspPaths, [server.languageId]: e.target.value })}
-                        placeholder={`Command / binary path (default: ${server.command})`}
-                        style={{ flex: 1, padding: '4px 8px', fontSize: '11px', backgroundColor: 'var(--bg-primary)', border: '1px solid var(--border-subtle)', borderRadius: '4px', color: 'var(--text-primary)' }}
+                        onChange={(event) => setCustomLspPaths((current) => ({ ...current, [server.languageId]: event.target.value }))}
+                        placeholder="Optional absolute path; blank uses system PATH"
+                        spellCheck={false}
+                        aria-describedby={`lsp-path-help-${server.languageId}`}
+                        style={{ minWidth: 0, flex: 1, padding: '5px 8px', fontSize: '11px', backgroundColor: 'var(--bg-primary)' }}
                       />
-                      <button
-                        onClick={() => void handleSaveLspConfig(server.languageId)}
-                        style={{ padding: '4px 8px', fontSize: '11px', backgroundColor: 'var(--bg-hover)', borderRadius: '4px', color: 'var(--text-secondary)' }}
-                      >
-                        Apply
-                      </button>
+                      <button onClick={() => void handleSaveLspConfig(server.languageId)} disabled={isLoading} style={{ padding: '5px 8px', fontSize: '11px', backgroundColor: 'var(--bg-hover)', color: 'var(--text-secondary)' }}>Save path</button>
                     </div>
+                    <div id={`lsp-path-help-${server.languageId}`} className="settings-hint">This path is stored per language and is the only way to run a project-local server.</div>
 
-                    {!server.isAvailable && (
-                      <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                        Install command: <code style={{ color: 'var(--accent-cyan)' }}>{server.installInstructions}</code>
-                      </div>
-                    )}
-                  </div>
+                    <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <strong style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Manual installation</strong>
+                      {server.installCommands?.map((item) => {
+                        const copyKey = `${server.languageId}:${item.platform}`;
+                        const copyText = item.command || item.guidance;
+                        return <div key={item.platform} style={{ display: 'grid', gridTemplateColumns: '60px minmax(0, 1fr) auto', alignItems: 'center', gap: '7px', fontSize: '11px' }}>
+                          <span style={{ color: 'var(--text-muted)' }}>{platformName[item.platform]}</span>
+                          <code style={{ minWidth: 0, color: item.command ? 'var(--accent-cyan)' : 'var(--text-secondary)', overflowWrap: 'anywhere' }}>{copyText}</code>
+                          <button type="button" onClick={() => void copyLspInstallCommand(server.languageId, item.platform, copyText)} aria-label={`${item.command ? 'Copy' : 'Copy instructions for'} ${server.name} ${platformName[item.platform]}`} title={item.command ? 'Copy install command' : 'Copy install instructions'} style={{ padding: '4px 6px', color: 'var(--text-secondary)' }}>
+                            {copiedLspCommand === copyKey ? <Check size={12} /> : <Copy size={12} />}
+                            <span>{copiedLspCommand === copyKey ? 'Copied' : item.command ? 'Copy' : 'Copy instructions'}</span>
+                          </button>
+                        </div>;
+                      })}
+                      {server.installCommands?.[0]?.sourceUrl && <div className="settings-hint">Official instructions: {server.installCommands[0].sourceUrl}</div>}
+                    </div>
+                  </section>
                 );
               })}
             </div>
@@ -502,7 +479,7 @@ export const SettingsModal: React.FC = () => {
               <h3 id="extension-runtime-heading" className="settings-field-label">Extension runtime</h3>
               <div className="settings-secure-note">
                 <ShieldCheck size={14} />
-                <span>Built-in packages run in an isolated Worker with mediated Ty-Claude Extension API capabilities.</span>
+                <span>Built-in packages run in an isolated Worker with mediated Ty-Code Extension API capabilities.</span>
               </div>
               <label className="extension-runtime-toggle" htmlFor="third-party-extension-runtime">
                 <input id="third-party-extension-runtime" type="checkbox" checked={thirdPartyRuntimeEnabled} onChange={(event) => setThirdPartyRuntimeEnabled(event.target.checked)} aria-describedby="extension-runtime-help" />

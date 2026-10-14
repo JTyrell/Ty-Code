@@ -1,8 +1,8 @@
-# AGENTS & Workflow Protocols: Ty-Claude
+# AGENTS & Workflow Protocols: Ty-Code
 
 ## Specialized Agent Roles & Responsibilities
 
-In developing and maintaining Ty-Claude, the system leverages specialized persona domains to maintain high architectural integrity, zero security vulnerabilities, and rock-solid developer experience:
+In developing and maintaining Ty-Code, the system leverages specialized persona domains to maintain high architectural integrity, zero security vulnerabilities, and rock-solid developer experience:
 
 ### 1. Chief Systems Architect / Desktop Lead
 - **Domain**: Electron lifecycle, process orchestration (Main vs Preload vs Renderer), window management, native system packaging, and cross-platform build targets.

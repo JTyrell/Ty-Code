@@ -8,7 +8,7 @@ export default defineConfig({
   plugins: [
     react(),
     {
-      name: 'ty-claude-development-csp',
+      name: 'ty-code-development-csp',
       transformIndexHtml(html, context) {
         if (!context.server) return html;
         const policy = "default-src 'self'; script-src 'self' 'unsafe-inline'; worker-src 'self'; child-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https://open-vsx.org; connect-src 'self' http://localhost:5173 ws://localhost:5173";

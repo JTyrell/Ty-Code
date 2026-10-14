@@ -169,7 +169,7 @@ export const ChatSidecar: React.FC = () => {
     </header>
 
     <div ref={feedRef} onScroll={handleScroll} className="chat-feed" aria-live="polite">
-      {messages.length === 0 && !streamingText && <div className="chat-empty-state"><Sparkles size={30} color="var(--border-strong)" /><strong>How can Ty-Claude help you today?</strong><span>Explore your workspace, implement a feature, fix a bug, or run a test suite.</span></div>}
+      {messages.length === 0 && !streamingText && <div className="chat-empty-state"><Sparkles size={30} color="var(--border-strong)" /><strong>How can Ty-Code help you today?</strong><span>Explore your workspace, implement a feature, fix a bug, or run a test suite.</span></div>}
       {messages.map((message) => <article key={message.id} className={`chat-message is-${message.role}`}>
         {message.role === 'user' ? <div className="user-message-bubble">{message.content}</div> : <div className="assistant-message-bubble">
           {message.toolCall && <ToolCard tool={message.toolCall} status={message.toolStatus} output={message.toolResult?.output ?? (message.toolStatus === 'running' ? undefined : message.content || undefined)} />}
@@ -192,13 +192,13 @@ export const ChatSidecar: React.FC = () => {
         <span className="agent-approval-note">The protected Git or destructive shell command will not run until approved. The request expires after two minutes.</span>
       </article>}
       {currentThought && <div className="chat-reasoning is-live"><strong>Reasoning</strong><span>{currentThought}</span></div>}
-      {firstTokenPending && <div className="chat-typing-indicator" role="status"><Loader2 size={12} className="animate-spin" color="var(--accent-primary)" /><span>Ty-Claude is thinking…</span></div>}
+      {firstTokenPending && <div className="chat-typing-indicator" role="status"><Loader2 size={12} className="animate-spin" color="var(--accent-primary)" /><span>Ty-Code is thinking…</span></div>}
       <div ref={messagesEndRef} />
     </div>
 
     <form onSubmit={handleSubmit} className="chat-composer">
       <div className="chat-composer-field">
-        <textarea value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={handleKeyDown} placeholder="Ask Ty-Claude… (Enter to send)" aria-label="Message Ty-Claude" rows={3} />
+        <textarea value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={handleKeyDown} placeholder="Ask Ty-Code… (Enter to send)" aria-label="Message Ty-Code" rows={3} />
         {isRunning ? <button type="button" onClick={() => void stopTask()} className="chat-send-button is-stop" title="Stop agent" aria-label="Stop agent"><Square size={12} /></button>
           : <button type="submit" disabled={!input.trim()} className="chat-send-button" title="Send message" aria-label="Send message"><Send size={13} /></button>}
       </div>

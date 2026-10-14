@@ -16,7 +16,7 @@ export class StorageCache {
   private memoryCache: Map<string, CacheEntry<unknown>> = new Map();
   private dbPromise: Promise<IDBDatabase | null> | null = null;
 
-  constructor(dbName = 'ty_claude_cache', storeName = 'general') {
+  constructor(dbName = 'ty_code_cache', storeName = 'general') {
     this.dbName = dbName;
     this.storeName = storeName;
     this.initDb();

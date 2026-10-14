@@ -50,8 +50,8 @@ export function generateReleaseNotes(options = {}) {
     }
   }
 
-  let output = `# Ty-Claude v${version} (${date})\n\n`;
-  output += `Welcome to **Ty-Claude v${version}**! This release brings major polish, 60fps performance optimizations, virtual scrolling, auto-updates, and multi-platform distribution packages for Windows, macOS, and Linux.\n\n`;
+  let output = `# Ty-Code v${version} (${date})\n\n`;
+  output += `Welcome to **Ty-Code v${version}**! This release brings major polish, 60fps performance optimizations, virtual scrolling, auto-updates, and multi-platform distribution packages for Windows, macOS, and Linux.\n\n`;
 
   output += `## 🌟 Highlights\n`;
   output += `- **Virtual File Tree**: Smooth 60fps scrolling and instant navigation across 10,000+ files.\n`;
@@ -76,9 +76,9 @@ export function generateReleaseNotes(options = {}) {
   output += renderSection('🔧 Build & System', categories.tooling);
 
   output += `## 📦 Download Packages\n`;
-  output += `- **Windows**: \`Ty-Claude-Setup-${version}.exe\` (NSIS Installer) / \`Ty-Claude-${version}-portable.exe\`\n`;
-  output += `- **macOS**: \`Ty-Claude-${version}-universal.dmg\` (Apple Silicon & Intel) / \`Ty-Claude-${version}-mac.zip\`\n`;
-  output += `- **Linux**: \`Ty-Claude-${version}.AppImage\` / \`ty-claude_${version}_amd64.deb\` / \`ty-claude-${version}.x86_64.rpm\`\n\n`;
+  output += `- **Windows**: \`Ty-Code-Setup-${version}.exe\` (NSIS Installer) / \`Ty-Code-${version}-portable.exe\`\n`;
+  output += `- **macOS**: \`Ty-Code-${version}-universal.dmg\` (Apple Silicon & Intel) / \`Ty-Code-${version}-mac.zip\`\n`;
+  output += `- **Linux**: \`Ty-Code-${version}.AppImage\` / \`ty-code_${version}_amd64.deb\` / \`ty-code-${version}.x86_64.rpm\`\n\n`;
 
   output += `## 🔐 Checksums & Verification\n`;
   output += `Every release artifact is accompanied by a SHA256 checksum file in the release assets.\n`;

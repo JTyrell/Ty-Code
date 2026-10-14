@@ -51,7 +51,7 @@ export const ExtensionManifestSchema = z.object({
   icon: z.string().max(500).optional(),
   categories: z.array(z.string().min(1).max(60)).max(20).optional(),
   capabilities: z.array(ExtensionCapabilitySchema).max(20).optional(),
-  engines: z.object({ vscode: z.string().max(100).optional(), 'ty-claude': z.string().max(100).optional() }).strict().optional(),
+  engines: z.object({ vscode: z.string().max(100).optional(), 'ty-code': z.string().max(100).optional(), 'ty-claude': z.string().max(100).optional() }).strict().optional(),
   activationEvents: z.array(z.string().max(120)).max(50).optional(),
   contributes: z.object({
     commands: z.array(ExtensionCommandSchema).max(100).optional(),

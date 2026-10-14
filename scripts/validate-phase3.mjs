@@ -8,11 +8,11 @@ import { build } from 'esbuild';
 
 const require = createRequire(import.meta.url);
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-process.env.GIT_AUTHOR_NAME = 'Ty-Claude Test';
-process.env.GIT_AUTHOR_EMAIL = 'ty-claude-test@example.invalid';
-process.env.GIT_COMMITTER_NAME = 'Ty-Claude Test';
-process.env.GIT_COMMITTER_EMAIL = 'ty-claude-test@example.invalid';
-const testDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ty-claude-phase3-'));
+process.env.GIT_AUTHOR_NAME = 'Ty-Code Test';
+process.env.GIT_AUTHOR_EMAIL = 'ty-code-test@example.invalid';
+process.env.GIT_COMMITTER_NAME = 'Ty-Code Test';
+process.env.GIT_COMMITTER_EMAIL = 'ty-code-test@example.invalid';
+const testDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ty-code-phase3-'));
 const bundleDir = path.join(testDir, 'bundle');
 await fs.mkdir(bundleDir, { recursive: true });
 
@@ -45,7 +45,7 @@ function mockSseResponse(event) {
 
 async function runPhase3Validation() {
   console.log('\n======================================================');
-  console.log('  TY-CLAUDE PHASE 3: GIT & SOURCE CONTROL VALIDATION');
+  console.log('  TY-CODE PHASE 3: GIT & SOURCE CONTROL VALIDATION');
   console.log('======================================================\n');
 
   const repoDir = path.join(testDir, 'repo');
@@ -66,7 +66,7 @@ async function runPhase3Validation() {
   // 2. Status Tracking (Untracked Files)
   console.log('\n--- Assertion 2: Status Tracking & Untracked Files ---');
   const readmePath = path.join(repoDir, 'README.md');
-  await fs.writeFile(readmePath, '# Ty-Claude Phase 3 Repo\nInitial content\n', 'utf-8');
+  await fs.writeFile(readmePath, '# Ty-Code Phase 3 Repo\nInitial content\n', 'utf-8');
 
   const status1 = await gitService.getStatus(repoDir);
   assert.strictEqual(status1.isRepo, true, 'Repository status isRepo should be true');

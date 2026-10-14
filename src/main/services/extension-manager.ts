@@ -1,4 +1,5 @@
-import fs from 'fs/promises';
+import fs from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import path from 'path';
 import os from 'os';
 import { ExtensionIdSchema, ExtensionManifestSchema, ExtensionMetadataSchema, validateExtensionSettings } from '../../preload/extension-schemas';
@@ -40,7 +41,9 @@ export class ExtensionManager {
 
   constructor(customBaseDir?: string) {
     const base = customBaseDir || getElectronUserData() || os.homedir();
-    this.extensionsDir = path.join(base, '.ty-claude', 'extensions');
+    const legacyDir = path.join(base, '.ty-claude', 'extensions');
+    const newDir = path.join(base, '.ty-code', 'extensions');
+    this.extensionsDir = existsSync(legacyDir) && !existsSync(newDir) ? legacyDir : newDir;
     this.installedFile = path.join(this.extensionsDir, 'installed.json');
   }
 
@@ -179,7 +182,7 @@ export class ExtensionManager {
           name: 'ai-copilot',
           publisher: 'ty-claude',
           version: '1.0.4',
-          displayName: 'Ty-Claude AI Copilot (Inline Assistant)',
+          displayName: 'Ty-Code AI Copilot (Inline Assistant)',
           description: 'Context-aware code completion, prompt-to-code generation, and automated refactoring in Monaco editor.',
           categories: ['AI', 'Tools'],
           capabilities: ['commands.register', 'editor.read', 'editor.edit', 'window.messages', 'window.input', 'agent.request'],

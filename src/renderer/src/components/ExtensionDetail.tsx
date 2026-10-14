@@ -328,7 +328,7 @@ export const ExtensionDetail: React.FC<ExtensionDetailProps> = ({ item, onClose 
               <div style={{ marginTop: '12px', padding: '12px', borderRadius: '6px', backgroundColor: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '11px', color: 'var(--text-secondary)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600, color: 'var(--text-primary)' }}>
                   <ShieldCheck size={14} color="var(--accent-green)" />
-                  <span>{isBuiltIn ? 'Ty-Claude Extension API' : 'Metadata only'}</span>
+                  <span>{isBuiltIn ? 'Ty-Code Extension API' : 'Metadata only'}</span>
                 </div>
                 <span>{isBuiltIn ? 'Trusted built-in commands run in an isolated Worker and receive only declared, mediated capabilities. Community code is not executed.' : 'This package is stored as metadata only. Its code and contributed commands are not installed or executed.'}</span>
               </div>

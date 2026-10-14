@@ -1,4 +1,4 @@
-# Ty-Claude Extension API Matrix
+# Ty-Code Extension API Matrix
 
 ## Runtime policy
 
@@ -13,7 +13,7 @@ All extension RPC messages are limited to 256 KiB, correlated by UUID and per-se
 | `commands` | Register and run statically bundled built-in commands; IDs must be declared in the manifest and begin with the owning extension ID. Duplicate registration is rejected. | `commands.register` |
 | `workspace.fs` | Read existing files up to 200 KiB and write text up to 50,000 characters using workspace-relative paths. The active workspace, path containment, symlink targets and sensitive `.env` segments are checked in main. | `workspace.fs.read`, `workspace.fs.write` |
 | `editor` | Read the active document and apply content to its open editor tab as a dirty edit. Disk writes remain user-controlled via normal save behavior. | `editor.read`, `editor.edit` |
-| `window` | Show a Ty-Claude toast message and request a string through an accessible modal prompt. | `window.messages`, `window.input` |
+| `window` | Show a Ty-Code toast message and request a string through an accessible modal prompt. | `window.messages`, `window.input` |
 | `terminal` | Open the integrated terminal surface. Command text and process creation are not exposed to extensions. | `terminal.open` |
 | `agent` | A trusted built-in can submit a request to the existing AI assistant flow after a user invokes its registered command. | `agent.request` |
 | `git` | Refresh source-control state and copy the configured repository remote. No mutating Git action is exposed through the extension API. | `git.read` |
@@ -38,4 +38,4 @@ IDs use lowercase `publisher.name` slugs. Manifest versions must be semantic ver
 
 ## Author guidance
 
-Treat this API as a Ty-Claude-specific contract, not a drop-in host for packages that expect Node.js or an editor workbench runtime. For current distribution, provide listings as discovery metadata only and keep executable logic inside reviewed, statically bundled built-ins. A future third-party compatibility layer will document its exact API surface and migration rules before it is enabled.
+Treat this API as a Ty-Code-specific contract, not a drop-in host for packages that expect Node.js or an editor workbench runtime. For current distribution, provide listings as discovery metadata only and keep executable logic inside reviewed, statically bundled built-ins. A future third-party compatibility layer will document its exact API surface and migration rules before it is enabled.

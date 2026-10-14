@@ -276,7 +276,7 @@ export const SourceControlPanel: React.FC = () => {
       </span>
     </div>
 
-    <div className="source-control-credential-note" style={{ padding: '6px 9px 0' }} title="Credentials are supplied by your operating system's configured Git credential helper; Ty-Claude does not store remote passwords or tokens.">
+    <div className="source-control-credential-note" style={{ padding: '6px 9px 0' }} title="Credentials are supplied by your operating system's configured Git credential helper; Ty-Code does not store remote passwords or tokens.">
       <ShieldCheck size={11} /><span>{remoteConfigured ? `GitHub, GitLab & Bitbucket credentials use your OS Git helper · ${remotes.map((remote) => remote.provider || 'remote').join(', ')}` : 'No remote configured. Add a remote in the terminal; credentials remain in your OS Git helper.'}</span>
     </div>
     {isNestedWorkspace && <div className="source-control-status" role="note">Changes, commits, and stashes are limited to this folder. Remote sync still affects the whole Git repository.</div>}

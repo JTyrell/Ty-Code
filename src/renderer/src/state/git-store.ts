@@ -129,7 +129,7 @@ export const useGitStore = create<GitStoreState>((set, get) => ({
 
   refreshStatus: async (loadMetadata = false) => {
     if (!window.electronAPI?.gitGetStatus) {
-      set({ status: emptyStatus(), error: 'Git source control is available in the Ty-Claude desktop app.' });
+      set({ status: emptyStatus(), error: 'Git source control is available in the Ty-Code desktop app.' });
       return;
     }
     try {

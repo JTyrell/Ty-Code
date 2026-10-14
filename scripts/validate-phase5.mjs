@@ -8,7 +8,7 @@ import { build } from 'esbuild';
 
 const require = createRequire(import.meta.url);
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const testDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ty-claude-phase5-'));
+const testDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ty-code-phase5-'));
 const bundleDir = path.join(testDir, 'bundle');
 await fs.mkdir(bundleDir, { recursive: true });
 
@@ -38,7 +38,7 @@ const { DEFAULT_KEYBINDINGS, DEFAULT_EDITOR_SETTINGS, SETTINGS_JSON_SCHEMA, KEYB
 
 async function runPhase5Validation() {
   console.log('\n=============================================================');
-  console.log('  TY-CLAUDE PHASE 5: ADVANCED EDITOR & LSP PROTOCOL VALIDATION');
+  console.log('  TY-CODE PHASE 5: ADVANCED EDITOR & LSP PROTOCOL VALIDATION');
   console.log('=============================================================\n');
 
   // --- Assertion 1: LSP JSON-RPC 2.0 Framing & Message Serialization ---
@@ -133,8 +133,8 @@ async function runPhase5Validation() {
   console.log('\n--- Assertion 4: Document Synchronization (Open, Change, Save, Close) ---');
   const docPath = path.join(testDir, 'sample.ts');
   await manager.onDocumentOpened(docPath, 'typescript', 'const greeting = "Hello World";');
-  manager.onDocumentChanged(docPath, 'const greeting = "Hello Ty-Claude";');
-  manager.onDocumentSaved(docPath, 'const greeting = "Hello Ty-Claude";');
+  manager.onDocumentChanged(docPath, 'const greeting = "Hello Ty-Code";');
+  manager.onDocumentSaved(docPath, 'const greeting = "Hello Ty-Code";');
   manager.onDocumentClosed(docPath);
   console.log('✓ Document synchronization lifecycle completed without error');
 

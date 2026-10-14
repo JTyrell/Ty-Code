@@ -105,7 +105,7 @@ export const TerminalDrawer: React.FC = () => {
 
   useEffect(() => {
     if (!window.electronAPI) {
-      setTerminalError('Interactive terminals are available in the Ty-Claude desktop app.');
+      setTerminalError('Interactive terminals are available in the Ty-Code desktop app.');
       return;
     }
     let cancelled = false;
@@ -136,7 +136,7 @@ export const TerminalDrawer: React.FC = () => {
     setShowShellMenu(false);
     setTerminalError('');
     if (!window.electronAPI) {
-      setTerminalError('Interactive terminals are available in the Ty-Claude desktop app.');
+      setTerminalError('Interactive terminals are available in the Ty-Code desktop app.');
       return;
     }
     let response;

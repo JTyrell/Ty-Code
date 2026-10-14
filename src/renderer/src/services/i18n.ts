@@ -19,7 +19,7 @@ export const AVAILABLE_LOCALES: LocaleInfo[] = [
 
 const TRANSLATIONS: Record<SupportedLocale, Record<string, string>> = {
   en: {
-    'app.title': 'Ty-Claude - Desktop AI Coding Assistant',
+    'app.title': 'Ty-Code - Desktop AI Coding Assistant',
     'common.open': 'Open',
     'common.close': 'Close',
     'common.save': 'Save',
@@ -29,7 +29,7 @@ const TRANSLATIONS: Record<SupportedLocale, Record<string, string>> = {
     'common.refresh': 'Refresh',
     'common.settings': 'Settings',
     'common.search': 'Search',
-    'welcome.title': 'Welcome to Ty-Claude',
+    'welcome.title': 'Welcome to Ty-Code',
     'welcome.subtitle': 'Autonomous AI-powered coding editor with Monaco intelligence',
     'welcome.openFolder': 'Open Folder',
     'welcome.newFile': 'New File',
@@ -51,7 +51,7 @@ const TRANSLATIONS: Record<SupportedLocale, Record<string, string>> = {
     'update.check': 'Check for Updates',
     'update.checking': 'Checking for updates…',
     'update.available': 'Update available: v{version}',
-    'update.upToDate': 'Ty-Claude is up to date',
+    'update.upToDate': 'Ty-Code is up to date',
     'update.download': 'Download Update',
     'update.downloading': 'Downloading update ({percent}%)…',
     'update.downloaded': 'Update downloaded! Restart to apply.',
@@ -61,7 +61,7 @@ const TRANSLATIONS: Record<SupportedLocale, Record<string, string>> = {
     'theme.highContrast': 'High Contrast'
   },
   es: {
-    'app.title': 'Ty-Claude - Asistente de Código IA de Escritorio',
+    'app.title': 'Ty-Code - Asistente de Código IA de Escritorio',
     'common.open': 'Abrir',
     'common.close': 'Cerrar',
     'common.save': 'Guardar',
@@ -71,7 +71,7 @@ const TRANSLATIONS: Record<SupportedLocale, Record<string, string>> = {
     'common.refresh': 'Actualizar',
     'common.settings': 'Configuración',
     'common.search': 'Buscar',
-    'welcome.title': 'Bienvenido a Ty-Claude',
+    'welcome.title': 'Bienvenido a Ty-Code',
     'welcome.subtitle': 'Editor de código impulsado por IA con inteligencia Monaco',
     'welcome.openFolder': 'Abrir Carpeta',
     'welcome.newFile': 'Nuevo Archivo',
@@ -93,7 +93,7 @@ const TRANSLATIONS: Record<SupportedLocale, Record<string, string>> = {
     'update.check': 'Buscar Actualizaciones',
     'update.checking': 'Buscando actualizaciones…',
     'update.available': 'Actualización disponible: v{version}',
-    'update.upToDate': 'Ty-Claude está actualizado',
+    'update.upToDate': 'Ty-Code está actualizado',
     'update.download': 'Descargar Actualización',
     'update.downloading': 'Descargando ({percent}%)…',
     'update.downloaded': '¡Descarga completa! Reinicie para instalar.',
@@ -103,7 +103,7 @@ const TRANSLATIONS: Record<SupportedLocale, Record<string, string>> = {
     'theme.highContrast': 'Alto Contraste'
   },
   ja: {
-    'app.title': 'Ty-Claude - デスクトップAIコーディングアシスタント',
+    'app.title': 'Ty-Code - デスクトップAIコーディングアシスタント',
     'common.open': '開く',
     'common.close': '閉じる',
     'common.save': '保存',
@@ -113,7 +113,7 @@ const TRANSLATIONS: Record<SupportedLocale, Record<string, string>> = {
     'common.refresh': '更新',
     'common.settings': '設定',
     'common.search': '検索',
-    'welcome.title': 'Ty-Claude へようこそ',
+    'welcome.title': 'Ty-Code へようこそ',
     'welcome.subtitle': 'Monacoエディタと自律型AIを融合した次世代コーディング環境',
     'welcome.openFolder': 'フォルダーを開く',
     'welcome.newFile': '新しいファイル',
@@ -145,7 +145,7 @@ const TRANSLATIONS: Record<SupportedLocale, Record<string, string>> = {
     'theme.highContrast': 'ハイコントラスト'
   },
   zh: {
-    'app.title': 'Ty-Claude - 桌面AI编程助手',
+    'app.title': 'Ty-Code - 桌面AI编程助手',
     'common.open': '打开',
     'common.close': '关闭',
     'common.save': '保存',
@@ -155,7 +155,7 @@ const TRANSLATIONS: Record<SupportedLocale, Record<string, string>> = {
     'common.refresh': '刷新',
     'common.settings': '设置',
     'common.search': '搜索',
-    'welcome.title': '欢迎使用 Ty-Claude',
+    'welcome.title': '欢迎使用 Ty-Code',
     'welcome.subtitle': '搭载 Monaco 编辑器与自律型 AI 的现代编码平台',
     'welcome.openFolder': '打开文件夹',
     'welcome.newFile': '新建文件',
@@ -187,7 +187,7 @@ const TRANSLATIONS: Record<SupportedLocale, Record<string, string>> = {
     'theme.highContrast': '高对比度模式'
   },
   de: {
-    'app.title': 'Ty-Claude - Desktop-KI-Programmierassistent',
+    'app.title': 'Ty-Code - Desktop-KI-Programmierassistent',
     'common.open': 'Öffnen',
     'common.close': 'Schließen',
     'common.save': 'Speichern',
@@ -197,7 +197,7 @@ const TRANSLATIONS: Record<SupportedLocale, Record<string, string>> = {
     'common.refresh': 'Aktualisieren',
     'common.settings': 'Einstellungen',
     'common.search': 'Suchen',
-    'welcome.title': 'Willkommen bei Ty-Claude',
+    'welcome.title': 'Willkommen bei Ty-Code',
     'welcome.subtitle': 'KI-gestützter Code-Editor mit Monaco-Intelligenz',
     'welcome.openFolder': 'Ordner öffnen',
     'welcome.newFile': 'Neue Datei',
@@ -219,7 +219,7 @@ const TRANSLATIONS: Record<SupportedLocale, Record<string, string>> = {
     'update.check': 'Nach Updates suchen',
     'update.checking': 'Suche nach Updates…',
     'update.available': 'Update verfügbar: v{version}',
-    'update.upToDate': 'Ty-Claude ist auf dem neuesten Stand',
+    'update.upToDate': 'Ty-Code ist auf dem neuesten Stand',
     'update.download': 'Update herunterladen',
     'update.downloading': 'Download läuft ({percent}%)…',
     'update.downloaded': 'Update heruntergeladen! Neustarten zum Installieren.',
@@ -229,7 +229,7 @@ const TRANSLATIONS: Record<SupportedLocale, Record<string, string>> = {
     'theme.highContrast': 'Hoher Kontrast'
   },
   fr: {
-    'app.title': 'Ty-Claude - Assistant de codage IA de bureau',
+    'app.title': 'Ty-Code - Assistant de codage IA de bureau',
     'common.open': 'Ouvrir',
     'common.close': 'Fermer',
     'common.save': 'Enregistrer',
@@ -239,7 +239,7 @@ const TRANSLATIONS: Record<SupportedLocale, Record<string, string>> = {
     'common.refresh': 'Actualiser',
     'common.settings': 'Paramètres',
     'common.search': 'Rechercher',
-    'welcome.title': 'Bienvenue sur Ty-Claude',
+    'welcome.title': 'Bienvenue sur Ty-Code',
     'welcome.subtitle': 'Éditeur de code alimenté par l’IA avec Monaco Editor',
     'welcome.openFolder': 'Ouvrir un dossier',
     'welcome.newFile': 'Nouveau fichier',
@@ -261,7 +261,7 @@ const TRANSLATIONS: Record<SupportedLocale, Record<string, string>> = {
     'update.check': 'Vérifier les mises à jour',
     'update.checking': 'Vérification en cours…',
     'update.available': 'Mise à jour disponible: v{version}',
-    'update.upToDate': 'Ty-Claude est à jour',
+    'update.upToDate': 'Ty-Code est à jour',
     'update.download': 'Télécharger la mise à jour',
     'update.downloading': 'Téléchargement ({percent}%)…',
     'update.downloaded': 'Téléchargement terminé ! Redémarrez pour appliquer.',
