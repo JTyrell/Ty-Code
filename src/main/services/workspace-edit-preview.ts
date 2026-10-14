@@ -266,7 +266,7 @@ export class WorkspaceEditPreviewService {
         const file = files[index];
         const rollbackPath = path.join(path.dirname(file.absolutePath), `.ty-code-rollback-${transactionId}-${index}.tmp`);
         try {
-          await fs.writeFile(rollbackPath, file.content, { encoding: 'utf8', flag: 'wx', mode: file.mode });
+          await fs.writeFile(rollbackPath, file.rollbackContent, { encoding: 'utf8', flag: 'wx', mode: file.mode });
           await fs.rename(rollbackPath, file.absolutePath);
         } catch (rollbackFailure) {
           rollbackError = rollbackFailure;
@@ -291,7 +291,7 @@ export class WorkspaceEditPreviewService {
     try {
       for (const file of stored.files) await this.validateFreshness(file, stored.publicPreview.origin);
       const transactionId = randomUUID();
-      const writeFiles = stored.files.map((file) => ({ absolutePath: file.absolutePath, content: file.modifiedContent, mode: file.mode }));
+      const writeFiles = stored.files.map((file) => ({ absolutePath: file.absolutePath, content: file.modifiedContent, rollbackContent: file.originalDiskContent, mode: file.mode }));
       await this.commitContents(writeFiles, transactionId);
       const undoFiles = stored.files.map((file) => ({ ...file, afterContent: file.modifiedContent, afterHash: hashContent(file.modifiedContent) }));
       this.undoEntries.push({ transactionId, origin: stored.publicPreview.origin, createdAt: Date.now(), files: undoFiles });
@@ -319,7 +319,7 @@ export class WorkspaceEditPreviewService {
         if (hashContent(current) !== file.afterHash) throw new Error(`Cannot undo the entire operation because ${file.filePath} changed after it was applied. No files were changed.`);
       }
       const undoId = randomUUID();
-      await this.commitContents(entry.files.map((file) => ({ absolutePath: file.absolutePath, content: file.originalDiskContent, mode: file.mode })), undoId);
+      await this.commitContents(entry.files.map((file) => ({ absolutePath: file.absolutePath, content: file.originalDiskContent, rollbackContent: file.afterContent, mode: file.mode })), undoId);
       this.undoEntries.pop();
       for (const file of entry.files) this.lspManager.applyDocumentContent(file.absolutePath, file.originalBufferContent, file.originalDiskContent);
       return {

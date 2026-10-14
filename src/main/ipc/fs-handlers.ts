@@ -305,7 +305,7 @@ function matchesPatternFilter(relPath: string, include?: string, exclude?: strin
   return true;
 }
 
-function buildSearchRegex(options: SearchInFilesOptions): RegExp {
+export function buildSearchRegex(options: SearchInFilesOptions): RegExp {
   let pattern = options.query;
   if (!options.isRegex) {
     pattern = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
