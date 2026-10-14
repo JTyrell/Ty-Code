@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import ReactMarkdown from 'react-markdown';
 import {
   Send,
   Square,
@@ -10,19 +11,101 @@ import {
   FileCode,
   Check,
   Eye,
-  AlertCircle
+  AlertCircle,
+  Copy,
+  RotateCcw,
+  Loader2
 } from 'lucide-react';
 import { useChatStore } from '../state/chat-store';
 import { useWorkspaceStore } from '../state/workspace-store';
 import type { ChatMessage, ToolCall, ProposedDiff } from '../../../preload/types';
 
+interface CodeBlockProps {
+  language?: string;
+  value: string;
+}
+
+const CodeBlock: React.FC<CodeBlockProps> = ({ language, value }) => {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(value);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1800);
+  };
+
+  return (
+    <div
+      style={{
+        margin: '8px 0',
+        borderRadius: '6px',
+        overflow: 'hidden',
+        border: '1px solid var(--border-subtle)',
+        backgroundColor: '#0d0e11'
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '4px 10px',
+          backgroundColor: 'var(--bg-tertiary)',
+          fontSize: '11px',
+          color: 'var(--text-muted)',
+          fontFamily: 'var(--font-mono)'
+        }}
+      >
+        <span>{language || 'text'}</span>
+        <button
+          onClick={handleCopy}
+          style={{
+            padding: '2px 6px',
+            fontSize: '10px',
+            color: copied ? 'var(--accent-green)' : 'var(--text-secondary)'
+          }}
+          title="Copy code"
+        >
+          {copied ? (
+            <>
+              <Check size={11} color="var(--accent-green)" />
+              <span>Copied</span>
+            </>
+          ) : (
+            <>
+              <Copy size={11} />
+              <span>Copy</span>
+            </>
+          )}
+        </button>
+      </div>
+
+      <pre
+        style={{
+          margin: 0,
+          padding: '10px',
+          fontSize: '11px',
+          fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+          lineHeight: 1.45,
+          overflowX: 'auto',
+          color: '#e2e8f0',
+          whiteSpace: 'pre'
+        }}
+      >
+        <code>{value}</code>
+      </pre>
+    </div>
+  );
+};
+
 interface ToolCardProps {
   tool: ToolCall;
   output?: string;
   isError?: boolean;
+  isRunning?: boolean;
 }
 
-const ToolCard: React.FC<ToolCardProps> = ({ tool, output, isError }) => {
+const ToolCard: React.FC<ToolCardProps> = ({ tool, output, isError, isRunning }) => {
   const [expanded, setExpanded] = useState(false);
 
   return (
@@ -30,7 +113,9 @@ const ToolCard: React.FC<ToolCardProps> = ({ tool, output, isError }) => {
       <div
         className="tool-header"
         onClick={() => setExpanded(!expanded)}
-        style={{ color: isError ? 'var(--accent-red)' : 'var(--text-primary)' }}
+        style={{
+          color: isError ? 'var(--accent-red)' : isRunning ? 'var(--accent-primary)' : 'var(--text-primary)'
+        }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
@@ -40,11 +125,20 @@ const ToolCard: React.FC<ToolCardProps> = ({ tool, output, isError }) => {
             ({Object.keys(tool.arguments || {}).length} args)
           </span>
         </div>
-        {output && (
-          <span style={{ fontSize: '10px', color: isError ? 'var(--accent-red)' : 'var(--accent-green)' }}>
-            {isError ? 'Failed' : 'Success'}
-          </span>
-        )}
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          {isRunning ? (
+            <span style={{ fontSize: '10px', color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <Loader2 size={11} className="animate-spin" />
+              <span>Running</span>
+            </span>
+          ) : output ? (
+            <span style={{ fontSize: '10px', color: isError ? 'var(--accent-red)' : 'var(--accent-green)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              {isError ? <AlertCircle size={11} /> : <Check size={11} />}
+              <span>{isError ? 'Failed' : 'Success'}</span>
+            </span>
+          ) : null}
+        </div>
       </div>
 
       {expanded && (
@@ -69,6 +163,8 @@ const ToolCard: React.FC<ToolCardProps> = ({ tool, output, isError }) => {
 export const ChatSidecar: React.FC = () => {
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const feedRef = useRef<HTMLDivElement>(null);
+  const userAtBottomRef = useRef(true);
 
   const {
     messages,
@@ -82,15 +178,19 @@ export const ChatSidecar: React.FC = () => {
   } = useChatStore();
 
   const { workspacePath, activeTabPath, openTabs, openDiffReview, applyDiff } = useWorkspaceStore();
-
   const activeTab = openTabs.find((t) => t.path === activeTabPath);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  // Monitor user scrolling: if user scrolled up, do not force-scroll down
+  const handleScroll = () => {
+    if (!feedRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = feedRef.current;
+    userAtBottomRef.current = scrollHeight - scrollTop - clientHeight < 60;
   };
 
   useEffect(() => {
-    scrollToBottom();
+    if (userAtBottomRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
   }, [messages, streamingText, currentThought, currentStatus]);
 
   const handleSubmit = (e?: React.FormEvent) => {
@@ -99,6 +199,7 @@ export const ChatSidecar: React.FC = () => {
 
     const promptText = input.trim();
     setInput('');
+    userAtBottomRef.current = true;
 
     sendMessage(
       promptText,
@@ -106,6 +207,20 @@ export const ChatSidecar: React.FC = () => {
       activeTab?.path,
       activeTab?.content
     );
+  };
+
+  const handleRegenerate = () => {
+    if (isRunning) return;
+    const lastUserMsg = [...messages].reverse().find((m) => m.role === 'user');
+    if (lastUserMsg) {
+      userAtBottomRef.current = true;
+      sendMessage(
+        lastUserMsg.content,
+        workspacePath,
+        activeTab?.path,
+        activeTab?.content
+      );
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -154,11 +269,14 @@ export const ChatSidecar: React.FC = () => {
                 color: 'var(--accent-primary)',
                 background: 'rgba(139, 92, 246, 0.1)',
                 padding: '2px 6px',
-                borderRadius: '4px'
+                borderRadius: '4px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px'
               }}
-              className="animate-pulse"
             >
-              {currentStatus}
+              <Loader2 size={10} className="animate-spin" />
+              <span>{currentStatus}</span>
             </span>
           )}
           <button onClick={clearChat} title="Clear Chat History" style={{ padding: '3px' }}>
@@ -168,7 +286,11 @@ export const ChatSidecar: React.FC = () => {
       </div>
 
       {/* Message History Feed */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '12px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+      <div
+        ref={feedRef}
+        onScroll={handleScroll}
+        style={{ flex: 1, overflowY: 'auto', padding: '12px', display: 'flex', flexDirection: 'column', gap: '12px' }}
+      >
         {messages.length === 0 && !streamingText && (
           <div
             style={{
@@ -191,7 +313,7 @@ export const ChatSidecar: React.FC = () => {
           </div>
         )}
 
-        {messages.map((msg) => (
+        {messages.map((msg, idx) => (
           <div
             key={msg.id}
             style={{
@@ -290,7 +412,60 @@ export const ChatSidecar: React.FC = () => {
                   </div>
                 ))}
 
-                <div style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</div>
+                {/* Render Markdown Response */}
+                <div style={{ lineHeight: 1.5 }}>
+                  <ReactMarkdown
+                    components={{
+                      code({ className, children, ...props }) {
+                        const match = /language-(\w+)/.exec(className || '');
+                        const codeText = String(children).replace(/\n$/, '');
+                        const isBlock = match || codeText.includes('\n');
+
+                        if (isBlock) {
+                          return <CodeBlock language={match?.[1]} value={codeText} />;
+                        }
+                        return (
+                          <code
+                            style={{
+                              backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                              padding: '2px 5px',
+                              borderRadius: '4px',
+                              fontFamily: 'var(--font-mono)',
+                              fontSize: '11px',
+                              color: 'var(--accent-cyan)'
+                            }}
+                            {...props}
+                          >
+                            {children}
+                          </code>
+                        );
+                      }
+                    }}
+                  >
+                    {msg.content}
+                  </ReactMarkdown>
+                </div>
+
+                {/* Regenerate Button if Last Assistant Message */}
+                {idx === messages.length - 1 && !isRunning && (
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>
+                    <button
+                      onClick={handleRegenerate}
+                      style={{
+                        padding: '3px 8px',
+                        fontSize: '10px',
+                        backgroundColor: 'var(--bg-secondary)',
+                        border: '1px solid var(--border-subtle)',
+                        borderRadius: '4px',
+                        color: 'var(--text-secondary)'
+                      }}
+                      title="Regenerate last response"
+                    >
+                      <RotateCcw size={11} />
+                      <span>Regenerate</span>
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -307,11 +482,38 @@ export const ChatSidecar: React.FC = () => {
               borderRadius: '0 8px 8px 8px',
               fontSize: '12px',
               lineHeight: 1.6,
-              whiteSpace: 'pre-wrap',
               wordBreak: 'break-word'
             }}
           >
-            {streamingText}
+            <ReactMarkdown
+              components={{
+                code({ className, children, ...props }) {
+                  const match = /language-(\w+)/.exec(className || '');
+                  const codeText = String(children).replace(/\n$/, '');
+                  const isBlock = match || codeText.includes('\n');
+                  if (isBlock) {
+                    return <CodeBlock language={match?.[1]} value={codeText} />;
+                  }
+                  return (
+                    <code
+                      style={{
+                        backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                        padding: '2px 5px',
+                        borderRadius: '4px',
+                        fontFamily: 'var(--font-mono)',
+                        fontSize: '11px',
+                        color: 'var(--accent-cyan)'
+                      }}
+                      {...props}
+                    >
+                      {children}
+                    </code>
+                  );
+                }
+              }}
+            >
+              {streamingText}
+            </ReactMarkdown>
           </div>
         )}
 
@@ -329,9 +531,26 @@ export const ChatSidecar: React.FC = () => {
             }}
           >
             <div style={{ fontWeight: 600, marginBottom: '4px', color: 'var(--accent-cyan)' }}>
-              Reasoning Process:
+              Reasoning Process (DeepSeek R1):
             </div>
             {currentThought}
+          </div>
+        )}
+
+        {/* Typing indicator while waiting for first token */}
+        {isRunning && !streamingText && !currentThought && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '8px 12px',
+              color: 'var(--text-muted)',
+              fontSize: '11px'
+            }}
+          >
+            <Loader2 size={12} className="animate-spin" color="var(--accent-primary)" />
+            <span>Ty-Claude is thinking...</span>
           </div>
         )}
 

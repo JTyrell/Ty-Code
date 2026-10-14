@@ -47,6 +47,7 @@ const api: ElectronAPI = {
   spawnPty: (options: PtySpawnOptions) => ipcRenderer.invoke('pty:spawn', options),
   writePty: (ptyId: string, data: string) => ipcRenderer.send('pty:write', { ptyId, data }),
   resizePty: (ptyId: string, cols: number, rows: number) => ipcRenderer.send('pty:resize', { ptyId, cols, rows }),
+  syncPtyCwd: (ptyId: string, targetCwd: string, shellId: string) => ipcRenderer.send('pty:sync-cwd', { ptyId, targetCwd, shellId }),
   killPty: (ptyId: string) => ipcRenderer.invoke('pty:kill', ptyId),
   onPtyData: (ptyId: string, callback: (data: string) => void) => {
     const channel = `pty:data:${ptyId}`;

@@ -104,17 +104,22 @@ export function spawnPtySession(
     const rows = options.rows || 24;
     const cwd = options.cwd || process.cwd();
 
+    // Inherit full parent environment with UTF-8 encoding flags
+    const ptyEnv = {
+      ...process.env,
+      COLORTERM: 'truecolor',
+      TERM: 'xterm-256color',
+      LC_ALL: 'en_US.UTF-8',
+      LANG: 'en_US.UTF-8'
+    };
+
     // Node-pty spawn with truecolor terminal emulation
     const ptyProcess = pty.spawn(selectedShell.path, [], {
       name: 'xterm-256color',
       cols,
       rows,
       cwd,
-      env: {
-        ...process.env,
-        COLORTERM: 'truecolor',
-        TERM: 'xterm-256color'
-      }
+      env: ptyEnv
     });
 
     activePtys.set(ptyId, ptyProcess);
@@ -158,6 +163,23 @@ export function writePty(ptyId: string, data: string): void {
     ptyProcess.write(data);
   }
 }
+
+/**
+ * Synchronize terminal working directory with active file directory
+ */
+export function syncPtyCwd(ptyId: string, targetCwd: string, shellId: string): void {
+  const ptyProcess = activePtys.get(ptyId);
+  if (!ptyProcess) return;
+
+  if (shellId === 'cmd') {
+    ptyProcess.write(`cd /d "${targetCwd}"\r\n`);
+  } else if (shellId === 'powershell') {
+    ptyProcess.write(`Set-Location -LiteralPath '${targetCwd}'\r\n`);
+  } else {
+    ptyProcess.write(`cd '${targetCwd}'\r\n`);
+  }
+}
+
 
 /**
  * Resize PTY dimensions

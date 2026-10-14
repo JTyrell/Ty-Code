@@ -19,6 +19,7 @@ import {
   spawnPtySession,
   writePty,
   resizePty,
+  syncPtyCwd,
   killPty,
   cleanupAllPtys
 } from './ipc/pty-handlers';
@@ -115,6 +116,7 @@ function createWindow(): void {
 
   ipcMain.on('pty:write', (_event, { ptyId, data }) => writePty(ptyId, data));
   ipcMain.on('pty:resize', (_event, { ptyId, cols, rows }) => resizePty(ptyId, cols, rows));
+  ipcMain.on('pty:sync-cwd', (_event, { ptyId, targetCwd, shellId }) => syncPtyCwd(ptyId, targetCwd, shellId));
   ipcMain.handle('pty:kill', (_event, ptyId: string) => killPty(ptyId));
 
   // VS Code Open VSX Extensions

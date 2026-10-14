@@ -175,6 +175,7 @@ export interface ElectronAPI {
   spawnPty: (options: PtySpawnOptions) => Promise<IpcResponse<PtySessionInfo>>;
   writePty: (ptyId: string, data: string) => void;
   resizePty: (ptyId: string, cols: number, rows: number) => void;
+  syncPtyCwd: (ptyId: string, targetCwd: string, shellId: string) => void;
   killPty: (ptyId: string) => Promise<IpcResponse<void>>;
   onPtyData: (ptyId: string, callback: (data: string) => void) => () => void;
   onPtyExit: (ptyId: string, callback: (exitCode: number) => void) => () => void;

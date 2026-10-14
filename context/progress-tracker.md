@@ -1,52 +1,44 @@
 # Progress Tracker: Ty-Claude Desktop
 
 ## Current Phase
-- **Phase 1: Foundation, Architectural Specification & Core Scaffolding (COMPLETED)**
+- **Phase 2: Core AI Agent Loop Validation & Terminal Integration (COMPLETED)**
 
 ## Current Goal
-- Complete verification of Phase 1 build and prepare interactive testing of Monaco Editor and AI Provider integration.
+- Verify end-to-end user workflows, testing interactive multi-provider models and split-terminal operations.
 
 ## Completed
-- [x] Renamed all boilerplate context files to permanent memory files (`AGENTS.md`, `ai-workflow-rules.md`, `architecture-context.md`, `code-standards.md`, `domain-spec.md`, `progress-tracker.md`, `project-overview.md`, `ui-context.md`).
-- [x] Analyzed reference codebase architecture (`https://github.com/Alishahryar1/free-claude-code.git`) regarding multi-provider routing (OpenRouter, Groq, Ollama, DeepSeek, NVIDIA NIM), SSE stream parsing, and Anthropic/OpenAI protocol bridging.
-- [x] Authored comprehensive `project-overview.md` with executive summary, user flow, and core feature definitions.
-- [x] Authored complete `architecture-context.md` defining Electron Main/Preload/Renderer boundaries, tech stack, data flow diagrams, and critical invariants.
-- [x] Authored `AGENTS.md` detailing specialized engineering personas, communication protocols, and safety escalation paths.
-- [x] Authored `ai-workflow-rules.md` outlining the 5-phase implementation roadmap, Electron security rules, and engineering practices.
-- [x] Authored `code-standards.md` establishing TypeScript strict typing, typed IPC contracts, and Monaco model lifecycle guidelines.
-- [x] Authored `domain-spec.md` with exact JSON schemas for agent tools (`read_file`, `write_file`, `replace_file_content`, `run_command`, etc.) and evaluation metrics.
-- [x] Authored `ui-context.md` detailing the Obsidian Cyber design system, 3-pane docking hierarchy, and keyboard shortcuts.
-- [x] Initialized Git repository and created production `.gitignore` and `README.md`.
-- [x] Configured `package.json`, `tsconfig.json`, `vite.config.ts`, and `scripts/dev.mjs`.
-- [x] Built Preload script (`src/preload/index.ts`) and type definitions (`src/preload/types.ts`) with typed `contextBridge` exposure.
-- [x] Built Main Process handlers: `fs-handlers.ts`, `settings-handlers.ts` (safeStorage encryption), `pty-handlers.ts`, and `index.ts`.
-- [x] Built Multi-Provider Gateway (`src/main/providers/provider-gateway.ts`) and SSE Stream Parser (`src/main/providers/sse-parser.ts`) supporting OpenRouter, Groq, DeepSeek, Ollama, and Free Claude Code proxy.
-- [x] Built Agentic Coding Engine (`src/main/agent/agent-engine.ts`), Tool Executor (`src/main/agent/tool-executor.ts`), and Claude Code-style System Prompt (`src/main/agent/system-prompt.ts`).
-- [x] Built React Renderer with Obsidian Cyber design system: `TitleBar`, `Sidebar` (file tree explorer), `EditorArea` (Monaco Editor & DiffEditor tabs), `ChatSidecar` (multi-turn streaming assistant with tool cards), `TerminalDrawer`, and `SettingsModal`.
-- [x] Installed dependencies and validated zero-error production build (`npm run build`).
-- [x] Implemented OS-based interactive Terminal subsystem with `node-pty` and `@xterm/xterm`:
-  - Automatic detection of host OS shells (Windows PowerShell, Command Prompt, Git Bash, WSL; macOS zsh/bash; Linux bash/zsh/sh).
-  - Truecolor ANSI terminal emulation with interactive bidirectional keystroke and output streaming.
-  - Multi-tab terminal drawer with shell picker dropdown, active tab switching, clear, and maximize/restore controls.
-- [x] Implemented VS Code Extensions Marketplace integrated with Open VSX Registry (`https://open-vsx.org`):
-  - Live search across thousands of VS Code extensions (Python, TypeScript, Prettier, ESLint, Themes, etc.).
-  - Extension cards with ratings, download counts, and direct `.vsix` download links.
-  - Extension details view modal.
-- [x] Implemented Antigravity Capabilities & Skills subsystem:
-  - Dynamic discovery and parsing of `SKILL.md` YAML frontmatter from `.agents/skills/` and `context/skills/`.
-  - Built-in Antigravity slash commands (`/plan`, `/goal`, `/schedule`, `/learn`).
-  - One-click skill activation into the AI Assistant context.
-- [x] Implemented VS Code-grade Quick Open modal (`Ctrl+P` / `Cmd+P`) for fuzzy workspace file navigation.
-- [x] Implemented VS Code-grade Status Bar displaying active Git branch, error diagnostics, cursor position, spaces, encoding, language mode, and model pill.
-- [x] Implemented Activity Bar allowing instant switching between Explorer, Extensions, and Antigravity Skills.
+- [x] **Phase 1: Foundation, Architectural Specification & Core Scaffolding**:
+  - Context files renamed and populated with production-grade specifications.
+  - Electron 34, React 18, Monaco Editor, Zustand, and esbuild pipeline.
+  - Multi-provider gateway (OpenRouter, Groq, DeepSeek, Ollama, FCC proxy).
+  - Resizable 3-pane layout with custom draggable splitters.
+- [x] **Phase 2: Terminal Integration (Production-Grade PTY)**:
+  - Cross-platform shell detection: CMD and PowerShell on Windows, Bash and Zsh on macOS/Linux.
+  - Native `node-pty` integration with truecolor ANSI terminal emulation.
+  - Multi-tab terminal management with dropdown shell selector.
+  - Side-by-side horizontal split-pane capability (`Columns` toggle).
+  - Terminal history and active tabs persistence across sessions in `localStorage`.
+  - Right-click context menu (Copy, Paste, Clear) and keyboard shortcuts (`Ctrl+Shift+C`, `Ctrl+Shift+V`).
+  - Working directory sync (`syncPtyCwd`) matching the active open file in Monaco.
+  - Full parent process environment variable inheritance with UTF-8 encoding flags.
+- [x] **Phase 2: Polished Streaming UI (ChatSidecar)**:
+  - Full Markdown rendering with `react-markdown` (headers, tables, lists, formatting).
+  - Syntax-highlighted code blocks with dedicated Copy button.
+  - Typing indicator (`Ty-Claude is thinking...` with spinner) while waiting for first token.
+  - Smart auto-scrolling that follows token generation but respects user scroll-up.
+  - Polished tool call cards with status badges (running ⏳, success ✅, error ❌).
+  - Task cancellation (`Stop` button) and `Regenerate` last response button.
+- [x] **Phase 2: Agent Loop Validation Suite**:
+  - Created `scripts/validate-phase2.mjs` (registered as `npm run test:agent`).
+  - Tested 7 core scenarios: `write_file`, `read_file` with line slicing, `replace_file_content`, `run_command`, missing file error handling, path traversal security, and DeepSeek R1 reasoning token extraction.
+  - All 11 assertions PASSED with 0 errors.
 
 ## In Progress
-- [ ] User review and verification of initial desktop UI and Monaco editing experience.
+- [ ] Phase 3: Advanced AI Context Pruning & Workspace Embeddings.
 
 ## Next Up
-- [ ] Add xterm.js terminal integration into the terminal drawer for interactive shell emulation.
-- [ ] Implement quick-open fuzzy file finder modal (`Ctrl+P`).
-- [ ] Implement Git diffs badge count in status bar.
+- [ ] Add Git staging and diff inspector in sidebar.
+- [ ] Enhance Monaco autocompletion with inline AI ghost-text completions.
 
 ## Architecture Decisions
 1. **Direct TypeScript Provider & Agent vs Python Sidecar**:

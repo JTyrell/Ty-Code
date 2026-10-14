@@ -10,7 +10,11 @@ export interface ToolExecutionResponse {
 }
 
 export class ToolExecutor {
-  constructor(private workspaceRoot: string) {}
+  private workspaceRoot: string;
+
+  constructor(workspaceRoot: string) {
+    this.workspaceRoot = workspaceRoot;
+  }
 
   private resolveSafePath(relativePath: string): string {
     const cleanRel = relativePath.replace(/^(\.\/|\/)+/, '');
