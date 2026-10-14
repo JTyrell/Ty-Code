@@ -541,8 +541,10 @@ export class LspManager {
     const doc = this.trackedDocuments.get(uri);
     if (!doc) return;
 
+    if (doc.text === text) return;
     doc.version++;
     doc.text = text;
+    doc.isDirty = text !== doc.savedText;
 
     const client = this.clients.get(doc.languageId);
     if (client && client.isRunning) {
@@ -554,10 +556,37 @@ export class LspManager {
     const uri = this.toUri(filePath);
     const doc = this.trackedDocuments.get(uri);
     if (!doc) return;
-
+    if (text !== undefined) {
+      if (doc.text !== text) {
+        doc.version++;
+        doc.text = text;
+        this.clients.get(doc.languageId)?.didChange(uri, doc.version, text);
+      }
+      doc.savedText = text;
+    } else {
+      doc.savedText = doc.text;
+    }
+    doc.isDirty = false;
     const client = this.clients.get(doc.languageId);
-    if (client && client.isRunning) {
-      client.didSave(uri, text);
+    if (client?.isRunning) client.didSave(uri, doc.text);
+  }
+
+  public getTrackedDocument(filePath: string): TrackedDocument | undefined {
+    return this.trackedDocuments.get(this.toUri(path.resolve(filePath)));
+  }
+
+  public applyDocumentContent(filePath: string, text: string, savedText: string): void {
+    const uri = this.toUri(path.resolve(filePath));
+    const doc = this.trackedDocuments.get(uri);
+    if (!doc) return;
+    doc.version++;
+    doc.text = text;
+    doc.savedText = savedText;
+    doc.isDirty = text !== savedText;
+    const client = this.clients.get(doc.languageId);
+    if (client?.isRunning) {
+      client.didChange(uri, doc.version, text);
+      if (!doc.isDirty) client.didSave(uri, text);
     }
   }
 
