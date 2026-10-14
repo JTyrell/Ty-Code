@@ -87,6 +87,52 @@ export interface CommandResult {
   exitCode: number;
 }
 
+// Shell & Interactive PTY
+export interface ShellInfo {
+  id: string;
+  name: string;
+  path: string;
+  isDefault?: boolean;
+}
+
+export interface PtySpawnOptions {
+  shellId?: string;
+  cwd?: string;
+  cols?: number;
+  rows?: number;
+}
+
+export interface PtySessionInfo {
+  ptyId: string;
+  shellId: string;
+  shellName: string;
+}
+
+// Open VSX Extensions
+export interface ExtensionMetadata {
+  id: string;
+  namespace: string;
+  name: string;
+  displayName: string;
+  description: string;
+  version: string;
+  iconUrl?: string;
+  downloadCount?: number;
+  rating?: number;
+  publishedDate?: string;
+  repository?: string;
+  downloadUrl?: string;
+}
+
+// Antigravity Skills & Customs
+export interface SkillDefinition {
+  id: string;
+  name: string;
+  description: string;
+  path: string;
+  content?: string;
+}
+
 export interface ElectronAPI {
   // Window controls
   minimizeWindow: () => void;
@@ -102,6 +148,7 @@ export interface ElectronAPI {
   createDirectory: (dirPath: string) => Promise<IpcResponse<void>>;
   deletePath: (targetPath: string) => Promise<IpcResponse<void>>;
   renamePath: (oldPath: string, newPath: string) => Promise<IpcResponse<void>>;
+  searchFiles: (query: string) => Promise<IpcResponse<string[]>>;
 
   // Settings & SafeStorage
   getSettings: () => Promise<IpcResponse<ProviderSettings>>;
@@ -114,13 +161,30 @@ export interface ElectronAPI {
     history: ChatMessage[];
     activeFilePath?: string;
     activeFileContent?: string;
+    skills?: SkillDefinition[];
   }) => Promise<IpcResponse<string>>;
   stopAgentTask: (taskId: string) => Promise<IpcResponse<void>>;
   onAgentStream: (callback: (chunk: AgentStreamChunk) => void) => () => void;
   applyDiff: (diff: ProposedDiff) => Promise<IpcResponse<void>>;
 
-  // Terminal & Shell Execution
+  // Terminal & Shell Execution (One-shot)
   runCommand: (options: CommandExecutionOptions) => Promise<IpcResponse<CommandResult>>;
+
+  // Interactive OS PTY Terminal
+  getAvailableShells: () => Promise<IpcResponse<ShellInfo[]>>;
+  spawnPty: (options: PtySpawnOptions) => Promise<IpcResponse<PtySessionInfo>>;
+  writePty: (ptyId: string, data: string) => void;
+  resizePty: (ptyId: string, cols: number, rows: number) => void;
+  killPty: (ptyId: string) => Promise<IpcResponse<void>>;
+  onPtyData: (ptyId: string, callback: (data: string) => void) => () => void;
+  onPtyExit: (ptyId: string, callback: (exitCode: number) => void) => () => void;
+
+  // VS Code Open VSX Extensions
+  searchExtensions: (query: string) => Promise<IpcResponse<ExtensionMetadata[]>>;
+  getExtensionDetails: (namespace: string, name: string) => Promise<IpcResponse<Record<string, unknown>>>;
+
+  // Antigravity Skills
+  getAvailableSkills: (workspacePath: string) => Promise<IpcResponse<SkillDefinition[]>>;
 }
 
 declare global {

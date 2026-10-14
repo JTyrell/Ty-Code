@@ -151,3 +151,36 @@ export async function renamePath(oldPath: string, newPath: string): Promise<IpcR
     return { success: false, error: errorMsg };
   }
 }
+
+export async function searchWorkspaceFiles(workspaceRoot: string, query: string): Promise<IpcResponse<string[]>> {
+  try {
+    const q = query.toLowerCase().trim();
+    const results: string[] = [];
+
+    async function walk(dir: string) {
+      if (results.length >= 60) return;
+      const entries = await fs.readdir(dir, { withFileTypes: true });
+
+      for (const entry of entries) {
+        if (IGNORED_DIRS.has(entry.name)) continue;
+        const fullPath = path.join(dir, entry.name);
+        const relPath = path.relative(workspaceRoot, fullPath).replace(/\\/g, '/');
+
+        if (entry.isDirectory()) {
+          await walk(fullPath);
+        } else if (entry.isFile()) {
+          if (!q || relPath.toLowerCase().includes(q)) {
+            results.push(relPath);
+          }
+        }
+      }
+    }
+
+    await walk(workspaceRoot);
+    return { success: true, data: results };
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    return { success: false, error: errorMsg };
+  }
+}
+

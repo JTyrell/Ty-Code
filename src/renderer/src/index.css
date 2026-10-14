@@ -1,3 +1,5 @@
+@import '@xterm/xterm/css/xterm.css';
+
 :root {
   /* Surface Layers */
   --bg-primary: #121316;

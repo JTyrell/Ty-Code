@@ -24,6 +24,21 @@
 - [x] Built Agentic Coding Engine (`src/main/agent/agent-engine.ts`), Tool Executor (`src/main/agent/tool-executor.ts`), and Claude Code-style System Prompt (`src/main/agent/system-prompt.ts`).
 - [x] Built React Renderer with Obsidian Cyber design system: `TitleBar`, `Sidebar` (file tree explorer), `EditorArea` (Monaco Editor & DiffEditor tabs), `ChatSidecar` (multi-turn streaming assistant with tool cards), `TerminalDrawer`, and `SettingsModal`.
 - [x] Installed dependencies and validated zero-error production build (`npm run build`).
+- [x] Implemented OS-based interactive Terminal subsystem with `node-pty` and `@xterm/xterm`:
+  - Automatic detection of host OS shells (Windows PowerShell, Command Prompt, Git Bash, WSL; macOS zsh/bash; Linux bash/zsh/sh).
+  - Truecolor ANSI terminal emulation with interactive bidirectional keystroke and output streaming.
+  - Multi-tab terminal drawer with shell picker dropdown, active tab switching, clear, and maximize/restore controls.
+- [x] Implemented VS Code Extensions Marketplace integrated with Open VSX Registry (`https://open-vsx.org`):
+  - Live search across thousands of VS Code extensions (Python, TypeScript, Prettier, ESLint, Themes, etc.).
+  - Extension cards with ratings, download counts, and direct `.vsix` download links.
+  - Extension details view modal.
+- [x] Implemented Antigravity Capabilities & Skills subsystem:
+  - Dynamic discovery and parsing of `SKILL.md` YAML frontmatter from `.agents/skills/` and `context/skills/`.
+  - Built-in Antigravity slash commands (`/plan`, `/goal`, `/schedule`, `/learn`).
+  - One-click skill activation into the AI Assistant context.
+- [x] Implemented VS Code-grade Quick Open modal (`Ctrl+P` / `Cmd+P`) for fuzzy workspace file navigation.
+- [x] Implemented VS Code-grade Status Bar displaying active Git branch, error diagnostics, cursor position, spaces, encoding, language mode, and model pill.
+- [x] Implemented Activity Bar allowing instant switching between Explorer, Extensions, and Antigravity Skills.
 
 ## In Progress
 - [ ] User review and verification of initial desktop UI and Monaco editing experience.

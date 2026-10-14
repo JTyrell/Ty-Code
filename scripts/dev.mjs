@@ -27,7 +27,7 @@ async function runDev() {
     platform: 'node',
     target: 'node20',
     format: 'cjs',
-    external: ['electron'],
+    external: ['electron', 'node-pty'],
     outfile: path.resolve(rootDir, 'dist/main/index.js'),
     sourcemap: true
   });
