@@ -102,6 +102,11 @@ export function registerMonacoLspProviders(monaco: Monaco): void {
   if (isAdapterRegistered || !window.electronAPI) return;
   isAdapterRegistered = true;
 
+  const typescriptMode = monaco.languages.typescript.typescriptDefaults;
+  const javascriptMode = monaco.languages.typescript.javascriptDefaults;
+  typescriptMode.setModeConfiguration({ ...typescriptMode.modeConfiguration, rename: false });
+  javascriptMode.setModeConfiguration({ ...javascriptMode.modeConfiguration, rename: false });
+
   for (const lang of REGISTERED_LANGUAGES) {
     // 1. Completion Provider
     monaco.languages.registerCompletionItemProvider(lang, {
