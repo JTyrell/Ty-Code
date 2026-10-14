@@ -220,7 +220,7 @@ export class ToolExecutor {
     const recursive = Boolean(args.recursive);
     const absPath = this.resolveSafePath(dirRel);
 
-    const ignored = new Set(['.git', 'node_modules', 'dist', 'dist-electron', 'out']);
+    const ignored = new Set(['.git', '.kombai', 'node_modules', 'dist', 'dist-electron', 'out']);
 
     async function scan(current: string, depth = 0): Promise<string[]> {
       const entries = await fs.readdir(current, { withFileTypes: true });
@@ -257,7 +257,7 @@ export class ToolExecutor {
       : new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), caseInsensitive ? 'gi' : 'g');
 
     const matches: string[] = [];
-    const ignored = new Set(['.git', 'node_modules', 'dist', 'dist-electron', 'out', 'package-lock.json']);
+    const ignored = new Set(['.git', '.kombai', 'node_modules', 'dist', 'dist-electron', 'out', 'package-lock.json']);
 
     async function searchDir(dir: string) {
       if (matches.length > 50) return;

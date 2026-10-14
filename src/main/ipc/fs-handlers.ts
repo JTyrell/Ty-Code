@@ -4,7 +4,7 @@ import path from 'path';
 import type { FileNode, IpcResponse } from '../../preload/types';
 
 // Ignored folders for fast directory indexing
-const IGNORED_DIRS = new Set(['.git', 'node_modules', 'dist', 'dist-electron', 'out', 'release', '.DS_Store', 'Thumbs.db']);
+const IGNORED_DIRS = new Set(['.git', '.kombai', 'node_modules', 'dist', 'dist-electron', 'out', 'release', '.DS_Store', 'Thumbs.db']);
 
 function isInsideWorkspace(targetPath: string, workspaceRoot: string): boolean {
   const relative = path.relative(workspaceRoot, targetPath);
