@@ -44,3 +44,7 @@ release/
 Thumbs.db
 [Dd]esktop.ini
 .DS_Store
+
+# Tooling / Local config
+.kombai/
+
