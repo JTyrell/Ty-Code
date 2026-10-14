@@ -17,8 +17,13 @@ import {
 import { useWorkspaceStore } from '../state/workspace-store';
 import type { FileSearchResult, SearchInFilesOptions, ReplaceInFilesOptions } from '../../../preload/types';
 import { useWorkspaceEditStore } from '../state/workspace-edit-store';
+import { handleAutoAppliedTransaction } from '../services/workspace-edit-commands';
 
-export const SearchPanel: React.FC = () => {
+interface SearchPanelProps {
+  onNavigateToLocation?: (filePath: string, line: number, column?: number) => void;
+}
+
+export const SearchPanel: React.FC<SearchPanelProps> = ({ onNavigateToLocation }) => {
   const [query, setQuery] = useState('');
   const [replacement, setReplacement] = useState('');
   const [isReplaceOpen, setIsReplaceOpen] = useState(false);
@@ -61,9 +66,9 @@ export const SearchPanel: React.FC = () => {
       sourceKey: replacementSourceKey,
       isStale: true,
       refresh: async () => {
-        const response = await window.electronAPI.previewReplace(options);
-        if (!response.success || !response.data) throw new Error(response.error || 'Could not refresh replacement preview.');
-        return response.data;
+        const response = await window.electronAPI.previewReplace({ ...options, forcePreview: true });
+        if (!response.success || !response.data?.preview) throw new Error(response.error || 'Could not refresh replacement preview.');
+        return response.data.preview;
       }
     });
   }, [replacementSourceKey]);
@@ -140,18 +145,24 @@ export const SearchPanel: React.FC = () => {
       filePaths
     };
     try {
-      const response = await window.electronAPI.previewReplace(options);
+      const response = await window.electronAPI.previewReplace({ ...options, forcePreview: useWorkspaceEditStore.getState().forcePreviewAll });
       if (!response.success || !response.data) throw new Error(response.error || 'Could not prepare a replacement preview.');
-      const preview = response.data;
+      if (response.data.applied) {
+        handleAutoAppliedTransaction(response.data.applied);
+        setStatusMessage(`Auto-applied ${response.data.applied.editCount} low-risk change(s) in ${response.data.applied.fileCount} tracked file(s).`);
+        return;
+      }
+      const preview = response.data.preview;
+      if (!preview) throw new Error('The replace preview response is empty.');
       useWorkspaceEditStore.getState().setRequest({
         preview,
         isStale: false,
         sourceKey: replacementSourceKey,
         filePaths,
         refresh: async () => {
-          const refreshed = await window.electronAPI.previewReplace(options);
-          if (!refreshed.success || !refreshed.data) throw new Error(refreshed.error || 'Could not refresh replacement preview.');
-          return refreshed.data;
+          const refreshed = await window.electronAPI.previewReplace({ ...options, forcePreview: true });
+          if (!refreshed.success || !refreshed.data?.preview) throw new Error(refreshed.error || 'Could not refresh replacement preview.');
+          return refreshed.data.preview;
         }
       });
       setStatusMessage(`Preview ready: ${preview.totalEdits} changes in ${preview.files.length} file${preview.files.length === 1 ? '' : 's'}.`);
@@ -170,7 +181,11 @@ export const SearchPanel: React.FC = () => {
     setCollapsedFiles((prev) => ({ ...prev, [filePath]: !prev[filePath] }));
   };
 
-  const handleOpenMatch = (filePath: string) => {
+  const handleOpenMatch = (filePath: string, lineNumber: number, column: number) => {
+    if (onNavigateToLocation) {
+      onNavigateToLocation(filePath, lineNumber, column);
+      return;
+    }
     const name = filePath.split(/[\/\\]/).pop() || filePath;
     void openFile(filePath, name);
   };
@@ -506,7 +521,7 @@ export const SearchPanel: React.FC = () => {
                   {file.matches.map((m, idx) => (
                     <div
                       key={idx}
-                      onClick={() => handleOpenMatch(file.filePath)}
+                      onClick={() => handleOpenMatch(file.filePath, m.lineNumber, m.matchStart + 1)}
                       style={{
                         padding: '3px 8px',
                         display: 'flex',

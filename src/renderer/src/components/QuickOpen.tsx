@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Search, FileCode, Hash, AtSign, ChevronRight } from 'lucide-react';
 import { useWorkspaceStore } from '../state/workspace-store';
+import { useEditorNavigationStore } from '../state/editor-navigation-store';
 
 interface QuickOpenProps {
   isOpen: boolean;
@@ -13,6 +14,11 @@ interface SymbolItem {
   name: string;
   kindName: string;
   line: number;
+}
+
+function joinWorkspacePath(root: string, relativePath: string): string {
+  const separator = root.includes('\\') ? '\\' : '/';
+  return `${root.replace(/[\\/]+$/, '')}${separator}${relativePath.replace(/[\\/]/g, separator)}`;
 }
 
 export const QuickOpen: React.FC<QuickOpenProps> = ({
@@ -92,8 +98,8 @@ export const QuickOpen: React.FC<QuickOpenProps> = ({
   };
 
   const handleSelectFile = (relPath: string) => {
-    const fullPath = `${workspacePath}/${relPath}`.replace(/\/+/g, '/');
-    const name = relPath.split('/').pop() || relPath;
+    const fullPath = joinWorkspacePath(workspacePath, relPath);
+    const name = relPath.split(/[\\/]/).pop() || relPath;
     void openFile(fullPath, name);
     onClose();
   };

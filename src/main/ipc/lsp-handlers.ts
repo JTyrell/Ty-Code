@@ -4,20 +4,36 @@
  */
 
 import { LspManager, type LanguageServerConfig } from '../services/lsp-manager';
+import { getSettings, saveSettings } from './settings-handlers';
 import type { IpcResponse } from '../../preload/types';
 
 export function getLspManager(workspacePath?: string): LspManager {
   return LspManager.getInstance(workspacePath);
 }
 
+const loadedSettings = new WeakSet<LspManager>();
+async function loadLspSettings(manager: LspManager): Promise<void> {
+  if (loadedSettings.has(manager)) return;
+  const response = await getSettings();
+  const settings = response.data;
+  manager.setAutoStart(settings?.['lsp.autoStart'] ?? true);
+  for (const [languageId, config] of Object.entries(settings?.languageServers || {})) {
+    try { await manager.configureServer(languageId, config); }
+    catch { /* Invalid persisted server paths fail closed and remain editable in Settings. */ }
+  }
+  loadedSettings.add(manager);
+}
+
 export async function handleGetLspServers(workspacePath?: string): Promise<IpcResponse<any>> {
   const manager = getLspManager(workspacePath);
+  await loadLspSettings(manager);
   await manager.refreshAvailability();
   return { success: true, data: manager.getAllServers() };
 }
 
 export async function handleStartLspServer(languageId: string, workspacePath?: string): Promise<IpcResponse<boolean>> {
   const manager = getLspManager(workspacePath);
+  await loadLspSettings(manager);
   const started = await manager.startServer(languageId);
   return { success: started, data: started };
 }
@@ -30,6 +46,7 @@ export async function handleStopLspServer(languageId: string, workspacePath?: st
 
 export async function handleRestartLspServer(languageId: string, workspacePath?: string): Promise<IpcResponse<boolean>> {
   const manager = getLspManager(workspacePath);
+  await loadLspSettings(manager);
   const restarted = await manager.restartServer(languageId);
   return { success: restarted, data: restarted };
 }
@@ -37,7 +54,10 @@ export async function handleRestartLspServer(languageId: string, workspacePath?:
 export async function handleConfigureLspServer(languageId: string, config: LanguageServerConfig, workspacePath?: string): Promise<IpcResponse<void>> {
   try {
     const manager = getLspManager(workspacePath);
+    await loadLspSettings(manager);
     await manager.configureServer(languageId, config);
+    const persisted = await saveSettings({ languageServers: { [languageId]: config } });
+    if (!persisted.success) throw new Error(persisted.error || 'Language-server settings could not be saved.');
     return { success: true };
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : String(error) };
@@ -46,6 +66,7 @@ export async function handleConfigureLspServer(languageId: string, config: Langu
 
 export async function handleLspDidOpen(payload: { filePath: string; languageId: string; text: string }, workspacePath?: string): Promise<IpcResponse<void>> {
   const manager = getLspManager(workspacePath);
+  await loadLspSettings(manager);
   await manager.onDocumentOpened(payload.filePath, payload.languageId, payload.text);
   return { success: true };
 }

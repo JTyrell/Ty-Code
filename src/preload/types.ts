@@ -38,6 +38,17 @@ export interface TerminalProfile {
 export type TerminalSplitOrientation = 'horizontal' | 'vertical';
 export type ToolExecutionStatus = 'running' | 'success' | 'error' | 'cancelled';
 
+export interface EditorPreferences {
+  fontSize?: number;
+  tabSize?: number;
+  minimap?: boolean;
+  bracketPairs?: boolean;
+  autoSave?: 'off' | 'afterDelay' | 'onFocusChange';
+  autoSaveDelay?: number;
+  wordWrap?: 'off' | 'on' | 'wordWrapColumn' | 'bounded';
+  formatOnSave?: boolean;
+}
+
 export interface ProviderSettings {
   activeProvider: ProviderType;
   activeModel: string;
@@ -49,6 +60,10 @@ export interface ProviderSettings {
   terminalProfiles?: TerminalProfile[];
   defaultTerminalProfileId?: string;
   thirdPartyRuntimeEnabled?: boolean;
+  'editor.reviewPolicy'?: EditReviewPolicy;
+  'lsp.autoStart'?: boolean;
+  editor?: EditorPreferences;
+  languageServers?: Record<string, LanguageServerConfig>;
 }
 
 export interface ToolCall {
@@ -379,11 +394,12 @@ export interface ElectronAPI {
   // Search & Replace APIs
   searchInFiles: (options: SearchInFilesOptions) => Promise<IpcResponse<FileSearchResult[]>>;
   replaceInFiles: (options: ReplaceInFilesOptions) => Promise<IpcResponse<{ replacedCount: number; filesChanged: number; results: ReplaceResult[] }>>;
-  previewReplace: (options: ReplaceInFilesOptions) => Promise<IpcResponse<WorkspaceEditPreview>>;
+  previewReplace: (options: ReplaceInFilesOptions) => Promise<IpcResponse<WorkspaceEditFlowResult>>;
   applyWorkspaceEdit: (previewId: string) => Promise<IpcResponse<WorkspaceEditTransactionResult>>;
+  previewLspWorkspaceEdit: (params: { edit: unknown; title: string; forcePreview?: boolean }) => Promise<IpcResponse<WorkspaceEditFlowResult>>;
   cancelWorkspaceEdit: (previewId: string) => Promise<IpcResponse<void>>;
   undoWorkspaceEdit: (transactionId?: string) => Promise<IpcResponse<WorkspaceEditTransactionResult>>;
-  getRecentWorkspaceEdits: () => Promise<IpcResponse<Array<{ transactionId: string; origin: WorkspaceEditOrigin; createdAt: number; fileCount: number }>>>;
+  getRecentWorkspaceEdits: () => Promise<IpcResponse<Array<{ transactionId: string; origin: WorkspaceEditOrigin; createdAt: number; fileCount: number; autoApplied: true }>>>;
 
   // Language Server Protocol (LSP) APIs
   lspGetServers: () => Promise<IpcResponse<LanguageServerStatus[]>>;
@@ -402,11 +418,12 @@ export interface ElectronAPI {
   lspImplementation: (params: { filePath: string; line: number; character: number }) => Promise<IpcResponse<any>>;
   lspReferences: (params: { filePath: string; line: number; character: number; includeDeclaration?: boolean }) => Promise<IpcResponse<any>>;
   lspRename: (params: { filePath: string; line: number; character: number; newName: string }) => Promise<IpcResponse<any>>;
-  lspRenamePreview: (params: { filePath: string; line: number; character: number; newName: string }) => Promise<IpcResponse<WorkspaceEditPreview>>;
+  lspRenamePreview: (params: { filePath: string; line: number; character: number; newName: string; forcePreview?: boolean }) => Promise<IpcResponse<WorkspaceEditFlowResult>>;
   lspDocumentSymbols: (params: { filePath: string }) => Promise<IpcResponse<any>>;
   lspWorkspaceSymbols: (params: { query: string }) => Promise<IpcResponse<any>>;
   lspCodeActions: (params: { filePath: string; range: any; context?: any }) => Promise<IpcResponse<any>>;
   lspSignatureHelp: (params: { filePath: string; line: number; character: number }) => Promise<IpcResponse<any>>;
+  onLspDiagnostics: (callback: (event: LspDiagnosticsEvent) => void) => () => void;
 
   // Workspace & Navigation
   setWorkspaceFolder: (folderPath: string) => Promise<IpcResponse<FileNode>>;
@@ -426,6 +443,21 @@ export interface ElectronAPI {
   // Myers Diff & App Info
   computeMyersDiff: (params: { original: string; modified: string; contextLines?: number }) => Promise<IpcResponse<MyersDiffResult>>;
   getAppInfo: () => Promise<IpcResponse<AppInfo>>;
+
+  // Phase 7: Advanced AI Features & Competitive Differentiation
+  getInlineCompletions: (params: InlineCompletionRequest) => Promise<IpcResponse<InlineCompletionResponse>>;
+  indexProject: (workspacePath?: string) => Promise<IpcResponse<ProjectIndexStats>>;
+  getProjectIndexStats: () => Promise<IpcResponse<ProjectIndexStats | null>>;
+  queryProjectContext: (query: ProjectContextQuery) => Promise<IpcResponse<ProjectContextResult>>;
+  runCodeReview: (params: CodeReviewRequest) => Promise<IpcResponse<CodeReviewResult>>;
+  getCodeReviewRules: () => Promise<IpcResponse<CodeReviewRule[]>>;
+  updateCodeReviewRules: (rules: CodeReviewRule[]) => Promise<IpcResponse<void>>;
+  requestRefactorPreview: (request: RefactorRequest) => Promise<IpcResponse<RefactorResult>>;
+  generateCodeFromPrompt: (request: GenerateCodeRequest) => Promise<IpcResponse<GenerateCodeResult>>;
+  parseNaturalLanguageCommand: (request: NaturalLanguageCommandRequest) => Promise<IpcResponse<NaturalLanguageCommandResult>>;
+  getConversationMemories: (query?: MemoryQuery) => Promise<IpcResponse<ConversationMemoryEntry[]>>;
+  addConversationMemory: (memory: Partial<ConversationMemoryEntry>) => Promise<IpcResponse<ConversationMemoryEntry>>;
+  getPairProgrammingSuggestions: (event: PairProgrammingEvent) => Promise<IpcResponse<PairProgrammingSuggestion[]>>;
 }
 
 export interface RecentWorkspace {
@@ -495,6 +527,7 @@ export interface ReplaceInFilesOptions extends SearchInFilesOptions {
   replacement: string;
   dryRun?: boolean;
   filePaths?: string[];
+  forcePreview?: boolean;
 }
 
 export interface ReplaceResult {
@@ -505,6 +538,7 @@ export interface ReplaceResult {
 }
 
 export type WorkspaceEditOrigin = 'lsp-rename' | 'search-replace' | 'refactor';
+export type EditReviewPolicy = 'alwaysReview' | 'autoApplySafeSingleFile';
 
 export interface WorkspaceEditPreviewFile {
   filePath: string;
@@ -526,9 +560,15 @@ export interface WorkspaceEditPreview {
   blockedReason?: string;
 }
 
+export interface WorkspaceEditFlowResult {
+  preview?: WorkspaceEditPreview;
+  applied?: WorkspaceEditTransactionResult;
+}
+
 export interface WorkspaceEditTransactionResult {
   transactionId: string;
   origin: WorkspaceEditOrigin;
+  autoApplied?: boolean;
   files: Array<{ filePath: string; content: string; isDirty: boolean }>;
   fileCount: number;
   editCount: number;
@@ -538,7 +578,6 @@ export interface LanguageServerConfig {
   enabled: boolean;
   args?: string[];
   path?: string;
-  customPath?: string;
 }
 
 export interface LanguageServerInstallCommand {
@@ -551,6 +590,21 @@ export interface LanguageServerInstallCommand {
 export interface WorkspaceServerCandidate {
   path: string;
   source: 'node_modules' | 'cargo-target' | 'python-venv' | 'workspace-bin';
+}
+
+export interface LspDiagnosticItem {
+  range: { start: { line: number; character: number }; end: { line: number; character: number } };
+  severity?: 1 | 2 | 3 | 4;
+  code?: string | number;
+  source?: string;
+  message: string;
+}
+
+export interface LspDiagnosticsEvent {
+  filePath: string;
+  uri: string;
+  languageId: string;
+  diagnostics: LspDiagnosticItem[];
 }
 
 export interface LanguageServerStatus {
@@ -569,6 +623,217 @@ export interface LanguageServerStatus {
   installCommands?: LanguageServerInstallCommand[];
   isExplicitPath?: boolean;
   configuredPath?: string;
+}
+
+// Phase 7: Advanced AI Features & Competitive Differentiation Interfaces
+
+export interface InlineCompletionRequest {
+  filePath: string;
+  language: string;
+  prefix: string;
+  suffix: string;
+  line: number;
+  character: number;
+  triggerKind?: 'automatic' | 'manual';
+}
+
+export interface InlineCompletionItem {
+  text: string;
+  range?: {
+    startLine: number;
+    startColumn: number;
+    endLine: number;
+    endColumn: number;
+  };
+  command?: string;
+  source?: 'llm' | 'cache' | 'heuristic';
+}
+
+export interface InlineCompletionResponse {
+  items: InlineCompletionItem[];
+  cached?: boolean;
+  latencyMs?: number;
+}
+
+export interface ProjectSymbol {
+  name: string;
+  kind: 'function' | 'class' | 'interface' | 'variable' | 'type' | 'method';
+  filePath: string;
+  line: number;
+  documentation?: string;
+  signature?: string;
+}
+
+export interface ProjectIndexStats {
+  fileCount: number;
+  symbolCount: number;
+  exportCount: number;
+  indexedInMs: number;
+  frameworks: string[];
+  languages: Record<string, number>;
+  lastIndexedAt: number;
+  customInstructions?: string;
+}
+
+export interface ProjectContextQuery {
+  query: string;
+  limit?: number;
+  activeFilePath?: string;
+}
+
+export interface ProjectContextResult {
+  files: string[];
+  symbols: ProjectSymbol[];
+  instructions?: string;
+  summary: string;
+  frameworks: string[];
+  relevantSnippets: Array<{ filePath: string; lineStart: number; content: string }>;
+}
+
+export interface ConversationMemoryEntry {
+  id: string;
+  timestamp: number;
+  topic: string;
+  summary: string;
+  keyDecisions: string[];
+  relevantFiles: string[];
+  tags: string[];
+}
+
+export interface MemoryQuery {
+  query: string;
+  limit?: number;
+}
+
+export interface CodeReviewRule {
+  id: string;
+  name: string;
+  category: 'bug' | 'security' | 'performance' | 'style';
+  severity: 'error' | 'warning' | 'info';
+  description: string;
+  pattern?: string;
+  fixTemplate?: string;
+  enabled: boolean;
+}
+
+export interface CodeReviewFinding {
+  id: string;
+  ruleId?: string;
+  filePath: string;
+  line: number;
+  endLine?: number;
+  category: 'bug' | 'security' | 'performance' | 'style';
+  severity: 'error' | 'warning' | 'info';
+  title: string;
+  description: string;
+  codeSnippet?: string;
+  suggestedFix?: {
+    originalText: string;
+    replacementText: string;
+  };
+}
+
+export interface CodeReviewRequest {
+  filePath?: string;
+  content?: string;
+  allWorkspace?: boolean;
+  customRules?: CodeReviewRule[];
+}
+
+export interface CodeReviewResult {
+  findings: CodeReviewFinding[];
+  summary: {
+    total: number;
+    bugs: number;
+    security: number;
+    performance: number;
+    style: number;
+  };
+  reviewedFiles: string[];
+  timestamp: number;
+}
+
+export type RefactorType =
+  | 'extract-function'
+  | 'extract-variable'
+  | 'inline-variable'
+  | 'ai-rename'
+  | 'convert-to-functional'
+  | 'add-error-handling'
+  | 'add-typescript-types';
+
+export interface RefactorRequest {
+  type: RefactorType;
+  filePath: string;
+  selectedText: string;
+  selectionRange: {
+    startLine: number;
+    startColumn: number;
+    endLine: number;
+    endColumn: number;
+  };
+  targetName?: string;
+  customPrompt?: string;
+  forcePreview?: boolean;
+}
+
+export interface RefactorResult {
+  preview: WorkspaceEditPreview;
+  applied?: WorkspaceEditTransactionResult;
+  suggestions?: string[];
+  explanation?: string;
+}
+
+export interface GenerateCodeRequest {
+  type: 'comment-to-code' | 'test-generation' | 'documentation' | 'sql-query' | 'regex';
+  prompt: string;
+  language?: string;
+  filePath?: string;
+  contextCode?: string;
+}
+
+export interface GenerateCodeResult {
+  code: string;
+  explanation: string;
+  language: string;
+  targetFilePath?: string;
+}
+
+export interface NaturalLanguageCommandRequest {
+  input: string;
+  context?: {
+    activeFilePath?: string;
+    selection?: string;
+    language?: string;
+  };
+}
+
+export interface NaturalLanguageCommandResult {
+  action: 'execute-command' | 'generate-code' | 'review-code' | 'navigate' | 'chat';
+  commandId?: string;
+  commandTitle?: string;
+  intent?: string;
+  args?: unknown[];
+  generatedCode?: string;
+  message: string;
+}
+
+export interface PairProgrammingEvent {
+  type: 'cursor-moved' | 'content-changed' | 'file-saved';
+  filePath: string;
+  language: string;
+  line: number;
+  content: string;
+}
+
+export interface PairProgrammingSuggestion {
+  id: string;
+  type: 'next-step' | 'bug-alert' | 'refactor-hint' | 'tdd-step';
+  title: string;
+  message: string;
+  codeSnippet?: string;
+  actionLabel?: string;
+  actionCommand?: string;
 }
 
 declare global {

@@ -13,10 +13,14 @@ import {
   FolderOpen,
   Check,
   Zap,
-  Bookmark
+  Bookmark,
+  Sparkles
 } from 'lucide-react';
 import { useWorkspaceStore } from '../state/workspace-store';
 import { useChatStore } from '../state/chat-store';
+import { useCodeReviewStore } from '../state/code-review-store';
+import { usePairProgrammingStore } from '../state/pair-programming-store';
+import { toast } from '../state/toast-store';
 import { extensionHost } from '../services/extension-host';
 
 export interface CommandItem {
@@ -204,6 +208,100 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
           }
           onClose();
         }
+      },
+      {
+        id: 'tycode.ai.runCodeReview',
+        title: 'AI: Run Automated Code Review',
+        category: 'General',
+        shortcut: 'Ctrl+Shift+R',
+        icon: <Sparkles size={14} color="var(--accent-primary)" />,
+        action: () => {
+          onNavigateToView?.('code-review');
+          onClose();
+          const tab = openTabs.find((t) => t.path === activeTabPath);
+          void useCodeReviewStore.getState().runReview(tab?.path, tab?.content);
+        }
+      },
+      {
+        id: 'tycode.ai.togglePairMode',
+        title: 'AI: Toggle Pair Programming Mode',
+        category: 'General',
+        icon: <Sparkles size={14} color="#22c55e" />,
+        action: () => {
+          usePairProgrammingStore.getState().togglePairMode();
+          onClose();
+        }
+      },
+      {
+        id: 'tycode.ai.indexWorkspace',
+        title: 'AI: Index Project & Build Context Graph',
+        category: 'General',
+        icon: <Sparkles size={14} color="var(--accent-cyan)" />,
+        action: async () => {
+          onClose();
+          toast.info('Indexing Project', 'Scanning workspace symbols and dependencies…');
+          const res = await window.electronAPI.indexProject();
+          if (res.success && res.data) {
+            toast.success('Project Indexed', `Indexed ${res.data.fileCount} files and ${res.data.symbolCount} symbols in ${res.data.indexedInMs}ms.`);
+          } else {
+            toast.error('Indexing failed', res.error);
+          }
+        }
+      },
+      {
+        id: 'tycode.ai.generateTests',
+        title: 'AI: Generate Unit Tests for Active File',
+        category: 'General',
+        icon: <Sparkles size={14} color="var(--accent-amber)" />,
+        action: async () => {
+          onClose();
+          const tab = openTabs.find((t) => t.path === activeTabPath);
+          if (!tab) {
+            toast.warning('No file open', 'Open a file to generate unit tests.');
+            return;
+          }
+          toast.info('Generating Tests', `Creating test suite for ${tab.path}…`);
+          const res = await window.electronAPI.generateCodeFromPrompt({
+            type: 'test-generation',
+            prompt: `Generate unit tests for ${tab.path}`,
+            language: tab.language,
+            filePath: tab.path,
+            contextCode: tab.content
+          });
+          if (res.success && res.data) {
+            await navigator.clipboard.writeText(res.data.code);
+            toast.success('Tests Generated & Copied to Clipboard', res.data.explanation);
+          } else {
+            toast.error('Test generation failed', res.error);
+          }
+        }
+      },
+      {
+        id: 'tycode.ai.generateDocs',
+        title: 'AI: Generate Documentation & Docstrings',
+        category: 'General',
+        icon: <Sparkles size={14} color="var(--accent-primary)" />,
+        action: async () => {
+          onClose();
+          const tab = openTabs.find((t) => t.path === activeTabPath);
+          if (!tab) {
+            toast.warning('No file open', 'Open a file to generate documentation.');
+            return;
+          }
+          const res = await window.electronAPI.generateCodeFromPrompt({
+            type: 'documentation',
+            prompt: `Generate documentation for ${tab.path}`,
+            language: tab.language,
+            filePath: tab.path,
+            contextCode: tab.content
+          });
+          if (res.success && res.data) {
+            await navigator.clipboard.writeText(res.data.code);
+            toast.success('Documentation Generated', 'Copied documentation comments to clipboard.');
+          } else {
+            toast.error('Doc generation failed', res.error);
+          }
+        }
       }
     ];
 
@@ -236,6 +334,49 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       cmd.id.toLowerCase().includes(q)
     );
   });
+
+  // Dynamic Natural Language Command Execution
+  if (query.trim().length > 1 && (query.startsWith('?') || query.startsWith('ai:') || filteredCommands.length === 0)) {
+    const rawInput = query.replace(/^(\?|ai:)\s*/, '');
+    filteredCommands.unshift({
+      id: 'tycode.ai.nlCommand',
+      title: `Ty-Code AI: "${rawInput}"`,
+      category: 'General',
+      icon: <Sparkles size={14} color="var(--accent-primary)" />,
+      action: async () => {
+        onClose();
+        const tab = openTabs.find((t) => t.path === activeTabPath);
+        const res = await window.electronAPI.parseNaturalLanguageCommand({
+          input: rawInput,
+          context: {
+            activeFilePath: tab?.path,
+            language: tab?.language
+          }
+        });
+        if (res.success && res.data) {
+          const item = res.data;
+          if (item.action === 'execute-command' && item.commandId) {
+            const match = allCommands.find((c) => c.id === item.commandId);
+            if (match) match.action();
+            else toast.info('Command executed', item.commandTitle || item.commandId);
+          } else if (item.action === 'navigate' && item.commandId) {
+            const view = item.commandId.replace('workbench.view.', '');
+            onNavigateToView?.(view);
+          } else if (item.action === 'review-code') {
+            onNavigateToView?.('code-review');
+            void useCodeReviewStore.getState().runReview(tab?.path, tab?.content);
+          } else if (item.action === 'generate-code' && item.generatedCode) {
+            await navigator.clipboard.writeText(item.generatedCode);
+            toast.success('Code Generated', 'Snippet generated and copied to clipboard.');
+          } else {
+            toast.info('Ty-Code Command', item.message);
+          }
+        } else {
+          toast.error('Command parse error', res.error);
+        }
+      }
+    });
+  }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {

@@ -7,6 +7,7 @@ import { SourceControlPanel } from './components/SourceControlPanel';
 import { ExtensionsPanel } from './components/ExtensionsPanel';
 import { SkillsPanel } from './components/SkillsPanel';
 import { OutlineView } from './components/OutlineView';
+import { CodeReviewPanel } from './components/CodeReviewPanel';
 import { EditorArea } from './components/EditorArea';
 import { DiffViewer } from './components/DiffViewer';
 import { ChatSidecar } from './components/ChatSidecar';
@@ -20,6 +21,7 @@ import { ToastContainer } from './components/ToastContainer';
 import { ExtensionInputDialog } from './components/ExtensionInputDialog';
 import { useChatStore } from './state/chat-store';
 import { useWorkspaceStore } from './state/workspace-store';
+import { useEditorNavigationStore } from './state/editor-navigation-store';
 
 export const App: React.FC = () => {
   const [activityTab, setActivityTab] = useState<ActivityTab>('explorer');
@@ -34,6 +36,7 @@ export const App: React.FC = () => {
 
   const { initSettings, toggleTerminal } = useChatStore();
   const { setWorkspacePath, setFileTree } = useWorkspaceStore();
+  const navigateTo = useEditorNavigationStore((state) => state.navigateTo);
 
   useEffect(() => {
     initSettings();
@@ -151,14 +154,15 @@ export const App: React.FC = () => {
         {/* Leftmost Activity Bar */}
         <ActivityBar activeTab={activityTab} onTabChange={setActivityTab} />
 
-        {/* Dynamic Primary Left Panel (Explorer / Search / Source Control / Extensions / Skills / Outline) */}
+        {/* Dynamic Primary Left Panel (Explorer / Search / Source Control / Code Review / Extensions / Skills / Outline) */}
         <div style={{ width: `${leftWidth}px`, height: '100%', flexShrink: 0, overflow: 'hidden' }}>
           {activityTab === 'explorer' && <Sidebar />}
-          {activityTab === 'search' && <SearchPanel />}
+          {activityTab === 'search' && <SearchPanel onNavigateToLocation={(filePath, line, column) => navigateTo({ filePath, line, column })} />}
           {activityTab === 'source-control' && <SourceControlPanel />}
+          {activityTab === 'code-review' && <CodeReviewPanel />}
           {activityTab === 'extensions' && <ExtensionsPanel />}
           {activityTab === 'skills' && <SkillsPanel />}
-          {activityTab === 'outline' && <OutlineView />}
+          {activityTab === 'outline' && <OutlineView onNavigateToLine={(line) => navigateTo({ line })} />}
         </div>
 
         {/* Left Splitter Resizer Handle */}
@@ -200,6 +204,7 @@ export const App: React.FC = () => {
         isOpen={isQuickOpenOpen}
         onClose={() => setIsQuickOpenOpen(false)}
         onSwitchToCommandPalette={() => setIsCommandPaletteOpen(true)}
+        onNavigateToLine={(lineNumber) => navigateTo({ line: lineNumber })}
       />
 
       {/* Command Palette (Ctrl+Shift+P) */}
@@ -207,6 +212,10 @@ export const App: React.FC = () => {
         isOpen={isCommandPaletteOpen}
         onClose={() => setIsCommandPaletteOpen(false)}
         onNavigateToView={(view) => setActivityTab(view as any)}
+        onToggleMinimap={() => useEditorNavigationStore.getState().runAction('toggleMinimap')}
+        onToggleWordWrap={() => useEditorNavigationStore.getState().runAction('toggleWordWrap')}
+        onToggleZenMode={() => useEditorNavigationStore.getState().runAction('toggleZenMode')}
+        onSplitEditor={(orientation) => useEditorNavigationStore.getState().runAction(orientation === 'vertical' ? 'splitVertical' : 'splitHorizontal')}
       />
 
       {/* Settings Modal */}

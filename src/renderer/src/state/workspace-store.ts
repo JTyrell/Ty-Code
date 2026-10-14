@@ -29,6 +29,7 @@ interface WorkspaceState {
   setActiveTab: (filePath: string) => void;
   updateTabContent: (filePath: string, newContent: string) => void;
   saveActiveFile: () => Promise<void>;
+  saveFile: (filePath: string) => Promise<boolean>;
   openDiffReview: (diff: ProposedDiff) => void;
   closeDiffReview: () => void;
   applyDiff: (diff: ProposedDiff) => Promise<void>;
@@ -146,21 +147,27 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   },
 
   saveActiveFile: async () => {
-    const { openTabs, activeTabPath } = get();
-    const activeTab = openTabs.find((t) => t.path === activeTabPath);
-    if (!activeTab || !activeTab.isDirty) return;
+    const activeTabPath = get().activeTabPath;
+    if (activeTabPath) await get().saveFile(activeTabPath);
+  },
 
+  saveFile: async (filePath: string) => {
+    const tab = get().openTabs.find((item) => item.path === filePath);
+    if (!tab || !tab.isDirty) return true;
+    const contentAtStart = tab.content;
     try {
-      const res = await window.electronAPI.writeFile(activeTab.path, activeTab.content);
-      if (res.success) {
-        set((state) => ({
-          openTabs: state.openTabs.map((t) =>
-            t.path === activeTab.path ? { ...t, isDirty: false } : t
-          )
-        }));
-      }
-    } catch (err) {
-      console.error('Failed to save file:', err);
+      const response = await window.electronAPI.writeFile(tab.path, contentAtStart);
+      if (!response.success) throw new Error(response.error || 'File write failed.');
+      set((state) => ({
+        openTabs: state.openTabs.map((item) => item.path === tab.path
+          ? { ...item, isDirty: item.content !== contentAtStart }
+          : item)
+      }));
+      void window.electronAPI.lspDidSave({ filePath: tab.path, text: contentAtStart });
+      return true;
+    } catch (error) {
+      console.error('Failed to save file:', error);
+      return false;
     }
   },
 

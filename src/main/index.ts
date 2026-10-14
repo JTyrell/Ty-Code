@@ -3,7 +3,7 @@ import path from 'path';
 import {
   selectWorkspaceFolder, getWorkspaceTree, readFile, writeFile, createFile,
   createDirectory, deletePath, renamePath, searchWorkspaceFiles,
-  searchInWorkspaceFiles, replaceInWorkspaceFiles, type ReplaceInFilesOptions
+  searchInWorkspaceFiles, replaceInWorkspaceFiles
 } from './ipc/fs-handlers';
 import {
   handleGetLspServers, handleStartLspServer, handleStopLspServer,
@@ -42,16 +42,36 @@ import { getUpdateManager, type UpdateChannel } from './services/update-manager'
 import { getRecentWorkspacesManager } from './services/recent-workspaces';
 import { MyersDiff } from './services/myers-diff';
 import { WorkspaceEditPreviewService } from './services/workspace-edit-preview';
-import type { CommandExecutionOptions, ProposedDiff, PtySpawnOptions, SearchInFilesOptions, WorkspaceEditOrigin } from '../preload/types';
+import { fromFileUri } from './services/lsp-path-utils';
+import type { CommandExecutionOptions, ProposedDiff, PtySpawnOptions, ReplaceInFilesOptions, SearchInFilesOptions, WorkspaceEditOrigin } from '../preload/types';
 import { fileURLToPath } from 'url';
+
+import { initAiFeatureServices, updateAiServicesWorkspace, registerAiFeatureHandlers } from './ipc/ai-features-handlers';
 
 let mainWindow: BrowserWindow | null = null;
 let currentWorkspacePath = process.cwd();
 let workspaceEditPreviewService: WorkspaceEditPreviewService | null = null;
 let workspaceEditPreviewWorkspace = '';
 let ipcRegistered = false;
+let diagnosticsManager: ReturnType<typeof getLspManager> | null = null;
+let diagnosticsUnsubscribe: (() => void) | null = null;
 
-function getWorkspaceEditPreviewService(): WorkspaceEditPreviewService {
+function ensureLspDiagnosticsBridge(): void {
+  const manager = getLspManager(currentWorkspacePath);
+  if (diagnosticsManager === manager) return;
+  diagnosticsUnsubscribe?.();
+  diagnosticsManager = manager;
+  diagnosticsUnsubscribe = manager.onDiagnostics((event) => {
+    if (!mainWindow) return;
+    try {
+      mainWindow.webContents.send('lsp:diagnostics', { ...event, filePath: fromFileUri(event.uri) });
+    } catch {
+      // Invalid server URIs are ignored and never forwarded to the renderer.
+    }
+  });
+}
+
+export function getWorkspaceEditPreviewService(): WorkspaceEditPreviewService {
   if (!workspaceEditPreviewService || workspaceEditPreviewWorkspace !== currentWorkspacePath) {
     workspaceEditPreviewWorkspace = currentWorkspacePath;
     workspaceEditPreviewService = new WorkspaceEditPreviewService(currentWorkspacePath, getLspManager(currentWorkspacePath));
@@ -91,6 +111,7 @@ function registerIpcHandlers(): void {
     const response = await selectWorkspaceFolder(mainWindow);
     if (response.success && response.data) {
       currentWorkspacePath = response.data;
+      updateAiServicesWorkspace(currentWorkspacePath);
       getRecentWorkspacesManager().addRecent(response.data);
     }
     return response;
@@ -98,6 +119,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle('fs:set-workspace', async (_event, folderPath: string) => {
     if (!folderPath) return { success: false, error: 'Invalid folder path' };
     currentWorkspacePath = folderPath;
+    updateAiServicesWorkspace(currentWorkspacePath);
     getRecentWorkspacesManager().addRecent(folderPath);
     return getWorkspaceTree(folderPath);
   });
@@ -116,7 +138,29 @@ function registerIpcHandlers(): void {
   });
   ipcMain.handle('fs:preview-replace', async (_event, options: ReplaceInFilesOptions) => {
     try {
-      return { success: true, data: await getWorkspaceEditPreviewService().createSearchReplacePreview(options) };
+      const service = getWorkspaceEditPreviewService();
+      const preview = await service.createSearchReplacePreview(options);
+      const settings = (await getSettings()).data;
+      const applied = options.forcePreview ? null : await service.tryAutoApplyPreview(preview.previewId, {
+        enabled: settings?.['editor.reviewPolicy'] === 'autoApplySafeSingleFile',
+        forcePreviewAll: false
+      });
+      return { success: true, data: applied ? { applied } : { preview } };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+  ipcMain.handle('workspace-edit:preview-lsp', async (_event, payload: { edit: unknown; title: string; origin: WorkspaceEditOrigin; forcePreview?: boolean }) => {
+    try {
+      if (!payload || !['lsp-rename', 'refactor'].includes(payload.origin) || typeof payload.title !== 'string' || payload.title.length > 160) throw new Error('Invalid workspace edit preview request.');
+      const service = getWorkspaceEditPreviewService();
+      const preview = await service.createLspPreview(payload.edit, payload.title, payload.origin);
+      const settings = (await getSettings()).data;
+      const applied = payload.forcePreview ? null : await service.tryAutoApplyPreview(preview.previewId, {
+        enabled: settings?.['editor.reviewPolicy'] === 'autoApplySafeSingleFile',
+        forcePreviewAll: payload.forcePreview === true
+      });
+      return { success: true, data: applied ? { applied } : { preview } };
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
@@ -135,7 +179,11 @@ function registerIpcHandlers(): void {
   });
   ipcMain.handle('workspace-edit:recent-undo', () => ({ success: true, data: getWorkspaceEditPreviewService().getRecentUndo() }));
   ipcMain.handle('settings:get', () => getSettings());
-  ipcMain.handle('settings:save', (_event, updates) => saveSettings(updates));
+  ipcMain.handle('settings:save', async (_event, updates) => {
+    const result = await saveSettings(updates);
+    if (result.success && updates?.['lsp.autoStart'] !== undefined) getLspManager(currentWorkspacePath).setAutoStart(updates['lsp.autoStart']);
+    return result;
+  });
 
   ipcMain.handle('agent:start-task', (_event, params) => {
     if (!mainWindow) return { success: false, error: 'No main window' };
@@ -258,16 +306,22 @@ function registerIpcHandlers(): void {
   ipcMain.handle('git:merge', (_event, branchName: string) => handleGitMerge(currentWorkspacePath, branchName));
 
   // Language Server Protocol (LSP) IPC Handlers
-  ipcMain.handle('lsp:get-servers', () => handleGetLspServers(currentWorkspacePath));
+  ipcMain.handle('lsp:get-servers', async () => {
+    const result = await handleGetLspServers(currentWorkspacePath);
+    ensureLspDiagnosticsBridge();
+    return result;
+  });
   ipcMain.handle('lsp:start-server', (_event, languageId: string) => handleStartLspServer(languageId, currentWorkspacePath));
   ipcMain.handle('lsp:stop-server', (_event, languageId: string) => handleStopLspServer(languageId, currentWorkspacePath));
   ipcMain.handle('lsp:restart-server', (_event, languageId: string) => handleRestartLspServer(languageId, currentWorkspacePath));
   ipcMain.handle('lsp:configure-server', (_event, payload: { languageId: string; config: any }) =>
     handleConfigureLspServer(payload.languageId, payload.config, currentWorkspacePath)
   );
-  ipcMain.handle('lsp:did-open', (_event, payload: { filePath: string; languageId: string; text: string }) =>
-    handleLspDidOpen(payload, currentWorkspacePath)
-  );
+  ipcMain.handle('lsp:did-open', async (_event, payload: { filePath: string; languageId: string; text: string }) => {
+    const result = await handleLspDidOpen(payload, currentWorkspacePath);
+    ensureLspDiagnosticsBridge();
+    return result;
+  });
   ipcMain.handle('lsp:did-change', (_event, payload: { filePath: string; text: string }) =>
     handleLspDidChange(payload, currentWorkspacePath)
   );
@@ -298,12 +352,18 @@ function registerIpcHandlers(): void {
   ipcMain.handle('lsp:rename', (_event, payload: { filePath: string; line: number; character: number; newName: string }) =>
     handleLspRename(payload, currentWorkspacePath)
   );
-  ipcMain.handle('lsp:rename-preview', async (_event, payload: { filePath: string; line: number; character: number; newName: string }) => {
+  ipcMain.handle('lsp:rename-preview', async (_event, payload: { filePath: string; line: number; character: number; newName: string; forcePreview?: boolean }) => {
     try {
       const result = await handleLspRename(payload, currentWorkspacePath);
       if (!result.success || !result.data) return { success: false, error: result.error || 'The language server returned no rename edits.' };
-      const preview = await getWorkspaceEditPreviewService().createLspPreview(result.data, `Rename to “${payload.newName}”`);
-      return { success: true, data: preview };
+      const service = getWorkspaceEditPreviewService();
+      const preview = await service.createLspPreview(result.data, `Rename to “${payload.newName}”`);
+      const settings = (await getSettings()).data;
+      const applied = payload.forcePreview ? null : await service.tryAutoApplyPreview(preview.previewId, {
+        enabled: settings?.['editor.reviewPolicy'] === 'autoApplySafeSingleFile',
+        forcePreviewAll: false
+      });
+      return { success: true, data: applied ? { applied } : { preview } };
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
@@ -356,6 +416,10 @@ function registerIpcHandlers(): void {
       isPackaged: Boolean(app?.isPackaged)
     }
   }));
+
+  // Phase 7: Advanced AI Features & Competitive Differentiation
+  initAiFeatureServices(currentWorkspacePath);
+  registerAiFeatureHandlers();
 }
 
 function cleanupAllResources(): void {

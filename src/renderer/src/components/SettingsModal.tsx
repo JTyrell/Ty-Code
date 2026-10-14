@@ -18,8 +18,9 @@ import {
   Copy
 } from 'lucide-react';
 import { useChatStore } from '../state/chat-store';
-import type { ProviderType, ShellInfo, TerminalProfile, LanguageServerStatus } from '../../../preload/types';
+import type { EditReviewPolicy, ProviderType, ShellInfo, TerminalProfile, LanguageServerStatus } from '../../../preload/types';
 import { DEFAULT_KEYBINDINGS, type KeybindingItem } from '../../../main/services/config-schemas';
+import { useLspStore } from '../state/lsp-store';
 
 type SettingsTab = 'keys' | 'endpoints' | 'params' | 'terminal' | 'lsp' | 'editor' | 'shortcuts' | 'extensions';
 
@@ -57,6 +58,10 @@ export const SettingsModal: React.FC = () => {
   const [minimap, setMinimap] = useState(true);
   const [bracketPairs, setBracketPairs] = useState(true);
   const [autoSaveDelay, setAutoSaveDelay] = useState(1000);
+  const [autoSaveMode, setAutoSaveMode] = useState<'off' | 'afterDelay' | 'onFocusChange'>('afterDelay');
+  const [editorWordWrap, setEditorWordWrap] = useState<'off' | 'on' | 'wordWrapColumn' | 'bounded'>('off');
+  const [reviewPolicy, setReviewPolicy] = useState<EditReviewPolicy>('alwaysReview');
+  const [lspAutoStart, setLspAutoStart] = useState(true);
 
   // Keybindings state
   const [keybindingSearch, setKeybindingSearch] = useState('');
@@ -74,6 +79,15 @@ export const SettingsModal: React.FC = () => {
     setProfiles(settings.terminalProfiles || []);
     setDefaultProfileId(settings.defaultTerminalProfileId || '');
     setThirdPartyRuntimeEnabled(settings.thirdPartyRuntimeEnabled ?? false);
+    setReviewPolicy(settings['editor.reviewPolicy'] || 'alwaysReview');
+    setLspAutoStart(settings['lsp.autoStart'] ?? true);
+    setFontSize(settings.editor?.fontSize ?? 13);
+    setTabSize(settings.editor?.tabSize ?? 2);
+    setMinimap(settings.editor?.minimap ?? true);
+    setBracketPairs(settings.editor?.bracketPairs ?? true);
+    setAutoSaveDelay(settings.editor?.autoSaveDelay ?? 1000);
+    setAutoSaveMode(settings.editor?.autoSave ?? 'afterDelay');
+    setEditorWordWrap(settings.editor?.wordWrap ?? 'off');
   }, [settings]);
 
   useEffect(() => {
@@ -100,6 +114,7 @@ export const SettingsModal: React.FC = () => {
       const res = await window.electronAPI.lspGetServers();
       if (res.success && res.data) {
         setLspServers(res.data);
+        useLspStore.getState().setServers(res.data);
         const paths: Record<string, string> = {};
         for (const s of res.data) {
           paths[s.languageId] = s.configuredPath || '';
@@ -211,7 +226,11 @@ export const SettingsModal: React.FC = () => {
       maxTokens: Number(maxTokens),
       terminalProfiles: profiles,
       defaultTerminalProfileId: defaultProfileId || undefined,
-      thirdPartyRuntimeEnabled
+      thirdPartyRuntimeEnabled,
+      'editor.reviewPolicy': reviewPolicy,
+      'lsp.autoStart': lspAutoStart,
+      editor: { fontSize, tabSize, minimap, bracketPairs, autoSave: autoSaveMode, autoSaveDelay, wordWrap: editorWordWrap, formatOnSave: settings?.editor?.formatOnSave || false },
+      languageServers: Object.fromEntries(lspServers.map((server) => [server.languageId, { enabled: server.status !== 'disabled', args: server.args, path: customLspPaths[server.languageId]?.trim() || undefined }]))
     });
     if (!saved) {
       setError('Failed to save settings. See the application log for details.');
@@ -338,6 +357,10 @@ export const SettingsModal: React.FC = () => {
               <p style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
                 Install language servers yourself. System PATH executables can start automatically; project-local candidates are detected for information only and never run unless you set an explicit absolute path.
               </p>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-primary)', fontSize: 12 }}>
+                <input type="checkbox" checked={lspAutoStart} onChange={(event) => setLspAutoStart(event.target.checked)} />
+                Start available configured servers when supported files open
+              </label>
 
               {lspServers.map((server) => {
                 const isLoading = Boolean(lspActionLoading[server.languageId]);
@@ -410,6 +433,26 @@ export const SettingsModal: React.FC = () => {
           {/* Editor Polish Tab */}
           {activeTab === 'editor' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <label className="settings-field-label" htmlFor="edit-review-policy">Change review policy</label>
+                <select id="edit-review-policy" value={reviewPolicy} onChange={(event) => setReviewPolicy(event.target.value as EditReviewPolicy)} style={{ width: '100%' }}>
+                  <option value="alwaysReview">Always preview edits (recommended)</option>
+                  <option value="autoApplySafeSingleFile">Auto-apply safe single-file edits</option>
+                </select>
+                <p className="settings-hint">Auto-apply is limited to low-risk changes in tracked files and always records an undo snapshot. Multi-file edits and protected files always require review.</p>
+              </div>
+              <div>
+                <label className="settings-field-label" htmlFor="editor-word-wrap">Word wrap</label>
+                <select id="editor-word-wrap" value={editorWordWrap} onChange={(event) => setEditorWordWrap(event.target.value as typeof editorWordWrap)} style={{ width: '100%' }}>
+                  <option value="off">Off</option><option value="on">On</option><option value="wordWrapColumn">Column</option><option value="bounded">Bounded</option>
+                </select>
+              </div>
+              <div>
+                <label className="settings-field-label" htmlFor="editor-auto-save">Auto-save behavior</label>
+                <select id="editor-auto-save" value={autoSaveMode} onChange={(event) => setAutoSaveMode(event.target.value as typeof autoSaveMode)} style={{ width: '100%' }}>
+                  <option value="off">Off</option><option value="afterDelay">After delay</option><option value="onFocusChange">When focus changes</option>
+                </select>
+              </div>
               <div>
                 <label className="settings-field-label">Font Size: {fontSize}px</label>
                 <input

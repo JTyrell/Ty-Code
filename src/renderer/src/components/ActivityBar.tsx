@@ -11,7 +11,9 @@ import {
 import { useChatStore } from '../state/chat-store';
 import { useGitStore } from '../state/git-store';
 
-export type ActivityTab = 'explorer' | 'search' | 'source-control' | 'extensions' | 'skills' | 'outline';
+import { FileCheck } from 'lucide-react';
+
+export type ActivityTab = 'explorer' | 'search' | 'source-control' | 'code-review' | 'extensions' | 'skills' | 'outline';
 
 interface ActivityBarProps {
   activeTab: ActivityTab;
@@ -37,6 +39,7 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({ activeTab, onTabChange
       icon: <GitBranch size={18} />,
       badge: totalChanges > 0 ? totalChanges : undefined
     },
+    { id: 'code-review', label: 'AI Code Review', icon: <FileCheck size={18} /> },
     { id: 'extensions', label: 'Extensions', icon: <Boxes size={18} /> },
     { id: 'skills', label: 'Capabilities', icon: <Sparkles size={18} /> },
     { id: 'outline', label: 'Document Outline', icon: <ListTree size={18} /> }

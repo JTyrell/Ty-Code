@@ -6,11 +6,17 @@
 
 import type * as monacoType from 'monaco-editor';
 import { useWorkspaceEditStore } from '../state/workspace-edit-store';
+import { useEditorNavigationStore } from '../state/editor-navigation-store';
+import { handleAutoAppliedTransaction } from './workspace-edit-commands';
+import { useLspStore } from '../state/lsp-store';
+
+const changeDebounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 type Monaco = typeof monacoType;
 
 const REGISTERED_LANGUAGES = ['typescript', 'javascript', 'python', 'rust', 'go', 'cpp', 'c', 'java'];
 let isAdapterRegistered = false;
+let editorOpenerRegistered = false;
 
 // Conversion helpers from LSP to Monaco types
 function toMonacoRange(range: any): monacoType.IRange {
@@ -98,6 +104,57 @@ function getModelPath(model: monacoType.editor.ITextModel): string {
   return model.uri.scheme === 'file' ? model.uri.fsPath : model.uri.path;
 }
 
+function toMonacoLocations(monaco: Monaco, result: any): monacoType.languages.Location[] {
+  const raw = Array.isArray(result) ? result : result ? [result] : [];
+  return raw.flatMap((location: any) => {
+    if (location.uri && location.range) return [{ uri: parseUri(monaco, location.uri), range: toMonacoRange(location.range) }];
+    if (location.targetUri && location.targetRange) return [{ uri: parseUri(monaco, location.targetUri), range: toMonacoRange(location.targetSelectionRange || location.targetRange) }];
+    return [];
+  });
+}
+
+const LSP_MARKER_OWNER = 'ty-code-lsp';
+
+function toMonacoMarkerSeverity(monaco: Monaco, severity?: number): monacoType.MarkerSeverity {
+  switch (severity) {
+    case 1: return monaco.MarkerSeverity.Error;
+    case 2: return monaco.MarkerSeverity.Warning;
+    case 3: return monaco.MarkerSeverity.Info;
+    case 4: return monaco.MarkerSeverity.Hint;
+    default: return monaco.MarkerSeverity.Info;
+  }
+}
+
+function applyDiagnosticsToModel(monaco: Monaco, event: { filePath: string; diagnostics: Array<{ range: any; severity?: number; code?: number | string; source?: string; message: string }> }): void {
+  const model = monaco.editor.getModel(monaco.Uri.file(event.filePath));
+  if (!model) return;
+  monaco.editor.setModelMarkers(model, LSP_MARKER_OWNER, event.diagnostics.map((diagnostic) => ({
+    ...toMonacoRange(diagnostic.range),
+    severity: toMonacoMarkerSeverity(monaco, diagnostic.severity),
+    code: diagnostic.code === undefined ? undefined : String(diagnostic.code),
+    source: diagnostic.source,
+    message: diagnostic.message
+  })));
+}
+
+export function applyStoredDiagnostics(monaco: Monaco, filePath: string): void {
+  const event = useLspStore.getState().diagnostics[filePath];
+  if (event) applyDiagnosticsToModel(monaco, event);
+}
+
+export function subscribeLspDiagnostics(monaco: Monaco): () => void {
+  if (!window.electronAPI) return () => undefined;
+  const unsubscribe = window.electronAPI.onLspDiagnostics((event) => {
+    useLspStore.getState().setDiagnostics(event);
+    applyDiagnosticsToModel(monaco, event);
+  });
+  for (const event of Object.values(useLspStore.getState().diagnostics)) applyDiagnosticsToModel(monaco, event);
+  return () => {
+    unsubscribe();
+    for (const model of monaco.editor.getModels()) monaco.editor.setModelMarkers(model, LSP_MARKER_OWNER, []);
+  };
+}
+
 export function registerMonacoLspProviders(monaco: Monaco): void {
   if (isAdapterRegistered || !window.electronAPI) return;
   isAdapterRegistered = true;
@@ -106,6 +163,25 @@ export function registerMonacoLspProviders(monaco: Monaco): void {
   const javascriptMode = monaco.languages.typescript.javascriptDefaults;
   typescriptMode.setModeConfiguration({ ...typescriptMode.modeConfiguration, rename: false });
   javascriptMode.setModeConfiguration({ ...javascriptMode.modeConfiguration, rename: false });
+  if (!editorOpenerRegistered) {
+    editorOpenerRegistered = true;
+    monaco.editor.registerEditorOpener({
+      openCodeEditor: async (_source, resource, selectionOrPosition) => {
+        const line = selectionOrPosition && 'lineNumber' in selectionOrPosition
+          ? selectionOrPosition.lineNumber
+          : selectionOrPosition && 'startLineNumber' in selectionOrPosition
+            ? selectionOrPosition.startLineNumber
+            : 1;
+        const column = selectionOrPosition && 'column' in selectionOrPosition
+          ? selectionOrPosition.column
+          : selectionOrPosition && 'startColumn' in selectionOrPosition
+            ? selectionOrPosition.startColumn
+            : 1;
+        useEditorNavigationStore.getState().navigateTo({ filePath: resource.fsPath || resource.path, line, column });
+        return true;
+      }
+    });
+  }
 
   for (const lang of REGISTERED_LANGUAGES) {
     // 1. Completion Provider
@@ -261,18 +337,24 @@ export function registerMonacoLspProviders(monaco: Monaco): void {
             filePath: getModelPath(model),
             line: position.lineNumber - 1,
             character: position.column - 1,
-            newName
+            newName,
+            forcePreview: useWorkspaceEditStore.getState().forcePreviewAll
           };
           const response = await window.electronAPI.lspRenamePreview(request);
           if (!response.success || !response.data) return null;
-          const preview = response.data;
+          if (response.data.applied) {
+            handleAutoAppliedTransaction(response.data.applied);
+            return null;
+          }
+          const preview = response.data.preview;
+          if (!preview) return null;
           useWorkspaceEditStore.getState().setRequest({
             preview,
             isStale: false,
             refresh: async () => {
-              const refreshed = await window.electronAPI.lspRenamePreview(request);
-              if (!refreshed.success || !refreshed.data) throw new Error(refreshed.error || 'Could not refresh rename preview.');
-              return refreshed.data;
+              const refreshed = await window.electronAPI.lspRenamePreview({ ...request, forcePreview: true });
+              if (!refreshed.success || !refreshed.data?.preview) throw new Error(refreshed.error || 'Could not refresh rename preview.');
+              return refreshed.data.preview;
             }
           });
           return null;
@@ -348,13 +430,14 @@ export function syncDocumentWithLsp(filePath: string, languageId: string, conten
   void window.electronAPI.lspDidOpen({ filePath, languageId, text: content });
 }
 
-let changeDebounceTimer: any = null;
 export function notifyDocumentChanged(filePath: string, content: string): void {
   if (!window.electronAPI) return;
-  clearTimeout(changeDebounceTimer);
-  changeDebounceTimer = setTimeout(() => {
+  const existing = changeDebounceTimers.get(filePath);
+  if (existing) clearTimeout(existing);
+  changeDebounceTimers.set(filePath, setTimeout(() => {
+    changeDebounceTimers.delete(filePath);
     void window.electronAPI.lspDidChange({ filePath, text: content });
-  }, 250);
+  }, 250));
 }
 
 export function notifyDocumentSaved(filePath: string, content?: string): void {

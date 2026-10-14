@@ -95,6 +95,7 @@ const api: ElectronAPI = {
   replaceInFiles: (options: any) => ipcRenderer.invoke('fs:replace-in-files', options),
   previewReplace: (options: any) => ipcRenderer.invoke('fs:preview-replace', options),
   applyWorkspaceEdit: (previewId: string) => ipcRenderer.invoke('workspace-edit:apply', previewId),
+  previewLspWorkspaceEdit: (params: { edit: unknown; title: string; origin: 'lsp-rename' | 'refactor'; forcePreview?: boolean }) => ipcRenderer.invoke('workspace-edit:preview-lsp', params),
   cancelWorkspaceEdit: (previewId: string) => ipcRenderer.invoke('workspace-edit:cancel', previewId),
   undoWorkspaceEdit: (transactionId?: string) => ipcRenderer.invoke('workspace-edit:undo', transactionId),
   getRecentWorkspaceEdits: () => ipcRenderer.invoke('workspace-edit:recent-undo'),
@@ -116,11 +117,16 @@ const api: ElectronAPI = {
   lspImplementation: (params: { filePath: string; line: number; character: number }) => ipcRenderer.invoke('lsp:implementation', params),
   lspReferences: (params: { filePath: string; line: number; character: number; includeDeclaration?: boolean }) => ipcRenderer.invoke('lsp:references', params),
   lspRename: (params: { filePath: string; line: number; character: number; newName: string }) => ipcRenderer.invoke('lsp:rename', params),
-  lspRenamePreview: (params: { filePath: string; line: number; character: number; newName: string }) => ipcRenderer.invoke('lsp:rename-preview', params),
+  lspRenamePreview: (params: { filePath: string; line: number; character: number; newName: string; forcePreview?: boolean }) => ipcRenderer.invoke('lsp:rename-preview', params),
   lspDocumentSymbols: (params: { filePath: string }) => ipcRenderer.invoke('lsp:document-symbols', params),
   lspWorkspaceSymbols: (params: { query: string }) => ipcRenderer.invoke('lsp:workspace-symbols', params),
   lspCodeActions: (params: { filePath: string; range: any; context?: any }) => ipcRenderer.invoke('lsp:code-actions', params),
   lspSignatureHelp: (params: { filePath: string; line: number; character: number }) => ipcRenderer.invoke('lsp:signature-help', params),
+  onLspDiagnostics: (callback: (event: any) => void) => {
+    const listener = (_event: unknown, payload: any) => callback(payload);
+    ipcRenderer.on('lsp:diagnostics', listener);
+    return () => ipcRenderer.removeListener('lsp:diagnostics', listener);
+  },
 
   // Workspace & Navigation
   setWorkspaceFolder: (folderPath: string) => ipcRenderer.invoke('fs:set-workspace', folderPath),
@@ -158,7 +164,22 @@ const api: ElectronAPI = {
   // Myers Diff & App Info
   computeMyersDiff: (params: { original: string; modified: string; contextLines?: number }) =>
     ipcRenderer.invoke('diff:compute-myers', params),
-  getAppInfo: () => ipcRenderer.invoke('app:get-info')
+  getAppInfo: () => ipcRenderer.invoke('app:get-info'),
+
+  // Phase 7: Advanced AI Features & Competitive Differentiation
+  getInlineCompletions: (params) => ipcRenderer.invoke('ai:inline-completions', params),
+  indexProject: (workspacePath) => ipcRenderer.invoke('ai:index-project', workspacePath),
+  getProjectIndexStats: () => ipcRenderer.invoke('ai:get-project-index-stats'),
+  queryProjectContext: (query) => ipcRenderer.invoke('ai:query-project-context', query),
+  runCodeReview: (params) => ipcRenderer.invoke('ai:run-code-review', params),
+  getCodeReviewRules: () => ipcRenderer.invoke('ai:get-code-review-rules'),
+  updateCodeReviewRules: (rules) => ipcRenderer.invoke('ai:update-code-review-rules', rules),
+  requestRefactorPreview: (request) => ipcRenderer.invoke('ai:request-refactor-preview', request),
+  generateCodeFromPrompt: (request) => ipcRenderer.invoke('ai:generate-code', request),
+  parseNaturalLanguageCommand: (request) => ipcRenderer.invoke('ai:parse-nl-command', request),
+  getConversationMemories: (query) => ipcRenderer.invoke('ai:get-memories', query),
+  addConversationMemory: (memory) => ipcRenderer.invoke('ai:add-memory', memory),
+  getPairProgrammingSuggestions: (event) => ipcRenderer.invoke('ai:pair-suggestions', event)
 };
 
 contextBridge.exposeInMainWorld('electronAPI', api);

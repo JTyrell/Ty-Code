@@ -17,6 +17,10 @@ import {
   Copy
 } from 'lucide-react';
 import { useWorkspaceStore } from '../state/workspace-store';
+import { useChatStore } from '../state/chat-store';
+import { useWorkspaceEditStore } from '../state/workspace-edit-store';
+import { useEditorNavigationStore } from '../state/editor-navigation-store';
+import { handleAutoAppliedTransaction, undoWorkspaceEditFromEditor } from '../services/workspace-edit-commands';
 import { toast } from '../state/toast-store';
 import { WelcomePage } from './WelcomePage';
 import { OnboardingTour } from './OnboardingTour';
@@ -26,9 +30,12 @@ import {
   registerMonacoLspProviders,
   syncDocumentWithLsp,
   notifyDocumentChanged,
-  notifyDocumentSaved,
-  notifyDocumentClosed
+  notifyDocumentClosed,
+  subscribeLspDiagnostics,
+  applyStoredDiagnostics
 } from '../services/monaco-lsp-adapter';
+import { registerMonacoInlineCompletionProvider } from '../services/monaco-inline-completion';
+import { usePairProgrammingStore } from '../state/pair-programming-store';
 
 interface SplitPaneState {
   isSplit: boolean;
@@ -45,14 +52,16 @@ export const EditorArea: React.FC = () => {
     closeTab,
     updateTabContent,
     saveActiveFile,
+    saveFile,
     diffReview,
     closeDiffReview,
     applyDiff
   } = useWorkspaceStore();
 
   const monaco = useMonaco();
+  const { settings } = useChatStore();
   const [minimapEnabled, setMinimapEnabled] = useState(true);
-  const [wordWrap, setWordWrap] = useState<'off' | 'on'>('off');
+  const [wordWrap, setWordWrap] = useState<'off' | 'on' | 'wordWrapColumn' | 'bounded'>('off');
   const [isZenMode, setIsZenMode] = useState(false);
   const [currentLine, setCurrentLine] = useState(1);
   const [blameHunks, setBlameHunks] = useState<GitBlameHunk[]>([]);
@@ -65,12 +74,35 @@ export const EditorArea: React.FC = () => {
   });
   const [isTourOpen, setIsTourOpen] = useState(false);
   const [tabContextMenu, setTabContextMenu] = useState<{ x: number; y: number; path: string } | null>(null);
+  const navigationRequest = useEditorNavigationStore((state) => state.request);
+  const openingNavigationId = useRef<number | null>(null);
 
   const editorRef = useRef<any>(null);
   const activeTab = openTabs.find((t) => t.path === activeTabPath);
   const secondaryTab = openTabs.find((t) => t.path === splitState.secondaryTabPath) || openTabs[1] || null;
 
   useEffect(() => () => cursorListenerRef.current?.dispose(), []);
+
+  useEffect(() => {
+    setMinimapEnabled(settings?.editor?.minimap ?? true);
+    setWordWrap(settings?.editor?.wordWrap ?? 'off');
+  }, [settings?.editor?.minimap, settings?.editor?.wordWrap]);
+
+  useEffect(() => {
+    const autoSave = settings?.editor?.autoSave ?? 'afterDelay';
+    if (autoSave === 'off') return;
+    const timers: number[] = [];
+    if (autoSave === 'afterDelay') {
+      for (const tab of openTabs) {
+        if (tab.isDirty) timers.push(window.setTimeout(() => { void saveFile(tab.path); }, settings?.editor?.autoSaveDelay ?? 1000));
+      }
+    } else {
+      const onBlur = () => { for (const tab of useWorkspaceStore.getState().openTabs) if (tab.isDirty) void saveFile(tab.path); };
+      window.addEventListener('blur', onBlur);
+      return () => { window.removeEventListener('blur', onBlur); timers.forEach(window.clearTimeout); };
+    }
+    return () => timers.forEach(window.clearTimeout);
+  }, [openTabs, saveFile, settings?.editor?.autoSave, settings?.editor?.autoSaveDelay]);
 
   const handleBlameLoaded = React.useCallback((hunks: GitBlameHunk[]) => {
     setBlameHunks(hunks);
@@ -89,28 +121,39 @@ export const EditorArea: React.FC = () => {
     return () => decorations.clear();
   }, [activeTab, blameHunks, monaco]);
 
-  // Register LSP providers once Monaco is loaded
+  // Register LSP & Inline AI completion providers once Monaco is loaded
   useEffect(() => {
-    if (monaco) {
-      registerMonacoLspProviders(monaco);
-    }
+    if (!monaco) return;
+    registerMonacoLspProviders(monaco);
+    registerMonacoInlineCompletionProvider(monaco);
+    return subscribeLspDiagnostics(monaco);
   }, [monaco]);
 
   // Sync active file with LSP when opened or tab switches
   useEffect(() => {
-    if (activeTab) {
-      syncDocumentWithLsp(activeTab.path, activeTab.language, activeTab.content);
-    }
+    if (activeTab) syncDocumentWithLsp(activeTab.path, activeTab.language, activeTab.content);
   }, [activeTab?.path]);
+
+  useEffect(() => {
+    if (splitState.isSplit && secondaryTab) syncDocumentWithLsp(secondaryTab.path, secondaryTab.language, secondaryTab.content);
+  }, [splitState.isSplit, secondaryTab?.path]);
 
   // Global Keyboard shortcuts in editor area
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+        const editorNode = editorRef.current?.getDomNode?.() as HTMLElement | null;
+        const activeElement = document.activeElement;
+        const editState = useWorkspaceEditStore.getState();
+        if (editorNode?.contains(activeElement) && editState.lastAppliedTransactionId && editState.lastAppliedEditorRevision === editState.editorRevision) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          void undoWorkspaceEditFromEditor();
+          return;
+        }
+      }
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
-        if (activeTab) {
-          notifyDocumentSaved(activeTab.path, activeTab.content);
-        }
         void saveActiveFile().then(() => setBlameRefreshKey((value) => value + 1));
       } else if ((e.ctrlKey || e.metaKey) && e.key === '\\') {
         e.preventDefault();
@@ -120,9 +163,51 @@ export const EditorArea: React.FC = () => {
         setWordWrap((prev) => (prev === 'on' ? 'off' : 'on'));
       }
     };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
   }, [saveActiveFile, activeTab]);
+
+  useEffect(() => {
+    return useEditorNavigationStore.getState().registerActions({
+      toggleMinimap: () => setMinimapEnabled((value) => !value),
+      toggleWordWrap: () => setWordWrap((value) => value === 'on' ? 'off' : 'on'),
+      toggleZenMode: () => setIsZenMode((value) => !value),
+      splitVertical: () => toggleSplit('vertical'),
+      splitHorizontal: () => toggleSplit('horizontal')
+    });
+  }, [openTabs, activeTabPath]);
+
+  useEffect(() => {
+    if (!navigationRequest || openingNavigationId.current === navigationRequest.id) return;
+    openingNavigationId.current = navigationRequest.id;
+    const targetPath = navigationRequest.target.filePath
+      ? (navigationRequest.target.filePath.startsWith(workspacePath) || /^[A-Za-z]:[\\/]|^\\\\/.test(navigationRequest.target.filePath)
+        ? navigationRequest.target.filePath
+        : `${workspacePath.replace(/[\\/]+$/, '')}${workspacePath.includes('\\') ? '\\' : '/'}${navigationRequest.target.filePath.replace(/[\\/]/g, workspacePath.includes('\\') ? '\\' : '/')}`)
+      : activeTabPath;
+    const navigate = async () => {
+      if (targetPath && targetPath !== activeTabPath) {
+        const name = targetPath.split(/[\\/]/).pop() || targetPath;
+        await useWorkspaceStore.getState().openFile(targetPath, name);
+      }
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        const editor = editorRef.current;
+        if (editor) {
+          const model = editor.getModel();
+          const maxLine = model?.getLineCount() || 1;
+          const lineNumber = Math.max(1, Math.min(maxLine, navigationRequest.target.line));
+          const maxColumn = model?.getLineMaxColumn(lineNumber) || 1;
+          const column = Math.max(1, Math.min(maxColumn, navigationRequest.target.column || 1));
+          editor.setPosition({ lineNumber, column });
+          editor.revealPositionInCenter({ lineNumber, column });
+          editor.focus();
+        }
+        useEditorNavigationStore.getState().clearRequest(navigationRequest.id);
+        openingNavigationId.current = null;
+      }));
+    };
+    void navigate();
+  }, [navigationRequest?.id, activeTabPath, workspacePath]);
 
   const toggleSplit = (orientation: 'horizontal' | 'vertical') => {
     setSplitState((prev) => {
@@ -138,9 +223,55 @@ export const EditorArea: React.FC = () => {
     });
   };
 
+  const triggerRefactor = async (
+    type: any,
+    selectedText: string,
+    selection: any,
+    targetName?: string
+  ) => {
+    if (!activeTab) return;
+    try {
+      const req = {
+        type,
+        filePath: activeTab.path,
+        selectedText,
+        selectionRange: {
+          startLine: selection.startLineNumber,
+          startColumn: selection.startColumn,
+          endLine: selection.endLineNumber,
+          endColumn: selection.endColumn
+        },
+        targetName,
+        forcePreview: useWorkspaceEditStore.getState().forcePreviewAll
+      };
+      const response = await window.electronAPI.requestRefactorPreview(req);
+      if (!response.success || !response.data) {
+        toast.error('Refactor failed', response.error);
+        return;
+      }
+      if (response.data.applied) {
+        handleAutoAppliedTransaction(response.data.applied);
+        return;
+      }
+      useWorkspaceEditStore.getState().setRequest({
+        preview: response.data.preview,
+        isStale: false,
+        refresh: async () => {
+          const refreshed = await window.electronAPI.requestRefactorPreview({ ...req, forcePreview: true });
+          if (!refreshed.success || !refreshed.data) throw new Error(refreshed.error || 'Could not refresh refactor preview.');
+          return refreshed.data.preview;
+        }
+      });
+      toast.info('Refactor Preview Ready', 'Review unified Myers diff and apply changes.');
+    } catch (err) {
+      toast.error('Refactor error', String(err));
+    }
+  };
+
   const handleEditorMount = (editor: any) => {
     cursorListenerRef.current?.dispose();
     editorRef.current = editor;
+    if (monaco && activeTab) applyStoredDiagnostics(monaco, activeTab.path);
     setCurrentLine(editor.getPosition()?.lineNumber || 1);
     cursorListenerRef.current = editor.onDidChangeCursorPosition((event: { position: { lineNumber: number } }) => {
       setCurrentLine(event.position.lineNumber);
@@ -160,11 +291,92 @@ export const EditorArea: React.FC = () => {
       showFoldingControls: 'always',
       renderWhitespace: 'selection'
     });
+
+    // AI Refactoring Context Menu Actions
+    editor.addAction({
+      id: 'tycode.refactor.extractFunction',
+      label: 'AI Refactor: Extract Function',
+      contextMenuGroupId: '1_modification',
+      contextMenuOrder: 1,
+      run: async (ed: any) => {
+        const selection = ed.getSelection();
+        const selectedText = ed.getModel()?.getValueInRange(selection);
+        if (!selectedText) {
+          toast.warning('No selection', 'Select code to extract function.');
+          return;
+        }
+        const fnName = prompt('Enter function name:', 'extractedFunction');
+        if (!fnName) return;
+        await triggerRefactor('extract-function', selectedText, selection, fnName);
+      }
+    });
+
+    editor.addAction({
+      id: 'tycode.refactor.extractVariable',
+      label: 'AI Refactor: Extract Variable',
+      contextMenuGroupId: '1_modification',
+      contextMenuOrder: 2,
+      run: async (ed: any) => {
+        const selection = ed.getSelection();
+        const selectedText = ed.getModel()?.getValueInRange(selection);
+        if (!selectedText) {
+          toast.warning('No selection', 'Select expression to extract variable.');
+          return;
+        }
+        const varName = prompt('Enter variable name:', 'extractedVal');
+        if (!varName) return;
+        await triggerRefactor('extract-variable', selectedText, selection, varName);
+      }
+    });
+
+    editor.addAction({
+      id: 'tycode.refactor.addErrorHandling',
+      label: 'AI Refactor: Add Error Handling (try/catch)',
+      contextMenuGroupId: '1_modification',
+      contextMenuOrder: 3,
+      run: async (ed: any) => {
+        const selection = ed.getSelection();
+        const selectedText = ed.getModel()?.getValueInRange(selection);
+        if (!selectedText) {
+          toast.warning('No selection', 'Select code to wrap in error handling.');
+          return;
+        }
+        await triggerRefactor('add-error-handling', selectedText, selection);
+      }
+    });
+
+    editor.addAction({
+      id: 'tycode.refactor.addTypes',
+      label: 'AI Refactor: Add TypeScript Types',
+      contextMenuGroupId: '1_modification',
+      contextMenuOrder: 4,
+      run: async (ed: any) => {
+        const selection = ed.getSelection();
+        const selectedText = ed.getModel()?.getValueInRange(selection);
+        if (!selectedText) {
+          toast.warning('No selection', 'Select code to add types.');
+          return;
+        }
+        await triggerRefactor('add-typescript-types', selectedText, selection);
+      }
+    });
   };
 
   const handleContentChange = (path: string, newContent: string) => {
+    const transactionContent = useWorkspaceEditStore.getState().consumePendingEditorContent(path);
+    if (transactionContent !== undefined && transactionContent === newContent) return;
     updateTabContent(path, newContent);
     notifyDocumentChanged(path, newContent);
+    useWorkspaceEditStore.getState().markEditorChanged(path, newContent);
+    if (activeTab) {
+      void usePairProgrammingStore.getState().processEditorEvent({
+        type: 'content-changed',
+        filePath: path,
+        language: activeTab.language,
+        line: currentLine,
+        content: newContent
+      });
+    }
   };
 
   const handleCloseTab = (path: string) => {
@@ -508,7 +720,7 @@ export const EditorArea: React.FC = () => {
                   if (val !== undefined) handleContentChange(activeTab.path, val);
                 }}
                 options={{
-                  fontSize: 13,
+                  fontSize: settings?.editor?.fontSize ?? 13,
                   fontFamily: "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
                   automaticLayout: true,
                   scrollBeyondLastLine: false,
@@ -517,8 +729,8 @@ export const EditorArea: React.FC = () => {
                   lineNumbers: 'on',
                   glyphMargin: true,
                   renderWhitespace: 'selection',
-                  tabSize: 2,
-                  bracketPairColorization: { enabled: true },
+                  tabSize: settings?.editor?.tabSize ?? 2,
+                  bracketPairColorization: { enabled: settings?.editor?.bracketPairs ?? true },
                   guides: {
                     indentation: true,
                     bracketPairs: true,

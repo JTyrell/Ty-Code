@@ -186,6 +186,17 @@ export class GitService {
     }
   }
 
+  async isTracked(workspacePath: string, filePath: string): Promise<boolean> {
+    try {
+      const { git } = await this.getRepoGit(workspacePath);
+      const { relativePath } = await this.resolveRepoPath(workspacePath, filePath);
+      await git.raw(['ls-files', '--error-unmatch', '--', this.literalPathspec(relativePath)]);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async init(workspacePath: string): Promise<void> {
     await this.getGit(workspacePath).init();
   }

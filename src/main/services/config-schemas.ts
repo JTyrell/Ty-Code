@@ -33,11 +33,11 @@ export interface EditorSettingsConfig {
   'editor.zenMode': boolean;
   'workbench.splitOrientation': 'horizontal' | 'vertical';
   'lsp.autoStart': boolean;
+  'editor.reviewPolicy': 'alwaysReview' | 'autoApplySafeSingleFile';
   'lsp.servers': Record<string, {
     enabled: boolean;
-    command?: string;
     args?: string[];
-    customPath?: string;
+    path?: string;
   }>;
 }
 
@@ -62,13 +62,14 @@ export const DEFAULT_EDITOR_SETTINGS: EditorSettingsConfig = {
   'editor.zenMode': false,
   'workbench.splitOrientation': 'vertical',
   'lsp.autoStart': true,
+  'editor.reviewPolicy': 'alwaysReview',
   'lsp.servers': {
-    typescript: { enabled: true, command: 'typescript-language-server', args: ['--stdio'] },
-    python: { enabled: true, command: 'pyright-langserver', args: ['--stdio'] },
-    rust: { enabled: true, command: 'rust-analyzer', args: [] },
-    go: { enabled: true, command: 'gopls', args: [] },
-    java: { enabled: true, command: 'jdtls', args: [] },
-    cpp: { enabled: true, command: 'clangd', args: ['--background-index'] }
+    typescript: { enabled: true, args: ['--stdio'] },
+    python: { enabled: true, args: ['--stdio'] },
+    rust: { enabled: true, args: [] },
+    go: { enabled: true, args: [] },
+    java: { enabled: true, args: [] },
+    cpp: { enabled: true, args: ['--background-index'] }
   }
 };
 
@@ -166,7 +167,13 @@ export const SETTINGS_JSON_SCHEMA = {
     'lsp.autoStart': {
       type: 'boolean',
       default: true,
-      description: 'Automatically launch language servers when opening supported files.'
+      description: 'Automatically launch user-managed language servers when opening supported files.'
+    },
+    'editor.reviewPolicy': {
+      type: 'string',
+      enum: ['alwaysReview', 'autoApplySafeSingleFile'],
+      default: 'alwaysReview',
+      description: 'Auto-apply only classifier-approved low-risk single-file edits in a tracked, in-workspace file; multi-file changes always require review.'
     },
     'lsp.servers': {
       type: 'object',
@@ -175,9 +182,8 @@ export const SETTINGS_JSON_SCHEMA = {
         type: 'object',
         properties: {
           enabled: { type: 'boolean' },
-          command: { type: 'string' },
           args: { type: 'array', items: { type: 'string' } },
-          customPath: { type: 'string' }
+          path: { type: 'string' }
         }
       }
     }

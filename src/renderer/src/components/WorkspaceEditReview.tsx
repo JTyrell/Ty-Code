@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { DiffEditor } from '@monaco-editor/react';
-import { Check, ChevronDown, ChevronRight, RefreshCw, Undo2, X } from 'lucide-react';
-import type { WorkspaceEditPreview, WorkspaceEditTransactionResult } from '../../../preload/types';
+import { Check, ChevronDown, ChevronRight, RefreshCw, X } from 'lucide-react';
+import type { WorkspaceEditPreview } from '../../../preload/types';
 import { useWorkspaceEditStore } from '../state/workspace-edit-store';
 import { useWorkspaceStore } from '../state/workspace-store';
 import { toast } from '../state/toast-store';
+import { undoWorkspaceEditTransaction, updateOpenTabsFromTransaction } from '../services/workspace-edit-commands';
 import './WorkspaceEditReview.css';
 
 function fullPath(workspacePath: string, relativePath: string): string {
@@ -17,18 +18,8 @@ function normalizePath(filePath: string): string {
   return /^[A-Z]:\//i.test(normalized) ? normalized.toLowerCase() : normalized;
 }
 
-function applyResultToOpenTabs(result: WorkspaceEditTransactionResult, workspacePath: string): void {
-  const changed = new Map(result.files.map((file) => [normalizePath(fullPath(workspacePath, file.filePath)), file]));
-  useWorkspaceStore.setState((state) => ({
-    openTabs: state.openTabs.map((tab) => {
-      const file = changed.get(normalizePath(tab.path));
-      return file ? { ...tab, content: file.content, isDirty: file.isDirty } : tab;
-    })
-  }));
-}
-
 export const WorkspaceEditReview: React.FC = () => {
-  const { request, clearRequest, updatePreview, refreshRecentEdits } = useWorkspaceEditStore();
+  const { request, clearRequest, updatePreview, refreshRecentEdits, markTransactionApplied } = useWorkspaceEditStore();
   const { workspacePath, openTabs, refreshFileTree } = useWorkspaceStore();
   const [selectedFile, setSelectedFile] = useState(0);
   const [isApplying, setIsApplying] = useState(false);
@@ -81,14 +72,15 @@ export const WorkspaceEditReview: React.FC = () => {
       const response = await window.electronAPI.applyWorkspaceEdit(preview.previewId);
       if (!response.success || !response.data) throw new Error(response.error || 'The edit transaction could not be applied.');
       const result = response.data;
-      applyResultToOpenTabs(result, workspacePath);
+      updateOpenTabsFromTransaction(result, workspacePath);
+      markTransactionApplied(result.transactionId);
       window.dispatchEvent(new CustomEvent('workspace-files-mutated', { detail: result.files.map((file) => file.filePath) }));
       clearRequest();
       await refreshFileTree();
       await refreshRecentEdits();
       toast.success(`${applyLabel} complete`, `${result.fileCount} file${result.fileCount === 1 ? '' : 's'} changed.`, {
         label: 'Undo',
-        onClick: () => { void undoTransaction(result.transactionId); }
+        onClick: () => { void undoWorkspaceEditTransaction(result.transactionId); }
       });
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
@@ -97,18 +89,6 @@ export const WorkspaceEditReview: React.FC = () => {
     }
   };
 
-  async function undoTransaction(transactionId: string): Promise<void> {
-    const response = await window.electronAPI.undoWorkspaceEdit(transactionId);
-    if (!response.success || !response.data) {
-      toast.error('Could not undo edit', response.error || 'The files changed after the edit was applied.');
-      return;
-    }
-    applyResultToOpenTabs(response.data, workspacePath);
-    window.dispatchEvent(new CustomEvent('workspace-files-mutated', { detail: response.data.files.map((file) => file.filePath) }));
-    useWorkspaceEditStore.getState().removeRecentEdit(transactionId);
-    await refreshFileTree();
-    toast.success('Edit undone', `${response.data.fileCount} file${response.data.fileCount === 1 ? '' : 's'} restored.`);
-  }
 
   return (
     <section className="workspace-edit-review" aria-label="Review workspace edits">

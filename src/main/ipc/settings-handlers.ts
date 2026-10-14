@@ -1,10 +1,28 @@
 import { app, safeStorage } from 'electron';
 import fs from 'fs/promises';
 import path from 'path';
-import type { IpcResponse, ProviderSettings, ProviderType } from '../../preload/types';
+import type { IpcResponse, ProviderSettings, ProviderType, EditReviewPolicy, LanguageServerConfig } from '../../preload/types';
+import { z } from 'zod';
 
 const SETTINGS_FILE = path.join(app.getPath('userData'), 'ty-code-settings.json');
 const LEGACY_SETTINGS_FILE = path.join(app.getPath('userData'), 'ty-claude-settings.json');
+
+const EditorPreferencesSchema = z.object({
+  fontSize: z.number().int().min(8).max(36).optional(),
+  tabSize: z.number().int().min(1).max(8).optional(),
+  minimap: z.boolean().optional(),
+  bracketPairs: z.boolean().optional(),
+  autoSave: z.enum(['off', 'afterDelay', 'onFocusChange']).optional(),
+  autoSaveDelay: z.number().int().min(100).max(60_000).optional(),
+  wordWrap: z.enum(['off', 'on', 'wordWrapColumn', 'bounded']).optional(),
+  formatOnSave: z.boolean().optional()
+}).strict();
+const LanguageServerConfigSchema = z.object({
+  enabled: z.boolean(),
+  args: z.array(z.string().max(500)).max(64).optional(),
+  path: z.string().max(4096).optional()
+}).strict();
+const LanguageServersSchema = z.record(z.string().regex(/^[a-z][a-z0-9-]{0,31}$/), LanguageServerConfigSchema);
 
 const DEFAULT_SETTINGS: ProviderSettings = {
   activeProvider: 'openrouter',
@@ -16,7 +34,11 @@ const DEFAULT_SETTINGS: ProviderSettings = {
   maxTokens: 4096,
   terminalProfiles: [],
   defaultTerminalProfileId: '',
-  thirdPartyRuntimeEnabled: false
+  thirdPartyRuntimeEnabled: false,
+  'editor.reviewPolicy': 'alwaysReview',
+  'lsp.autoStart': true,
+  editor: { fontSize: 13, tabSize: 2, minimap: true, bracketPairs: true, autoSave: 'afterDelay', autoSaveDelay: 1000, wordWrap: 'off', formatOnSave: false },
+  languageServers: {}
 };
 
 type StoredSettings = Partial<Omit<ProviderSettings, 'apiKeys' | 'apiKeysConfigured'>> & {
@@ -60,6 +82,10 @@ async function readDecryptedSettings(): Promise<ProviderSettings> {
       ...parsed,
       apiKeys,
       thirdPartyRuntimeEnabled: parsed.thirdPartyRuntimeEnabled === true,
+      'editor.reviewPolicy': parsed['editor.reviewPolicy'] === 'autoApplySafeSingleFile' ? 'autoApplySafeSingleFile' : 'alwaysReview',
+      'lsp.autoStart': typeof parsed['lsp.autoStart'] === 'boolean' ? parsed['lsp.autoStart'] : DEFAULT_SETTINGS['lsp.autoStart'],
+      editor: { ...DEFAULT_SETTINGS.editor, ...(EditorPreferencesSchema.safeParse(parsed.editor).success ? EditorPreferencesSchema.parse(parsed.editor) : {}) },
+      languageServers: { ...DEFAULT_SETTINGS.languageServers, ...(LanguageServersSchema.safeParse(parsed.languageServers).success ? LanguageServersSchema.parse(parsed.languageServers) : {}) },
       apiKeysConfigured: undefined
     };
   } catch {
@@ -97,6 +123,14 @@ export async function saveSettings(updates: Partial<ProviderSettings>): Promise<
     if (updates.thirdPartyRuntimeEnabled !== undefined && typeof updates.thirdPartyRuntimeEnabled !== 'boolean') {
       throw new Error('Third-party extension runtime preference must be boolean.');
     }
+    if (updates['editor.reviewPolicy'] !== undefined && !['alwaysReview', 'autoApplySafeSingleFile'].includes(updates['editor.reviewPolicy'])) {
+      throw new Error('Editor review policy is invalid.');
+    }
+    if (updates['lsp.autoStart'] !== undefined && typeof updates['lsp.autoStart'] !== 'boolean') throw new Error('LSP auto-start preference must be boolean.');
+    const editorResult = updates.editor === undefined ? undefined : EditorPreferencesSchema.safeParse(updates.editor);
+    if (editorResult && !editorResult.success) throw new Error('Editor settings are invalid.');
+    const languageServersResult = updates.languageServers === undefined ? undefined : LanguageServersSchema.safeParse(updates.languageServers);
+    if (languageServersResult && !languageServersResult.success) throw new Error('Language-server settings are invalid.');
     const current = await readDecryptedSettings();
     const apiKeys = { ...current.apiKeys };
     for (const [provider, rawKey] of Object.entries(updates.apiKeys || {})) {
@@ -109,7 +143,11 @@ export async function saveSettings(updates: Partial<ProviderSettings>): Promise<
       apiKeys,
       customEndpoints: { ...current.customEndpoints, ...updates.customEndpoints },
       terminalProfiles: updates.terminalProfiles ?? current.terminalProfiles,
-      defaultTerminalProfileId: updates.defaultTerminalProfileId ?? current.defaultTerminalProfileId
+      defaultTerminalProfileId: updates.defaultTerminalProfileId ?? current.defaultTerminalProfileId,
+      'editor.reviewPolicy': updates['editor.reviewPolicy'] ?? current['editor.reviewPolicy'],
+      'lsp.autoStart': updates['lsp.autoStart'] ?? current['lsp.autoStart'],
+      editor: { ...current.editor, ...editorResult?.data },
+      languageServers: { ...current.languageServers, ...languageServersResult?.data }
     };
     const encryptedKeys: Partial<Record<ProviderType, string>> = {};
     for (const [provider, rawKey] of Object.entries(merged.apiKeys)) {

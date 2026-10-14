@@ -247,8 +247,8 @@ async function runPhase5Validation() {
   const editService = new WorkspaceEditPreviewService(transactionWorkspace, transactionManager);
   const makeRenameEdit = () => ({
     documentChanges: [
-      { textDocument: { uri: toFileUri(firstFile), version: 1 }, edits: [{ range: { start: { line: 0, character: 6 }, end: { line: 0, character: 13 } }, newText: 'newName' }] },
-      { textDocument: { uri: toFileUri(secondFile), version: 1 }, edits: [{ range: { start: { line: 0, character: 9 }, end: { line: 0, character: 16 } }, newText: 'newName' }] }
+      { textDocument: { uri: toFileUri(firstFile), version: transactionManager.getTrackedDocument(firstFile)?.version }, edits: [{ range: { start: { line: 0, character: 6 }, end: { line: 0, character: 13 } }, newText: 'newName' }] },
+      { textDocument: { uri: toFileUri(secondFile), version: transactionManager.getTrackedDocument(secondFile)?.version }, edits: [{ range: { start: { line: 0, character: 9 }, end: { line: 0, character: 16 } }, newText: 'newName' }] }
     ]
   });
   const cancelPreview = await editService.createLspPreview(makeRenameEdit(), 'Rename oldName');
@@ -272,6 +272,19 @@ async function runPhase5Validation() {
   assert.strictEqual(undone.files.length, 2, 'Undo restores all files as one operation');
   assert.strictEqual(await fs.readFile(firstFile, 'utf-8'), firstOriginal, 'Transaction undo restores the first file');
   assert.strictEqual(await fs.readFile(secondFile, 'utf-8'), secondOriginal, 'Transaction undo restores the second file');
+
+  let renameAttempts = 0;
+  const failingService = new WorkspaceEditPreviewService(transactionWorkspace, transactionManager, {
+    renameFile: async (source, target) => {
+      renameAttempts++;
+      if (renameAttempts === 2) throw new Error('simulated disk error');
+      await fs.rename(source, target);
+    }
+  });
+  const rollbackPreview = await failingService.createLspPreview(makeRenameEdit(), 'Rename oldName');
+  await assert.rejects(failingService.applyPreview(rollbackPreview.previewId), /simulated disk error/, 'A commit failure is reported');
+  assert.strictEqual(await fs.readFile(firstFile, 'utf-8'), firstOriginal, 'Failed multi-file apply rolls back the first file');
+  assert.strictEqual(await fs.readFile(secondFile, 'utf-8'), secondOriginal, 'Failed multi-file apply leaves the second file unchanged');
 
   const unsupportedRefactor = { documentChanges: [{ kind: 'rename', oldUri: toFileUri(firstFile), newUri: toFileUri(path.join(transactionWorkspace, 'src', 'renamed.ts')) }] };
   await assert.rejects(editService.createLspPreview(unsupportedRefactor, 'Rename file'), /not supported/i, 'Unsupported resource operations are rejected before writes');

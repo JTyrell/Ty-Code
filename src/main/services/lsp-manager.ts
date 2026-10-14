@@ -138,7 +138,9 @@ export class LspManager {
   private trackedDocuments = new Map<string, TrackedDocument>();
   private workspacePath: string;
   private workspaceEpoch = 0;
+  private autoStart = true;
   private injectedExecutableResolver?: LspManagerOptions['resolveSystemExecutable'];
+  private diagnosticsListeners = new Set<(payload: { uri: string; diagnostics: unknown[]; languageId: string }) => void>();
 
   constructor(workspacePath?: string, options: LspManagerOptions = {}) {
     this.workspacePath = path.resolve(workspacePath || process.cwd());
@@ -173,6 +175,15 @@ export class LspManager {
 
   public getWorkspacePath(): string {
     return this.workspacePath;
+  }
+
+  public setAutoStart(enabled: boolean): void {
+    this.autoStart = enabled;
+  }
+
+  public onDiagnostics(listener: (payload: { uri: string; diagnostics: unknown[]; languageId: string }) => void): () => void {
+    this.diagnosticsListeners.add(listener);
+    return () => this.diagnosticsListeners.delete(listener);
   }
 
   private binaryCache = new Map<string, { expiresAt: number; resolvedPath?: string; version?: string }>();
@@ -460,6 +471,10 @@ export class LspManager {
         status.error = error.message;
       }
     });
+    client.on('diagnostics', (params: { uri: string; diagnostics: unknown[] }) => {
+      const payload = { uri: params.uri, diagnostics: params.diagnostics || [], languageId };
+      for (const listener of this.diagnosticsListeners) listener(payload);
+    });
 
     try {
       await client.start();
@@ -533,7 +548,7 @@ export class LspManager {
       return;
     }
     const status = this.serverStatuses.get(resolvedLanguageId);
-    if (status && status.status !== 'disabled') await this.startServer(resolvedLanguageId);
+    if (this.autoStart && status && status.status !== 'disabled') await this.startServer(resolvedLanguageId);
   }
 
   public onDocumentChanged(filePath: string, text: string): void {
@@ -750,10 +765,10 @@ export class LspManager {
   }
 
   public cleanupAll(): void {
-    for (const [, client] of this.clients) {
-      void client.stop();
-    }
+    this.workspaceEpoch++;
+    for (const client of this.clients.values()) void client.stop();
     this.clients.clear();
     this.trackedDocuments.clear();
+    this.diagnosticsListeners.clear();
   }
 }
