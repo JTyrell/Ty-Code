@@ -120,7 +120,7 @@ export const WorkspaceEditReview: React.FC = () => {
         </div>
         <div className="workspace-edit-review__actions">
           {isStale && <button type="button" className="workspace-edit-review__refresh" onClick={() => void refresh()} disabled={isApplying}><RefreshCw size={13} />Refresh preview</button>}
-          <button type="button" className="workspace-edit-review__apply" onClick={() => void apply()} disabled={isApplying || !preview.files.length || blockedDirtySearch}>
+          <button type="button" className="workspace-edit-review__apply" onClick={() => void apply()} disabled={isApplying || !preview.files.length || blockedDirtySearch || request.isStale}>
             <Check size={13} />{isApplying ? 'Applying…' : applyLabel}
           </button>
           <button type="button" className="workspace-edit-review__cancel" onClick={() => void cancel()} disabled={isApplying}><X size={13} />Cancel</button>
@@ -128,6 +128,7 @@ export const WorkspaceEditReview: React.FC = () => {
       </header>
 
       {error && <div className="workspace-edit-review__error" role="alert">{error}</div>}
+      {request.isStale && !error && <div className="workspace-edit-review__warning" role="status">Search or replacement options changed. Refresh the preview before applying.</div>}
       {blockedDirtySearch && <div className="workspace-edit-review__warning" role="status">Save or discard unsaved changes in affected files, then refresh the preview.</div>}
 
       <div className="workspace-edit-review__body">

@@ -28,11 +28,15 @@ await Promise.all([
   bundleConfig('src/main/services/lsp-client.ts', 'lsp-client.cjs'),
   bundleConfig('src/main/services/lsp-manager.ts', 'lsp-manager.cjs'),
   bundleConfig('src/main/ipc/fs-handlers.ts', 'fs-handlers.cjs'),
-  bundleConfig('src/main/services/config-schemas.ts', 'config-schemas.cjs')
+  bundleConfig('src/main/services/config-schemas.ts', 'config-schemas.cjs'),
+  bundleConfig('src/main/services/workspace-edit-preview.ts', 'workspace-edit-preview.cjs'),
+  bundleConfig('src/main/services/lsp-path-utils.ts', 'lsp-path-utils.cjs')
 ]);
 
 const { LspClient } = require(path.join(bundleDir, 'lsp-client.cjs'));
 const { LspManager, SUPPORTED_LANGUAGE_SERVERS } = require(path.join(bundleDir, 'lsp-manager.cjs'));
+const { WorkspaceEditPreviewService } = require(path.join(bundleDir, 'workspace-edit-preview.cjs'));
+const { toFileUri, fromFileUri } = require(path.join(bundleDir, 'lsp-path-utils.cjs'));
 const { searchInWorkspaceFiles, replaceInWorkspaceFiles } = require(path.join(bundleDir, 'fs-handlers.cjs'));
 const { DEFAULT_KEYBINDINGS, DEFAULT_EDITOR_SETTINGS, SETTINGS_JSON_SCHEMA, KEYBINDINGS_JSON_SCHEMA } = require(path.join(bundleDir, 'config-schemas.cjs'));
 
@@ -106,7 +110,8 @@ async function runPhase5Validation() {
 
   // --- Assertion 3: Language Server Discovery & Multi-Language Registry ---
   console.log('\n--- Assertion 3: Multi-Language Server Support & File Routing ---');
-  const manager = new LspManager(testDir);
+  const manager = new LspManager(testDir, { resolveSystemExecutable: async () => ({}) });
+  await manager.refreshAvailability();
   const allServers = manager.getAllServers();
 
   assert.strictEqual(allServers.length, 6, 'Must support 6 core language server categories');
@@ -207,8 +212,73 @@ async function runPhase5Validation() {
   assert.ok(!updatedMain.includes('calculateTotal'), 'Old term removed');
   console.log('✓ Multi-file replace executed and verified on disk');
 
-  // --- Assertion 8: Command Palette & Keybinding Schema Integrity ---
-  console.log('\n--- Assertion 8: Command Palette & Keybindings Schema ---');
+  // --- Assertion 8: Canonical URIs, local-candidate safety, and edit transactions ---
+  console.log('\n--- Assertion 8: Canonical URIs, Server Trust, and Workspace Edit Transactions ---');
+  const uriFile = path.join(testDir, 'uri path #percent%.ts');
+  const uri = toFileUri(uriFile);
+  assert.ok(uri.includes('%20') && uri.includes('%23') && uri.includes('%25'), 'File URIs encode spaces and reserved path characters');
+  assert.strictEqual(fromFileUri(uri), uriFile, 'File URI round-trips on the current platform');
+
+  const localCandidateWorkspace = path.join(testDir, 'local-candidate-workspace');
+  const localBin = path.join(localCandidateWorkspace, 'node_modules', '.bin');
+  await fs.mkdir(localBin, { recursive: true });
+  const localServerPath = path.join(localBin, process.platform === 'win32' ? 'typescript-language-server.cmd' : 'typescript-language-server');
+  const markerPath = path.join(testDir, 'local-server-executed.txt');
+  await fs.writeFile(localServerPath, `echo executed > "${markerPath}"\n`, 'utf-8');
+  const localManager = new LspManager(localCandidateWorkspace, { resolveSystemExecutable: async () => ({}) });
+  await localManager.refreshAvailability();
+  const localTypeScript = localManager.getAllServers().find((item) => item.languageId === 'typescript');
+  assert.ok(localTypeScript?.workspaceCandidates?.some((candidate) => candidate.path === localServerPath), 'Workspace-local binary is detected for information');
+  assert.strictEqual(localTypeScript?.isAvailable, false, 'Workspace-local binary is not considered runnable');
+  assert.strictEqual(await localManager.startServer('typescript'), false, 'Workspace-local binary cannot start without an explicit absolute path');
+  assert.strictEqual(await fs.access(markerPath).then(() => true, () => false), false, 'Detection does not execute a workspace-local binary');
+
+  const transactionWorkspace = path.join(testDir, 'transaction-workspace');
+  await fs.mkdir(path.join(transactionWorkspace, 'src'), { recursive: true });
+  const firstFile = path.join(transactionWorkspace, 'src', 'first.ts');
+  const secondFile = path.join(transactionWorkspace, 'src', 'second.ts');
+  const firstOriginal = 'const oldName = 1;\n';
+  const secondOriginal = 'export { oldName };\n';
+  await fs.writeFile(firstFile, firstOriginal, 'utf-8');
+  await fs.writeFile(secondFile, secondOriginal, 'utf-8');
+  const transactionManager = new LspManager(transactionWorkspace, { resolveSystemExecutable: async () => ({}) });
+  await transactionManager.onDocumentOpened(firstFile, 'typescript', firstOriginal);
+  await transactionManager.onDocumentOpened(secondFile, 'typescript', secondOriginal);
+  const editService = new WorkspaceEditPreviewService(transactionWorkspace, transactionManager);
+  const makeRenameEdit = () => ({
+    documentChanges: [
+      { textDocument: { uri: toFileUri(firstFile), version: 1 }, edits: [{ range: { start: { line: 0, character: 6 }, end: { line: 0, character: 13 } }, newText: 'newName' }] },
+      { textDocument: { uri: toFileUri(secondFile), version: 1 }, edits: [{ range: { start: { line: 0, character: 9 }, end: { line: 0, character: 16 } }, newText: 'newName' }] }
+    ]
+  });
+  const cancelPreview = await editService.createLspPreview(makeRenameEdit(), 'Rename oldName');
+  assert.strictEqual(cancelPreview.files.length, 2, 'Rename preview includes both affected files');
+  editService.cancelPreview(cancelPreview.previewId);
+  assert.strictEqual(await fs.readFile(firstFile, 'utf-8'), firstOriginal, 'Cancel leaves the first file untouched');
+  assert.strictEqual(await fs.readFile(secondFile, 'utf-8'), secondOriginal, 'Cancel leaves the second file untouched');
+
+  const stalePreview = await editService.createLspPreview(makeRenameEdit(), 'Rename oldName');
+  await fs.writeFile(secondFile, `${secondOriginal}// concurrent edit\n`, 'utf-8');
+  await assert.rejects(editService.applyPreview(stalePreview.previewId), /stale/i, 'Stale source blocks the whole transaction');
+  assert.strictEqual(await fs.readFile(firstFile, 'utf-8'), firstOriginal, 'Stale validation writes nothing to other files');
+  await fs.writeFile(secondFile, secondOriginal, 'utf-8');
+
+  const applyPreview = await editService.createLspPreview(makeRenameEdit(), 'Rename oldName');
+  const applied = await editService.applyPreview(applyPreview.previewId);
+  assert.strictEqual(applied.files.length, 2, 'Apply reports the complete transaction');
+  assert.ok((await fs.readFile(firstFile, 'utf-8')).includes('newName'), 'Apply changes the first file');
+  assert.ok((await fs.readFile(secondFile, 'utf-8')).includes('newName'), 'Apply changes the second file');
+  const undone = await editService.undoTransaction(applied.transactionId);
+  assert.strictEqual(undone.files.length, 2, 'Undo restores all files as one operation');
+  assert.strictEqual(await fs.readFile(firstFile, 'utf-8'), firstOriginal, 'Transaction undo restores the first file');
+  assert.strictEqual(await fs.readFile(secondFile, 'utf-8'), secondOriginal, 'Transaction undo restores the second file');
+
+  const unsupportedRefactor = { documentChanges: [{ kind: 'rename', oldUri: toFileUri(firstFile), newUri: toFileUri(path.join(transactionWorkspace, 'src', 'renamed.ts')) }] };
+  await assert.rejects(editService.createLspPreview(unsupportedRefactor, 'Rename file'), /not supported/i, 'Unsupported resource operations are rejected before writes');
+  console.log('✓ Local binaries stay inert; preview/cancel/stale/apply/undo preserve all-or-nothing semantics');
+
+  // --- Assertion 9: Command Palette & Keybinding Schema Integrity ---
+  console.log('\n--- Assertion 9: Command Palette & Keybindings Schema ---');
   assert.ok(Array.isArray(DEFAULT_KEYBINDINGS), 'Default keybindings list present');
   const keyMap = new Map(DEFAULT_KEYBINDINGS.map((k) => [k.command, k.key]));
 

@@ -73,7 +73,7 @@ function applyTextEdits(content: string, edits: LspTextEdit[]): string {
   let lastStart = content.length + 1;
   let result = content;
   for (const edit of offsets) {
-    if (edit.end < edit.start || edit.end > lastStart) throw new Error('The language server returned overlapping text edits.');
+    if (edit.end < edit.start || edit.end > lastStart || (edit.start === lastStart && edit.start === edit.end)) throw new Error('The language server returned overlapping text edits.');
     result = `${result.slice(0, edit.start)}${edit.newText}${result.slice(edit.end)}`;
     lastStart = edit.start;
   }
