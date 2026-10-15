@@ -59,9 +59,10 @@
     "dev:website": "vite --config website/vite.config.ts",
     "build:website": "vite build --config website/vite.config.ts",
     "build:pages": "npm run build:website",
-    "pages:deploy": "wrangler pages deploy ./website-dist",
+    "pages:deploy": "npx --yes wrangler pages deploy ./website-dist",
     "typecheck:website": "tsc --noEmit --project website/tsconfig.json",
-    "test:website": "node scripts/validate-website.mjs"
+    "test:website": "node scripts/validate-website.mjs",
+    "test:edge-drift": "node scripts/validate-edge-drift.mjs"
   },
   "keywords": [
     "electron",

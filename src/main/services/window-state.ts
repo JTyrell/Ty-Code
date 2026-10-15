@@ -147,7 +147,7 @@ export class WindowStateManager {
   }
 
   private isWithinDisplayBounds(state: { x: number; y: number; width: number; height: number }): boolean {
-    if (!screen || !screen.getAllDisplays) return true;
+    if (!app?.isReady || !app.isReady() || !screen || !screen.getAllDisplays) return true;
     try {
       const displays = screen.getAllDisplays();
       const rect: Rectangle = { x: state.x, y: state.y, width: state.width, height: state.height };
