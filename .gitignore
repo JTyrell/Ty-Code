@@ -50,6 +50,7 @@ Thumbs.db
 # Tooling / Local config
 .kombai/
 .ty-code/
+.wrangler/
 
 # Local test & validation scripts
 scripts/validate-*.mjs

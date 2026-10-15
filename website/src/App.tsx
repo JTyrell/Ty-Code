@@ -16,20 +16,22 @@ export default function App() {
     <div className={styles.site} id="top">
       <SiteHeader />
       <main className={styles.main}>
-        <section className={styles.intro} aria-labelledby="intro-heading">
-          <div className={styles.introCopy}>
-            <h1 id="intro-heading">A desktop workspace for coding with AI.</h1>
-            <p>
-              Edit with Monaco, work in an integrated terminal, and choose the model providers that fit your workflow.
-              Your project files and local indexes stay on your device.
-            </p>
-          </div>
-          <div className={styles.localNote}>
-            <span className={styles.localMark} aria-hidden="true" />
-            <span>Windows <i /> macOS <i /> Linux</span>
-          </div>
-        </section>
-        <DownloadSection />
+        <div className={styles.topGrid}>
+          <section className={styles.intro} aria-labelledby="intro-heading">
+            <div className={styles.introCopy}>
+              <h1 id="intro-heading">A desktop workspace for coding with AI.</h1>
+              <p>
+                Edit with Monaco, work in an integrated terminal, and choose the model providers that fit your workflow.
+                Your project files and local indexes stay on your device.
+              </p>
+            </div>
+            <div className={styles.localNote}>
+              <span className={styles.localMark} aria-hidden="true" />
+              <span>Windows <i /> macOS <i /> Linux</span>
+            </div>
+          </section>
+          <DownloadSection />
+        </div>
         <HowToVerify />
         <PrivacySummary />
       </main>
