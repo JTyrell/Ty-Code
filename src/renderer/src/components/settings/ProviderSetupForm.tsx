@@ -171,7 +171,7 @@ export const ProviderSetupForm: React.FC<ProviderSetupFormProps> = ({
                 color: isConfigured ? 'var(--accent-green)' : 'var(--text-muted)'
               }}
             >
-              {isConfigured ? 'Configured in safeStorage' : 'Not yet configured'}
+              {isConfigured ? 'Configured in operating-system storage' : 'Not yet configured'}
             </span>
           </div>
           <p style={{ margin: '4px 0 0', fontSize: '11px', color: 'var(--text-secondary)' }}>
@@ -256,7 +256,7 @@ export const ProviderSetupForm: React.FC<ProviderSetupFormProps> = ({
               onChange={(e) => setApiKey(e.target.value)}
               placeholder={
                 isConfigured
-                  ? '•••••••••••••••• (Encrypted in Electron safeStorage. Enter new key to replace)'
+                  ? '•••••••••••••••• (Stored in operating-system secure storage. Enter a new key to replace)'
                   : provider.id === 'openrouter'
                     ? 'sk-or-v1-...'
                     : provider.id === 'groq'
@@ -294,7 +294,7 @@ export const ProviderSetupForm: React.FC<ProviderSetupFormProps> = ({
 
           <div className="settings-secure-note" style={{ marginTop: '2px' }}>
             <ShieldCheck size={12} />
-            <span>Encrypted with Electron safeStorage prior to disk persistence. Plaintext keys are never stored.</span>
+            <span>Saved using the operating-system credential store. If secure storage is unavailable, Ty-Code refuses to save the key.</span>
           </div>
         </div>
       )}

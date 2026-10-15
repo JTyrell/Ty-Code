@@ -9,6 +9,7 @@ import { globTool } from './glob';
 import { lsTool } from './ls';
 import { fetchTool } from './fetch';
 import { diagnosticsTool } from './diagnostics';
+import { approveFileMutation, approveTerminalCommand } from './policy';
 
 export * from './types';
 export * from './view';
@@ -21,6 +22,7 @@ export * from './glob';
 export * from './ls';
 export * from './fetch';
 export * from './diagnostics';
+export * from './policy';
 
 export const OPENCODE_TOOLS: Record<string, OpenCodeTool> = {
   view: viewTool,

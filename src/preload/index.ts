@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { IpcRendererEvent } from 'electron';
 import type { AgentStreamChunk, CommandExecutionOptions, ElectronAPI, ExtensionMetadata, ProposedDiff, PtySpawnOptions } from './types';
 
@@ -7,6 +7,7 @@ const api: ElectronAPI = {
   maximizeWindow: () => ipcRenderer.send('window:maximize'),
   closeWindow: () => ipcRenderer.send('window:close'),
   selectWorkspaceFolder: () => ipcRenderer.invoke('fs:select-workspace'),
+  getFilePathForDroppedFile: (file) => webUtils.getPathForFile(file),
   getWorkspaceTree: (rootPath: string) => ipcRenderer.invoke('fs:get-tree', rootPath),
   readFile: (filePath: string) => ipcRenderer.invoke('fs:read-file', filePath),
   writeFile: (filePath: string, content: string) => ipcRenderer.invoke('fs:write-file', filePath, content),
@@ -17,6 +18,15 @@ const api: ElectronAPI = {
   searchFiles: (query: string) => ipcRenderer.invoke('fs:search-files', query),
   getSettings: () => ipcRenderer.invoke('settings:get'),
   saveSettings: (settings) => ipcRenderer.invoke('settings:save', settings),
+  getTelemetryPreview: () => ipcRenderer.invoke('telemetry:get-preview'),
+  deleteTelemetryEvent: (index, expected) => ipcRenderer.invoke('telemetry:delete-event', { index, expected }),
+  clearTelemetryData: () => ipcRenderer.invoke('telemetry:clear-data'),
+  getCredentialStorageStatus: () => ipcRenderer.invoke('credentials:get-storage-status'),
+  onTelemetryChanged: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on('telemetry:changed', listener);
+    return () => ipcRenderer.removeListener('telemetry:changed', listener);
+  },
   getSettingsLayer: (scope) => ipcRenderer.invoke('settings:layer:get', scope),
   saveSettingsLayer: (scope, settings) => ipcRenderer.invoke('settings:layer:save', { scope, settings }),
   getSecurityPolicy: () => ipcRenderer.invoke('settings:security:get'),
@@ -29,12 +39,24 @@ const api: ElectronAPI = {
   startAgentTask: (params) => ipcRenderer.invoke('agent:start-task', params),
   stopAgentTask: (taskId: string) => ipcRenderer.invoke('agent:stop-task', taskId),
   respondAgentApproval: (approvalId: string, approved: boolean) => ipcRenderer.invoke('agent:respond-approval', { approvalId, approved }),
+  userApproveDiff: (payload: { approvalId?: string; diffId?: string; approved?: boolean } | boolean) => ipcRenderer.invoke('user_approve_diff', payload),
   onAgentStream: (callback) => {
     const listener = (_event: IpcRendererEvent, chunk: AgentStreamChunk) => callback(chunk);
     ipcRenderer.on('agent:stream', listener);
     return () => ipcRenderer.removeListener('agent:stream', listener);
   },
   applyDiff: (diff: ProposedDiff) => ipcRenderer.invoke('agent:apply-diff', diff),
+  resolvePtyApproval: (approvalId: string, approved: boolean) => ipcRenderer.invoke('pty:resolve-approval', { approvalId, approved }),
+  onPtyApprovalRequired: (callback: (data: { approvalId: string; ptyId: string; command: string; reason: string }) => void) => {
+    const listener = (_event: IpcRendererEvent, data: { approvalId: string; ptyId: string; command: string; reason: string }) => callback(data);
+    ipcRenderer.on('pty:approval-required', listener);
+    return () => ipcRenderer.removeListener('pty:approval-required', listener);
+  },
+  onPtyCommandBlocked: (callback: (data: { ptyId: string; command: string; reason: string }) => void) => {
+    const listener = (_event: IpcRendererEvent, data: { ptyId: string; command: string; reason: string }) => callback(data);
+    ipcRenderer.on('pty:command-blocked', listener);
+    return () => ipcRenderer.removeListener('pty:command-blocked', listener);
+  },
   runCommand: (options: CommandExecutionOptions) => ipcRenderer.invoke('pty:run-command', options),
   getAvailableShells: () => ipcRenderer.invoke('pty:get-shells'),
   spawnPty: (options: PtySpawnOptions) => ipcRenderer.invoke('pty:spawn', options),
@@ -57,7 +79,7 @@ const api: ElectronAPI = {
   },
   searchExtensions: (query: string) => ipcRenderer.invoke('extensions:search', query),
   getExtensionDetails: (namespace: string, name: string) => ipcRenderer.invoke('extensions:details', { namespace, name }),
-  getAvailableSkills: (workspacePath: string) => ipcRenderer.invoke('antigravity:get-skills', workspacePath),
+  getAvailableSkills: (workspacePath: string) => ipcRenderer.invoke('skills:get', workspacePath),
   getInstalledExtensions: () => ipcRenderer.invoke('extensions:get-installed'),
   installExtension: (ext: ExtensionMetadata) => ipcRenderer.invoke('extensions:install', ext),
   uninstallExtension: (id: string) => ipcRenderer.invoke('extensions:uninstall', id),
@@ -209,7 +231,94 @@ const api: ElectronAPI = {
   providerGetRegistry: () => ipcRenderer.invoke('provider:get-registry'),
   providerGetModels: (params) => ipcRenderer.invoke('provider:get-models', params),
   providerTestConnection: (params) => ipcRenderer.invoke('provider:test-connection', params),
-  openExternal: (url: string) => ipcRenderer.invoke('app:open-external', url)
+  openExternal: (url: string) => ipcRenderer.invoke('app:open-external', url),
+  openPath: (filePath: string) => ipcRenderer.invoke('app:open-path', filePath),
+
+  // Phase 5.5: Smart Orchestration & Quota Management (Layer 6)
+  orchestrationGetQuotaStats: () => ipcRenderer.invoke('orchestration:get-quota-stats'),
+  orchestrationGetSmartRoutingLogs: () => ipcRenderer.invoke('orchestration:get-smart-routing-logs'),
+  orchestrationSetFreeMode: (enabled) => ipcRenderer.invoke('orchestration:set-free-mode', enabled),
+  orchestrationClassifyTask: (prompt) => ipcRenderer.invoke('orchestration:classify-task', prompt),
+  orchestrationSelectModel: (prompt, context) => ipcRenderer.invoke('orchestration:select-model', prompt, context),
+
+  // Phase 5.6: End-to-End Performance & Onboarding
+  orchestrationGetPerformanceMetrics: () => ipcRenderer.invoke('orchestration:get-performance-metrics'),
+  orchestrationCompressContext: (prompt, codeContext) => ipcRenderer.invoke('orchestration:compress-context', prompt, codeContext),
+  orchestrationWarmConnections: () => ipcRenderer.invoke('orchestration:warm-connections'),
+  orchestrationCompleteOnboarding: () => ipcRenderer.invoke('orchestration:complete-onboarding'),
+
+  // Phase 3.1: Modular Skills & External Integration Registry
+  modulesGetList: (workspacePath?: string) => ipcRenderer.invoke('modules:get-list', workspacePath),
+  modulesToggle: (moduleId: string, enabled: boolean, workspacePath?: string) => ipcRenderer.invoke('modules:toggle', moduleId, enabled, workspacePath),
+  modulesCheckDependencies: (dependencies: string[]) => ipcRenderer.invoke('modules:check-dependencies', dependencies),
+  modulesGetStatus: (moduleId: string, workspacePath?: string) => ipcRenderer.invoke('modules:get-status', moduleId, workspacePath),
+
+  // Phase 3.3: AI Data Extractor (History Export)
+  historyExportAiData: (options) => ipcRenderer.invoke('history:export-ai-data', options),
+  historySelectExportDestination: (defaultName, format) => ipcRenderer.invoke('history:select-destination', defaultName, format),
+  onHistoryExportProgress: (callback) => {
+    const listener = (_event: unknown, progress: any) => callback(progress);
+    ipcRenderer.on('history:export-progress', listener);
+    return () => {
+      ipcRenderer.removeListener('history:export-progress', listener);
+    };
+  },
+
+  // Phase 3.5: Visual UI Sketcher (M3E Canvas)
+  sketcherSendPrompt: (prompt: string) => ipcRenderer.invoke('sketcher:send-prompt', prompt),
+  onSketcherPrompt: (callback: (prompt: string) => void) => {
+    const listener = (_event: unknown, prompt: string) => callback(prompt);
+    ipcRenderer.on('sketcher:prompt-received', listener);
+    return () => {
+      ipcRenderer.removeListener('sketcher:prompt-received', listener);
+    };
+  },
+
+  // Phase 3.6: Open SEO & GEO MCP Skills
+  mcpGetSeoConfig: (workspacePath?: string) => ipcRenderer.invoke('mcp:get-seo-config', workspacePath),
+  mcpSaveSeoConfig: (options: any) => ipcRenderer.invoke('mcp:save-seo-config', options),
+  mcpTestSeoConnection: (workspacePath?: string) => ipcRenderer.invoke('mcp:test-seo-connection', workspacePath),
+
+  // Phase 6.1: Permanent Free Provider Registry & Model Curation
+  freeProvidersGetList: () => ipcRenderer.invoke('free-providers:get-list'),
+  freeProvidersGetTiers: () => ipcRenderer.invoke('free-providers:get-tiers'),
+  freeProvidersGetHealth: () => ipcRenderer.invoke('free-providers:get-health'),
+  freeProvidersPing: (providerId?: string) => ipcRenderer.invoke('free-providers:ping', providerId),
+
+  // Phase 6.2: Seamless BYOK Interface & Key Management
+  byokDetectKeys: () => ipcRenderer.invoke('byok:detect-keys'),
+  byokImportDetectedKey: (keyId: string, providerId?: string) => ipcRenderer.invoke('byok:import-detected-key', keyId, providerId),
+  byokGetStoredKeys: () => ipcRenderer.invoke('byok:get-stored-keys'),
+  byokRevealKey: (providerId: string) => ipcRenderer.invoke('byok:reveal-key', providerId),
+  byokRevokeKey: (providerId: string) => ipcRenderer.invoke('byok:revoke-key', providerId),
+  byokExportKeys: () => ipcRenderer.invoke('byok:export-keys'),
+  byokImportKeys: (backupData: string) => ipcRenderer.invoke('byok:import-keys', backupData),
+  byokSaveCustomProvider: (config: any) => ipcRenderer.invoke('byok:save-custom-provider', config),
+
+  // Phase 6.3: OpenCode Integration & Free Model Sync
+  opencodeDetect: () => ipcRenderer.invoke('opencode:detect'),
+  opencodeGetFreeSummary: () => ipcRenderer.invoke('opencode:get-free-summary'),
+  opencodeImportProviders: () => ipcRenderer.invoke('opencode:import-providers'),
+  opencodeSetFramework: (framework: string) => ipcRenderer.invoke('opencode:set-framework', framework),
+  opencodeGetFramework: () => ipcRenderer.invoke('opencode:get-framework'),
+  opencodeGetMergedProviders: () => ipcRenderer.invoke('opencode:get-merged-providers'),
+
+  // Phase 6.4: Intelligent Model Router
+  modelRouterClassifyTask: (prompt: string) => ipcRenderer.invoke('model-router:classify-task', prompt),
+  modelRouterSelectModel: (prompt: string, overridePreferences?: any) => ipcRenderer.invoke('model-router:select-model', prompt, overridePreferences),
+  modelRouterGetPreferences: () => ipcRenderer.invoke('model-router:get-preferences'),
+  modelRouterSetPreferences: (updates: any) => ipcRenderer.invoke('model-router:set-preferences', updates),
+  modelRouterGetAvailableModels: () => ipcRenderer.invoke('model-router:get-available-models'),
+
+  // Phase 6.5: Unified Provider Dashboard & Quota Management
+  dashboardGetData: () => ipcRenderer.invoke('dashboard:get-data'),
+  dashboardGetOverview: () => ipcRenderer.invoke('dashboard:get-overview'),
+  dashboardGetQuota: () => ipcRenderer.invoke('dashboard:get-quota'),
+  dashboardGetComparison: () => ipcRenderer.invoke('dashboard:get-comparison'),
+  dashboardGetAnalytics: () => ipcRenderer.invoke('dashboard:get-analytics'),
+  dashboardGetRecommendations: () => ipcRenderer.invoke('dashboard:get-recommendations'),
+  dashboardDismissRecommendation: (recommendationId: string) => ipcRenderer.invoke('dashboard:dismiss-recommendation', recommendationId),
+  dashboardRecordActivity: (record: any) => ipcRenderer.invoke('dashboard:record-activity', record)
 };
 
 contextBridge.exposeInMainWorld('electronAPI', api);

@@ -8,6 +8,7 @@ import { ExtensionsPanel } from './components/ExtensionsPanel';
 import { SkillsPanel } from './components/SkillsPanel';
 import { OutlineView } from './components/OutlineView';
 import { CodeReviewPanel } from './components/CodeReviewPanel';
+import { CanvasWebview } from './components/CanvasWebview';
 import { EditorArea } from './components/EditorArea';
 import { DiffViewer } from './components/DiffViewer';
 import { ChatSidecar } from './components/ChatSidecar';
@@ -16,9 +17,12 @@ import { StatusBar } from './components/StatusBar';
 import { QuickOpen } from './components/QuickOpen';
 import { CommandPalette } from './components/CommandPalette';
 import { SettingsModal } from './components/SettingsModal';
+import { UsageDashboard } from './components/UsageDashboard';
+import { OnboardingWizard } from './components/OnboardingWizard';
 import { WorkspaceEditReview } from './components/WorkspaceEditReview';
 import { ToastContainer } from './components/ToastContainer';
 import { ExtensionInputDialog } from './components/ExtensionInputDialog';
+import { AgentApprovalModal } from './components/AgentApprovalModal';
 import { useChatStore } from './state/chat-store';
 import { useWorkspaceStore } from './state/workspace-store';
 import { useEditorNavigationStore } from './state/editor-navigation-store';
@@ -34,6 +38,14 @@ export const App: React.FC = () => {
   const [rightWidth, setRightWidth] = useState(380);
   const [isDraggingLeft, setIsDraggingLeft] = useState(false);
   const [isDraggingRight, setIsDraggingRight] = useState(false);
+  const [isSketcherExpanded, setIsSketcherExpanded] = useState(false);
+
+  // Automatically widen left sidebar when opening UI sketcher if too narrow
+  useEffect(() => {
+    if (activityTab === 'ui-sketcher' && leftWidth < 380) {
+      setLeftWidth(380);
+    }
+  }, [activityTab, leftWidth]);
 
   const { initSettings, toggleTerminal, toggleSettings } = useChatStore();
   const { setWorkspacePath, setFileTree } = useWorkspaceStore();
@@ -185,6 +197,19 @@ export const App: React.FC = () => {
           {activityTab === 'extensions' && <ExtensionsPanel />}
           {activityTab === 'skills' && <SkillsPanel />}
           {activityTab === 'outline' && <OutlineView onNavigateToLine={(line) => navigateTo({ line })} />}
+          {activityTab === 'ui-sketcher' && (
+            <CanvasWebview
+              isExpanded={isSketcherExpanded}
+              onExpandToggle={(expanded) => {
+                setIsSketcherExpanded(expanded);
+                if (expanded) {
+                  setLeftWidth((w) => Math.max(w, 640));
+                } else {
+                  setLeftWidth(380);
+                }
+              }}
+            />
+          )}
         </div>
 
         {/* Left Splitter Resizer Handle */}
@@ -243,9 +268,12 @@ export const App: React.FC = () => {
         onOpenQuickOpen={(initialQuery) => { setQuickOpenInitialQuery(initialQuery); setIsQuickOpenOpen(true); }}
       />
 
-      {/* Settings Modal */}
+      {/* Settings & Usage Modals */}
       <SettingsModal />
+      <UsageDashboard />
+      <OnboardingWizard />
       <ExtensionInputDialog />
+      <AgentApprovalModal />
 
       {/* Global Toast Notifications */}
       <ToastContainer />

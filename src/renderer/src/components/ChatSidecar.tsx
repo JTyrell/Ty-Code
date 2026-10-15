@@ -14,10 +14,11 @@ import powershell from 'highlight.js/lib/languages/powershell';
 import python from 'highlight.js/lib/languages/python';
 import typescript from 'highlight.js/lib/languages/typescript';
 import yaml from 'highlight.js/lib/languages/yaml';
-import { Send, Square, Sparkles, Trash2, ChevronRight, ChevronDown, Terminal, FileCode, Check, Eye, AlertCircle, Copy, RotateCcw, Loader2, ShieldCheck, X, Users, Lightbulb, Hammer, Compass, Info } from 'lucide-react';
+import { Send, Square, Sparkles, Trash2, ChevronRight, ChevronDown, Terminal, FileCode, Check, Eye, AlertCircle, Copy, RotateCcw, Loader2, ShieldCheck, X, Users, Lightbulb, Hammer, Compass, Info, Presentation, Play, ExternalLink } from 'lucide-react';
 import { useChatStore } from '../state/chat-store';
 import { useWorkspaceStore } from '../state/workspace-store';
 import { usePairProgrammingStore } from '../state/pair-programming-store';
+import { ModelSelector } from './ChatInterface/ModelSelector';
 import type { ChatMessage, ToolCall, ToolExecutionStatus } from '../../../preload/types';
 
 const languages: Record<string, LanguageFn> = {
@@ -81,13 +82,166 @@ function MarkdownContent({ content }: { content: string }): React.ReactElement {
 
 interface ToolCardProps { tool: ToolCall; status?: ToolExecutionStatus; output?: string; }
 
+interface PresentationData {
+  topic: string;
+  filePath: string;
+  absolutePath?: string;
+  slideCount: number;
+  outline: string[];
+  previewUrl?: string;
+}
+
+function parsePresentationData(toolArgs: Record<string, unknown>, output?: string): PresentationData | null {
+  try {
+    if (output) {
+      const parsed = JSON.parse(output);
+      if (parsed && typeof parsed === 'object' && parsed.success !== false) {
+        return {
+          topic: String(parsed.topic || toolArgs.topic || 'Presentation'),
+          filePath: String(parsed.filePath || toolArgs.outputPath || 'presentation.html'),
+          absolutePath: parsed.absolutePath ? String(parsed.absolutePath) : undefined,
+          slideCount: typeof parsed.slideCount === 'number' ? parsed.slideCount : (Array.isArray(toolArgs.outline) ? toolArgs.outline.length + 1 : 1),
+          outline: Array.isArray(parsed.outline) ? parsed.outline.map(String) : (Array.isArray(toolArgs.outline) ? toolArgs.outline.map(String) : []),
+          previewUrl: parsed.previewUrl ? String(parsed.previewUrl) : undefined
+        };
+      }
+    }
+  } catch {
+    // not JSON
+  }
+  if (toolArgs && toolArgs.topic) {
+    const outlineArr = Array.isArray(toolArgs.outline) ? toolArgs.outline.map(String) : [];
+    return {
+      topic: String(toolArgs.topic),
+      filePath: String(toolArgs.outputPath || 'presentation.html'),
+      slideCount: outlineArr.length + 1,
+      outline: outlineArr
+    };
+  }
+  return null;
+}
+
+export const PresentationPreviewCard: React.FC<{ data: PresentationData }> = ({ data }) => {
+  const [opening, setOpening] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const { openFile } = useWorkspaceStore();
+
+  const handlePreview = async () => {
+    setOpening(true);
+    try {
+      const target = data.previewUrl || (data.absolutePath ? `file:///${data.absolutePath.replace(/\\/g, '/')}` : data.filePath);
+      if (window.electronAPI?.openExternal) {
+        await window.electronAPI.openExternal(target);
+      } else if (window.electronAPI?.openPath && data.filePath) {
+        await window.electronAPI.openPath(data.filePath);
+      } else if (typeof window !== 'undefined') {
+        window.open(target, '_blank');
+      }
+    } catch (err) {
+      console.error('Failed to preview presentation:', err);
+    } finally {
+      window.setTimeout(() => setOpening(false), 800);
+    }
+  };
+
+  const handleOpenEditor = async () => {
+    try {
+      const name = data.filePath.split(/[/\\]/).pop() || 'presentation.html';
+      await openFile(data.filePath, name);
+    } catch (err) {
+      console.error('Failed to open presentation in editor:', err);
+    }
+  };
+
+  const handleCopyPath = async () => {
+    try {
+      await navigator.clipboard.writeText(data.filePath);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      setCopied(false);
+    }
+  };
+
+  return (
+    <div className="presentation-preview-card" role="region" aria-label="Interactive Presentation Preview">
+      <div className="presentation-card-header">
+        <div className="presentation-card-badge">
+          <Presentation size={13} color="var(--accent-cyan)" />
+          <span>Bento Presentation Deck</span>
+        </div>
+        <span className="presentation-card-count">{data.slideCount} {data.slideCount === 1 ? 'Slide' : 'Slides'}</span>
+      </div>
+
+      <div className="presentation-card-body">
+        <h4 className="presentation-card-topic">{data.topic}</h4>
+        <div className="presentation-card-meta">
+          <FileCode size={12} color="var(--accent-primary)" />
+          <span className="presentation-card-filepath" title={data.filePath}>{data.filePath}</span>
+          <button
+            type="button"
+            className="presentation-copy-btn"
+            onClick={() => void handleCopyPath()}
+            title="Copy file path"
+          >
+            {copied ? <Check size={11} color="var(--accent-green)" /> : <Copy size={11} />}
+          </button>
+        </div>
+
+        {data.outline && data.outline.length > 0 && (
+          <details className="presentation-card-outline">
+            <summary>
+              <span>Slide Outline ({data.outline.length} sections)</span>
+              <ChevronDown size={11} className="outline-chevron" />
+            </summary>
+            <ol>
+              <li><em>Cover:</em> {data.topic}</li>
+              {data.outline.map((item, i) => (
+                <li key={i}>{item}</li>
+              ))}
+            </ol>
+          </details>
+        )}
+      </div>
+
+      <div className="presentation-card-actions">
+        <button
+          type="button"
+          className="presentation-btn-preview"
+          onClick={() => void handlePreview()}
+          disabled={opening}
+          title="Open interactive presentation in default browser"
+        >
+          {opening ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
+          <span>{opening ? 'Opening…' : 'Preview Presentation'}</span>
+          <ExternalLink size={11} />
+        </button>
+
+        <button
+          type="button"
+          className="presentation-btn-editor"
+          onClick={() => void handleOpenEditor()}
+          title="Open HTML file in IDE editor"
+        >
+          <FileCode size={12} />
+          <span>Open in Editor</span>
+        </button>
+      </div>
+    </div>
+  );
+};
+
 const ToolCard: React.FC<ToolCardProps> = ({ tool, status, output }) => {
   const [expanded, setExpanded] = useState(false);
   const isError = status === 'error';
+  const isPresentation = tool.name === 'generate_presentation';
+  const presentationData = isPresentation ? parsePresentationData(tool.arguments || {}, output) : null;
+
   return <section className="tool-card">
     <button className="tool-header" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded} aria-label={`${expanded ? 'Collapse' : 'Expand'} ${tool.name} tool details`} style={{ color: isError ? 'var(--accent-red)' : status === 'running' ? 'var(--accent-primary)' : 'var(--text-primary)' }}>
       <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-        {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}<Terminal size={12} color="var(--accent-primary)" />
+        {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+        {isPresentation ? <Presentation size={12} color="var(--accent-cyan)" /> : <Terminal size={12} color="var(--accent-primary)" />}
         <strong>{tool.name}</strong><span style={{ color: 'var(--text-muted)' }}>({Object.keys(tool.arguments || {}).length} args)</span>
       </span>
       <span style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
@@ -97,6 +251,9 @@ const ToolCard: React.FC<ToolCardProps> = ({ tool, status, output }) => {
         {status === 'cancelled' && <span className="tool-status is-cancelled">Stopped</span>}
       </span>
     </button>
+    {status === 'success' && presentationData && (
+      <PresentationPreviewCard data={presentationData} />
+    )}
     {expanded && <div className="tool-body">
       <div style={{ marginBottom: 8, color: 'var(--accent-cyan)' }}><strong>Input:</strong>{' '}{JSON.stringify(tool.arguments, null, 2)}</div>
       {output !== undefined && <div><strong style={{ color: isError ? 'var(--accent-red)' : 'var(--text-secondary)' }}>Output:</strong><div style={{ marginTop: 4 }}>{output}</div></div>}
@@ -122,10 +279,11 @@ function DiffCard({ diff: proposedDiff, onInspect, onApply }: {
 export const ChatSidecar: React.FC = () => {
   const [input, setInput] = useState('');
   const [sidecarTab, setSidecarTab] = useState<'chat' | 'pair'>('chat');
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const feedRef = useRef<HTMLDivElement>(null);
   const userAtBottomRef = useRef(true);
-  const { messages, isRunning, currentStatus, currentThought, streamingText, pendingApproval, sendMessage, stopTask, respondToApproval, clearChat, agentMode, setAgentMode } = useChatStore();
+  const { messages, isRunning, currentStatus, currentThought, streamingText, pendingApproval, sendMessage, stopTask, respondToApproval, clearChat, agentMode, setAgentMode, draftPrompt, setDraftPrompt } = useChatStore();
   const { isPairActive, suggestions, togglePairMode, dismissSuggestion, clearSuggestions } = usePairProgrammingStore();
   const [approvalSending, setApprovalSending] = useState(false);
   const { workspacePath, activeTabPath, openTabs, openDiffReview, applyDiff } = useWorkspaceStore();
@@ -133,6 +291,21 @@ export const ChatSidecar: React.FC = () => {
   const lastAssistantId = [...messages].reverse().find((message) => message.role === 'assistant')?.id;
   const lastUserMessage = [...messages].reverse().find((message) => message.role === 'user');
   const firstTokenPending = isRunning && !streamingText && !currentThought && !messages.some((message) => message.role === 'tool' && message.toolStatus === 'running');
+
+  useEffect(() => {
+    if (draftPrompt) {
+      setInput(draftPrompt);
+      setSidecarTab('chat');
+      setDraftPrompt('');
+      window.setTimeout(() => {
+        if (inputRef.current) {
+          inputRef.current.focus();
+          inputRef.current.selectionStart = inputRef.current.value.length;
+          inputRef.current.selectionEnd = inputRef.current.value.length;
+        }
+      }, 50);
+    }
+  }, [draftPrompt, setDraftPrompt]);
 
   const handleScroll = () => {
     const feed = feedRef.current;
@@ -207,60 +380,65 @@ export const ChatSidecar: React.FC = () => {
           {isPairActive && <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#22c55e' }} />}
         </button>
         {sidecarTab === 'chat' && (
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              background: 'var(--bg-secondary)',
-              borderRadius: '4px',
-              padding: '2px',
-              border: '1px solid var(--border-subtle)',
-              marginLeft: '4px'
-            }}
-          >
-            <button
-              type="button"
-              onClick={() => setAgentMode('build')}
-              title="Build Agent: Full access to read, write, edit files and execute commands (Default)"
+          <>
+            <div
               style={{
-                background: agentMode === 'build' ? 'var(--accent-primary)' : 'transparent',
-                color: agentMode === 'build' ? '#fff' : 'var(--text-muted)',
-                border: 'none',
-                borderRadius: '3px',
-                padding: '2px 6px',
-                fontSize: '10px',
-                fontWeight: 600,
-                cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '3px'
+                background: 'var(--bg-secondary)',
+                borderRadius: '4px',
+                padding: '2px',
+                border: '1px solid var(--border-subtle)',
+                marginLeft: '4px'
               }}
             >
-              <Hammer size={10} />
-              <span>Build</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setAgentMode('plan')}
-              title="Plan Agent: Read-only exploration and planning. Refuses file edits, bash commands require permission."
-              style={{
-                background: agentMode === 'plan' ? '#f59e0b' : 'transparent',
-                color: agentMode === 'plan' ? '#fff' : 'var(--text-muted)',
-                border: 'none',
-                borderRadius: '3px',
-                padding: '2px 6px',
-                fontSize: '10px',
-                fontWeight: 600,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '3px'
-              }}
-            >
-              <Compass size={10} />
-              <span>Plan</span>
-            </button>
-          </div>
+              <button
+                type="button"
+                onClick={() => setAgentMode('build')}
+                title="Build Agent: Full access to read, write, edit files and execute commands (Default)"
+                style={{
+                  background: agentMode === 'build' ? 'var(--accent-primary)' : 'transparent',
+                  color: agentMode === 'build' ? '#fff' : 'var(--text-muted)',
+                  border: 'none',
+                  borderRadius: '3px',
+                  padding: '2px 6px',
+                  fontSize: '10px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '3px'
+                }}
+              >
+                <Hammer size={10} />
+                <span>Build</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setAgentMode('plan')}
+                title="Plan Agent: Read-only exploration and planning. Refuses file edits, bash commands require permission."
+                style={{
+                  background: agentMode === 'plan' ? '#f59e0b' : 'transparent',
+                  color: agentMode === 'plan' ? '#fff' : 'var(--text-muted)',
+                  border: 'none',
+                  borderRadius: '3px',
+                  padding: '2px 6px',
+                  fontSize: '10px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '3px'
+                }}
+              >
+                <Compass size={10} />
+                <span>Plan</span>
+              </button>
+            </div>
+            <div style={{ marginLeft: '4px' }}>
+              <ModelSelector />
+            </div>
+          </>
         )}
       </div>
       <div className="chat-header-actions">
@@ -386,7 +564,7 @@ export const ChatSidecar: React.FC = () => {
 
     <form onSubmit={handleSubmit} className="chat-composer">
       <div className="chat-composer-field">
-        <textarea value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={handleKeyDown} placeholder="Ask Ty-Code… (Enter to send)" aria-label="Message Ty-Code" rows={3} />
+        <textarea ref={inputRef} value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={handleKeyDown} placeholder="Ask Ty-Code… (Enter to send)" aria-label="Message Ty-Code" rows={3} />
         {isRunning ? <button type="button" onClick={() => void stopTask()} className="chat-send-button is-stop" title="Stop agent" aria-label="Stop agent"><Square size={12} /></button>
           : <button type="submit" disabled={!input.trim()} className="chat-send-button" title="Send message" aria-label="Send message"><Send size={13} /></button>}
       </div>

@@ -33,9 +33,9 @@ In developing and maintaining Ty-Code, the system leverages specialized persona 
   - Provide modern dark-mode aesthetics, micro-interactions, and responsive layout resizing.
 
 ### 5. Security & Persistence Guardian
-- **Domain**: Hardware-encrypted credential storage, path sanitization, shell injection prevention, and context memory persistence.
+- **Domain**: OS-backed credential storage, path sanitization, shell injection prevention, and context memory persistence.
 - **Responsibilities**:
-  - Ensure API keys are encrypted via Electron `safeStorage`.
+  - Save API keys only when Electron `safeStorage` can use a secure OS credential backend; fail closed on unsupported Linux `basic_text` and unavailable backends.
   - Restrict agent filesystem access strictly to the active workspace folder (prevent directory traversal via `..` or symbolic links).
   - Intercept dangerous terminal commands and enforce explicit user confirmation before execution.
 

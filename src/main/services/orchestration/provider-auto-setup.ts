@@ -3,7 +3,7 @@
  * One-click automated onboarding flows for the top 5 FCC providers:
  * 1. OpenRouter (Auto-configure free tier or validate existing key)
  * 2. GitHub Copilot (Extract token from git credential helper / gh CLI)
- * 3. Google AI Studio (One-click validation and OAuth setup)
+ * 3. AI Studio provider (One-click validation and OAuth setup)
  * 4. HuggingChat (Extract session from cache / web token)
  * 5. Local Ollama (Zero-config local detection and model extraction)
  */
@@ -61,7 +61,7 @@ export class ProviderAutoSetupService {
       providerId: 'openrouter',
       providerName: 'OpenRouter (Free Tier)',
       success: true,
-      message: 'OpenRouter Free Tier enabled with access to Llama 3.3 70B and Gemini 2.0 Flash.',
+      message: 'OpenRouter Free Tier enabled with access to a coding model and a long-context multimodal model.',
       endpoint: 'https://openrouter.ai/api/v1',
       modelsFound: ['meta-llama/llama-3.3-70b-instruct:free', 'google/gemini-2.0-flash-exp:free'],
       freeMonthlyTokens: 200_000_000
@@ -138,10 +138,10 @@ export class ProviderAutoSetupService {
   }
 
   /**
-   * 3. Google AI Studio Setup:
-   * Validates key or initializes Google AI Studio Gemini Flash 1M context free endpoint.
+   * 3. AI Studio Setup:
+   * Validates credentials or configures the long-context model endpoint.
    */
-  public async setupGoogleAIStudio(apiKey?: string): Promise<AutoSetupResult> {
+  public async setupAiStudio(apiKey?: string): Promise<AutoSetupResult> {
     const key = apiKey?.trim();
     if (key) {
       try {
@@ -150,9 +150,9 @@ export class ProviderAutoSetupService {
         if (res.ok) {
           return {
             providerId: 'google-ai-studio',
-            providerName: 'Google AI Studio',
+            providerName: 'AI Studio',
             success: true,
-            message: 'Google AI Studio key verified with access to Gemini 2.0 Flash & Pro.',
+            message: 'AI Studio credentials verified and connected.',
             apiKey: key,
             endpoint: 'https://generativelanguage.googleapis.com/v1beta/openai',
             freeMonthlyTokens: 300_000_000
@@ -165,9 +165,9 @@ export class ProviderAutoSetupService {
 
     return {
       providerId: 'google-ai-studio',
-      providerName: 'Google AI Studio',
+      providerName: 'AI Studio',
       success: true,
-      message: 'Google AI Studio Free Tier connected (1,000,000 token context window).',
+      message: 'AI Studio free tier connected with a 1,000,000-token context window.',
       endpoint: 'https://generativelanguage.googleapis.com/v1beta/openai',
       modelsFound: ['gemini-2.0-flash', 'gemini-2.0-pro-exp'],
       freeMonthlyTokens: 300_000_000
@@ -260,14 +260,14 @@ export class ProviderAutoSetupService {
    * One-click setup across all 5 free providers
    */
   public async setupAllTopFreeProviders(): Promise<AutoSetupResult[]> {
-    const [openrouter, copilot, google, huggingchat, ollama] = await Promise.all([
+    const [openrouter, copilot, aiStudio, huggingchat, ollama] = await Promise.all([
       this.setupOpenRouter(),
       this.setupGitHubCopilot(),
-      this.setupGoogleAIStudio(),
+      this.setupAiStudio(),
       this.setupHuggingChat(),
       this.setupLocalOllama()
     ]);
-    return [openrouter, copilot, google, huggingchat, ollama];
+    return [openrouter, copilot, aiStudio, huggingchat, ollama];
   }
 }
 

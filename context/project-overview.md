@@ -51,7 +51,7 @@ graph TD
   - **Direct Cloud APIs**: Groq (high-speed inference), DeepSeek direct, Google Gemini, Mistral, NVIDIA NIM.
   - **Local Offline Models**: Ollama (`ollama run qwen2.5-coder`, `deepseek-r1`), LM Studio, and `llama.cpp` local endpoints.
 - **Protocol Translation Layer**: Emulates Anthropic and OpenAI tool-calling semantics, streaming SSE parser, and normalized reasoning tokens.
-- **Key & Endpoint Management**: Per-provider API key storage encrypted via Electron's `safeStorage`, custom endpoint URLs, and model parameter tuning (temperature, max tokens, top-p).
+- **Key & Endpoint Management**: Per-provider API keys use Electron `safeStorage` when an OS credential provider is available; storage fails closed otherwise. Includes custom endpoint URLs and model parameters.
 
 ### 3. Agentic Coding Core
 - **Autonomous Tool Loop**: Maximum step budget, reactive execution, and automatic error self-correction.
@@ -79,7 +79,7 @@ graph TD
 - Built-in multi-provider API client with streaming response and tool-calling loop.
 - Agent toolset: file operations (`read`, `write`, `replace`), directory search, pattern grep, and shell execution.
 - Sidecar AI chat interface with markdown rendering, code block copy/apply, and diff review.
-- Local encrypted API key storage.
+- OS-backed API key storage with secure-storage availability checks and no plaintext fallback.
 - Integrated Xterm.js terminal.
 
 ### Out of Scope (Initial Phase)

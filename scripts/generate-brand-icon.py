@@ -1,4 +1,4 @@
-"""Render the Ty-Code icon SVG geometry as a 1024px PNG for electron-builder 25.x."""
+"""Render the Ty-Code icon SVG geometry as a 1024px PNG for electron-builder 26.x."""
 
 from pathlib import Path
 

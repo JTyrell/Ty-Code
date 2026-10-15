@@ -83,6 +83,39 @@ export class SecurityPolicyEngine {
     };
   }
 
+  public async checkTerminalCommand(command: string): Promise<{
+    decision: PolicyDecision;
+    status: 'ALLOW' | 'ASK' | 'BLOCK';
+    reason: string;
+    allowed: boolean;
+    blocked: boolean;
+    ask: boolean;
+    toString: () => string;
+    valueOf: () => string;
+  }> {
+    const res = await this.evaluateTerminalCommand(command);
+    const status: 'ALLOW' | 'ASK' | 'BLOCK' = res.decision === 'allow' ? 'ALLOW' : res.decision === 'block' ? 'BLOCK' : 'ASK';
+    return {
+      decision: res.decision,
+      status,
+      reason: res.reason,
+      allowed: res.decision === 'allow',
+      blocked: res.decision === 'block',
+      ask: res.decision === 'ask',
+      toString: () => status,
+      valueOf: () => status
+    };
+  }
+
+  public async isFileAllowed(filePath: string): Promise<boolean> {
+    try {
+      await this.resolveFilePath(filePath, true);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   public async evaluateFileMutation(review: FileMutationReview): Promise<{ decision: PolicyDecision; reason: string }> {
     const policy = await this.getPolicy();
     if (policy.reviewPolicy === 'always-ask') return { decision: 'ask', reason: 'Always Ask is enabled for agent file changes.' };
@@ -146,6 +179,43 @@ export class SecurityPolicyEngine {
       }
       return absolute;
     }
+  }
+
+  public async createFileMutationReview(filePath: string, proposedContent: string): Promise<FileMutationReview> {
+    const absolutePath = await this.resolveFilePath(filePath, true);
+    let originalContent = '';
+    let originalExists = false;
+    try {
+      originalContent = await fs.readFile(absolutePath, 'utf8');
+      originalExists = true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+    return {
+      filePath,
+      originalContent,
+      proposedContent,
+      ...countLineChanges(originalContent, proposedContent),
+      originalExists,
+      originalHash: createHash('sha256').update(originalContent, 'utf8').digest('hex')
+    };
+  }
+
+  public async verifyFileMutationSnapshot(review: FileMutationReview): Promise<string> {
+    const absolutePath = await this.resolveFilePath(review.filePath, true);
+    let currentContent = '';
+    let exists = false;
+    try {
+      currentContent = await fs.readFile(absolutePath, 'utf8');
+      exists = true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+    const hash = createHash('sha256').update(currentContent, 'utf8').digest('hex');
+    if (exists !== review.originalExists || hash !== review.originalHash) {
+      throw new Error(`File ${review.filePath} changed after approval. Review the updated file before applying this change.`);
+    }
+    return absolutePath;
   }
 
   public async previewFileMutation(toolName: string, args: Record<string, unknown>): Promise<FileMutationReview> {

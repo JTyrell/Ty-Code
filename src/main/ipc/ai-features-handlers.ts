@@ -60,7 +60,7 @@ export function updateAiServicesWorkspace(workspacePath: string): void {
   refactorService?.setWorkspace(workspacePath, getWorkspaceEditPreviewService());
 }
 
-export function registerAiFeatureHandlers(): void {
+export function registerAiFeatureHandlers(onProjectIndexed?: () => void): void {
   // 1. Inline AI Completions
   ipcMain.handle('ai:inline-completions', async (_event, req: InlineCompletionRequest) => {
     try {
@@ -73,13 +73,11 @@ export function registerAiFeatureHandlers(): void {
   });
 
   // 2. Project Indexing & Context
-  ipcMain.handle('ai:index-project', async (_event, customPath?: string) => {
+  ipcMain.handle('ai:index-project', async () => {
     try {
-      if (customPath && projectIndexer) {
-        projectIndexer.setWorkspace(customPath);
-      }
       if (!projectIndexer) throw new Error('Project indexer not initialized.');
       const stats = await projectIndexer.index();
+      onProjectIndexed?.();
       return { success: true, data: stats };
     } catch (err) {
       return { success: false, error: String(err) };

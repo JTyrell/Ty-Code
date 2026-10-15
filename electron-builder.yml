@@ -19,8 +19,8 @@ extraResources:
 
 asar: true
 asarUnpack:
-  - "**/*.node"
-  - "**/node-pty/**"
+  - "**/node-pty/prebuilds/**"
+  - "**/node-pty/build/Release/**"
 
 extraMetadata:
   main: dist/main/index.js
@@ -53,6 +53,7 @@ win:
         - x64
   legalTrademarks: Ty-Code
   requestedExecutionLevel: asInvoker
+  verifyUpdateCodeSignature: true
   artifactName: Ty-Code-${version}-${arch}.${ext}
 
 nsis:
@@ -80,6 +81,7 @@ mac:
         - universal
   category: public.app-category.developer-tools
   hardenedRuntime: true
+  notarize: true
   gatekeeperAssess: false
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.inherit.plist
@@ -109,8 +111,11 @@ linux:
     StartupWMClass: ty-code
     MimeType: text/plain;text/x-typescript;text/x-javascript;text/x-python;application/json;
 
+generateUpdatesFilesForAllChannels: true
 publish:
   provider: github
   owner: ty-code
   repo: ty-code
   releaseType: release
+  # electron-builder-generated latest*.yml files embed SHA-512 artifact checksums.
+  # CI additionally ships SHA256SUMS.txt covering every release asset.

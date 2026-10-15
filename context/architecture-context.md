@@ -16,7 +16,7 @@ Ty-Code is architected as a modular, sandboxed Electron desktop application sepa
 | **AI Protocol Gateway** | TypeScript Multi-Provider Client | Architecture inspired by `free-claude-code`: unified client for OpenRouter, DeepSeek, Groq, NVIDIA NIM, Ollama, and Anthropic endpoints with SSE streaming. |
 | **Agent Execution Loop** | TypeScript Tool State Machine | Autonomous agent loop managing conversation history, system prompt budgeting, tool call invocations, error reflection, and result routing. |
 | **Styling & Design System** | Tailwind CSS / CSS Modules | VS Code dark-mode aesthetics, responsive flex/grid layouts, polished micro-interactions, smooth splitter panes. |
-| **Local Persistence** | Electron `safeStorage` + `electron-store` | Hardware-encrypted API keys and credentials; JSON-backed local storage for workspace settings, recent projects, and chat history. |
+| **Local Persistence** | Electron `safeStorage` + local JSON | API credentials use the OS credential store when available; credential writes fail closed on Linux `basic_text` or unavailable backends. Workspace settings, recent projects, and chat history remain local. |
 | **Build & Bundling** | Vite + electron-builder | Ultra-fast HMR in development, optimized code splitting, native code signing and cross-platform binary installer packaging. |
 
 ---
@@ -185,5 +185,5 @@ sequenceDiagram
 2. **Atomic Disk Operations**: When the AI agent modifies code via `replace_file_content` or `write_file`, writes must be atomic (e.g., write to temporary file then replace, or verify character-exact pre-conditions) to prevent file corruption.
 3. **Target Content Exactness**: The agent's `replace_file_content` tool strictly validates that `TargetContent` exists uniquely within the designated line range before writing to prevent ambiguous overwrites.
 4. **Non-Blocking Main Thread**: File search, heavy regex matching, and network requests must never block the Electron main thread. Long-running tasks use async streams or worker threads.
-5. **Encrypted Secret Storage**: User API keys (OpenRouter, DeepSeek, Groq, etc.) are never saved in plain text; they are encrypted using Electron's OS-backed `safeStorage` API.
+5. **Credential Storage**: User API keys are saved only when Electron `safeStorage` can use an OS-backed secure credential store; unsupported Linux `basic_text` and unavailable backends fail closed.
 6. **Graceful Degradation / Offline Capability**: If no internet access or API key is provided, the application automatically allows fallback to local Ollama (`http://localhost:11434`) or LM Studio endpoints.

@@ -171,7 +171,7 @@ export class ProviderRegistry {
         },
         {
           id: 'google/gemini-2.0-flash-exp:free',
-          name: 'Gemini 2.0 Flash (Free OpenRouter)',
+          name: 'Long-Context Multimodal (Free OpenRouter)',
           contextWindow: 1_048_576,
           maxOutputTokens: 8192,
           capabilities: { reasoning: false, tools: true, vision: true, codingScore: 90, speedTokensPerSec: 120, isFree: true },
@@ -257,6 +257,43 @@ export class ProviderRegistry {
           maxOutputTokens: 8192,
           capabilities: { reasoning: false, tools: true, vision: false, codingScore: 92, speedTokensPerSec: 350, isFree: false },
           costTier: 'low',
+          primaryTask: 'coding'
+        }
+      ]
+    });
+
+    this.registerProvider({
+      id: 'opencode',
+      name: 'OpenCode Unified Providers',
+      category: 'api_key',
+      authMethod: 'api_key',
+      defaultEndpoint: 'https://api.opencode.ai/v1',
+      isFreeTierAvailable: true,
+      freeTierTokenLimit: 500_000,
+      rateLimitPattern: { requestsPerMinute: 60, tokensPerMinute: 120_000, cooldownBaseMs: 5000, maxCooldownMs: 120_000 },
+      healthCheckEndpoint: 'https://api.opencode.ai/v1/models',
+      headersFactory: ({ apiKey }) => ({
+        Authorization: `Bearer ${apiKey || ''}`,
+        'X-Client': 'Ty-Code',
+        'User-Agent': 'Ty-Code/1.0 (OpenCode-Sync)'
+      }),
+      supportedModels: [
+        {
+          id: 'opencode-v1',
+          name: 'OpenCode Standard V1',
+          contextWindow: 128_000,
+          maxOutputTokens: 8192,
+          capabilities: { reasoning: true, tools: true, vision: true, codingScore: 95, speedTokensPerSec: 85, isFree: true },
+          costTier: 'free',
+          primaryTask: 'coding'
+        },
+        {
+          id: 'opencode-coder-pro',
+          name: 'OpenCode Coder Pro',
+          contextWindow: 128_000,
+          maxOutputTokens: 16384,
+          capabilities: { reasoning: true, tools: true, vision: false, codingScore: 98, speedTokensPerSec: 75, isFree: false },
+          costTier: 'medium',
           primaryTask: 'coding'
         }
       ]
@@ -619,7 +656,7 @@ export class ProviderRegistry {
 
     this.registerProvider({
       id: 'google-ai-studio',
-      name: 'Google AI Studio (Gemini)',
+      name: 'AI Studio',
       category: 'oauth',
       authMethod: 'oauth',
       defaultEndpoint: 'https://generativelanguage.googleapis.com/v1beta/openai',
@@ -629,7 +666,7 @@ export class ProviderRegistry {
       supportedModels: [
         {
           id: 'gemini-2.0-flash',
-          name: 'Gemini 2.0 Flash',
+          name: 'Long-Context Multimodal',
           contextWindow: 1_048_576,
           maxOutputTokens: 8192,
           capabilities: { reasoning: true, tools: true, vision: true, codingScore: 92, speedTokensPerSec: 130, isFree: true },
@@ -638,7 +675,7 @@ export class ProviderRegistry {
         },
         {
           id: 'gemini-2.0-pro-exp',
-          name: 'Gemini 2.0 Pro Experimental',
+          name: 'Advanced Long-Context Model',
           contextWindow: 2_097_152,
           maxOutputTokens: 8192,
           capabilities: { reasoning: true, tools: true, vision: true, codingScore: 96, speedTokensPerSec: 60, isFree: true },
@@ -867,7 +904,7 @@ export class ProviderRegistry {
     const oauthProviders: Array<{ id: string; name: string }> = [
       { id: 'aws-bedrock-sso', name: 'AWS Bedrock IAM/SSO' },
       { id: 'azure-openai-ad', name: 'Azure OpenAI Entra ID' },
-      { id: 'gcp-vertex-oauth', name: 'Google Cloud Vertex AI OAuth' },
+      { id: 'gcp-vertex-oauth', name: 'Cloud Vertex AI OAuth' },
       { id: 'snowflake-cortex-oauth', name: 'Snowflake Cortex OAuth' },
       { id: 'databricks-unity-oauth', name: 'Databricks Unity OAuth' },
       { id: 'salesforce-einstein', name: 'Salesforce Einstein 1 Platform' },
@@ -876,7 +913,7 @@ export class ProviderRegistry {
       { id: 'ibm-watsonx-iam', name: 'IBM Cloud watsonx IAM' },
       { id: 'cloudflare-zerotrust', name: 'Cloudflare Zero Trust AI' },
       { id: 'microsoft-365-copilot', name: 'Microsoft 365 Copilot' },
-      { id: 'google-workspace-duet', name: 'Google Workspace AI' },
+      { id: 'google-workspace-duet', name: 'Workspace AI' },
       { id: 'slack-ai-enterprise', name: 'Slack AI Enterprise' },
       { id: 'zoom-ai-companion', name: 'Zoom AI Companion' },
       { id: 'atlassian-intelligence', name: 'Atlassian Intelligence' },
@@ -1082,7 +1119,7 @@ export class ProviderRegistry {
         },
         {
           id: 'gemini-2.0-flash',
-          name: 'Gemini 2.0 Flash (via FCC)',
+          name: 'Long-Context Multimodal (via FCC)',
           contextWindow: 1_048_576,
           maxOutputTokens: 8192,
           capabilities: { reasoning: true, tools: true, vision: true, codingScore: 93, speedTokensPerSec: 110, isFree: true },
@@ -1133,6 +1170,49 @@ export class ProviderRegistry {
       rateLimitPattern: { requestsPerMinute: 200, tokensPerMinute: 2_000_000, cooldownBaseMs: 2000, maxCooldownMs: 30_000 },
       supportedModels: openkiloModels,
       healthCheckEndpoint: 'https://api.openkilo.com/v1/models',
+      headersFactory: (credentials) => {
+        const key = credentials.apiKey?.trim() || 'anonymous';
+        return {
+          Authorization: `Bearer ${key}`,
+          'X-Client': 'Ty-Code'
+        };
+      }
+    });
+
+    // 15. OpenCode Framework & Provider Catalog (Phase 6.3)
+    this.registerProvider({
+      id: 'opencode',
+      name: 'OpenCode Framework',
+      category: 'api_key',
+      authMethod: 'api_key',
+      defaultEndpoint: 'https://api.opencode.ai/v1',
+      isFreeTierAvailable: true,
+      freeTierTokenLimit: 1_000_000_000,
+      monthlyFreeTokens: 1_000_000_000,
+      rateLimitPattern: { requestsPerMinute: 300, tokensPerMinute: 3_000_000, cooldownBaseMs: 1500, maxCooldownMs: 25_000 },
+      supportedModels: [
+        {
+          id: 'opencode-v1',
+          name: 'OpenCode V1',
+          contextWindow: 128_000,
+          maxOutputTokens: 8192,
+          capabilities: { codingScore: 92, reasoning: true, tools: true, isFree: true },
+          costTier: 'free',
+          primaryTask: 'coding',
+          description: 'OpenCode autonomous agent primary model'
+        },
+        {
+          id: 'opencode-coder-pro',
+          name: 'OpenCode Coder Pro',
+          contextWindow: 200_000,
+          maxOutputTokens: 16_384,
+          capabilities: { codingScore: 95, reasoning: true, tools: true, isFree: false },
+          costTier: 'low',
+          primaryTask: 'coding',
+          description: 'High-capability autonomous coding specialist'
+        }
+      ],
+      healthCheckEndpoint: 'https://api.opencode.ai/v1/models',
       headersFactory: (credentials) => {
         const key = credentials.apiKey?.trim() || 'anonymous';
         return {

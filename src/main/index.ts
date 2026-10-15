@@ -1,7 +1,9 @@
-import { app, BrowserWindow, ipcMain, session, shell, type IpcMainInvokeEvent } from 'electron';
+import { app, BrowserWindow, ipcMain, session, shell, dialog, type IpcMainInvokeEvent } from 'electron';
 import path from 'path';
+import os from 'os';
 import { ProviderGateway } from './providers/provider-gateway';
 import { PRECONFIGURED_PROVIDERS } from './config/provider-registry';
+import { historyExtractor } from './services/history-extractor';
 import {
   selectWorkspaceFolder, getWorkspaceTree, readFile, writeFile, createFile,
   createDirectory, deletePath, renamePath, searchWorkspaceFiles,
@@ -16,12 +18,12 @@ import {
   handleLspRename, handleLspDocumentSymbols, handleLspWorkspaceSymbols,
   handleLspCodeActions, handleLspSignatureHelp, getLspManager
 } from './ipc/lsp-handlers';
-import { getSettings, getSettingsLayer, getSecurityPolicy, saveSecurityPolicy, saveSettings, saveSettingsLayer } from './ipc/settings-handlers';
+import { getCredentialStorageStatusResponse, getSettings, getSettingsLayer, getSecurityPolicy, saveSecurityPolicy, saveSettings, saveSettingsLayer } from './ipc/settings-handlers';
 import { settingsManager } from './services/settings-manager';
-import { startAgentTask, stopAgentTask, respondAgentApproval, applyDiff } from './ipc/agent-handlers';
+import { startAgentTask, stopAgentTask, respondAgentApproval, applyDiff, handleUserApproveDiff } from './ipc/agent-handlers';
 import {
   runCommand, getAvailableShells, spawnPtySession, attachPty, writePty,
-  resizePty, syncPtyCwd, killPty, cleanupAllPtys
+  resizePty, syncPtyCwd, killPty, cleanupAllPtys, resolvePtyApproval, executePtyCommand
 } from './ipc/pty-handlers';
 import {
   searchOpenVsxExtensions, getOpenVsxExtensionDetails, handleGetInstalledExtensions,
@@ -46,13 +48,36 @@ import { getRecentWorkspacesManager } from './services/recent-workspaces';
 import { MyersDiff } from './services/myers-diff';
 import { WorkspaceEditPreviewService } from './services/workspace-edit-preview';
 import { fromFileUri } from './services/lsp-path-utils';
-import type { CommandExecutionOptions, ProposedDiff, PtySpawnOptions, ReplaceInFilesOptions, SearchInFilesOptions, WorkspaceEditOrigin } from '../preload/types';
+import type { CommandExecutionOptions, ProposedDiff, PtySpawnOptions, ReplaceInFilesOptions, SearchInFilesOptions, TelemetryEvent, WorkspaceEditOrigin } from '../preload/types';
 import { fileURLToPath } from 'url';
 
 import { initAiFeatureServices, updateAiServicesWorkspace, registerAiFeatureHandlers } from './ipc/ai-features-handlers';
 import { fccManager } from './services/orchestration/fcc-manager';
 import { providerAutoSetup } from './services/orchestration/provider-auto-setup';
 import { openKiloProvider } from './services/orchestration/openkilo-provider';
+import { quotaTracker } from './services/orchestration/quota-tracker';
+import { smartModelSelector } from './services/orchestration/smart-selector';
+import { performanceManager } from './services/orchestration/performance-manager';
+import { contextCompressor } from './services/orchestration/context-compressor';
+import { moduleManager } from './services/module-manager';
+import { moduleRegistry } from './services/module-registry';
+import { mcpManager } from './services/mcp-manager';
+import { freeProviderRegistry } from './services/providers/free-provider-registry';
+import { modelClassifier } from './services/providers/model-classifier';
+import { providerHealthMonitor } from './services/providers/health-monitor';
+import { keyDetector, maskKey } from './services/providers/key-detector';
+import { readStoredCredentials, writeStoredCredentials, encryptSecret, decryptSecret } from './ipc/settings-handlers';
+import type { CustomProviderConfig, StoredKeySummary } from '../shared/types/byok';
+import { opencodeIntegration } from './services/providers/opencode-integration';
+import { opencodeFreeDetector } from './services/providers/opencode-free-detector';
+import type { AgentFramework } from '../shared/types/opencode-sync';
+import { taskClassifier } from './services/orchestration/task-classifier';
+import { userPreferences } from './services/orchestration/user-preferences';
+import { modelRouter } from './services/orchestration/model-router';
+import type { RouterUserPreferences } from '../shared/types/model-router';
+import { usageAnalytics } from './services/orchestration/usage-analytics';
+import { TelemetryManager } from './services/telemetry-manager';
+import type { TelemetryFeature } from '../preload/types';
 
 import { recordLspDiagnostics } from './services/orchestration/tools/diagnostics';
 
@@ -63,6 +88,15 @@ let workspaceEditPreviewWorkspace = '';
 let ipcRegistered = false;
 let diagnosticsManager: ReturnType<typeof getLspManager> | null = null;
 let diagnosticsUnsubscribe: (() => void) | null = null;
+let telemetryManager: TelemetryManager | null = null;
+let pendingHistoryDestination: string | null = null;
+
+function getTelemetryManager(): TelemetryManager {
+  if (!telemetryManager) {
+    telemetryManager = new TelemetryManager(settingsManager, path.join(app.getPath('userData'), 'telemetry-events.json'));
+  }
+  return telemetryManager;
+}
 
 function ensureLspDiagnosticsBridge(): void {
   const manager = getLspManager(currentWorkspacePath);
@@ -205,7 +239,35 @@ function registerIpcHandlers(): void {
     catch (error) { return { success: false, error: error instanceof Error ? error.message : String(error) }; }
   });
   ipcMain.handle('workspace-edit:recent-undo', () => ({ success: true, data: getWorkspaceEditPreviewService().getRecentUndo() }));
-  ipcMain.handle('settings:get', () => getSettings());
+  ipcMain.handle('settings:get', (event) => isTrustedExtensionFrame(event)
+    ? getSettings()
+    : { success: false, error: 'Untrusted renderer frame.' });
+  ipcMain.handle('credentials:get-storage-status', (event) => isTrustedExtensionFrame(event)
+    ? getCredentialStorageStatusResponse()
+    : { success: false, error: 'Untrusted renderer frame.' });
+  ipcMain.handle('telemetry:get-preview', async (event) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try { return { success: true, data: await getTelemetryManager().getPreview() }; }
+    catch (error) { return { success: false, error: error instanceof Error ? error.message : String(error) }; }
+  });
+  ipcMain.handle('telemetry:delete-event', async (event, payload: { index?: unknown; expected?: unknown }) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      if (!payload || !Number.isInteger(payload.index) || !payload.expected || typeof payload.expected !== 'object') throw new Error('Telemetry event selection is invalid.');
+      await getTelemetryManager().deleteEvent(payload.index as number, payload.expected as TelemetryEvent);
+      return { success: true };
+    } catch (error) { return { success: false, error: error instanceof Error ? error.message : String(error) }; }
+  });
+  ipcMain.handle('telemetry:clear-data', async (event) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try { await getTelemetryManager().clearData(); return { success: true }; }
+    catch (error) { return { success: false, error: error instanceof Error ? error.message : String(error) }; }
+  });
+  getTelemetryManager().onDidChange(() => {
+    if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
+      mainWindow.webContents.send('telemetry:changed');
+    }
+  });
   settingsManager.onDidChange(() => {
     if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
       mainWindow.webContents.send('settings:changed');
@@ -220,7 +282,14 @@ function registerIpcHandlers(): void {
     if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
     if (!payload || (payload.scope !== 'global' && payload.scope !== 'workspace')) return { success: false, error: 'Settings scope must be global or workspace.' };
     const result = await saveSettingsLayer(payload.scope, payload.settings);
-    if (result.success && payload.scope === 'global' && (payload.settings as Record<string, unknown>)?.['lsp.autoStart'] !== undefined) {
+    const layerUpdates = payload.settings && typeof payload.settings === 'object' ? payload.settings as Record<string, unknown> : {};
+    const telemetryUpdate = layerUpdates.telemetry && typeof layerUpdates.telemetry === 'object'
+      ? layerUpdates.telemetry as Record<string, unknown>
+      : {};
+    if (result.success && payload.scope === 'global' && telemetryUpdate.enabled === false) {
+      await getTelemetryManager().clearData();
+    }
+    if (result.success && payload.scope === 'global' && layerUpdates['lsp.autoStart'] !== undefined) {
       getLspManager(currentWorkspacePath).setAutoStart(Boolean((payload.settings as Record<string, unknown>)['lsp.autoStart']));
     }
     return result;
@@ -231,18 +300,24 @@ function registerIpcHandlers(): void {
   ipcMain.handle('settings:security:save', async (event, policy) => isTrustedExtensionFrame(event)
     ? saveSecurityPolicy(policy)
     : { success: false, error: 'Untrusted renderer frame.' });
-  ipcMain.handle('settings:save', async (_event, updates) => {
+  ipcMain.handle('settings:save', async (event, updates) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
     const result = await saveSettings(updates);
+    if (result.success && updates?.telemetry?.enabled === false) await getTelemetryManager().clearData();
     if (result.success && updates?.['lsp.autoStart'] !== undefined) getLspManager(currentWorkspacePath).setAutoStart(updates['lsp.autoStart']);
     return result;
   });
 
-  ipcMain.handle('agent:start-task', (_event, params) => {
+  ipcMain.handle('agent:start-task', async (_event, params) => {
     if (!mainWindow) return { success: false, error: 'No main window' };
-    return startAgentTask(mainWindow, { ...params, workspacePath: currentWorkspacePath });
+    const result = await startAgentTask(mainWindow, { ...params, workspacePath: currentWorkspacePath });
+    if (result.success) void getTelemetryManager().recordFeatureUsed('agent_chat');
+    return result;
   });
   ipcMain.handle('agent:stop-task', (_event, taskId: string) => stopAgentTask(taskId));
   ipcMain.handle('agent:respond-approval', (_event, payload: { approvalId: string; approved: boolean }) => respondAgentApproval(payload.approvalId, payload.approved));
+  ipcMain.handle('user_approve_diff', (_event, payload: { approvalId?: string; diffId?: string; approved?: boolean } | boolean) => handleUserApproveDiff(payload));
+  ipcMain.handle('pty:resolve-approval', (_event, payload: { approvalId: string; approved: boolean }) => resolvePtyApproval(payload.approvalId, payload.approved));
   ipcMain.handle('agent:apply-diff', (_event, diff: ProposedDiff) => applyDiff(currentWorkspacePath, diff));
 
   // OpenKilo Gateway (Layer 5) IPC Handlers
@@ -293,6 +368,642 @@ function registerIpcHandlers(): void {
         apiKeys: { openkilo: 'anonymous' }
       });
       return { success: true, data: openKiloProvider.getStatus() };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  // Phase 5.5: Smart Orchestration & Quota Management (Layer 6)
+  ipcMain.handle('orchestration:get-quota-stats', async () => {
+    try {
+      return { success: true, data: quotaTracker.getSnapshot() };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('orchestration:get-smart-routing-logs', async () => {
+    try {
+      return { success: true, data: smartModelSelector.getDecisionLogs() };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('orchestration:set-free-mode', async (_event, enabled: boolean) => {
+    try {
+      quotaTracker.setFreeMode(enabled);
+      return { success: true, data: { freeMode: quotaTracker.isFreeMode() } };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('orchestration:classify-task', async (_event, prompt: string) => {
+    try {
+      const task = smartModelSelector.classifyTask(prompt);
+      return { success: true, data: task };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('orchestration:select-model', async (_event, prompt: string, context?: { contextTokens?: number; hasImages?: boolean }) => {
+    try {
+      const selection = smartModelSelector.selectModel(prompt, context);
+      return { success: true, data: selection };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  // Phase 5.6: End-to-End Performance & Onboarding (Layer 6)
+  ipcMain.handle('orchestration:get-performance-metrics', async () => {
+    try {
+      return { success: true, data: performanceManager.getMetricsSnapshot() };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('orchestration:compress-context', async (_event, prompt: string, codeContext?: string) => {
+    try {
+      const result = contextCompressor.compress(prompt, codeContext);
+      return { success: true, data: result };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('orchestration:warm-connections', async () => {
+    try {
+      const result = await performanceManager.warmConnections();
+      return { success: true, data: result };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('orchestration:complete-onboarding', async () => {
+    try {
+      await saveSettings({ hasCompletedOnboarding: true, freeMode: true });
+      return { success: true, data: true };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  // Phase 3.1: Modular Skills & External Integration Registry
+  ipcMain.handle('modules:get-list', async (_event, workspacePath?: string) => {
+    try {
+      const list = await moduleManager.getModules(workspacePath || currentWorkspacePath);
+      return { success: true, data: list };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('modules:toggle', async (_event, moduleId: string, enabled: boolean, workspacePath?: string) => {
+    try {
+      const result = await moduleManager.toggleModule(moduleId, enabled, workspacePath || currentWorkspacePath);
+      return { success: true, data: result };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('modules:check-dependencies', async (_event, dependencies: string[]) => {
+    try {
+      const result = await moduleManager.checkDependencies(dependencies || []);
+      return { success: true, data: result };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('modules:get-status', async (_event, moduleId: string, workspacePath?: string) => {
+    try {
+      const status = await moduleManager.getModuleStatus(moduleId, workspacePath || currentWorkspacePath);
+      return { success: true, data: status };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  // Phase 3.3: AI Data Extractor (History Export), constrained to the user's file-picker choice.
+  ipcMain.handle('history:export-ai-data', async (event, options?: { format?: 'json' | 'md' | 'all'; outputFileName?: string }) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      const selectedPath = pendingHistoryDestination;
+      pendingHistoryDestination = null;
+      if (!selectedPath) throw new Error('Choose an export destination before exporting local chat history.');
+      const outputFileName = path.basename(options?.outputFileName || path.basename(selectedPath, path.extname(selectedPath)));
+      const format = options?.format === 'md' || options?.format === 'all' ? options.format : 'json';
+      const result = await historyExtractor.exportHistory({
+        workspacePath: currentWorkspacePath,
+        outputDir: path.dirname(selectedPath),
+        outputFileName,
+        format,
+        onProgress: (p) => {
+          try { event.sender.send('history:export-progress', p); } catch {}
+        }
+      });
+      if (result.success) void getTelemetryManager().recordFeatureUsed('history_export');
+      return { success: true, data: result };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('history:select-destination', async (event, defaultName?: string, format?: string) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      const ext = format === 'md' ? 'md' : format === 'all' ? 'json' : 'json';
+      const defaultFilename = `${path.basename(defaultName || `ty-code-history-export-${new Date().toISOString().split('T')[0]}`, path.extname(defaultName || ''))}.${ext}`;
+      const downloadsDir = app.getPath('downloads');
+      if (!mainWindow) throw new Error('History export destination picker is unavailable.');
+      const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+        title: 'Select AI History Export Destination',
+        defaultPath: path.join(downloadsDir, defaultFilename),
+        filters: [
+          { name: 'JSON Export', extensions: ['json'] },
+          { name: 'Markdown Export', extensions: ['md'] },
+          { name: 'All Files', extensions: ['*'] }
+        ]
+      });
+      if (canceled || !filePath) {
+        pendingHistoryDestination = null;
+        return { success: true, data: null };
+      }
+      pendingHistoryDestination = filePath;
+      return { success: true, data: filePath };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  // Phase 3.5: Visual UI Sketcher (M3E Canvas) Prompt Bridge
+  ipcMain.handle('sketcher:send-prompt', (_event, prompt: string) => {
+    try {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('sketcher:prompt-received', prompt);
+      }
+      return { success: true, data: true };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  // Phase 3.6: Open SEO & GEO MCP Skills
+  ipcMain.handle('mcp:get-seo-config', async (event) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      const status = await mcpManager.getSeoConfigStatus(currentWorkspacePath);
+      return { success: true, data: status };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('mcp:save-seo-config', async (event, options: { enabled?: boolean; apiKeys?: any }) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      const root = currentWorkspacePath;
+      if (typeof options?.enabled === 'boolean') {
+        await mcpManager.setSeoServerEnabled(options.enabled, root);
+      }
+      if (options?.apiKeys) {
+        await mcpManager.saveSeoApiKeys(options.apiKeys, root);
+      }
+      return { success: true, data: { success: true, message: 'SEO MCP configuration updated.' } };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('mcp:test-seo-connection', async (event) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      const root = currentWorkspacePath;
+      const res = await mcpManager.executeSeoTool('audit_page_seo', { targetUrl: 'index.html' }, { workspacePath: root });
+      return { success: !res.isError, data: { success: !res.isError, details: res.output } };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  // Phase 6.1: Permanent Free Provider Registry & Health Monitoring
+  ipcMain.handle('free-providers:get-list', async (event) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    return { success: true, data: freeProviderRegistry.getAllProviders() };
+  });
+
+  ipcMain.handle('free-providers:get-tiers', async (event) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    return { success: true, data: modelClassifier.getAllTiers() };
+  });
+
+  ipcMain.handle('free-providers:get-health', async (event) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    return { success: true, data: providerHealthMonitor.getAllHealthStatuses() };
+  });
+
+  ipcMain.handle('free-providers:ping', async (event, providerId?: string) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      if (providerId) {
+        const res = await providerHealthMonitor.pingProvider(providerId);
+        return { success: true, data: { [providerId]: res } };
+      }
+      const allRes = await providerHealthMonitor.pingAllProviders();
+      return { success: true, data: allRes };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  // Phase 6.2: Seamless BYOK Interface & Key Management
+  ipcMain.handle('byok:detect-keys', async (event) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      const keys = await keyDetector.detectAllKeys();
+      // Mask raw keys before returning to renderer
+      const sanitized = keys.map((k) => ({ ...k, rawKey: undefined }));
+      return { success: true, data: sanitized };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('byok:import-detected-key', async (event, keyId: string, providerId?: string) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      const detected = keyDetector.getDetectedKeyById(keyId);
+      if (!detected || !detected.rawKey) {
+        return { success: false, error: 'Detected key not found or expired.' };
+      }
+      const targetProvider = providerId || detected.providerId;
+      const { keys } = await readStoredCredentials();
+      keys[targetProvider] = detected.rawKey;
+      await writeStoredCredentials(keys);
+
+      if (detected.endpoint) {
+        const currentSettings = await settingsManager.getEffectiveSettings();
+        const customEndpoints = { ...(currentSettings.customEndpoints || {}), [targetProvider]: detected.endpoint };
+        await settingsManager.saveLayer('global', { customEndpoints });
+      }
+
+      return { success: true, data: { providerId: targetProvider } };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('byok:get-stored-keys', async (event) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      const { keys } = await readStoredCredentials();
+      const allProviders = freeProviderRegistry.getAllProviders();
+      const summaries: StoredKeySummary[] = [];
+
+      for (const p of allProviders) {
+        const rawKey = keys[p.id] || keys[p.id.replace('-free', '')];
+        summaries.push({
+          providerId: p.id,
+          providerName: p.name,
+          isConfigured: Boolean(rawKey && rawKey.trim()),
+          maskedKey: rawKey ? maskKey(rawKey) : undefined,
+          endpoint: p.base_url,
+          setupUrl: p.signup_url,
+          supportsRegenerate: Boolean(p.signup_url),
+          isFreeTierAvailable: true,
+          freeModelCount: p.best_free_models?.length || 0
+        });
+      }
+
+      // Also check any extra keys that aren't in freeProviderRegistry (e.g. openai, custom)
+      for (const [providerId, rawKey] of Object.entries(keys)) {
+        if (!summaries.some((s) => s.providerId === providerId || s.providerId.replace('-free', '') === providerId)) {
+          summaries.push({
+            providerId,
+            providerName: providerId.charAt(0).toUpperCase() + providerId.slice(1),
+            isConfigured: Boolean(rawKey && rawKey.trim()),
+            maskedKey: rawKey ? maskKey(rawKey) : undefined,
+            isFreeTierAvailable: false
+          });
+        }
+      }
+
+      return { success: true, data: summaries };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('byok:reveal-key', async (event, providerId: string) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      const { keys } = await readStoredCredentials();
+      const key = keys[providerId] || keys[providerId.replace('-free', '')] || keys[`${providerId}-free`];
+      if (!key) return { success: false, error: `No key stored for ${providerId}.` };
+      return { success: true, data: key };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('byok:revoke-key', async (event, providerId: string) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      const { keys } = await readStoredCredentials();
+      delete keys[providerId];
+      delete keys[providerId.replace('-free', '')];
+      delete keys[`${providerId}-free`];
+      await writeStoredCredentials(keys);
+      return { success: true, data: true };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('byok:export-keys', async (event) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      const { keys } = await readStoredCredentials();
+      const payload = {
+        version: 1,
+        exportedAt: Date.now(),
+        brand: 'Ty-Code',
+        providerCount: Object.keys(keys).length,
+        encryptedPayload: encryptSecret(JSON.stringify(keys))
+      };
+      return { success: true, data: JSON.stringify(payload, null, 2) };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('byok:import-keys', async (event, backupData: string) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      let importedKeys: Record<string, string> = {};
+      const parsed = JSON.parse(backupData.trim());
+      if (parsed.encryptedPayload) {
+        const decryptedStr = decryptSecret(parsed.encryptedPayload);
+        importedKeys = JSON.parse(decryptedStr);
+      } else if (parsed.keys && typeof parsed.keys === 'object') {
+        importedKeys = parsed.keys;
+      } else if (typeof parsed === 'object') {
+        importedKeys = parsed;
+      }
+
+      const { keys } = await readStoredCredentials();
+      const updatedProviders: string[] = [];
+      for (const [provider, rawKey] of Object.entries(importedKeys)) {
+        if (typeof rawKey === 'string' && rawKey.trim()) {
+          keys[provider] = rawKey.trim();
+          updatedProviders.push(provider);
+        }
+      }
+      await writeStoredCredentials(keys);
+      return {
+        success: true,
+        data: {
+          importedCount: updatedProviders.length,
+          updatedProviders
+        }
+      };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('byok:save-custom-provider', async (event, config: CustomProviderConfig) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      if (!config.name || !config.baseUrl) {
+        return { success: false, error: 'Provider Name and Base URL are required.' };
+      }
+      const providerId = config.id || `custom-${Date.now()}`;
+      if (config.apiKey && config.apiKey.trim()) {
+        const { keys } = await readStoredCredentials();
+        keys[providerId] = config.apiKey.trim();
+        await writeStoredCredentials(keys);
+      }
+      const currentSettings = await settingsManager.getEffectiveSettings();
+      const customEndpoints = { ...(currentSettings.customEndpoints || {}), [providerId]: config.baseUrl };
+      await settingsManager.saveLayer('global', {
+        customEndpoints,
+        activeProvider: providerId as any,
+        activeModel: config.defaultModel || (config.models?.[0]) || currentSettings.activeModel
+      });
+      return { success: true, data: true };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  // Phase 6.3: OpenCode Integration & Free Model Sync
+  ipcMain.handle('opencode:detect', async (event) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      const result = await opencodeIntegration.detectOpenCode();
+      return { success: true, data: result };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('opencode:get-free-summary', async (event) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      const config = await opencodeIntegration.readConfig();
+      const summary = opencodeFreeDetector.analyzeFreeTiers(config);
+      return { success: true, data: summary };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('opencode:import-providers', async (event) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      const result = await opencodeIntegration.importOpenCodeProviders();
+      return { success: result.success, data: result, error: result.success ? undefined : result.message };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('opencode:set-framework', async (event, framework: AgentFramework) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      const activeHarness = framework === 'opencode' ? 'opencode' : 'claude-code';
+      await settingsManager.saveLayer('global', { activeHarness } as any);
+      return { success: true, data: framework };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('opencode:get-framework', async (event) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      const settings = await settingsManager.getEffectiveSettings();
+      const framework: AgentFramework = settings.activeHarness === 'opencode' ? 'opencode' : 'native';
+      return { success: true, data: framework };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('opencode:get-merged-providers', async (event) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      const providers = await opencodeIntegration.getMergedProviders();
+      return { success: true, data: providers };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  // Phase 6.4: Intelligent Model Router
+  ipcMain.handle('model-router:classify-task', async (event, prompt: string) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      const classification = taskClassifier.classify(prompt);
+      return { success: true, data: classification };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('model-router:select-model', async (event, prompt: string, overridePreferences?: Partial<RouterUserPreferences>) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      const decision = await modelRouter.selectModel(prompt, overridePreferences);
+      return { success: true, data: decision };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('model-router:get-preferences', async (event) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      const prefs = await userPreferences.getPreferences();
+      return { success: true, data: prefs };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('model-router:set-preferences', async (event, updates: Partial<RouterUserPreferences>) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      const updated = await userPreferences.updatePreferences(updates);
+      return { success: true, data: updated };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('model-router:get-available-models', async (event) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      const grouped = modelRouter.getCatalogGroupedByTier();
+      return { success: true, data: grouped };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  // Phase 6.5: Unified Provider Dashboard & Quota Management
+  ipcMain.handle('dashboard:get-data', async (event) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      const data = usageAnalytics.getDashboardData();
+      return { success: true, data };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('dashboard:get-overview', async (event) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      const full = usageAnalytics.getDashboardData();
+      return {
+        success: true,
+        data: {
+          providers: full.providers,
+          summary: full.summary,
+          recentActivity: full.recentActivity,
+          alerts: full.alerts
+        }
+      };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('dashboard:get-quota', async (event) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      const snapshot = quotaTracker.getSnapshot();
+      const breakdown = usageAnalytics.getModelUsageBreakdown();
+      return { success: true, data: { snapshot, breakdown } };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('dashboard:get-comparison', async (event) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      const comparisons = usageAnalytics.getProviderComparisons();
+      return { success: true, data: comparisons };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('dashboard:get-analytics', async (event) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      const history = usageAnalytics.getHistoricalUsage();
+      const modelBreakdown = usageAnalytics.getModelUsageBreakdown();
+      return { success: true, data: { history, modelBreakdown } };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('dashboard:get-recommendations', async (event) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      const recs = usageAnalytics.getRecommendations();
+      return { success: true, data: recs };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('dashboard:dismiss-recommendation', async (event, recommendationId: string) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      const res = usageAnalytics.dismissRecommendation(recommendationId);
+      return { success: true, data: res };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('dashboard:record-activity', async (event, record: any) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      const created = usageAnalytics.recordActivity(record);
+      return { success: true, data: created };
     } catch (err: unknown) {
       return { success: false, error: err instanceof Error ? err.message : String(err) };
     }
@@ -352,7 +1063,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle('extensions:capability', (event, payload: unknown) => isTrustedExtensionFrame(event)
     ? handleExtensionCapability(payload, currentWorkspacePath)
     : { success: false, error: 'Untrusted renderer frame.' });
-  ipcMain.handle('antigravity:get-skills', (_event, workspacePath: string) => getAvailableSkills(workspacePath || currentWorkspacePath));
+  ipcMain.handle('skills:get', (_event, workspacePath: string) => getAvailableSkills(workspacePath || currentWorkspacePath));
 
   // Git operations always target the active workspace selected in the main process.
   // Renderer-supplied workspace paths are intentionally ignored.
@@ -533,7 +1244,7 @@ function registerIpcHandlers(): void {
 
   // Phase 7: Advanced AI Features & Competitive Differentiation
   initAiFeatureServices(currentWorkspacePath);
-  registerAiFeatureHandlers();
+  registerAiFeatureHandlers(() => { void getTelemetryManager().recordFeatureUsed('project_index'); });
 
   // Phase 5.2: FCC Server Integration (Layer 3)
   registerFccHandlers();
@@ -543,12 +1254,17 @@ function registerIpcHandlers(): void {
 }
 
 function registerProviderHandlers(): void {
-  ipcMain.handle('provider:get-registry', () => ({
-    success: true,
-    data: PRECONFIGURED_PROVIDERS
-  }));
+  ipcMain.handle('provider:get-registry', async () => {
+    try {
+      const merged = await opencodeIntegration.getMergedProviders();
+      return { success: true, data: merged };
+    } catch {
+      return { success: true, data: PRECONFIGURED_PROVIDERS };
+    }
+  });
 
-  ipcMain.handle('provider:get-models', async (_event, payload: { providerId: string; apiKey?: string; customEndpoint?: string }) => {
+  ipcMain.handle('provider:get-models', async (event, payload: { providerId: string; apiKey?: string; customEndpoint?: string }) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
     try {
       const models = await ProviderGateway.getAvailableModels(payload.providerId, payload.apiKey, payload.customEndpoint);
       return { success: true, data: models };
@@ -557,7 +1273,8 @@ function registerProviderHandlers(): void {
     }
   });
 
-  ipcMain.handle('provider:test-connection', async (_event, payload: { providerId: string; apiKey?: string; modelId?: string; customEndpoint?: string }) => {
+  ipcMain.handle('provider:test-connection', async (event, payload: { providerId: string; apiKey?: string; modelId?: string; customEndpoint?: string }) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
     try {
       const result = await ProviderGateway.testConnection(payload.providerId, payload.apiKey, payload.modelId, payload.customEndpoint);
       return { success: true, data: result };
@@ -566,12 +1283,43 @@ function registerProviderHandlers(): void {
     }
   });
 
-  ipcMain.handle('app:open-external', async (_event, url: string) => {
+  ipcMain.handle('app:open-external', async (event, target: string) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
     try {
-      if (!url || typeof url !== 'string' || !url.startsWith('http')) {
-        throw new Error('Invalid URL');
+      if (!target || typeof target !== 'string') {
+        throw new Error('Invalid URL or file path');
       }
-      await shell.openExternal(url);
+      if (target.startsWith('http://') || target.startsWith('https://')) {
+        await shell.openExternal(target);
+        return { success: true };
+      }
+      if (target.startsWith('file://')) {
+        try {
+          const { fileURLToPath } = await import('node:url');
+          const localPath = fileURLToPath(target);
+          const err = await shell.openPath(localPath);
+          if (err) throw new Error(err);
+          return { success: true };
+        } catch {
+          await shell.openExternal(target);
+          return { success: true };
+        }
+      }
+      const err = await shell.openPath(target);
+      if (err) throw new Error(err);
+      return { success: true };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('app:open-path', async (_event, filePath: string) => {
+    try {
+      if (!filePath || typeof filePath !== 'string') {
+        throw new Error('Invalid file path');
+      }
+      const err = await shell.openPath(filePath);
+      if (err) throw new Error(err);
       return { success: true };
     } catch (err: unknown) {
       return { success: false, error: err instanceof Error ? err.message : String(err) };
@@ -588,7 +1336,7 @@ function registerFccHandlers(): void {
     try {
       if (providerId === 'openrouter') return { success: true, data: await providerAutoSetup.setupOpenRouter() };
       if (providerId === 'github-copilot') return { success: true, data: await providerAutoSetup.setupGitHubCopilot() };
-      if (providerId === 'google-ai-studio') return { success: true, data: await providerAutoSetup.setupGoogleAIStudio() };
+      if (providerId === 'google-ai-studio') return { success: true, data: await providerAutoSetup.setupAiStudio() };
       if (providerId === 'huggingchat') return { success: true, data: await providerAutoSetup.setupHuggingChat() };
       if (providerId === 'ollama') return { success: true, data: await providerAutoSetup.setupLocalOllama() };
       return { success: true, data: await providerAutoSetup.setupAllTopFreeProviders() };
@@ -609,6 +1357,16 @@ function cleanupAllResources(): void {
     void fccManager.stop();
   } catch {
     // Ignore FCC cleanup error
+  }
+  try {
+    providerHealthMonitor.stopMonitoring();
+  } catch {
+    // Ignore monitor cleanup error
+  }
+  try {
+    opencodeIntegration.stopConfigWatcher();
+  } catch {
+    // Ignore OpenCode watcher cleanup error
   }
 }
 
@@ -659,9 +1417,12 @@ function createWindow(): void {
 app.whenReady().then(async () => {
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
   await settingsManager.setWorkspacePath(currentWorkspacePath);
+  void getTelemetryManager().recordAppStarted();
   registerIpcHandlers();
   createWindow();
   void fccManager.start();
+  providerHealthMonitor.startMonitoring();
+  void opencodeIntegration.startConfigWatcher();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
 app.on('before-quit', cleanupAllResources);

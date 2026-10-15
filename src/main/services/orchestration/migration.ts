@@ -26,6 +26,7 @@ export const DEFAULT_OMNIROUTE_SETTINGS: ProviderSettings = {
   terminalProfiles: [],
   defaultTerminalProfileId: '',
   thirdPartyRuntimeEnabled: false,
+  telemetry: { enabled: false },
   security: {
     terminalPolicy: 'restricted',
     fileAccessPolicy: 'workspace-only',
@@ -44,7 +45,9 @@ export const DEFAULT_OMNIROUTE_SETTINGS: ProviderSettings = {
     wordWrap: 'off',
     formatOnSave: false
   },
-  languageServers: {}
+  languageServers: {},
+  integrations: {},
+  modules: {}
 };
 
 const VALID_STRATEGIES = new Set<RoutingStrategyType>([

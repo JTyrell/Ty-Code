@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import type { OpenCodeTool, ToolContext, ToolExecutionResult } from './types';
 import { resolveSafePath } from './view';
+import { approveFileMutation } from './policy';
 
 interface Hunk {
   oldStart: number;
@@ -111,7 +112,9 @@ export const patchTool: OpenCodeTool = {
         return { output: 'Error: "patch" parameter containing diff data is required.', isError: true };
       }
 
-      const absolutePath = resolveSafePath(context.workspaceRoot, filePath);
+      const absolutePath = context.securityPolicy
+        ? await context.securityPolicy.resolveFilePath(filePath)
+        : resolveSafePath(context.workspaceRoot, filePath);
       const original = await fs.readFile(absolutePath, 'utf-8');
 
       const hunks = parseUnifiedDiff(patchText);
@@ -124,9 +127,15 @@ export const patchTool: OpenCodeTool = {
 
       const patched = applyHunks(original, hunks);
 
-      const tempPath = `${absolutePath}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
+      const approval = await approveFileMutation({ id: `patch_${Date.now()}`, name: 'patch', arguments: { filePath, patch: patchText } }, filePath, original, patched, context);
+      if (approval.denied) return approval.denied;
+      let resolvedPath = approval.absolutePath || absolutePath;
+      if (context.securityPolicy) {
+        resolvedPath = await context.securityPolicy.verifyFileMutationSnapshot(approval.review!);
+      }
+      const tempPath = `${resolvedPath}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
       await fs.writeFile(tempPath, patched, 'utf-8');
-      await fs.rename(tempPath, absolutePath);
+      await fs.rename(tempPath, resolvedPath);
 
       context.trackModifiedFile?.(filePath);
 

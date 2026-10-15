@@ -1,10 +1,13 @@
 import type { AgentHarnessType, AgentStreamChunk, AgentToolApproval, ChatMessage, ProviderSettings, ToolCall } from '../../preload/types';
 import { ProviderGateway, type ChatCompletionMessage } from '../providers/provider-gateway';
-import { buildSystemPrompt, AGENT_TOOLS_DEFINITIONS } from './system-prompt';
+export { ProviderGateway };
+import { buildSystemPrompt, AGENT_TOOLS_DEFINITIONS, getEccRulesPrompt, getSeoPromptGuidance, isLocalModel } from './system-prompt';
 import { ToolExecutor } from './tool-executor';
 import { getHarness } from '../services/orchestration/harnesses';
 import { SecurityPolicyEngine } from '../services/security-policy';
 import { settingsManager, type SettingsManager } from '../services/settings-manager';
+import { moduleRegistry } from '../services/module-registry';
+import { mcpManager } from '../services/mcp-manager';
 
 export interface RunAgentParams {
   prompt: string;
@@ -15,7 +18,7 @@ export interface RunAgentParams {
   activeFilePath?: string;
   activeFileContent?: string;
   onChunk: (chunk: AgentStreamChunk) => void;
-  requestApproval?: (approval: AgentToolApproval) => Promise<boolean>;
+  requestApproval: (approval: AgentToolApproval) => Promise<boolean>;
   abortSignal?: AbortSignal;
 }
 
@@ -32,7 +35,31 @@ export class AgentEngine {
     const { prompt, workspacePath, history, settings, activeFilePath, activeFileContent, onChunk, requestApproval, abortSignal } = params;
     const harnessType = params.harness || settings.activeHarness || 'claude-code';
     const harness = getHarness(harnessType);
-    const systemPrompt = harness.formatSystemPrompt(workspacePath, activeFilePath, activeFileContent) || buildSystemPrompt(workspacePath, activeFilePath, activeFileContent);
+
+    const isEccEnabled = Boolean(
+      settings?.integrations?.['ecc-rules'] ?? moduleRegistry.getModule('ecc-rules')?.isEnabled
+    );
+    const isSeoEnabled = Boolean(
+      settings?.integrations?.['seo-analytics-mcp'] ?? await mcpManager.isSeoServerEnabled(workspacePath)
+    );
+    const isLocal = isLocalModel(settings?.activeProvider, settings?.activeModel);
+
+    let systemPrompt = harness.formatSystemPrompt(workspacePath, activeFilePath, activeFileContent) ||
+      buildSystemPrompt(workspacePath, activeFilePath, activeFileContent, {
+        isEccEnabled,
+        isSeoEnabled,
+        isLocal,
+        activeProvider: settings?.activeProvider,
+        activeModel: settings?.activeModel,
+        settings
+      });
+
+    if (isEccEnabled && !systemPrompt.includes('ADVANCED AGENT WORKFLOWS (ECC')) {
+      systemPrompt += `\n\n${getEccRulesPrompt(isLocal)}`;
+    }
+    if (isSeoEnabled && !systemPrompt.includes('OPEN SEO & ANALYTICS MCP')) {
+      systemPrompt += `\n\n${getSeoPromptGuidance(isLocal)}`;
+    }
     const messages: ChatCompletionMessage[] = [{ role: 'system', content: systemPrompt }];
     for (const message of history.slice(-10)) {
       if (message.role === 'user' || message.role === 'assistant') {
@@ -117,17 +144,25 @@ export class AgentEngine {
           } else if (toolCall.name === 'write_file' || toolCall.name === 'replace_file_content') {
             try {
               fileReview = await this.securityPolicy.previewFileMutation(toolCall.name, toolCall.arguments);
-              const decision = await this.securityPolicy.evaluateFileMutation(fileReview);
-              policyBlockReason = decision.decision === 'block' ? decision.reason : null;
+              const policy = await this.securityPolicy.getPolicy();
+              if (toolCall.name === 'replace_file_content' && policy.reviewPolicy === 'always-ask') {
+                approvalReason = 'Review Policy is set to Always Ask; user confirmation is required before applying diffs to disk.';
+              } else {
+                const decision = await this.securityPolicy.evaluateFileMutation(fileReview);
+                policyBlockReason = decision.decision === 'block' ? decision.reason : null;
+                if (decision.decision === 'ask') approvalReason = decision.reason;
+                else approvalReason = null;
+              }
               approvedExecutionArgs = {
                 ...toolCall.arguments,
                 __approvedOriginalHash: fileReview.originalHash,
                 __approvedOriginalExists: fileReview.originalExists
               };
-              if (decision.decision === 'ask') approvalReason = decision.reason;
-              else approvalReason = null;
-            } catch {
-              // Let the executor return the standard recoverable validation/path error.
+            } catch (err: unknown) {
+              const msg = err instanceof Error ? err.message : String(err);
+              if (msg.includes('Security Exception') || msg.includes('Access denied')) {
+                policyBlockReason = msg;
+              }
             }
           }
           if (policyBlockReason) {

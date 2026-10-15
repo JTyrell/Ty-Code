@@ -1,0 +1,13 @@
+*, *::before, *::after { box-sizing: border-box; }
+html { min-width: 320px; scroll-behavior: smooth; scroll-padding-top: 20px; background: var(--color-background); }
+body { min-width: 320px; margin: 0; color: var(--color-text-primary); background: var(--color-background); font-size: 15px; line-height: 1.55; }
+body, button { font-family: var(--font-sans); }
+button, a, summary { -webkit-tap-highlight-color: transparent; }
+a { color: inherit; }
+button { color: inherit; }
+::selection { color: #fff; background: rgba(139, 92, 246, 0.45); }
+:focus-visible { outline: 2px solid var(--color-accent-verify); outline-offset: 4px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+}

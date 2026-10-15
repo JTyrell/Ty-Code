@@ -1,6 +1,56 @@
 import type { z } from 'zod';
 import type { ExtensionCapabilitySchema, ExtensionManifestSchema } from './extension-schemas';
-import type { SecurityPolicySettings, SettingsData, SettingsPatch, SettingsScope, WorkspaceSettingsPatch } from '../shared/types/settings';
+import type { SecurityPolicySettings, SettingsData, SettingsPatch, SettingsScope, TelemetrySettings, WorkspaceSettingsPatch } from '../shared/types/settings';
+import type { FreeProvider, ModelTier, TierClassification, ProviderHealthStatus } from '../shared/types/free-providers';
+import type { DetectedApiKey, CustomProviderConfig, StoredKeySummary, ByokExportBundle, ByokImportResult, KeyDetectionSource } from '../shared/types/byok';
+import type { OpenCodeDetectionResult, OpenCodeFreeTierSummary, OpenCodeImportResult, AgentFramework } from '../shared/types/opencode-sync';
+import type {
+  TaskType,
+  TaskClassificationResult,
+  RoutingPreferenceMode,
+  RouterUserPreferences,
+  RankedModelCandidate,
+  ModelRoutingDecision
+} from '../shared/types/model-router';
+import type {
+  ProviderConnectionStatus,
+  ProviderCategory,
+  ConnectedProviderInfo,
+  FreeTierSummary,
+  RecentActivityRecord,
+  HistoricalUsageBucket,
+  ModelUsageStat,
+  RecommendationType,
+  OptimizationRecommendation,
+  ProviderComparisonMetric,
+  ProviderDashboardData,
+  QuotaAlertItem
+} from '../shared/types/quota-dashboard';
+export type { FreeProvider, ModelTier, TierClassification, ProviderHealthStatus };
+export type { DetectedApiKey, CustomProviderConfig, StoredKeySummary, ByokExportBundle, ByokImportResult, KeyDetectionSource };
+export type { OpenCodeDetectionResult, OpenCodeFreeTierSummary, OpenCodeImportResult, AgentFramework };
+export type {
+  TaskType,
+  TaskClassificationResult,
+  RoutingPreferenceMode,
+  RouterUserPreferences,
+  RankedModelCandidate,
+  ModelRoutingDecision
+};
+export type {
+  ProviderConnectionStatus,
+  ProviderCategory,
+  ConnectedProviderInfo,
+  FreeTierSummary,
+  RecentActivityRecord,
+  HistoricalUsageBucket,
+  ModelUsageStat,
+  RecommendationType,
+  OptimizationRecommendation,
+  ProviderComparisonMetric,
+  ProviderDashboardData,
+  QuotaAlertItem
+};
 
 export interface IpcResponse<T = unknown> {
   success: boolean;
@@ -97,6 +147,32 @@ export type AgentHarnessType =
   | 'muse-code'
   | 'vscode-chat';
 
+export type TelemetryFeature = 'agent_chat' | 'project_index' | 'history_export';
+
+export type TelemetryEvent =
+  | { event: 'app_started'; timestamp: string }
+  | { event: 'feature_used'; feature: TelemetryFeature; timestamp: string };
+
+export interface TelemetryPreview {
+  recordingEnabled: boolean;
+  storageAvailable: boolean;
+  storageMessage: string;
+  storageError?: string;
+  destinationConfigured: false;
+  queuedCount: number;
+  sentCount: 0;
+  failedCount: 0;
+  transmittedEvents: 0;
+  events: TelemetryEvent[];
+}
+
+export interface CredentialStorageStatus {
+  available: boolean;
+  platform: string;
+  backend: string;
+  message: string;
+}
+
 export interface ProviderSettings {
   activeProvider: ProviderType;
   activeModel: string;
@@ -119,6 +195,19 @@ export interface ProviderSettings {
   editor?: EditorPreferences;
   languageServers?: Record<string, LanguageServerConfig>;
   security?: SecurityPolicySettings;
+  freeMode?: boolean;
+  quotaAlertThreshold?: number;
+  autoRotateProviders?: boolean;
+  hasCompletedOnboarding?: boolean;
+  performanceOptimization?: {
+    requestCachingEnabled?: boolean;
+    contextCompressionEnabled?: boolean;
+    predictivePrefetchEnabled?: boolean;
+    connectionPoolingEnabled?: boolean;
+  };
+  integrations?: Record<string, boolean>;
+  modules?: Record<string, { enabled: boolean; installedAt?: number; customConfig?: Record<string, unknown> }>;
+  telemetry?: TelemetrySettings;
 }
 
 export interface ToolCall {
@@ -370,6 +459,7 @@ export interface ElectronAPI {
   maximizeWindow: () => void;
   closeWindow: () => void;
   selectWorkspaceFolder: () => Promise<IpcResponse<string>>;
+  getFilePathForDroppedFile: (file: File) => string;
   getWorkspaceTree: (rootPath: string) => Promise<IpcResponse<FileNode>>;
   readFile: (filePath: string) => Promise<IpcResponse<string>>;
   writeFile: (filePath: string, content: string) => Promise<IpcResponse<void>>;
@@ -380,6 +470,11 @@ export interface ElectronAPI {
   searchFiles: (query: string) => Promise<IpcResponse<string[]>>;
   getSettings: () => Promise<IpcResponse<ProviderSettings>>;
   saveSettings: (settings: Partial<ProviderSettings>) => Promise<IpcResponse<void>>;
+  getTelemetryPreview: () => Promise<IpcResponse<TelemetryPreview>>;
+  deleteTelemetryEvent: (index: number, expected: TelemetryEvent) => Promise<IpcResponse<void>>;
+  clearTelemetryData: () => Promise<IpcResponse<void>>;
+  getCredentialStorageStatus: () => Promise<IpcResponse<CredentialStorageStatus>>;
+  onTelemetryChanged: (callback: () => void) => () => void;
   getSettingsLayer: (scope: SettingsScope) => Promise<IpcResponse<SettingsData | WorkspaceSettingsPatch>>;
   saveSettingsLayer: (scope: SettingsScope, settings: SettingsPatch | WorkspaceSettingsPatch) => Promise<IpcResponse<void>>;
   getSecurityPolicy: () => Promise<IpcResponse<SecurityPolicySettings>>;
@@ -398,8 +493,12 @@ export interface ElectronAPI {
   }) => Promise<IpcResponse<string>>;
   stopAgentTask: (taskId: string) => Promise<IpcResponse<void>>;
   respondAgentApproval: (approvalId: string, approved: boolean) => Promise<IpcResponse<void>>;
+  userApproveDiff?: (payload: { approvalId?: string; diffId?: string; approved?: boolean } | boolean) => Promise<IpcResponse<void>>;
   onAgentStream: (callback: (chunk: AgentStreamChunk) => void) => () => void;
   applyDiff: (diff: ProposedDiff) => Promise<IpcResponse<void>>;
+  resolvePtyApproval?: (approvalId: string, approved: boolean) => Promise<IpcResponse<void>>;
+  onPtyApprovalRequired?: (callback: (data: { approvalId: string; ptyId: string; command: string; reason: string }) => void) => () => void;
+  onPtyCommandBlocked?: (callback: (data: { ptyId: string; command: string; reason: string }) => void) => () => void;
   runCommand: (options: CommandExecutionOptions) => Promise<IpcResponse<CommandResult>>;
   getAvailableShells: () => Promise<IpcResponse<ShellInfo[]>>;
   spawnPty: (options: PtySpawnOptions) => Promise<IpcResponse<PtySessionInfo>>;
@@ -544,6 +643,252 @@ export interface ElectronAPI {
   providerGetModels: (params: { providerId: string; apiKey?: string; customEndpoint?: string }) => Promise<IpcResponse<DiscoveredModel[]>>;
   providerTestConnection: (params: { providerId: string; apiKey?: string; modelId?: string; customEndpoint?: string }) => Promise<IpcResponse<TestConnectionResult>>;
   openExternal: (url: string) => Promise<IpcResponse<void>>;
+  openPath?: (filePath: string) => Promise<IpcResponse<void>>;
+
+  // Phase 5.5: Smart Orchestration & Quota Management (Layer 6)
+  orchestrationGetQuotaStats: () => Promise<IpcResponse<QuotaSnapshot>>;
+  orchestrationGetSmartRoutingLogs: () => Promise<IpcResponse<RoutingDecisionLog[]>>;
+  orchestrationSetFreeMode: (enabled: boolean) => Promise<IpcResponse<boolean>>;
+  orchestrationClassifyTask: (prompt: string) => Promise<IpcResponse<{ task: SmartTaskType; confidence: number; rationale: string }>>;
+  orchestrationSelectModel: (prompt: string, context?: unknown) => Promise<IpcResponse<SmartModelSelection>>;
+
+  // Phase 5.6: End-to-End Performance & Onboarding
+  orchestrationGetPerformanceMetrics: () => Promise<IpcResponse<PerformanceMetricsSnapshot>>;
+  orchestrationCompressContext: (prompt: string, codeContext?: string) => Promise<IpcResponse<ContextCompressionResult>>;
+  orchestrationWarmConnections: () => Promise<IpcResponse<{ success: boolean; warmed: string[] }>>;
+  orchestrationCompleteOnboarding: () => Promise<IpcResponse<boolean>>;
+
+  // Phase 3.1: Modular Skills & External Integration Registry
+  modulesGetList: (workspacePath?: string) => Promise<IpcResponse<ExternalModuleInfo[]>>;
+  modulesToggle: (moduleId: string, enabled: boolean, workspacePath?: string) => Promise<IpcResponse<ModuleActivationResult>>;
+  modulesCheckDependencies: (dependencies: string[]) => Promise<IpcResponse<{ available: boolean; missing: string[]; details: Record<string, boolean> }>>;
+  modulesGetStatus: (moduleId: string, workspacePath?: string) => Promise<IpcResponse<ExternalModuleInfo>>;
+
+  // Phase 3.3: AI Data Extractor (History Export)
+  historyExportAiData: (options?: HistoryExportIpcOptions) => Promise<IpcResponse<HistoryExportResult>>;
+  historySelectExportDestination: (defaultName?: string, format?: 'json' | 'md' | 'all') => Promise<IpcResponse<string | null>>;
+  onHistoryExportProgress: (callback: (progress: HistoryExportProgress) => void) => () => void;
+
+  // Phase 3.5: Visual UI Sketcher (M3E Canvas)
+  sketcherSendPrompt?: (prompt: string) => Promise<IpcResponse<boolean>>;
+  onSketcherPrompt?: (callback: (prompt: string) => void) => () => void;
+
+  // Phase 3.6: Open SEO & GEO MCP Skills
+  mcpGetSeoConfig?: (workspacePath?: string) => Promise<IpcResponse<McpSeoConfigStatus>>;
+  mcpSaveSeoConfig?: (options: McpSaveSeoOptions) => Promise<IpcResponse<{ success: boolean; message: string }>>;
+  mcpTestSeoConnection?: (workspacePath?: string) => Promise<IpcResponse<{ success: boolean; details: string }>>;
+
+  // Phase 6.1: Permanent Free Provider Registry & Model Curation
+  freeProvidersGetList?: () => Promise<IpcResponse<FreeProvider[]>>;
+  freeProvidersGetTiers?: () => Promise<IpcResponse<Record<ModelTier, TierClassification>>>;
+  freeProvidersGetHealth?: () => Promise<IpcResponse<Record<string, ProviderHealthStatus>>>;
+  freeProvidersPing?: (providerId?: string) => Promise<IpcResponse<Record<string, ProviderHealthStatus>>>;
+
+  // Phase 6.2: Seamless BYOK Interface & Key Management
+  byokDetectKeys?: () => Promise<IpcResponse<DetectedApiKey[]>>;
+  byokImportDetectedKey?: (keyId: string, providerId?: string) => Promise<IpcResponse<{ providerId: string }>>;
+  byokGetStoredKeys?: () => Promise<IpcResponse<StoredKeySummary[]>>;
+  byokRevealKey?: (providerId: string) => Promise<IpcResponse<string>>;
+  byokRevokeKey?: (providerId: string) => Promise<IpcResponse<boolean>>;
+  byokExportKeys?: () => Promise<IpcResponse<string>>;
+  byokImportKeys?: (backupData: string) => Promise<IpcResponse<ByokImportResult>>;
+  byokSaveCustomProvider?: (config: CustomProviderConfig) => Promise<IpcResponse<boolean>>;
+
+  // Phase 6.3: OpenCode Integration & Free Model Sync
+  opencodeDetect?: () => Promise<IpcResponse<OpenCodeDetectionResult>>;
+  opencodeGetFreeSummary?: () => Promise<IpcResponse<OpenCodeFreeTierSummary>>;
+  opencodeImportProviders?: () => Promise<IpcResponse<OpenCodeImportResult>>;
+  opencodeSetFramework?: (framework: AgentFramework) => Promise<IpcResponse<AgentFramework>>;
+  opencodeGetFramework?: () => Promise<IpcResponse<AgentFramework>>;
+  opencodeGetMergedProviders?: () => Promise<IpcResponse<PreConfiguredProvider[]>>;
+
+  // Phase 6.4: Intelligent Model Router
+  modelRouterClassifyTask?: (prompt: string) => Promise<IpcResponse<TaskClassificationResult>>;
+  modelRouterSelectModel?: (prompt: string, overridePreferences?: Partial<RouterUserPreferences>) => Promise<IpcResponse<ModelRoutingDecision>>;
+  modelRouterGetPreferences?: () => Promise<IpcResponse<RouterUserPreferences>>;
+  modelRouterSetPreferences?: (updates: Partial<RouterUserPreferences>) => Promise<IpcResponse<RouterUserPreferences>>;
+  modelRouterGetAvailableModels?: () => Promise<IpcResponse<Record<ModelTier, RankedModelCandidate[]>>>;
+
+  // Phase 6.5: Unified Provider Dashboard & Quota Management
+  dashboardGetData?: () => Promise<IpcResponse<ProviderDashboardData>>;
+  dashboardGetOverview?: () => Promise<IpcResponse<{ providers: ConnectedProviderInfo[]; summary: FreeTierSummary; recentActivity: RecentActivityRecord[]; alerts: QuotaAlertItem[] }>>;
+  dashboardGetQuota?: () => Promise<IpcResponse<{ snapshot: QuotaSnapshot; breakdown: ModelUsageStat[] }>>;
+  dashboardGetComparison?: () => Promise<IpcResponse<ProviderComparisonMetric[]>>;
+  dashboardGetAnalytics?: () => Promise<IpcResponse<{ history: { daily: HistoricalUsageBucket[]; weekly: HistoricalUsageBucket[]; monthly: HistoricalUsageBucket[] }; modelBreakdown: ModelUsageStat[] }>>;
+  dashboardGetRecommendations?: () => Promise<IpcResponse<OptimizationRecommendation[]>>;
+  dashboardDismissRecommendation?: (recommendationId: string) => Promise<IpcResponse<boolean>>;
+  dashboardRecordActivity?: (record: any) => Promise<IpcResponse<RecentActivityRecord>>;
+}
+
+export interface McpSeoConfigStatus {
+  enabled: boolean;
+  hasKeys: { google_search_console: boolean; ahrefs: boolean; generic_search: boolean };
+  storageStatus: string;
+  serverInfo?: {
+    command: string;
+    args: string[];
+    disabled: boolean;
+    description?: string;
+  };
+}
+
+export interface McpSaveSeoOptions {
+  enabled?: boolean;
+  apiKeys?: {
+    google_search_console?: string;
+    ahrefs?: string;
+    generic_search?: string;
+  };
+  workspacePath?: string;
+}
+
+export interface HistoryExportIpcOptions {
+  customHome?: string;
+  workspacePath?: string;
+  scanLocations?: string[];
+  outputDir?: string;
+  outputFileName?: string;
+  format?: 'json' | 'md' | 'all';
+}
+
+export interface HistoryExportProgress {
+  stage: 'discovering' | 'reading' | 'normalizing' | 'writing' | 'completed' | 'error';
+  current: number;
+  total: number;
+  percent: number;
+  message: string;
+  currentSource?: string;
+}
+
+export interface HistoryExportResult {
+  success: boolean;
+  exportPath: string;
+  format: 'json' | 'md' | 'all';
+  totalSessions: number;
+  totalMessages: number;
+  sourcesFound: Record<string, number>;
+  outputPath: string;
+  filesGenerated: string[];
+  error?: string;
+}
+
+export type ModuleLlmCompatibility = 'hosted' | 'local' | 'both';
+
+export interface ExternalModuleInfo {
+  id: string;
+  name: string;
+  description: string;
+  isEnabled: boolean;
+  llm_compatibility: ModuleLlmCompatibility;
+  dependencies: string[];
+  missingDependencies?: string[];
+  isConfigured?: boolean;
+  category?: string;
+  version?: string;
+}
+
+export interface ModuleActivationResult {
+  success: boolean;
+  moduleId: string;
+  isEnabled: boolean;
+  message?: string;
+  filesCreated?: string[];
+  warning?: string;
+}
+
+export interface RequestCacheStats {
+  hits: number;
+  misses: number;
+  totalEntries: number;
+  tokensSaved: number;
+  latencySavedMs: number;
+  hitRatePercent: number;
+}
+
+export interface ContextCompressionResult {
+  originalLength: number;
+  compressedLength: number;
+  originalEstimatedTokens: number;
+  compressedEstimatedTokens: number;
+  tokensSaved: number;
+  compressionRatioPercent: number;
+  compressedPrompt: string;
+}
+
+export interface PerformanceMetricsSnapshot {
+  averageLatencyMs: number;
+  p95LatencyMs: number;
+  memoryUsageMb: number;
+  uptimeSeconds: number;
+  cache: RequestCacheStats;
+  compression: {
+    totalOriginalTokens: number;
+    totalCompressedTokens: number;
+    tokensSaved: number;
+    averageCompressionRatio: number;
+  };
+  connectionPool: {
+    activeSockets: number;
+    pooledProviders: string[];
+    warmedEndpoints: string[];
+  };
+  freeTokensUsed: number;
+  freeTokensAvailable: number;
+}
+
+export type SmartTaskType = 'coding' | 'reasoning' | 'fast-response' | 'large-context' | 'multimodal' | 'simple-query';
+
+export interface SmartModelSelection {
+  task: SmartTaskType;
+  providerId: string;
+  modelId: string;
+  modelName: string;
+  isFree: boolean;
+  rationale: string;
+  contextWindow: number;
+  confidence: number;
+  quotaHeadroomPercent?: number;
+  alternatives?: Array<{ providerId: string; modelId: string; rationale: string }>;
+}
+
+export interface RoutingDecisionLog {
+  id: string;
+  timestamp: number;
+  promptSnippet: string;
+  detectedTask: SmartTaskType;
+  selectedProvider: string;
+  selectedModel: string;
+  isFree: boolean;
+  rationale: string;
+  latencyMs?: number;
+  tokensUsed?: number;
+  failoverOccurred?: boolean;
+}
+
+export interface ProviderQuotaInfo {
+  providerId: string;
+  providerName: string;
+  monthlyFreeTokens: number;
+  consumedTokens: number;
+  remainingTokens: number;
+  percentUsed: number;
+  isApproachingLimit: boolean;
+  isRateLimited: boolean;
+  requestsCount: number;
+  lastResetTimestamp: number;
+  estimatedCostUsd: number;
+  costSavedUsd: number;
+  healthStatus: 'healthy' | 'degraded' | 'cooling_down' | 'exhausted';
+}
+
+export interface QuotaSnapshot {
+  totalFreeTokensAvailable: number;
+  totalTokensConsumed: number;
+  totalCostSavedUsd: number;
+  freeModeActive: boolean;
+  activeProviderRotation: string;
+  providers: Record<string, ProviderQuotaInfo>;
+  recentAlerts: Array<{ id: string; providerId: string; message: string; severity: 'info' | 'warning' | 'critical'; timestamp: number }>;
 }
 
 export interface OpenKiloStatus {
@@ -556,6 +901,7 @@ export interface OpenKiloStatus {
 }
 
 export interface FCCServerStatus {
+  installed?: boolean;
   running: boolean;
   port: number;
   pid?: number;

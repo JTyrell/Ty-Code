@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { OpenCodeTool, ToolContext, ToolExecutionResult } from './types';
 import { resolveSafePath } from './view';
+import { approveFileMutation } from './policy';
 
 export const writeTool: OpenCodeTool = {
   name: 'write',
@@ -42,7 +43,9 @@ export const writeTool: OpenCodeTool = {
       }
       const content = String(args.content ?? '');
 
-      const absolutePath = resolveSafePath(context.workspaceRoot, filePath);
+      const absolutePath = context.securityPolicy
+        ? await context.securityPolicy.resolveFilePath(filePath, true)
+        : resolveSafePath(context.workspaceRoot, filePath);
       let originalContent = '';
       let isNewFile = true;
       try {
@@ -52,10 +55,16 @@ export const writeTool: OpenCodeTool = {
         // File does not exist yet
       }
 
-      await fs.mkdir(path.dirname(absolutePath), { recursive: true });
-      const tempPath = `${absolutePath}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
+      const approval = await approveFileMutation({ id: `write_${Date.now()}`, name: 'write', arguments: { filePath, content } }, filePath, originalContent, content, context);
+      if (approval.denied) return approval.denied;
+      let resolvedPath = approval.absolutePath || absolutePath;
+      await fs.mkdir(path.dirname(resolvedPath), { recursive: true });
+      if (context.securityPolicy) {
+        resolvedPath = await context.securityPolicy.verifyFileMutationSnapshot(approval.review!);
+      }
+      const tempPath = `${resolvedPath}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
       await fs.writeFile(tempPath, content, 'utf-8');
-      await fs.rename(tempPath, absolutePath);
+      await fs.rename(tempPath, resolvedPath);
 
       context.trackModifiedFile?.(filePath);
 

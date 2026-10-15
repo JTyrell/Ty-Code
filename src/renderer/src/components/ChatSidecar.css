@@ -126,6 +126,10 @@
 .agent-approval-tool { margin: 8px 0; padding: 7px; background: rgba(0, 0, 0, .18); border-radius: 4px; }
 .agent-approval-tool > strong { color: var(--accent-cyan); font: 10px var(--font-mono); }
 .agent-approval-tool pre { max-height: 130px; overflow: auto; margin-top: 5px; color: var(--text-secondary); font: 9px/1.45 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
+.agent-approval-diff { max-height: 240px; overflow: auto; margin: 8px 0; padding-top: 7px; border-top: 1px solid rgba(245, 158, 11, .2); }
+.agent-approval-diff summary { margin-bottom: 6px; color: var(--accent-amber); font-size: 10px; cursor: pointer; }
+.agent-approval-diff > div { margin: 5px 0; color: var(--text-secondary); font-size: 9px; }
+.agent-approval-diff pre { max-height: 100px; overflow: auto; margin: 3px 0 0; padding: 6px; background: rgba(0, 0, 0, .2); color: var(--text-secondary); font: 9px/1.45 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
 .agent-approval-paths { margin: 7px 0; color: var(--text-secondary); font-size: 10px; }
 .agent-approval-paths ul { max-height: 96px; overflow: auto; margin: 4px 0 0; padding-left: 18px; color: var(--text-muted); font: 9px/1.45 var(--font-mono); }
 .agent-approval-paths li { overflow-wrap: anywhere; }
@@ -212,3 +216,170 @@
   .chat-composer { padding: 8px; }
   .chat-status { max-width: 110px; }
 }
+
+/* Presentation Preview Card (Phase 3.4 Bento Integration) */
+.presentation-preview-card {
+  margin: 8px 0 4px;
+  padding: 12px 14px;
+  background: linear-gradient(135deg, rgba(14, 165, 233, 0.08) 0%, rgba(15, 23, 42, 0.75) 100%);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.presentation-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.presentation-card-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent-cyan);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.presentation-card-count {
+  font-size: 10px;
+  font-weight: 600;
+  color: #fff;
+  background: rgba(56, 189, 248, 0.2);
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  padding: 2px 8px;
+  border-radius: 12px;
+}
+
+.presentation-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.presentation-card-topic {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.35;
+}
+
+.presentation-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.presentation-card-filepath {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 260px;
+}
+
+.presentation-copy-btn {
+  background: none;
+  border: none;
+  padding: 2px;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+}
+
+.presentation-copy-btn:hover {
+  color: var(--text-primary);
+}
+
+.presentation-card-outline {
+  margin-top: 4px;
+  font-size: 11px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  padding: 6px 8px;
+}
+
+.presentation-card-outline summary {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--accent-cyan);
+  font-weight: 600;
+  font-size: 10px;
+  user-select: none;
+}
+
+.presentation-card-outline ol {
+  margin: 6px 0 2px 18px;
+  padding: 0;
+  color: var(--text-secondary);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.presentation-card-outline li {
+  margin-bottom: 2px;
+}
+
+.presentation-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.presentation-btn-preview {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.15s ease, filter 0.15s ease;
+}
+
+.presentation-btn-preview:hover:not(:disabled) {
+  filter: brightness(1.15);
+  transform: translateY(-1px);
+}
+
+.presentation-btn-editor {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.presentation-btn-editor:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+

@@ -11,6 +11,8 @@ import type { AgentMode, ToolContext } from './tools/types';
 import { SessionStore, type SessionData } from './session-store';
 import { SecurityPolicyEngine } from '../security-policy';
 import { settingsManager, type SettingsManager } from '../settings-manager';
+import { getEccRulesPrompt, isLocalModel } from '../../agent/system-prompt';
+import { moduleRegistry } from '../module-registry';
 
 export interface RunOpenCodeAgentParams {
   prompt: string;
@@ -38,14 +40,14 @@ export const AGENT_MODES: Record<AgentMode, AgentInfo> = {
   build: {
     mode: 'build',
     name: 'Build Agent',
-    description: 'Full-access autonomous developer for writing code, editing files, and running commands.',
+    description: 'full-access development engineer for writing code, editing files, and running commands.',
     readOnly: false,
     capabilities: ['file-ops', 'bash-sandbox', 'grep-glob', 'lsp-diagnostics', 'mcp-tools']
   },
   plan: {
     mode: 'plan',
     name: 'Plan Agent',
-    description: 'Read-only analyst for architecture review, code inspection, and project planning.',
+    description: 'read-only code intelligence analyst for architecture review, code inspection, and project planning.',
     readOnly: true,
     capabilities: ['read-only-inspection', 'architecture-planning', 'search', 'guarded-bash']
   },
@@ -78,11 +80,30 @@ export class OpenCodeAgentManager {
     return AGENT_MODES[mode] || AGENT_MODES.build;
   }
 
+  public getSystemPrompt(
+    agentMode: AgentMode = 'build',
+    workspacePath: string = this.workspacePath,
+    options?: { isEccEnabled?: boolean; isLocal?: boolean; settings?: any }
+  ): string {
+    return this.buildSystemPrompt(agentMode, workspacePath, undefined, undefined, options);
+  }
+
+  public getToolsForMode(mode: AgentMode): { name: string; description: string }[] {
+    const excluded = mode === 'plan' ? ['write', 'edit', 'patch'] : [];
+    return OPENCODE_TOOL_DEFINITIONS
+      .filter((t) => !excluded.includes(t.function.name))
+      .map((t) => ({
+        name: t.function.name,
+        description: t.function.description
+      }));
+  }
+
   public buildSystemPrompt(
     agentMode: AgentMode,
     workspacePath: string,
     activeFilePath?: string,
-    activeFileContent?: string
+    activeFileContent?: string,
+    options?: { isEccEnabled?: boolean; isLocal?: boolean; settings?: any }
   ): string {
     const info = this.getAgentInfo(agentMode);
 
@@ -128,6 +149,26 @@ export class OpenCodeAgentManager {
       }
     }
 
+    let isEccEnabled = false;
+    if (options && typeof options.isEccEnabled === 'boolean') {
+      isEccEnabled = options.isEccEnabled;
+    } else if (options?.settings?.integrations && typeof options.settings.integrations['ecc-rules'] === 'boolean') {
+      isEccEnabled = options.settings.integrations['ecc-rules'];
+    } else {
+      try {
+        isEccEnabled = Boolean(moduleRegistry.getModule('ecc-rules')?.isEnabled);
+      } catch {
+        isEccEnabled = false;
+      }
+    }
+
+    if (isEccEnabled) {
+      const isLocal = typeof options?.isLocal === 'boolean'
+        ? options.isLocal
+        : isLocalModel(options?.settings?.activeProvider, options?.settings?.activeModel);
+      basePrompt.push('', getEccRulesPrompt(isLocal));
+    }
+
     return basePrompt.join('\n');
   }
 
@@ -151,11 +192,17 @@ export class OpenCodeAgentManager {
       agentMode
     });
 
+    const isEccEnabled = Boolean(
+      settings?.integrations?.['ecc-rules'] ?? moduleRegistry.getModule('ecc-rules')?.isEnabled
+    );
+    const isLocal = isLocalModel(settings?.activeProvider, settings?.activeModel);
+
     const systemPrompt = this.buildSystemPrompt(
       agentMode,
       workspacePath,
       params.activeFilePath,
-      params.activeFileContent
+      params.activeFileContent,
+      { isEccEnabled, isLocal, settings }
     );
 
     const messages: ChatCompletionMessage[] = [{ role: 'system', content: systemPrompt }];
@@ -274,43 +321,6 @@ export class OpenCodeAgentManager {
             continue;
           }
 
-          // Plan agent check: Bash command requires approval
-          if (agentMode === 'plan' && (toolCall.name === 'bash' || toolCall.name === 'run_command')) {
-            const command = String(toolCall.arguments.command || '');
-            const approval: AgentToolApproval = {
-              id: `approval_${toolCall.id}`,
-              toolCall: tool,
-              reason: 'Plan Agent requires explicit user confirmation before executing shell commands.',
-              affectedPaths: [command]
-            };
-            onChunk({ type: 'approval_request', approvalRequest: approval });
-            const approved = await requestApproval?.(approval);
-
-            if (abortSignal?.aborted) {
-              onChunk({ type: 'cancelled' });
-              return;
-            }
-
-            if (!approved) {
-              const deniedOutput = 'The user did not approve this bash execution (Plan Agent permission gate).';
-              onChunk({
-                type: 'tool_result',
-                toolResult: {
-                  toolCallId: toolCall.id,
-                  name: toolCall.name,
-                  output: deniedOutput,
-                  isError: true
-                }
-              });
-              messages.push({
-                role: 'tool',
-                name: toolCall.name,
-                tool_call_id: toolCall.id,
-                content: deniedOutput
-              });
-              continue;
-            }
-          }
 
           onChunk({ type: 'status', content: `Running ${toolCall.name}…` });
 

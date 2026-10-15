@@ -510,6 +510,44 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent-primary);
 .settings-cancel { color: var(--text-secondary); background: var(--bg-hover); }
 .settings-save { color: #fff; background: var(--accent-primary); }
 
+/* Privacy & About: plain-language disclosures and a local telemetry inspector. */
+.privacy-panel, .privacy-inspector { display: flex; flex-direction: column; gap: 14px; color: var(--text-secondary); font-size: 13px; line-height: 1.55; }
+.privacy-status { color: var(--text-primary); font-size: 14px; font-weight: 600; }
+.privacy-consent { display: grid; grid-template-columns: 18px minmax(0, 1fr); align-items: start; gap: 10px; color: var(--text-primary); cursor: pointer; }
+.privacy-consent input { width: 16px; height: 16px; margin-top: 2px; padding: 0; accent-color: var(--accent-primary); }
+.privacy-consent > span { display: flex; flex-direction: column; gap: 3px; }
+.privacy-consent strong { font-size: 14px; font-weight: 600; }
+.privacy-consent .settings-hint { margin: 0; font-size: 12px; }
+.privacy-inspect-button, .privacy-back { align-self: flex-start; min-height: 32px; padding: 6px 10px; color: var(--text-primary); background: var(--bg-hover); border: 1px solid var(--border-subtle); }
+.privacy-inspect-button:hover, .privacy-back:hover { border-color: var(--border-strong); }
+.model-provider-disclosure { margin: -5px 0 2px; color: var(--text-muted); font-size: 12px; }
+.privacy-section { display: flex; flex-direction: column; gap: 8px; padding-top: 12px; border-top: 1px solid var(--border-subtle); }
+.privacy-section h3, .privacy-inspector h3 { display: flex; align-items: center; gap: 7px; color: var(--text-primary); font-size: 14px; font-weight: 600; }
+.privacy-section p { margin: 0; }
+.privacy-section > p:not(.settings-hint) { color: var(--text-secondary); }
+.privacy-list { display: flex; flex-direction: column; gap: 6px; padding-left: 20px; }
+.privacy-list li { padding-left: 2px; }
+.privacy-storage-available { color: var(--accent-green) !important; }
+.privacy-storage-unavailable { color: var(--accent-amber) !important; }
+.privacy-transmission { color: var(--text-primary); font-weight: 600; }
+.privacy-delivery-status { color: var(--text-secondary); font-size: 13px; }
+.privacy-empty { padding: 14px 0; color: var(--text-muted); }
+.privacy-event-list { max-height: 240px; overflow: auto; border: 1px solid var(--border-subtle); border-radius: 6px; background: var(--bg-primary); }
+.privacy-queue-actions button:focus-visible, .privacy-event-actions button:focus-visible { outline: 2px solid var(--accent-cyan); outline-offset: 2px; }
+.privacy-event-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 6px; padding: 6px; }
+.privacy-event-row + .privacy-event-row { border-top: 1px solid var(--border-subtle); }
+.privacy-event { min-width: 0; padding: 5px 6px; color: var(--text-secondary); font: 12px/1.5 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.privacy-event-actions { display: flex; gap: 2px; }
+.privacy-delete-event { min-width: 30px; min-height: 30px; color: var(--text-secondary); }
+.privacy-delete-event:hover { color: var(--accent-red); background: var(--bg-hover); }
+.privacy-queue-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.privacy-queue-actions button { min-height: 32px; padding: 6px 10px; color: var(--text-primary); background: var(--bg-hover); border: 1px solid var(--border-subtle); }
+.privacy-queue-actions button:hover:not(:disabled) { border-color: var(--border-strong); }
+.privacy-queue-actions button:disabled { opacity: .5; cursor: not-allowed; }
+.privacy-notice { color: var(--accent-green); font-size: 13px; }
+.privacy-version { padding-top: 5px; color: var(--text-muted) !important; font-size: 12px; }
+.privacy-panel button:focus-visible, .privacy-inspector button:focus-visible { outline: 2px solid var(--accent-cyan); outline-offset: 2px; }
+
 /* Resizable splitter handles */
 .resizer-col { width: 5px; cursor: col-resize; background-color: transparent; transition: background-color 0.15s ease; position: relative; z-index: 20; flex-shrink: 0; user-select: none; }
 .resizer-col::after { content: ''; position: absolute; top: 0; bottom: 0; left: 2px; width: 1px; background-color: var(--border-subtle); transition: background-color 0.15s ease, width 0.15s ease, left 0.15s ease; }

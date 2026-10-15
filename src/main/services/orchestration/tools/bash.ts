@@ -1,7 +1,8 @@
 import { exec } from 'node:child_process';
 import path from 'node:path';
+import { resolveToolPath } from './view';
 import type { OpenCodeTool, ToolContext, ToolExecutionResult } from './types';
-import type { AgentToolApproval } from '../../../../preload/types';
+import { approveTerminalCommand } from './policy';
 
 export const bashTool: OpenCodeTool = {
   name: 'bash',
@@ -37,48 +38,16 @@ export const bashTool: OpenCodeTool = {
       return { output: 'Error: "command" parameter is required.', isError: true };
     }
 
-    // Dangerous destructive pattern check
-    if (/\b(?:rm\s+-(?:rf|fr)\s+(?:\/|\.\.|\*)|del\s+\/[sq]\s+[a-z]:\\|format\s+[a-z]:)/i.test(command)) {
-      return {
-        output: 'Blocked by security policy: Destructive command detected that could compromise root or system files.',
-        isError: true
-      };
-    }
-
-    // In Plan mode: Plan agent MUST ask permission before executing bash
-    if (context.agentMode === 'plan') {
-      const approvalReason = 'Plan Agent requires explicit user confirmation before executing shell commands.';
-      if (context.requestApproval) {
-        const approval: AgentToolApproval = {
-          id: `approval_bash_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-          toolCall: {
-            id: `call_${Date.now()}`,
-            name: 'bash',
-            arguments: { command }
-          },
-          reason: approvalReason,
-          affectedPaths: [command]
-        };
-        const approved = await context.requestApproval(approval);
-        if (!approved) {
-          return {
-            output: 'Command execution denied by user (Plan Agent permission gate).',
-            isError: true,
-            metadata: { approvalDenied: true }
-          };
-        }
-      } else {
-        return {
-          output: 'Plan Agent requires explicit user confirmation before executing shell commands.',
-          isError: true,
-          metadata: { requiresApproval: true }
-        };
-      }
-    }
-
-    const workingDir = args.cwd
-      ? path.resolve(context.workspaceRoot, String(args.cwd))
-      : context.workspaceRoot;
+    const { cwd, denied } = await approveTerminalCommand(
+      command,
+      typeof args.cwd === 'string' ? args.cwd : undefined,
+      context,
+      context.agentMode === 'plan'
+    );
+    if (denied) return denied;
+    const workingDir = cwd || (args.cwd
+      ? await resolveToolPath(context, String(args.cwd))
+      : context.workspaceRoot);
     const timeoutMs = typeof args.timeoutMs === 'number' && args.timeoutMs > 0 ? args.timeoutMs : 30_000;
 
     return new Promise((resolve) => {

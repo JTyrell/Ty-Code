@@ -2,7 +2,7 @@ import { app, safeStorage } from 'electron';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
-import type { IpcResponse, ProviderSettings, ProviderType } from '../../preload/types';
+import type { CredentialStorageStatus, IpcResponse, ProviderSettings, ProviderType } from '../../preload/types';
 import {
   SecurityPolicySettingsSchema,
   SettingsPatchSchema,
@@ -25,51 +25,108 @@ const LanguageServersSchema = z.record(z.string().regex(/^[a-z][a-z0-9-]{0,31}$/
 
 type StoredCredentialSettings = { apiKeys?: Partial<Record<ProviderType, string>> };
 
-function encryptSecret(secret: string): string {
+export function getCredentialStorageStatus(): CredentialStorageStatus {
+  let backend = process.platform === 'win32' ? 'windows_dpapi' : process.platform === 'darwin' ? 'macos_keychain' : 'unknown';
+  if (process.platform === 'linux' && typeof safeStorage?.getSelectedStorageBackend === 'function') {
+    backend = safeStorage.getSelectedStorageBackend();
+  }
+  const secureLinuxBackend = process.platform !== 'linux' || (backend !== 'basic_text' && backend !== 'unknown');
+  const available = Boolean(safeStorage?.isEncryptionAvailable?.()) && secureLinuxBackend;
+  const message = available
+    ? 'Credentials are protected by the operating system credential store.'
+    : process.platform === 'linux'
+      ? 'Credential protection is unavailable. Install and configure libsecret (GNOME Secret Service) or a supported KWallet service, then restart Ty-Code. Credentials will not be saved until secure storage is available.'
+      : 'Credential protection is unavailable. Credentials will not be saved until operating-system secure storage is available.';
+  return { available, platform: process.platform, backend, message };
+}
+
+export function encryptSecret(secret: string): string {
   if (!secret) return '';
-  if (safeStorage && typeof safeStorage.isEncryptionAvailable === 'function' && safeStorage.isEncryptionAvailable()) {
-    return safeStorage.encryptString(secret).toString('base64');
-  }
-  return Buffer.from(`safestorage_fallback:${Buffer.from(secret).toString('base64')}`).toString('base64');
+  if (!getCredentialStorageStatus().available) throw new Error(getCredentialStorageStatus().message);
+  return `electron_safe_storage_v1:${safeStorage.encryptString(secret).toString('base64')}`;
 }
 
-function decryptSecret(encryptedBase64: string): string {
-  if (!encryptedBase64) return '';
-  if (safeStorage && typeof safeStorage.isEncryptionAvailable === 'function' && safeStorage.isEncryptionAvailable()) {
-    try { return safeStorage.decryptString(Buffer.from(encryptedBase64, 'base64')); }
-    catch { /* Try the explicit test/headless fallback below. */ }
-  }
+function isLegacyBase64Fallback(value: string): boolean {
   try {
-    const raw = Buffer.from(encryptedBase64, 'base64').toString('utf8');
-    return raw.startsWith('safestorage_fallback:')
-      ? Buffer.from(raw.slice('safestorage_fallback:'.length), 'base64').toString('utf8')
-      : '';
+    return Buffer.from(value, 'base64').toString('utf8').startsWith('safestorage_fallback:');
   } catch {
-    return '';
+    return false;
   }
 }
 
-async function readStoredCredentials(): Promise<{ parsed: Record<string, unknown>; keys: Record<string, string> }> {
+export function decryptSecret(encryptedValue: string): string {
+  if (!encryptedValue) return '';
+  const storage = getCredentialStorageStatus();
+  if (!storage.available) return '';
+  if (encryptedValue.startsWith('electron_safe_storage_v1:')) {
+    return safeStorage.decryptString(Buffer.from(encryptedValue.slice('electron_safe_storage_v1:'.length), 'base64'));
+  }
+  if (isLegacyBase64Fallback(encryptedValue)) {
+    const decoded = Buffer.from(encryptedValue, 'base64').toString('utf8');
+    return Buffer.from(decoded.slice('safestorage_fallback:'.length), 'base64').toString('utf8');
+  }
+  // Older Electron safeStorage values were stored as untagged base64 buffers.
+  return safeStorage.decryptString(Buffer.from(encryptedValue, 'base64'));
+}
+
+async function removeLegacyBase64Credentials(filePath: string, parsed: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const storedKeys = parsed.apiKeys && typeof parsed.apiKeys === 'object' && !Array.isArray(parsed.apiKeys)
+    ? parsed.apiKeys as Record<string, unknown>
+    : {};
+  const retainedKeys = Object.fromEntries(Object.entries(storedKeys)
+    .filter(([, value]) => typeof value !== 'string' || !isLegacyBase64Fallback(value)));
+  const safeSettings = { ...parsed, apiKeys: retainedKeys };
+  const temporaryFile = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+  try {
+    await fs.writeFile(temporaryFile, JSON.stringify(safeSettings, null, 2), { encoding: 'utf8', mode: 0o600 });
+    await fs.rename(temporaryFile, filePath);
+  } catch (error) {
+    await fs.rm(temporaryFile, { force: true }).catch(() => undefined);
+    throw error;
+  }
+  return safeSettings;
+}
+
+export async function readStoredCredentials(): Promise<{ parsed: Record<string, unknown>; keys: Record<string, string> }> {
   let raw: string | null = null;
+  let sourcePath = SETTINGS_FILE;
   for (const filePath of [SETTINGS_FILE, LEGACY_SETTINGS_FILE]) {
-    try { raw = await fs.readFile(filePath, 'utf8'); break; }
+    try { raw = await fs.readFile(filePath, 'utf8'); sourcePath = filePath; break; }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
   }
   if (!raw) return { parsed: {}, keys: {} };
   const value: unknown = JSON.parse(raw);
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Legacy settings document must be a JSON object.');
-  const parsed = value as Record<string, unknown>;
+  let parsed = value as Record<string, unknown>;
   const storedKeys = parsed.apiKeys && typeof parsed.apiKeys === 'object' && !Array.isArray(parsed.apiKeys)
     ? parsed.apiKeys as StoredCredentialSettings['apiKeys']
     : {};
   const keys: Record<string, string> = {};
+  let migrateLegacyFallback = false;
+  let removeLegacyFallback = false;
+  const secureStorageAvailable = getCredentialStorageStatus().available;
   for (const [provider, secret] of Object.entries(storedKeys || {})) {
-    if (typeof secret === 'string') keys[provider] = decryptSecret(secret);
+    if (typeof secret !== 'string') continue;
+    if (isLegacyBase64Fallback(secret)) {
+      if (secureStorageAvailable) {
+        migrateLegacyFallback = true;
+        keys[provider] = decryptSecret(secret);
+      } else {
+        removeLegacyFallback = true;
+      }
+      continue;
+    }
+    keys[provider] = decryptSecret(secret);
+  }
+  if (removeLegacyFallback) parsed = await removeLegacyBase64Credentials(sourcePath, parsed);
+  if (migrateLegacyFallback) {
+    if (sourcePath !== SETTINGS_FILE) parsed = await removeLegacyBase64Credentials(sourcePath, parsed);
+    await writeStoredCredentials(keys);
   }
   return { parsed, keys };
 }
 
-async function writeStoredCredentials(apiKeys: Record<string, string>): Promise<void> {
+export async function writeStoredCredentials(apiKeys: Record<string, string>): Promise<void> {
   const encrypted: Record<string, string> = {};
   for (const [provider, secret] of Object.entries(apiKeys)) {
     if (typeof secret === 'string' && secret.trim()) encrypted[provider] = encryptSecret(secret.trim());
@@ -94,6 +151,11 @@ async function readEffectiveSettings(): Promise<ProviderSettings> {
 }
 
 /** Renderer-safe settings: API key values are never returned over IPC. */
+export async function getCredentialStorageStatusResponse(): Promise<IpcResponse<CredentialStorageStatus>> {
+  try { return { success: true, data: getCredentialStorageStatus() }; }
+  catch (error: unknown) { return { success: false, error: error instanceof Error ? error.message : String(error) }; }
+}
+
 export async function getSettings(): Promise<IpcResponse<ProviderSettings>> {
   try {
     const settings = await readEffectiveSettings();
@@ -154,7 +216,11 @@ export async function saveSettings(updates: Partial<ProviderSettings>): Promise<
   try {
     const parsedPatch = SettingsPatchSchema.safeParse(updates);
     if (!parsedPatch.success) throw new Error(`Settings failed schema validation: ${parsedPatch.error.issues[0]?.message || 'invalid settings'}`);
+    if (parsedPatch.data.security !== undefined) throw new Error('Security policy must be changed through the trusted security settings channel.');
     const { apiKeys, ...globalUpdates } = parsedPatch.data;
+    if (apiKeys !== undefined && !getCredentialStorageStatus().available) {
+      throw new Error(getCredentialStorageStatus().message);
+    }
     await settingsManager.saveLayer('global', globalUpdates);
 
     if (apiKeys !== undefined) {

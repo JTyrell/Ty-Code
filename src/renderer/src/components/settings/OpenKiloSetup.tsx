@@ -56,7 +56,7 @@ const PRIORITY_MODELS: PriorityModelInfo[] = [
     context: '131K context',
     task: 'Efficient Instruction',
     score: 91,
-    desc: 'Lightweight and highly responsive instruction model from Google.'
+    desc: 'Lightweight and highly responsive instruction model.'
   },
   {
     id: 'mistralai/mistral-small-3.1-24b-instruct:free',

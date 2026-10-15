@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import type { OpenCodeTool, ToolContext, ToolExecutionResult } from './types';
 import { resolveSafePath } from './view';
+import { approveFileMutation } from './policy';
 
 export const editTool: OpenCodeTool = {
   name: 'edit',
@@ -50,7 +51,9 @@ export const editTool: OpenCodeTool = {
         return { output: 'Error: "oldString" parameter is required to identify the target code to replace.', isError: true };
       }
 
-      const absolutePath = resolveSafePath(context.workspaceRoot, filePath);
+      const absolutePath = context.securityPolicy
+        ? await context.securityPolicy.resolveFilePath(filePath)
+        : resolveSafePath(context.workspaceRoot, filePath);
       const original = await fs.readFile(absolutePath, 'utf-8');
 
       if (!original.includes(oldString)) {
@@ -71,9 +74,15 @@ export const editTool: OpenCodeTool = {
       // Literal string replacement without regex interpolation tokens
       const modified = original.replace(oldString, () => newString);
 
-      const tempPath = `${absolutePath}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
+      const approval = await approveFileMutation({ id: `edit_${Date.now()}`, name: 'edit', arguments: { filePath, oldString, newString } }, filePath, original, modified, context);
+      if (approval.denied) return approval.denied;
+      let resolvedPath = approval.absolutePath || absolutePath;
+      if (context.securityPolicy) {
+        resolvedPath = await context.securityPolicy.verifyFileMutationSnapshot(approval.review!);
+      }
+      const tempPath = `${resolvedPath}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
       await fs.writeFile(tempPath, modified, 'utf-8');
-      await fs.rename(tempPath, absolutePath);
+      await fs.rename(tempPath, resolvedPath);
 
       context.trackModifiedFile?.(filePath);
 

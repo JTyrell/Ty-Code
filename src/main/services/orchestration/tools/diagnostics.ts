@@ -1,7 +1,7 @@
 import path from 'node:path';
 import type { OpenCodeTool, ToolContext, ToolExecutionResult } from './types';
 import { LspManager } from '../../lsp-manager';
-import { resolveSafePath } from './view';
+import { resolveToolPath } from './view';
 
 interface StoredDiagnostic {
   uri: string;
@@ -68,7 +68,7 @@ export const diagnosticsTool: OpenCodeTool = {
 
       let targetAbsolute = '';
       if (filterPath) {
-        targetAbsolute = resolveSafePath(context.workspaceRoot, filterPath).replace(/\\/g, '/').toLowerCase();
+        targetAbsolute = (await resolveToolPath(context, filterPath)).replace(/\\/g, '/').toLowerCase();
       }
 
       let allEntries: StoredDiagnostic[] = [];

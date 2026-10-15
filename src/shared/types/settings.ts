@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const SETTINGS_SCHEMA_VERSION = 2;
+export const SETTINGS_SCHEMA_VERSION = 3;
 
 export const EditorPreferencesSchema = z.object({
   fontSize: z.number().int().min(8).max(36).optional(),
@@ -38,8 +38,12 @@ export const SecurityPolicySettingsSchema = z.object({
   reviewPolicy: z.enum(['always-ask', 'auto-apply-safe'])
 }).strict();
 
-// Eight validated categories: provider, model, routing, terminal, editor,
-// language-server, extension, and security settings.
+export const TelemetrySettingsSchema = z.object({
+  enabled: z.boolean()
+}).strict();
+
+// Ten validated categories: provider, model, routing, terminal, editor,
+// language-server, extension, integration, security, and telemetry settings.
 export const ProviderSettingsSchema = z.object({
   activeProvider: z.string().min(1).max(128),
   apiKeys: z.record(z.string().min(1).max(128), z.string().max(16_384).optional()),
@@ -87,6 +91,17 @@ export const SecuritySettingsSchema = z.object({
   security: SecurityPolicySettingsSchema
 }).strip();
 
+export const IntegrationModuleConfigSchema = z.object({
+  enabled: z.boolean(),
+  installedAt: z.number().optional(),
+  customConfig: z.record(z.string(), z.unknown()).optional()
+}).strip();
+
+export const IntegrationsSettingsSchema = z.object({
+  integrations: z.record(z.string().min(1).max(128), z.boolean()).optional(),
+  modules: z.record(z.string().min(1).max(128), IntegrationModuleConfigSchema).optional()
+}).strip();
+
 export const SettingsSchema = ProviderSettingsSchema
   .merge(ModelSettingsSchema)
   .merge(RoutingSettingsSchema)
@@ -94,18 +109,21 @@ export const SettingsSchema = ProviderSettingsSchema
   .merge(EditorSettingsSchema)
   .merge(LanguageServerSettingsSchema)
   .merge(ExtensionSettingsSchema)
-  .merge(SecuritySettingsSchema);
+  .merge(SecuritySettingsSchema)
+  .merge(IntegrationsSettingsSchema)
+  .merge(z.object({ telemetry: TelemetrySettingsSchema }).strip());
 
 export const SettingsPatchSchema = SettingsSchema.partial().extend({
   editor: EditorPreferencesSchema.partial().optional(),
   languageServers: LanguageServersSchema.optional(),
-  security: SecurityPolicySettingsSchema.partial().optional()
+  security: SecurityPolicySettingsSchema.partial().optional(),
+  telemetry: TelemetrySettingsSchema.partial().optional()
 });
 
 // Workspace settings can override non-secret values only. System access is a
 // global opt-in and cannot be enabled by a project-local settings file.
 export const WorkspaceSettingsSchema = SettingsPatchSchema
-  .omit({ apiKeys: true })
+  .omit({ apiKeys: true, telemetry: true })
   .extend({
     security: SecurityPolicySettingsSchema.partial().omit({ systemAccessConfirmed: true }).optional()
   })
@@ -115,4 +133,5 @@ export type SettingsData = z.infer<typeof SettingsSchema>;
 export type SettingsPatch = z.infer<typeof SettingsPatchSchema>;
 export type WorkspaceSettingsPatch = z.infer<typeof WorkspaceSettingsSchema>;
 export type SecurityPolicySettings = z.infer<typeof SecurityPolicySettingsSchema>;
+export type TelemetrySettings = z.infer<typeof TelemetrySettingsSchema>;
 export type SettingsScope = 'global' | 'workspace';

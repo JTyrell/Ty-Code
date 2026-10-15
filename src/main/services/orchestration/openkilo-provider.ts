@@ -141,7 +141,7 @@ export const OPENKILO_CURATED_FREE_MODELS: OpenKiloModelDefinition[] = [
   },
   {
     id: 'google/gemini-2.0-flash-lite:free',
-    name: 'Gemini 2.0 Flash Lite Free',
+    name: 'Long-Context Multimodal Lite Free',
     contextWindow: 1_048_576,
     maxOutputTokens: 8192,
     isFree: true,
@@ -152,7 +152,7 @@ export const OPENKILO_CURATED_FREE_MODELS: OpenKiloModelDefinition[] = [
   },
   {
     id: 'google/gemini-2.0-flash-exp:free',
-    name: 'Gemini 2.0 Flash Experimental Free',
+    name: 'Long-Context Multimodal Experimental Free',
     contextWindow: 1_048_576,
     maxOutputTokens: 8192,
     isFree: true,

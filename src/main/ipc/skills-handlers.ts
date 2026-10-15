@@ -29,8 +29,12 @@ export async function getAvailableSkills(workspacePath: string): Promise<IpcResp
   const searchRoots = [
     path.join(workspacePath, '.agents', 'skills'),
     path.join(workspacePath, 'context', 'skills'),
+    path.join(workspacePath, '.ty-code', 'skills'),
+    path.join(workspacePath, '.ty-claude', 'skills'),
     path.join(os.homedir(), '.gemini', 'config', 'skills'),
-    path.join(os.homedir(), '.agents', 'skills')
+    path.join(os.homedir(), '.agents', 'skills'),
+    path.join(os.homedir(), '.ty-code', 'skills'),
+    path.join(os.homedir(), '.ty-claude', 'skills')
   ];
 
   for (const root of searchRoots) {
@@ -52,7 +56,7 @@ export async function getAvailableSkills(workspacePath: string): Promise<IpcResp
           skills.push({
             id: entry.name,
             name: meta.name || entry.name,
-            description: meta.description || 'Specialized Antigravity Agent Skill workflow',
+            description: meta.description || 'Specialized Agent skill workflow',
             path: skillMdPath,
             content
           });

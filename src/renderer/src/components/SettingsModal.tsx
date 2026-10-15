@@ -19,9 +19,13 @@ import {
   Zap,
   Globe,
   Sparkles,
-  Layers
+  Layers,
+  Gauge,
+  Eye,
+  LockKeyhole
 } from 'lucide-react';
 import { useChatStore } from '../state/chat-store';
+import { useUsageDashboardStore } from '../state/usage-dashboard-store';
 import type {
   EditReviewPolicy,
   ProviderType,
@@ -30,7 +34,10 @@ import type {
   LanguageServerStatus,
   PreConfiguredProvider,
   DiscoveredModel,
-  TestConnectionResult
+  TestConnectionResult,
+  TelemetryPreview,
+  CredentialStorageStatus,
+  AppInfo
 } from '../../../preload/types';
 import type { SecurityPolicySettings, SettingsData, SettingsScope, WorkspaceSettingsPatch } from '../../../shared/types/settings';
 import { DEFAULT_KEYBINDINGS, type KeybindingItem } from '../../../main/services/config-schemas';
@@ -43,9 +50,17 @@ import { ProviderSelectionGrid, type ProviderStatusInfo } from './settings/Provi
 import { ProviderSetupForm } from './settings/ProviderSetupForm';
 import { ModelSelectorDropdown } from './settings/ModelSelectorDropdown';
 import { CustomProviderForm } from './settings/CustomProviderForm';
+import { IntegrationsPanel } from './settings/IntegrationsPanel';
+import { BYOKWizard } from './settings/BYOKWizard';
+import { ProviderCards } from './settings/ProviderCards';
+import { AdvancedProviderConfig } from './settings/AdvancedProviderConfig';
+import { APIKeyManager } from './settings/APIKeyManager';
+import { OpenCodeIntegration } from './settings/OpenCodeIntegration';
+import type { FreeProvider } from '../../../shared/types/free-providers';
+import type { StoredKeySummary, CustomProviderConfig } from '../../../shared/types/byok';
 
 type UpdateChannelPreference = 'stable' | 'beta' | 'nightly';
-type SettingsTab = 'providers' | 'openkilo' | 'fcc' | 'endpoints' | 'params' | 'terminal' | 'lsp' | 'editor' | 'shortcuts' | 'extensions' | 'security';
+type SettingsTab = 'providers' | 'byok' | 'openkilo' | 'opencode' | 'integrations' | 'orchestration' | 'fcc' | 'endpoints' | 'params' | 'terminal' | 'lsp' | 'editor' | 'shortcuts' | 'extensions' | 'security' | 'privacy';
 
 const DEFAULT_SECURITY_SETTINGS: SecurityPolicySettings = {
   terminalPolicy: 'restricted',
@@ -118,6 +133,105 @@ export const SettingsModal: React.FC = () => {
   const [discoveredModels, setDiscoveredModels] = useState<Record<string, DiscoveredModel[]>>({});
   const [loadingModels, setLoadingModels] = useState(false);
 
+  // BYOK & Key Management State (Phase 6.2)
+  const [byokSubTab, setByokSubTab] = useState<'cards' | 'wizard' | 'keys' | 'advanced'>('cards');
+  const [freeProviders, setFreeProviders] = useState<FreeProvider[]>([]);
+  const [storedKeysSummary, setStoredKeysSummary] = useState<StoredKeySummary[]>([]);
+  const [byokWizardProviderId, setByokWizardProviderId] = useState<string>('openrouter-free');
+  const [byokTesting, setByokTesting] = useState<Record<string, boolean>>({});
+  const [byokConnStatus, setByokConnStatus] = useState<Record<string, { status: 'connected' | 'error' | 'disconnected'; latencyMs?: number; error?: string }>>({});
+
+  const refreshByokData = useCallback(async () => {
+    if (window.electronAPI?.freeProvidersGetList) {
+      const res = await window.electronAPI.freeProvidersGetList();
+      if (res.success && res.data) setFreeProviders(res.data);
+    }
+    if (window.electronAPI?.byokGetStoredKeys) {
+      const res = await window.electronAPI.byokGetStoredKeys();
+      if (res.success && res.data) setStoredKeysSummary(res.data);
+    }
+  }, []);
+
+  const handleByokAddKey = (providerId: string) => {
+    setByokWizardProviderId(providerId);
+    setByokSubTab('wizard');
+  };
+
+  const handleByokTestConnection = async (providerId: string) => {
+    setByokTesting((prev) => ({ ...prev, [providerId]: true }));
+    try {
+      const cleanId = providerId.replace('-free', '');
+      const provider = freeProviders.find((p) => p.id === providerId);
+      const response = await window.electronAPI.providerTestConnection({
+        providerId: cleanId,
+        customEndpoint: provider?.base_url !== 'auto' ? provider?.base_url : undefined
+      });
+      if (!response.success || !response.data) throw new Error(response.error || 'Provider connection test failed.');
+      const res = response.data;
+      if (res.success) {
+        setByokConnStatus((prev) => ({
+          ...prev,
+          [providerId]: { status: 'connected', latencyMs: res.latencyMs }
+        }));
+        toast.success('Connection Successful', `Latency: ${res.latencyMs || 0}ms`);
+      } else {
+        setByokConnStatus((prev) => ({
+          ...prev,
+          [providerId]: { status: 'error', error: res.error }
+        }));
+        toast.error('Connection Failed', res.error || 'Verification failed');
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setByokConnStatus((prev) => ({ ...prev, [providerId]: { status: 'error', error: msg } }));
+      toast.error('Connection Failed', msg);
+    } finally {
+      setByokTesting((prev) => ({ ...prev, [providerId]: false }));
+    }
+  };
+
+  const handleByokRemoveKey = async (providerId: string) => {
+    if (!window.electronAPI?.byokRevokeKey) return;
+    const res = await window.electronAPI.byokRevokeKey(providerId);
+    if (res.success) {
+      toast.info('Key Revoked', `Key for ${providerId} removed from safeStorage.`);
+      await refreshByokData();
+    }
+  };
+
+  const handleByokWizardComplete = async (config: { providerId: string; apiKey: string; selectedModel?: string; selectedModels?: string[] }) => {
+    const cleanId = config.providerId.replace('-free', '');
+    const updates: Record<string, unknown> = {
+      activeProvider: cleanId,
+      apiKeys: { [cleanId]: config.apiKey }
+    };
+    if (config.selectedModel) {
+      updates.activeModel = config.selectedModel;
+    }
+    await saveSettings(updates);
+    await refreshByokData();
+    toast.success('Key Saved Securely', `${config.providerId} configured with safeStorage.`);
+  };
+
+  const handleByokSaveAdvancedConfig = async (config: CustomProviderConfig): Promise<boolean> => {
+    if (!window.electronAPI?.byokSaveCustomProvider) return false;
+    const res = await window.electronAPI.byokSaveCustomProvider(config);
+    if (res.success) {
+      toast.success('Custom Provider Saved', `${config.name} added and set as active.`);
+      await refreshByokData();
+      setByokSubTab('cards');
+      return true;
+    } else {
+      toast.error('Save Failed', res.error || 'Could not save custom provider.');
+      return false;
+    }
+  };
+
+  const handleByokStartCoding = () => {
+    toggleSettings();
+    toast.success('Ready to Code', 'Your AI provider is connected and ready to assist.');
+  };
+
   // Endpoints & Inference state
   const [ollamaUrl, setOllamaUrl] = useState('http://localhost:11434/v1');
   const [fccProxyUrl, setFccProxyUrl] = useState('http://localhost:8082/v1');
@@ -130,6 +244,12 @@ export const SettingsModal: React.FC = () => {
   const [newProfileShellId, setNewProfileShellId] = useState('');
   const [newProfilePath, setNewProfilePath] = useState('');
   const [error, setError] = useState('');
+
+  // Orchestration & Quota state
+  const [freeMode, setFreeMode] = useState(true);
+  const [quotaAlertThreshold, setQuotaAlertThreshold] = useState(80);
+  const [autoRotateProviders, setAutoRotateProviders] = useState(true);
+  const { openDashboard } = useUsageDashboardStore();
 
   // LSP Settings state
   const [lspServers, setLspServers] = useState<LanguageServerStatus[]>([]);
@@ -159,6 +279,14 @@ export const SettingsModal: React.FC = () => {
   const [settingsScope, setSettingsScope] = useState<SettingsScope>('global');
   const [securitySettings, setSecuritySettings] = useState<SecurityPolicySettings>(DEFAULT_SECURITY_SETTINGS);
   const [securitySaving, setSecuritySaving] = useState(false);
+  const [telemetryEnabled, setTelemetryEnabled] = useState(false);
+  const [telemetryInspectorOpen, setTelemetryInspectorOpen] = useState(false);
+  const [telemetryPreview, setTelemetryPreview] = useState<TelemetryPreview | null>(null);
+  const [credentialStorageStatus, setCredentialStorageStatus] = useState<CredentialStorageStatus | null>(null);
+  const [privacyLoading, setPrivacyLoading] = useState(false);
+  const [privacyError, setPrivacyError] = useState('');
+  const [privacyNotice, setPrivacyNotice] = useState('');
+  const [privacyAppInfo, setPrivacyAppInfo] = useState<AppInfo | null>(null);
 
   // Load Registry Providers from IPC
   useEffect(() => {
@@ -169,6 +297,11 @@ export const SettingsModal: React.FC = () => {
       }
     }).catch((err) => console.warn('Could not fetch provider registry:', err));
   }, []);
+
+  useEffect(() => {
+    if (!isSettingsOpen) return;
+    void refreshByokData();
+  }, [isSettingsOpen, refreshByokData]);
 
   // Sync state from settings
   useEffect(() => {
@@ -186,6 +319,10 @@ export const SettingsModal: React.FC = () => {
     setFccProxyUrl(settings.customEndpoints?.['fcc-proxy'] || 'http://localhost:8082/v1');
     setTemperature(settings.temperature ?? 0.2);
     setMaxTokens(settings.maxTokens ?? 4096);
+    setFreeMode(settings.freeMode ?? true);
+    setQuotaAlertThreshold(settings.quotaAlertThreshold ?? 80);
+    setAutoRotateProviders(settings.autoRotateProviders ?? true);
+    setTelemetryEnabled(settings.telemetry?.enabled ?? false);
     setProfiles(settings.terminalProfiles || []);
     setDefaultProfileId(settings.defaultTerminalProfileId || '');
     setThirdPartyRuntimeEnabled(settings.thirdPartyRuntimeEnabled ?? false);
@@ -216,11 +353,25 @@ export const SettingsModal: React.FC = () => {
     } else if (settings.activeProvider === 'custom') {
       setIsCustomSelected(true);
     }
-  }, [settings, registryProviders]);
+  }, [settings, registryProviders, isSettingsOpen]);
 
   useEffect(() => {
-    if (!isSettingsOpen) return;
+    if (!isSettingsOpen) {
+      setTelemetryInspectorOpen(false);
+      return;
+    }
     let cancelled = false;
+    void Promise.all([
+      window.electronAPI.getCredentialStorageStatus(),
+      window.electronAPI.getAppInfo()
+    ]).then(([credentialResponse, appInfoResponse]) => {
+      if (cancelled) return;
+      if (credentialResponse.success && credentialResponse.data) setCredentialStorageStatus(credentialResponse.data);
+      else setPrivacyError(credentialResponse.error || 'Credential storage status is unavailable.');
+      if (appInfoResponse.success && appInfoResponse.data) setPrivacyAppInfo(appInfoResponse.data);
+    }).catch((reason: unknown) => {
+      if (!cancelled) setPrivacyError(reason instanceof Error ? reason.message : String(reason));
+    });
     const load = async () => {
       const [globalResponse, layerResponse] = await Promise.all([
         window.electronAPI.getSettingsLayer('global'),
@@ -278,11 +429,6 @@ export const SettingsModal: React.FC = () => {
     }
   }, [settings?.customEndpoints]);
 
-  useEffect(() => {
-    if (selectedGridProviderId && !isCustomSelected && !discoveredModels[selectedGridProviderId]) {
-      void fetchModelsForProvider(selectedGridProviderId);
-    }
-  }, [selectedGridProviderId, isCustomSelected, fetchModelsForProvider, discoveredModels]);
 
   const refreshLspServers = async () => {
     if (!window.electronAPI?.lspGetServers) return;
@@ -440,9 +586,85 @@ export const SettingsModal: React.FC = () => {
     }
   };
 
+  const refreshTelemetryPreview = async () => {
+    const response = await window.electronAPI.getTelemetryPreview();
+    if (!response.success || !response.data) throw new Error(response.error || 'Telemetry data is unavailable.');
+    setTelemetryPreview(response.data);
+  };
+
+  const handleOpenTelemetryInspector = async () => {
+    setTelemetryInspectorOpen(true);
+    setPrivacyLoading(true);
+    setPrivacyError('');
+    try {
+      await refreshTelemetryPreview();
+    } catch (reason) {
+      setPrivacyError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setPrivacyLoading(false);
+    }
+  };
+
+  const handleDeleteTelemetryEvent = async (index: number, event: TelemetryPreview['events'][number]) => {
+    setPrivacyError('');
+    try {
+      const response = await window.electronAPI.deleteTelemetryEvent(index, event);
+      if (!response.success) throw new Error(response.error || 'Could not delete this telemetry event.');
+      await refreshTelemetryPreview();
+    } catch (reason) {
+      setPrivacyError(reason instanceof Error ? reason.message : String(reason));
+    }
+  };
+
+  const handleClearTelemetryData = async () => {
+    setPrivacyError('');
+    try {
+      const response = await window.electronAPI.clearTelemetryData();
+      if (!response.success) throw new Error(response.error || 'Could not clear telemetry data.');
+      await refreshTelemetryPreview();
+    } catch (reason) {
+      setPrivacyError(reason instanceof Error ? reason.message : String(reason));
+    }
+  };
+
+  const handleCopyTelemetryData = async (event?: TelemetryPreview['events'][number]) => {
+    setPrivacyError('');
+    setPrivacyNotice('');
+    try {
+      const payload = event || telemetryPreview?.events || [];
+      await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
+      setPrivacyNotice(event ? 'Telemetry event JSON copied.' : 'Queued telemetry JSON copied.');
+    } catch {
+      setPrivacyError('Clipboard access failed. Select and copy the JSON manually.');
+    }
+  };
+
+  useEffect(() => {
+    if (!isSettingsOpen || !telemetryInspectorOpen) return;
+    let cancelled = false;
+    const refreshPreview = async () => {
+      try {
+        const response = await window.electronAPI.getTelemetryPreview();
+        if (!cancelled && response.success && response.data) setTelemetryPreview(response.data);
+      } catch {
+        // Keep the last sanitized snapshot visible if a refresh temporarily fails.
+      }
+    };
+    const unsubscribe = window.electronAPI.onTelemetryChanged(refreshPreview);
+    void refreshPreview();
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [isSettingsOpen, telemetryInspectorOpen]);
+
   const handleSave = async () => {
     setError('');
     const saved = await saveSettings({
+      telemetry: { enabled: telemetryEnabled },
+      freeMode,
+      quotaAlertThreshold: Number(quotaAlertThreshold),
+      autoRotateProviders,
       customEndpoints: { ollama: ollamaUrl, 'fcc-proxy': fccProxyUrl },
       temperature: Number(temperature),
       maxTokens: Number(maxTokens),
@@ -454,6 +676,9 @@ export const SettingsModal: React.FC = () => {
       editor: { fontSize, tabSize, minimap, bracketPairs, autoSave: autoSaveMode, autoSaveDelay, wordWrap: editorWordWrap, formatOnSave: settings?.editor?.formatOnSave || false },
       languageServers: Object.fromEntries(lspServers.map((server) => [server.languageId, { enabled: server.status !== 'disabled', args: server.args, path: customLspPaths[server.languageId]?.trim() || undefined }]))
     });
+    if (window.electronAPI?.orchestrationSetFreeMode) {
+      await window.electronAPI.orchestrationSetFreeMode(freeMode);
+    }
     if (!saved) {
       setError('Failed to save settings. See the application log for details.');
       return;
@@ -556,6 +781,15 @@ export const SettingsModal: React.FC = () => {
     const q = keybindingSearch.toLowerCase();
     return kb.command.toLowerCase().includes(q) || kb.key.toLowerCase().includes(q) || (kb.description && kb.description.toLowerCase().includes(q));
   });
+  const savedTelemetryEnabled = settings?.telemetry?.enabled ?? false;
+  const telemetryChoiceIsDirty = telemetryEnabled !== savedTelemetryEnabled;
+  const telemetryStatusText = telemetryChoiceIsDirty
+    ? 'Your telemetry choice has not been saved. No events are transmitted.'
+    : telemetryEnabled && credentialStorageStatus && !credentialStorageStatus.available
+      ? 'Telemetry recording is selected, but encrypted OS storage is unavailable. No events are recorded or transmitted.'
+      : telemetryEnabled
+        ? 'Local event recording is on. Events remain on this device; nothing is transmitted.'
+        : 'Telemetry is off. No telemetry data is transmitted.';
 
   return (
     <div className="settings-backdrop" onClick={toggleSettings}>
@@ -569,11 +803,33 @@ export const SettingsModal: React.FC = () => {
           <button className={activeTab === 'providers' ? 'is-active' : ''} onClick={() => setActiveTab('providers')} style={{ color: activeTab === 'providers' ? 'var(--accent-primary)' : undefined }}>
             <Key size={13} color="var(--accent-primary)" />AI Providers &amp; Models
           </button>
+          <button
+            className={activeTab === 'byok' ? 'is-active' : ''}
+            onClick={() => setActiveTab('byok')}
+            style={{ color: activeTab === 'byok' ? '#f43f5e' : undefined }}
+            id="tab-btn-byok"
+          >
+            <Key size={13} color="#f43f5e" />BYOK &amp; Keys
+          </button>
+          <button
+            className={activeTab === 'opencode' ? 'is-active' : ''}
+            onClick={() => setActiveTab('opencode')}
+            style={{ color: activeTab === 'opencode' ? '#06b6d4' : undefined }}
+            id="tab-btn-opencode"
+          >
+            <Code2 size={13} color="#06b6d4" />OpenCode Sync
+          </button>
+          <button className={activeTab === 'orchestration' ? 'is-active' : ''} onClick={() => setActiveTab('orchestration')} style={{ color: activeTab === 'orchestration' ? '#38bdf8' : undefined }}>
+            <Layers size={13} color="#38bdf8" />Smart Orchestration
+          </button>
           <button className={activeTab === 'openkilo' ? 'is-active' : ''} onClick={() => setActiveTab('openkilo')} style={{ color: activeTab === 'openkilo' ? '#10b981' : undefined }}>
             <Sparkles size={13} color="#10b981" />OpenKilo (Free Backup)
           </button>
           <button className={activeTab === 'fcc' ? 'is-active' : ''} onClick={() => setActiveTab('fcc')} style={{ color: activeTab === 'fcc' ? '#f59e0b' : undefined }}>
             <Zap size={13} color="#f59e0b" />Free Models (FCC)
+          </button>
+          <button className={activeTab === 'integrations' ? 'is-active' : ''} onClick={() => setActiveTab('integrations')} style={{ color: activeTab === 'integrations' ? '#c084fc' : undefined }}>
+            <Layers size={13} color="#c084fc" />Integrations &amp; Skills
           </button>
           <button className={activeTab === 'endpoints' ? 'is-active' : ''} onClick={() => setActiveTab('endpoints')}><Server size={13} />Endpoints</button>
           <button className={activeTab === 'params' ? 'is-active' : ''} onClick={() => setActiveTab('params')}><Sliders size={13} />Inference</button>
@@ -583,6 +839,7 @@ export const SettingsModal: React.FC = () => {
           <button className={activeTab === 'editor' ? 'is-active' : ''} onClick={() => setActiveTab('editor')}><Sliders size={13} />Editor Polish</button>
           <button className={activeTab === 'shortcuts' ? 'is-active' : ''} onClick={() => setActiveTab('shortcuts')}><Keyboard size={13} />Keybindings</button>
           <button className={activeTab === 'extensions' ? 'is-active' : ''} onClick={() => setActiveTab('extensions')}><ShieldCheck size={13} />Extensions</button>
+          <button className={activeTab === 'privacy' ? 'is-active' : ''} onClick={() => { setActiveTab('privacy'); setTelemetryInspectorOpen(false); }}><LockKeyhole size={13} />Privacy &amp; About</button>
         </nav>
 
         <div className="settings-body" style={{ maxHeight: '480px', overflowY: 'auto' }}>
@@ -636,6 +893,321 @@ export const SettingsModal: React.FC = () => {
             </div>
           )}
 
+          {/* Tab: Seamless BYOK Interface & Key Management (Phase 6.2) */}
+          {activeTab === 'byok' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }} id="byok-settings-panel">
+              {/* Sub-tab navigation */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '4px',
+                  background: 'rgba(30, 41, 59, 0.5)',
+                  borderRadius: '8px',
+                  border: '1px solid rgba(255, 255, 255, 0.08)'
+                }}
+                id="byok-subtab-bar"
+              >
+                {[
+                  { id: 'cards', label: 'Provider Cards' },
+                  { id: 'wizard', label: 'BYOK Setup Wizard' },
+                  { id: 'keys', label: 'API Key Vault' },
+                  { id: 'advanced', label: 'JSON Manual Config' }
+                ].map((st) => (
+                  <button
+                    key={st.id}
+                    type="button"
+                    id={`byok-subtab-${st.id}`}
+                    onClick={() => setByokSubTab(st.id as any)}
+                    style={{
+                      flex: 1,
+                      padding: '7px 12px',
+                      borderRadius: '6px',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      border: 'none',
+                      background: byokSubTab === st.id ? 'var(--accent-primary)' : 'transparent',
+                      color: byokSubTab === st.id ? '#ffffff' : '#94a3b8',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    {st.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* View 1: Provider Cards */}
+              {byokSubTab === 'cards' && (
+                <ProviderCards
+                  freeProviders={freeProviders}
+                  storedKeys={storedKeysSummary}
+                  onAddKey={handleByokAddKey}
+                  onTestConnection={handleByokTestConnection}
+                  onRemoveKey={handleByokRemoveKey}
+                  onOpenSettings={(providerId) => {
+                    setSelectedGridProviderId(providerId.replace('-free', ''));
+                    setActiveTab('providers');
+                  }}
+                  onLaunchWizard={() => setByokSubTab('wizard')}
+                  onOpenAdvanced={() => setByokSubTab('advanced')}
+                  testingProviders={byokTesting}
+                  connectionStatuses={byokConnStatus}
+                />
+              )}
+
+              {/* View 2: BYOK Setup Wizard */}
+              {byokSubTab === 'wizard' && (
+                <BYOKWizard
+                  freeProviders={freeProviders}
+                  initialProviderId={byokWizardProviderId}
+                  onComplete={handleByokWizardComplete}
+                  onClose={() => setByokSubTab('cards')}
+                  onStartCoding={handleByokStartCoding}
+                />
+              )}
+
+              {/* View 3: API Key Vault & Auto-Detection */}
+              {byokSubTab === 'keys' && (
+                <APIKeyManager
+                  onRefreshStoredKeys={refreshByokData}
+                  onOpenWizardForProvider={handleByokAddKey}
+                />
+              )}
+
+              {/* View 4: Advanced JSON Config */}
+              {byokSubTab === 'advanced' && (
+                <AdvancedProviderConfig
+                  onSaveConfig={handleByokSaveAdvancedConfig}
+                  onBack={() => setByokSubTab('cards')}
+                />
+              )}
+            </div>
+          )}
+
+          {/* Tab: OpenCode Integration & Free Model Sync (Phase 6.3) */}
+          {activeTab === 'opencode' && (
+            <OpenCodeIntegration
+              onSyncComplete={async () => {
+                await refreshByokData();
+                if (window.electronAPI?.providerGetRegistry) {
+                  const res = await window.electronAPI.providerGetRegistry();
+                  if (res.success && res.data) setRegistryProviders(res.data);
+                }
+              }}
+            />
+          )}
+
+          {/* Tab: Modular Skills & External Integration Registry (Phase 3.1) */}
+          {activeTab === 'integrations' && (
+            <IntegrationsPanel />
+          )}
+
+          {/* Tab: Smart Orchestration & Unified Experience (Layer 6) */}
+          {activeTab === 'orchestration' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div
+                style={{
+                  padding: '16px',
+                  borderRadius: '8px',
+                  background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.1) 0%, rgba(99, 102, 241, 0.05) 100%)',
+                  border: '1px solid rgba(56, 189, 248, 0.25)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between'
+                }}
+              >
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Layers size={16} color="#38bdf8" />
+                    Automated Model Orchestration &amp; Quota Balancing
+                  </h3>
+                  <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#94a3b8' }}>
+                    Ty-Code automatically selects the optimal free model for code generation, reasoning, large context, vision, and quick responses.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    toggleSettings();
+                    openDashboard();
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '8px 14px',
+                    borderRadius: '6px',
+                    background: '#0ea5e9',
+                    color: '#ffffff',
+                    border: 'none',
+                    fontWeight: 600,
+                    fontSize: '12px',
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 12px rgba(14, 165, 233, 0.3)'
+                  }}
+                >
+                  <Gauge size={14} />
+                  Open Quota Dashboard
+                </button>
+              </div>
+
+              {/* Free Mode Toggle */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '14px',
+                  backgroundColor: 'rgba(255, 255, 255, 0.03)',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: '6px'
+                }}
+              >
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>One-Click "Free Mode"</span>
+                    <span style={{ fontSize: '10px', padding: '1px 6px', borderRadius: '4px', backgroundColor: freeMode ? 'rgba(16, 185, 129, 0.2)' : 'rgba(245, 158, 11, 0.2)', color: freeMode ? '#34d399' : '#fbbf24', fontWeight: 600 }}>
+                      {freeMode ? 'ACTIVE' : 'DISABLED'}
+                    </span>
+                  </div>
+                  <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '4px 0 0 0' }}>
+                    Strictly enforces $0 cost by prioritizing OpenKilo (40+ free models), FCC Proxy (1.35B tokens/mo), OpenRouter free tier, and local Ollama.
+                  </p>
+                </div>
+                <label style={{ position: 'relative', display: 'inline-block', width: '40px', height: '22px', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={freeMode}
+                    onChange={(e) => setFreeMode(e.target.checked)}
+                    style={{ opacity: 0, width: 0, height: 0 }}
+                  />
+                  <span
+                    style={{
+                      position: 'absolute',
+                      cursor: 'pointer',
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      backgroundColor: freeMode ? '#10b981' : '#334155',
+                      borderRadius: '22px',
+                      transition: '0.2s'
+                    }}
+                  >
+                    <span
+                      style={{
+                        position: 'absolute',
+                        height: '16px',
+                        width: '16px',
+                        left: freeMode ? '21px' : '3px',
+                        bottom: '3px',
+                        backgroundColor: '#ffffff',
+                        borderRadius: '50%',
+                        transition: '0.2s'
+                      }}
+                    />
+                  </span>
+                </label>
+              </div>
+
+              {/* Auto Rotate Providers */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '14px',
+                  backgroundColor: 'rgba(255, 255, 255, 0.03)',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: '6px'
+                }}
+              >
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>Automatic Provider Failover &amp; Rotation</span>
+                    <span style={{ fontSize: '10px', padding: '1px 6px', borderRadius: '4px', backgroundColor: autoRotateProviders ? 'rgba(56, 189, 248, 0.2)' : 'rgba(255, 255, 255, 0.05)', color: autoRotateProviders ? '#38bdf8' : '#94a3b8', fontWeight: 600 }}>
+                      {autoRotateProviders ? 'ENABLED' : 'MANUAL'}
+                    </span>
+                  </div>
+                  <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '4px 0 0 0' }}>
+                    Automatically rotates to backup providers (e.g. OpenKilo or FCC) whenever rate limits (HTTP 429) or quota saturation occur.
+                  </p>
+                </div>
+                <label style={{ position: 'relative', display: 'inline-block', width: '40px', height: '22px', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={autoRotateProviders}
+                    onChange={(e) => setAutoRotateProviders(e.target.checked)}
+                    style={{ opacity: 0, width: 0, height: 0 }}
+                  />
+                  <span
+                    style={{
+                      position: 'absolute',
+                      cursor: 'pointer',
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      backgroundColor: autoRotateProviders ? '#0ea5e9' : '#334155',
+                      borderRadius: '22px',
+                      transition: '0.2s'
+                    }}
+                  >
+                    <span
+                      style={{
+                        position: 'absolute',
+                        height: '16px',
+                        width: '16px',
+                        left: autoRotateProviders ? '21px' : '3px',
+                        bottom: '3px',
+                        backgroundColor: '#ffffff',
+                        borderRadius: '50%',
+                        transition: '0.2s'
+                      }}
+                    />
+                  </span>
+                </label>
+              </div>
+
+              {/* Quota Alert Threshold */}
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '8px',
+                  padding: '14px',
+                  backgroundColor: 'rgba(255, 255, 255, 0.03)',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: '6px'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                    Quota Warning Threshold
+                  </span>
+                  <span style={{ fontSize: '12px', fontWeight: 600, color: '#38bdf8' }}>
+                    {quotaAlertThreshold}% Used
+                  </span>
+                </div>
+                <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>
+                  Displays an alert badge and pre-emptively activates failover pools when any provider approaches this percentage.
+                </p>
+                <input
+                  type="range"
+                  min="50"
+                  max="98"
+                  step="5"
+                  value={quotaAlertThreshold}
+                  onChange={(e) => setQuotaAlertThreshold(Number(e.target.value))}
+                  style={{ width: '100%', marginTop: '6px' }}
+                />
+              </div>
+            </div>
+          )}
+
           {activeTab === 'openkilo' && <OpenKiloSetup />}
 
           {activeTab === 'fcc' && <FCCSetup />}
@@ -684,6 +1256,98 @@ export const SettingsModal: React.FC = () => {
             </div>
             <div className="settings-hint">Session scrollback and shell profile are saved locally.</div>
           </>}
+
+          {activeTab === 'privacy' && (
+            telemetryInspectorOpen ? (
+              <section className="privacy-inspector" aria-labelledby="telemetry-inspector-heading">
+                <button type="button" className="privacy-back" onClick={() => setTelemetryInspectorOpen(false)}>
+                  <Eye size={14} /> Back to Privacy &amp; About
+                </button>
+                <h3 id="telemetry-inspector-heading">Telemetry data on this device</h3>
+                <p className="privacy-status" role="status">{telemetryStatusText}</p>
+                <p className="privacy-transmission">Transmitted events: none</p>
+                <p className="privacy-delivery-status" role="status">
+                  Queued: {telemetryPreview?.queuedCount ?? 0} · Sent: 0 · Failed: 0
+                </p>
+                {privacyLoading && <p className="settings-hint" role="status">Loading local event data…</p>}
+                {privacyError && <p className="settings-error" role="alert">{privacyError}</p>}
+                {privacyNotice && <p className="privacy-notice" role="status">{privacyNotice}</p>}
+                {telemetryPreview && !telemetryPreview.storageAvailable && <p className="settings-error" role="alert">{telemetryPreview.storageMessage}</p>}
+                {!privacyLoading && !privacyError && telemetryPreview?.storageError && <p className="settings-error" role="alert">The encrypted telemetry queue could not be read or updated: {telemetryPreview.storageError}</p>}
+                {!privacyLoading && !privacyError && (telemetryPreview?.events.length
+                  ? <div className="privacy-event-list" aria-label="Queued telemetry event payloads">
+                    {telemetryPreview.events.map((event, index) => (
+                      <div className="privacy-event-row" key={`${event.event}-${event.timestamp}-${index}`}>
+                        <pre className="privacy-event">{JSON.stringify(event, null, 2)}</pre>
+                        <div className="privacy-event-actions">
+                          <button type="button" className="privacy-delete-event" onClick={() => void handleCopyTelemetryData(event)} aria-label={`Copy local ${event.event} event JSON`} title="Copy this event JSON"><Copy size={13} /></button>
+                          <button type="button" className="privacy-delete-event" onClick={() => void handleDeleteTelemetryEvent(index, event)} aria-label={`Delete local ${event.event} event`} title="Delete this local event"><Trash2 size={14} /></button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  : telemetryPreview && !telemetryPreview.storageAvailable
+                    ? <p className="privacy-empty">Encrypted events cannot be read until operating-system secure storage is available.</p>
+                    : telemetryPreview?.storageError
+                      ? null
+                      : <p className="privacy-empty">No diagnostic events recorded.</p>)}
+                <div className="privacy-queue-actions">
+                  <button type="button" onClick={() => void handleCopyTelemetryData()} disabled={!telemetryPreview?.events.length}>Copy queued JSON</button>
+                  <button type="button" onClick={() => void handleClearTelemetryData()}>Clear telemetry data</button>
+                </div>
+                <p className="settings-hint">{telemetryPreview?.storageMessage} No telemetry destination is configured, so nothing is sent. Events older than 30 days are removed; the encrypted queue is limited to 5 MB.</p>
+              </section>
+            ) : (
+              <section className="privacy-panel" aria-label="Privacy and application information">
+                <p className="privacy-status" role="status">{telemetryStatusText}</p>
+                <label className="privacy-consent">
+                  <input
+                    type="checkbox"
+                    checked={telemetryEnabled}
+                    onChange={(event) => setTelemetryEnabled(event.target.checked)}
+                    aria-describedby="telemetry-consent-help"
+                  />
+                  <span>
+                    <strong>Record anonymized diagnostic events on this device</strong>
+                    <span id="telemetry-consent-help" className="settings-hint">
+                      Fixed event names, allowlisted feature labels, and event timestamps only. Code, chat content, filenames, paths, API keys, and identifying details are excluded. There is no telemetry server; enabling recording does not send events.
+                    </span>
+                  </span>
+                </label>
+                <button type="button" className="privacy-inspect-button" onClick={() => void handleOpenTelemetryInspector()}>
+                  <Eye size={14} /> View telemetry data
+                </button>
+
+                {privacyError && <p className="settings-error" role="alert">{privacyError}</p>}
+                <section className="privacy-section" aria-labelledby="credential-storage-heading">
+                  <h3 id="credential-storage-heading"><LockKeyhole size={15} />Credential storage on this device</h3>
+                  <p className={credentialStorageStatus?.available ? 'privacy-storage-available' : 'privacy-storage-unavailable'} role="status">
+                    {credentialStorageStatus?.message || 'Checking operating-system credential storage…'}
+                  </p>
+                  {privacyAppInfo && <p className="settings-hint">System: {privacyAppInfo.platform} · {credentialStorageStatus?.backend || 'checking storage backend'}</p>}
+                </section>
+
+                <section className="privacy-section" aria-labelledby="local-data-heading">
+                  <h3 id="local-data-heading">What stays local</h3>
+                  <ul className="privacy-list">
+                    <li>Codebase indexing and local search run on this device. Workspace embeddings are not uploaded by default.</li>
+                    <li>Chat history and conversation memory are stored locally.</li>
+                    <li>History extraction reads local files and writes exports to the destination you choose.</li>
+                    <li>If you choose a remote model provider, the prompts and context for that request go to that provider. This is separate from telemetry.</li>
+                  </ul>
+                </section>
+
+                <section className="privacy-section" aria-labelledby="privacy-policy-heading">
+                  <h3 id="privacy-policy-heading">Privacy policy</h3>
+                  <p>Ty-Code keeps settings, chat history, conversation memory, and project-index data on this device. API credentials use the operating system credential store when available; Ty-Code will not save credentials when secure storage is unavailable.</p>
+                  <p>Telemetry is off by default. If you turn it on, Ty-Code records only allowlisted, anonymized event names, approved feature labels, and timestamps on this device. It excludes code, chat content, file names, paths, API keys, and identifying details. Events are encrypted locally, kept for up to 30 days within a 5 MiB queue, and removed oldest-first when the queue reaches that size. You can copy or delete events individually, clear the queue, or turn telemetry off to purge it. No telemetry destination is configured, so telemetry events are not transmitted.</p>
+                  <p>Codebase indexing, local search, and history extraction operate on the local filesystem. If you use a remote model provider, the prompts and context needed for that model request are sent to that provider under its terms; this provider traffic is not telemetry.</p>
+                  <p>Save Settings applies your telemetry choice. Cancel discards unsaved changes. You can change consent any time in Settings &gt; Privacy &amp; About.</p>
+                  {privacyAppInfo && <p className="privacy-version">Ty-Code v{privacyAppInfo.version} · {privacyAppInfo.platform} ({privacyAppInfo.arch})</p>}
+                </section>
+              </section>
+            )
+          )}
 
           {/* Security Policy Settings Tab */}
           {activeTab === 'security' && (
@@ -991,6 +1655,84 @@ export const SettingsModal: React.FC = () => {
               <p className="settings-hint">
                 Only enable if you trust downloaded extensions. Sandboxed workers have restricted filesystem and process capabilities.
               </p>
+
+              {/* Sub-tab: Integrations & Modular Skills */}
+              <div
+                style={{
+                  marginTop: '6px',
+                  padding: '12px 14px',
+                  borderRadius: '6px',
+                  backgroundColor: 'rgba(168, 85, 247, 0.08)',
+                  border: '1px solid rgba(168, 85, 247, 0.25)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '12px'
+                }}
+              >
+                <div>
+                  <strong style={{ fontSize: '13px', color: 'var(--text-primary)' }}>Integrations &amp; Modular Skills</strong>
+                  <p style={{ margin: '3px 0 0 0', fontSize: '11px', color: 'var(--text-secondary)' }}>
+                    Enable external agent workflows, presentation tools, chat history exporters, UI wireframing, and SEO MCP servers.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('integrations')}
+                  style={{
+                    padding: '6px 12px',
+                    fontSize: '11px',
+                    backgroundColor: '#a855f7',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontWeight: 600,
+                    whiteSpace: 'nowrap'
+                  }}
+                >
+                  Open Integrations &amp; Skills
+                </button>
+              </div>
+
+              {/* AI Chat History Export (Phase 3.3) */}
+              <div
+                style={{
+                  marginTop: '10px',
+                  padding: '12px 14px',
+                  borderRadius: '6px',
+                  backgroundColor: 'rgba(56, 189, 248, 0.08)',
+                  border: '1px solid rgba(56, 189, 248, 0.25)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '12px'
+                }}
+              >
+                <div>
+                  <strong style={{ fontSize: '13px', color: 'var(--text-primary)' }}>Export AI Chat History</strong>
+                  <p style={{ margin: '3px 0 0 0', fontSize: '11px', color: 'var(--text-secondary)' }}>
+                    Export and backup conversations from Ty-Code, Cursor, and Aider into normalized JSON and Markdown.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('integrations')}
+                  style={{
+                    padding: '6px 12px',
+                    fontSize: '11px',
+                    backgroundColor: '#0ea5e9',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontWeight: 600,
+                    whiteSpace: 'nowrap'
+                  }}
+                >
+                  Export AI History
+                </button>
+              </div>
             </div>
           )}
 

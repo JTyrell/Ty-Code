@@ -214,8 +214,9 @@ export const VirtualFileTree: React.FC<VirtualFileTreeProps> = ({ rootNode, onRe
     if (files.length > 0) {
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
-        if (file.path) {
-          openFile(file.path, file.name);
+        const filePath = window.electronAPI.getFilePathForDroppedFile(file);
+        if (filePath) {
+          openFile(filePath, file.name);
           toast.info('Opened file', file.name);
         }
       }

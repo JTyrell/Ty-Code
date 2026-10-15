@@ -1,14 +1,22 @@
 import { EventEmitter } from 'node:events';
 import { watch, type FSWatcher } from 'node:fs';
 import { randomUUID } from 'node:crypto';
-import { z } from 'zod';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {
   SETTINGS_SCHEMA_VERSION,
+  EditorSettingsSchema,
+  ExtensionSettingsSchema,
+  LanguageServerSettingsSchema,
+  ModelSettingsSchema,
+  ProviderSettingsSchema,
+  RoutingSettingsSchema,
+  SecuritySettingsSchema,
   SettingsPatchSchema,
   SettingsSchema,
+  TelemetrySettingsSchema,
+  TerminalSettingsSchema,
   WorkspaceSettingsSchema,
   type SettingsData,
   type SettingsPatch,
@@ -29,7 +37,8 @@ export const DEFAULT_SECURITY_POLICY = {
 
 export const DEFAULT_SETTINGS: SettingsData = SettingsSchema.parse({
   ...DEFAULT_OMNIROUTE_SETTINGS,
-  security: DEFAULT_SECURITY_POLICY
+  security: DEFAULT_SECURITY_POLICY,
+  telemetry: { enabled: false }
 });
 
 export interface SettingsManagerOptions {
@@ -45,32 +54,55 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function normalizeGlobal(value: unknown): SettingsData {
   const raw = isRecord(value) ? value : {};
   const source = isRecord(raw.settings) ? raw.settings : raw;
-  const { schemaVersion: _schemaVersion, apiKeys: _apiKeys, ...nonSecret } = source;
-  const candidate = {
-    ...DEFAULT_SETTINGS,
-    ...nonSecret,
-    apiKeys: {},
-    customEndpoints: { ...DEFAULT_SETTINGS.customEndpoints, ...(isRecord(source.customEndpoints) ? source.customEndpoints : {}) },
-    editor: { ...DEFAULT_SETTINGS.editor, ...(isRecord(source.editor) ? source.editor : {}) },
-    languageServers: isRecord(source.languageServers) ? source.languageServers : {},
-    security: { ...DEFAULT_SECURITY_POLICY, ...(isRecord(source.security) ? source.security : {}) }
-  };
-  const parsed = SettingsSchema.safeParse(candidate);
-  if (parsed.success) return parsed.data;
-
   const defaults = SettingsSchema.parse(DEFAULT_SETTINGS);
-  const partial = SettingsPatchSchema.safeParse(nonSecret);
-  if (!partial.success) return defaults;
-  const fallback = SettingsSchema.safeParse({
-    ...defaults,
-    ...partial.data,
-    apiKeys: {},
-    customEndpoints: { ...defaults.customEndpoints, ...partial.data.customEndpoints },
-    editor: { ...defaults.editor, ...partial.data.editor },
-    languageServers: { ...defaults.languageServers, ...partial.data.languageServers },
-    security: { ...defaults.security, ...partial.data.security }
-  });
-  return fallback.success ? fallback.data : defaults;
+  const endpointEntries = Object.entries(isRecord(source.customEndpoints) ? source.customEndpoints : {})
+    .filter(([key, endpoint]) => key.length > 0 && key.length <= 128 && typeof endpoint === 'string' && endpoint.length <= 4096);
+  const categoryValues = [
+    ProviderSettingsSchema.safeParse({
+      activeProvider: typeof source.activeProvider === 'string' && source.activeProvider ? source.activeProvider : defaults.activeProvider,
+      apiKeys: {},
+      customEndpoints: { ...defaults.customEndpoints, ...Object.fromEntries(endpointEntries) }
+    }),
+    ModelSettingsSchema.safeParse({
+      activeModel: typeof source.activeModel === 'string' && source.activeModel.length <= 512 ? source.activeModel : defaults.activeModel,
+      ...(source.activeHarness === undefined ? {} : { activeHarness: source.activeHarness }),
+      temperature: typeof source.temperature === 'number' ? source.temperature : defaults.temperature,
+      maxTokens: typeof source.maxTokens === 'number' ? source.maxTokens : defaults.maxTokens
+    }),
+    RoutingSettingsSchema.safeParse({
+      routingStrategy: source.routingStrategy ?? defaults.routingStrategy,
+      enableFailover: source.enableFailover ?? defaults.enableFailover,
+      maxFailoverRetries: source.maxFailoverRetries ?? defaults.maxFailoverRetries,
+      healthMonitoringEnabled: source.healthMonitoringEnabled ?? defaults.healthMonitoringEnabled,
+      healthCheckIntervalMs: source.healthCheckIntervalMs ?? defaults.healthCheckIntervalMs
+    }),
+    TerminalSettingsSchema.safeParse({
+      terminalProfiles: source.terminalProfiles ?? defaults.terminalProfiles,
+      defaultTerminalProfileId: source.defaultTerminalProfileId ?? defaults.defaultTerminalProfileId
+    }),
+    EditorSettingsSchema.safeParse({
+      'editor.reviewPolicy': source['editor.reviewPolicy'] ?? defaults['editor.reviewPolicy'],
+      editor: { ...defaults.editor, ...(isRecord(source.editor) ? source.editor : {}) }
+    }),
+    LanguageServerSettingsSchema.safeParse({
+      'lsp.autoStart': source['lsp.autoStart'] ?? defaults['lsp.autoStart'],
+      languageServers: isRecord(source.languageServers) ? source.languageServers : defaults.languageServers
+    }),
+    ExtensionSettingsSchema.safeParse({
+      thirdPartyRuntimeEnabled: source.thirdPartyRuntimeEnabled ?? defaults.thirdPartyRuntimeEnabled
+    }),
+    SecuritySettingsSchema.safeParse({
+      security: { ...DEFAULT_SECURITY_POLICY, ...(isRecord(source.security) ? source.security : {}) }
+    }),
+    TelemetrySettingsSchema.safeParse({
+      telemetry: { ...defaults.telemetry, ...(isRecord(source.telemetry) ? source.telemetry : {}) }
+    })
+  ];
+  const normalized = { ...defaults };
+  for (const category of categoryValues) {
+    if (category.success) Object.assign(normalized, category.data);
+  }
+  return SettingsSchema.parse(normalized);
 }
 
 function mergeSettings(base: SettingsData, workspace: WorkspaceSettingsPatch): SettingsData {
@@ -93,7 +125,8 @@ function mergeSettings(base: SettingsData, workspace: WorkspaceSettingsPatch): S
     customEndpoints: { ...base.customEndpoints, ...workspace.customEndpoints },
     editor: { ...base.editor, ...workspace.editor },
     languageServers: { ...base.languageServers, ...workspace.languageServers },
-    security: { ...security, systemAccessConfirmed: base.security.systemAccessConfirmed }
+    security: { ...security, systemAccessConfirmed: base.security.systemAccessConfirmed },
+    telemetry: base.telemetry
   };
 }
 
@@ -163,6 +196,9 @@ export class SettingsManager {
 
   public async saveLayer(scope: SettingsScope, updates: unknown): Promise<void> {
     await this.refresh();
+    if (scope === 'workspace' && isRecord(updates) && Object.prototype.hasOwnProperty.call(updates, 'telemetry')) {
+      throw new Error('Telemetry consent is global and cannot be changed by workspace settings.');
+    }
     if (scope === 'global') {
       if (isRecord(updates) && Object.prototype.hasOwnProperty.call(updates, 'apiKeys')) {
         throw new Error('Credentials must be saved through the secure provider settings channel.');
@@ -176,7 +212,8 @@ export class SettingsManager {
         customEndpoints: { ...this.globalSettings.customEndpoints, ...patch.data.customEndpoints },
         editor: { ...this.globalSettings.editor, ...patch.data.editor },
         languageServers: { ...this.globalSettings.languageServers, ...patch.data.languageServers },
-        security: { ...this.globalSettings.security, ...patch.data.security }
+        security: { ...this.globalSettings.security, ...patch.data.security },
+        telemetry: { ...this.globalSettings.telemetry, ...patch.data.telemetry }
       });
       if (!next.success) throw new Error(`Global settings failed schema validation: ${next.error.issues[0]?.message || 'invalid settings'}`);
       await this.writeFile(this.globalSettingsPath, next.data);

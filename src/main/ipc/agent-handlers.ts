@@ -52,6 +52,22 @@ export function respondAgentApproval(approvalId: string, approved: boolean): Ipc
   return { success: true };
 }
 
+export function handleUserApproveDiff(
+  payload: { approvalId?: string; diffId?: string; approved?: boolean } | boolean
+): IpcResponse<void> {
+  if (typeof payload === 'boolean') {
+    const firstKey = pendingApprovals.keys().next().value;
+    if (!firstKey) return { success: false, error: 'No pending approvals' };
+    return respondAgentApproval(firstKey, payload);
+  }
+  const targetId = payload.approvalId
+    || (payload.diffId ? Array.from(pendingApprovals.keys()).find((k) => k.includes(payload.diffId!)) : undefined)
+    || pendingApprovals.keys().next().value;
+
+  if (!targetId) return { success: false, error: 'No pending approvals' };
+  return respondAgentApproval(targetId, payload.approved !== false);
+}
+
 function cancelTaskApprovals(taskId: string): void {
   for (const [approvalId, pending] of pendingApprovals) {
     if (pending.taskId !== taskId) continue;

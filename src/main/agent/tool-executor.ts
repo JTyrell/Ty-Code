@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { pathToFileURL } from 'node:url';
 import fs from 'fs/promises';
 import path from 'path';
 import { spawn } from 'child_process';
@@ -6,6 +7,7 @@ import type { AgentToolApproval, ProposedDiff, ToolCall } from '../../preload/ty
 import { gitService } from '../services/git-service';
 import { SecurityPolicyEngine } from '../services/security-policy';
 import { settingsManager } from '../services/settings-manager';
+import { mcpManager } from '../services/mcp-manager';
 
 export interface ToolExecutionResponse {
   output: string;
@@ -53,6 +55,13 @@ export class ToolExecutor {
         case 'git_branch': return await this.gitBranch(args);
         case 'git_log': return await this.gitLog(args);
         case 'git_merge': return await this.gitMerge(args);
+        case 'generate_presentation': return await this.generatePresentation(args);
+        case 'seo_analytics_query':
+        case 'audit_page_seo':
+        case 'query_search_console':
+        case 'inspect_keyword_rankings':
+        case 'check_core_web_vitals':
+          return await this.executeSeoQuery(name, args);
         default: return { output: `Unknown tool: "${name}"`, isError: true };
       }
     } catch (err: unknown) {
@@ -61,9 +70,13 @@ export class ToolExecutor {
     }
   }
 
-  private async readFile(args: Record<string, unknown>): Promise<ToolExecutionResponse> {
+  public async readFile(args: Record<string, unknown>): Promise<ToolExecutionResponse> {
     const filePath = String(args.filePath || '');
     if (!filePath) return { output: 'Error: filePath is required', isError: true };
+    const allowed = await this.securityPolicy.isFileAllowed(filePath);
+    if (!allowed) {
+      throw new Error(`Security Exception: Access denied to path outside workspace: "${filePath}". Non-Workspace Access is disabled.`);
+    }
     const absolutePath = await this.resolveSafePath(filePath);
     const content = await fs.readFile(absolutePath, 'utf-8');
     const lines = content.split('\n');
@@ -74,12 +87,16 @@ export class ToolExecutor {
     return { output: `File: ${filePath} (lines ${startLine}-${Math.min(endLine, lines.length)} of ${lines.length})\n\n${formatted}` };
   }
 
-  private async replaceFileContent(args: Record<string, unknown>): Promise<ToolExecutionResponse> {
+  public async replaceFileContent(args: Record<string, unknown>): Promise<ToolExecutionResponse> {
     const filePath = String(args.filePath || '');
     const targetContent = String(args.targetContent || '');
     const replacementContent = String(args.replacementContent ?? '');
     if (!filePath) return { output: 'Error: filePath is required', isError: true };
     if (!targetContent) return { output: 'Error: targetContent is required', isError: true };
+    const allowed = await this.securityPolicy.isFileAllowed(filePath);
+    if (!allowed) {
+      throw new Error(`Security Exception: Access denied to path outside workspace: "${filePath}". Non-Workspace Access is disabled.`);
+    }
     const absolutePath = await this.resolveSafePath(filePath);
     const original = await fs.readFile(absolutePath, 'utf-8');
     if (typeof args.__approvedOriginalHash === 'string'
@@ -95,7 +112,10 @@ export class ToolExecutor {
     }
     // Use a callback replacer so JavaScript replacement tokens such as $&, $' and $$ stay literal.
     const modified = original.replace(targetContent, () => replacementContent);
-    await this.atomicWrite(absolutePath, modified);
+    const current = await fs.readFile(absolutePath, 'utf-8');
+    if (current !== original) return { output: `Error: ${filePath} changed before the edit could be written. Read the latest content and try again.`, isError: true };
+    const verifiedPath = await this.resolveSafePath(filePath);
+    await this.atomicWrite(verifiedPath, modified);
     const diff: ProposedDiff = {
       id: `diff_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       filePath,
@@ -107,11 +127,15 @@ export class ToolExecutor {
     return { output: `Successfully replaced content in ${filePath}. Changes applied.`, proposedDiff: diff };
   }
 
-  private async writeFile(args: Record<string, unknown>): Promise<ToolExecutionResponse> {
+  public async writeFile(args: Record<string, unknown>): Promise<ToolExecutionResponse> {
     const filePath = String(args.filePath || '');
     const content = String(args.content ?? '');
     const overwrite = Boolean(args.overwrite);
     if (!filePath) return { output: 'Error: filePath is required', isError: true };
+    const allowed = await this.securityPolicy.isFileAllowed(filePath);
+    if (!allowed) {
+      throw new Error(`Security Exception: Access denied to path outside workspace: "${filePath}". Non-Workspace Access is disabled.`);
+    }
     const absolutePath = await this.resolveSafePath(filePath, true);
     let original = '';
     let fileExisted = false;
@@ -131,7 +155,13 @@ export class ToolExecutor {
       return { output: `Error: File ${filePath} already exists. Set overwrite: true if you intend to replace it completely.`, isError: true };
     }
     await fs.mkdir(path.dirname(absolutePath), { recursive: true });
-    await this.atomicWrite(absolutePath, content);
+    const current = await fs.readFile(absolutePath, 'utf-8').catch((err: unknown) => {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return '';
+      throw err;
+    });
+    if (current !== original) return { output: `Error: ${filePath} changed before the write could be completed. Read the latest content and try again.`, isError: true };
+    const verifiedPath = await this.resolveSafePath(filePath, true);
+    await this.atomicWrite(verifiedPath, content);
     const diff: ProposedDiff = {
       id: `diff_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       filePath,
@@ -402,5 +432,532 @@ export class ToolExecutor {
     }
 
     return { output: result.message || `Successfully merged ${branchName}.` };
+  }
+
+  private async generatePresentation(args: Record<string, unknown>): Promise<ToolExecutionResponse> {
+    const topic = String(args.topic || '').trim();
+    if (!topic) {
+      return { output: 'Error: topic is required for generate_presentation', isError: true };
+    }
+
+    let outline: string[] = [];
+    if (Array.isArray(args.outline)) {
+      outline = args.outline.map(String).map((s) => s.trim()).filter(Boolean);
+    } else if (typeof args.outline === 'string' && args.outline.trim()) {
+      outline = args.outline
+        .split(/[,\n]/)
+        .map((s) => s.replace(/^[-*•\d.]+\s*/, '').trim())
+        .filter(Boolean);
+    } else if (Array.isArray(args.slides) && args.slides.length > 0) {
+      outline = args.slides.map((s: any) => String(s?.title || s?.content || 'Slide')).filter(Boolean);
+    }
+
+    if (outline.length === 0) {
+      return { output: 'Error: outline is required (must provide at least one slide outline item)', isError: true };
+    }
+
+    let relativePath = typeof args.outputPath === 'string' && args.outputPath.trim()
+      ? args.outputPath.trim()
+      : 'presentation.html';
+    if (!/\.html?$/i.test(relativePath)) {
+      relativePath += '.html';
+    }
+
+    const absolutePath = await this.resolveSafePath(relativePath, true);
+    await fs.mkdir(path.dirname(absolutePath), { recursive: true });
+
+    // Load base template
+    const templateCandidates = [
+      path.join(__dirname, '../templates/bento-base.html'),
+      path.join(__dirname, '../../templates/bento-base.html'),
+      path.join(__dirname, 'templates/bento-base.html'),
+      path.join(process.cwd(), 'src/main/templates/bento-base.html'),
+      path.join(this.workspaceRoot, 'src/main/templates/bento-base.html'),
+      path.join(this.workspaceRoot, '.ty-code/templates/bento-generator/bento-base.html')
+    ];
+
+    let baseHtml = '';
+    for (const candidate of templateCandidates) {
+      try {
+        baseHtml = await fs.readFile(candidate, 'utf-8');
+        if (baseHtml && baseHtml.includes('bento-doc')) break;
+      } catch {
+        // try next
+      }
+    }
+
+    if (!baseHtml) {
+      baseHtml = this.getFallbackPresentationTemplate();
+    }
+
+    const themeName = (typeof args.theme === 'string' ? args.theme.toLowerCase() : 'dark');
+    const themes: Record<string, { background: string; color: string; accent: string; cardBg: string; cardBorder: string; textMuted: string }> = {
+      dark: {
+        background: '#0a0f1d',
+        color: '#f8fafc',
+        accent: '#38bdf8',
+        cardBg: '#111827',
+        cardBorder: 'rgba(56, 189, 248, 0.25)',
+        textMuted: '#94a3b8'
+      },
+      light: {
+        background: '#f8fafc',
+        color: '#0f172a',
+        accent: '#0284c7',
+        cardBg: '#ffffff',
+        cardBorder: 'rgba(2, 132, 199, 0.25)',
+        textMuted: '#64748b'
+      },
+      cyan: {
+        background: '#041724',
+        color: '#ecfeff',
+        accent: '#06b6d4',
+        cardBg: '#08253a',
+        cardBorder: 'rgba(6, 182, 212, 0.3)',
+        textMuted: '#67e8f9'
+      },
+      emerald: {
+        background: '#041b12',
+        color: '#ecfdf5',
+        accent: '#10b981',
+        cardBg: '#072e20',
+        cardBorder: 'rgba(16, 185, 129, 0.3)',
+        textMuted: '#6ee7b7'
+      },
+      sunset: {
+        background: '#1a0b1e',
+        color: '#fdf4ff',
+        accent: '#f43f5e',
+        cardBg: '#2c1233',
+        cardBorder: 'rgba(244, 63, 94, 0.3)',
+        textMuted: '#f9a8d4'
+      }
+    };
+    const activeTheme = themes[themeName] || themes.dark;
+
+    const escapeHtml = (str: string) => String(str || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+
+    const rawSlides = Array.isArray(args.slides) ? args.slides : [];
+
+    // Construct Bento Doc
+    const bentoSlides: any[] = [];
+
+    // Slide 1: Cover slide
+    bentoSlides.push({
+      id: 'slide-1',
+      background: activeTheme.background,
+      transition: 'none',
+      notes: `Welcome everyone. Today's presentation is on ${topic}. We will explore ${outline.length} core themes.`,
+      elements: [
+        {
+          id: 'cover-accent-bar',
+          type: 'shape',
+          shape: 'rect',
+          x: 96,
+          y: 160,
+          w: 96,
+          h: 6,
+          rotation: 0,
+          opacity: 1,
+          fill: activeTheme.accent,
+          stroke: 'none',
+          strokeWidth: 0,
+          radius: 3
+        },
+        {
+          id: 'cover-title',
+          type: 'text',
+          x: 96,
+          y: 196,
+          w: 1088,
+          h: 180,
+          rotation: 0,
+          opacity: 1,
+          html: `<b>${escapeHtml(topic)}</b>`,
+          fontSize: 56,
+          fontFamily: 'system-ui, -apple-system, sans-serif',
+          fontWeight: 800,
+          color: activeTheme.color,
+          align: 'left',
+          valign: 'top',
+          lineHeight: 1.15,
+          fx: { enter: 'fade-up' }
+        },
+        {
+          id: 'cover-subtitle',
+          type: 'text',
+          x: 96,
+          y: 390,
+          w: 1088,
+          h: 60,
+          rotation: 0,
+          opacity: 1,
+          html: `Single-File Interactive Presentation · ${outline.length + 1} Slides`,
+          fontSize: 22,
+          fontFamily: 'system-ui, -apple-system, sans-serif',
+          fontWeight: 500,
+          color: activeTheme.textMuted,
+          align: 'left',
+          valign: 'top',
+          lineHeight: 1.2
+        },
+        {
+          id: 'cover-badge',
+          type: 'shape',
+          shape: 'rect',
+          x: 96,
+          y: 470,
+          w: 220,
+          h: 36,
+          rotation: 0,
+          opacity: 1,
+          fill: activeTheme.cardBg,
+          stroke: activeTheme.cardBorder,
+          strokeWidth: 1,
+          radius: 8
+        },
+        {
+          id: 'cover-badge-text',
+          type: 'text',
+          x: 108,
+          y: 478,
+          w: 196,
+          h: 20,
+          rotation: 0,
+          opacity: 1,
+          html: '⚡ Ty-Code Presentation',
+          fontSize: 13,
+          fontFamily: 'system-ui, -apple-system, sans-serif',
+          fontWeight: 600,
+          color: activeTheme.accent,
+          align: 'left',
+          valign: 'top',
+          lineHeight: 1
+        }
+      ]
+    });
+
+    // Content slides
+    outline.forEach((titleStr, index) => {
+      const slideIndex = index + 2;
+      const slideInput = rawSlides[index] as Record<string, unknown> | undefined;
+      const slideTitle = String(slideInput?.title || titleStr);
+      const slideNotes = String(slideInput?.notes || `Speaker notes for: ${slideTitle}. Highlight real-world impact and actionable takeaways.`);
+
+      let items: string[] = [];
+      if (Array.isArray(slideInput?.items) && slideInput.items.length > 0) {
+        items = slideInput.items.map(String).map((s) => s.trim()).filter(Boolean);
+      } else if (typeof slideInput?.content === 'string' && slideInput.content.trim()) {
+        items = slideInput.content
+          .split(/\r?\n/)
+          .map((line) => line.replace(/^[-*•\d.]+\s*/, '').trim())
+          .filter(Boolean);
+      }
+      if (items.length === 0) {
+        items = [
+          `Key principles, architectural standards, and core requirements for ${slideTitle.toLowerCase()}`,
+          `Practical workflows, best practices, and integration strategies`,
+          `Validation checkpoints, metrics, and actionable next steps`
+        ];
+      }
+
+      const elements: any[] = [
+        {
+          id: `slide-${slideIndex}-accent`,
+          type: 'shape',
+          shape: 'rect',
+          x: 96,
+          y: 64,
+          w: 6,
+          h: 40,
+          rotation: 0,
+          opacity: 1,
+          fill: activeTheme.accent,
+          stroke: 'none',
+          strokeWidth: 0,
+          radius: 3
+        },
+        {
+          id: `slide-${slideIndex}-title`,
+          type: 'text',
+          x: 114,
+          y: 60,
+          w: 1070,
+          h: 50,
+          rotation: 0,
+          opacity: 1,
+          html: `<b>${escapeHtml(slideTitle)}</b>`,
+          fontSize: 34,
+          fontFamily: 'system-ui, -apple-system, sans-serif',
+          fontWeight: 700,
+          color: activeTheme.color,
+          align: 'left',
+          valign: 'top',
+          lineHeight: 1.2
+        }
+      ];
+
+      // Lay out items in Bento box cards
+      const count = Math.min(items.length, 4);
+      let cardConfigs: Array<{ x: number; y: number; w: number; h: number }>;
+      if (count === 1) {
+        cardConfigs = [{ x: 96, y: 150, w: 1088, h: 480 }];
+      } else if (count === 2) {
+        cardConfigs = [
+          { x: 96, y: 150, w: 524, h: 480 },
+          { x: 660, y: 150, w: 524, h: 480 }
+        ];
+      } else if (count === 3) {
+        cardConfigs = [
+          { x: 96, y: 150, w: 342, h: 480 },
+          { x: 468, y: 150, w: 342, h: 480 },
+          { x: 840, y: 150, w: 342, h: 480 }
+        ];
+      } else {
+        cardConfigs = [
+          { x: 96, y: 150, w: 524, h: 225 },
+          { x: 660, y: 150, w: 524, h: 225 },
+          { x: 96, y: 405, w: 524, h: 225 },
+          { x: 660, y: 405, w: 524, h: 225 }
+        ];
+      }
+
+      for (let c = 0; c < count; c++) {
+        const cfg = cardConfigs[c];
+        const itemText = items[c];
+        elements.push({
+          id: `slide-${slideIndex}-card-${c}`,
+          type: 'shape',
+          shape: 'rect',
+          x: cfg.x,
+          y: cfg.y,
+          w: cfg.w,
+          h: cfg.h,
+          rotation: 0,
+          opacity: 1,
+          fill: activeTheme.cardBg,
+          stroke: activeTheme.cardBorder,
+          strokeWidth: 1,
+          radius: 12
+        });
+
+        elements.push({
+          id: `slide-${slideIndex}-card-step-${c}`,
+          type: 'text',
+          x: cfg.x + 24,
+          y: cfg.y + 20,
+          w: 80,
+          h: 26,
+          rotation: 0,
+          opacity: 1,
+          html: `<b>0${c + 1}</b>`,
+          fontSize: 16,
+          fontFamily: 'system-ui, -apple-system, sans-serif',
+          fontWeight: 800,
+          color: activeTheme.accent,
+          align: 'left',
+          valign: 'top',
+          lineHeight: 1
+        });
+
+        elements.push({
+          id: `slide-${slideIndex}-card-text-${c}`,
+          type: 'text',
+          x: cfg.x + 24,
+          y: cfg.y + 54,
+          w: cfg.w - 48,
+          h: cfg.h - 74,
+          rotation: 0,
+          opacity: 1,
+          html: escapeHtml(itemText),
+          fontSize: count >= 4 ? 17 : 20,
+          fontFamily: 'system-ui, -apple-system, sans-serif',
+          fontWeight: 500,
+          color: activeTheme.color,
+          align: 'left',
+          valign: 'top',
+          lineHeight: 1.45
+        });
+      }
+
+      bentoSlides.push({
+        id: `slide-${slideIndex}`,
+        background: activeTheme.background,
+        transition: 'morph',
+        notes: slideNotes,
+        elements
+      });
+    });
+
+    const bentoDoc = {
+      format: 'bento/slides',
+      version: 1,
+      title: topic,
+      size: { width: 1280, height: 720 },
+      theme: {
+        background: activeTheme.background,
+        color: activeTheme.color,
+        accent: activeTheme.accent,
+        fontFamily: 'system-ui, -apple-system, sans-serif'
+      },
+      slides: bentoSlides
+    };
+
+    const docJson = JSON.stringify(bentoDoc, null, 2).replace(/</g, '\\u003c');
+
+    let outputHtml = baseHtml;
+    if (outputHtml.includes('<script type="application/bento+json" id="bento-doc"></script>')) {
+      outputHtml = outputHtml.replace(
+        '<script type="application/bento+json" id="bento-doc"></script>',
+        `<script type="application/bento+json" id="bento-doc">\n${docJson}\n    </script>`
+      );
+    } else if (/<script[^>]*id=["']bento-doc["'][^>]*>[\s\S]*?<\/script>/i.test(outputHtml)) {
+      outputHtml = outputHtml.replace(
+        /<script[^>]*id=["']bento-doc["'][^>]*>[\s\S]*?<\/script>/i,
+        `<script type="application/bento+json" id="bento-doc">\n${docJson}\n    </script>`
+      );
+    } else {
+      outputHtml = outputHtml.replace(
+        '</head>',
+        `    <script type="application/bento+json" id="bento-doc">\n${docJson}\n    </script>\n  </head>`
+      );
+    }
+
+    // Ensure title matches topic
+    outputHtml = outputHtml.replace(/<title>.*?<\/title>/i, `<title>${escapeHtml(topic)}</title>`);
+
+    await this.atomicWrite(absolutePath, outputHtml);
+
+    let previewUrl = `file:///${absolutePath.replace(/\\/g, '/')}`;
+    try {
+      previewUrl = pathToFileURL(absolutePath).href;
+    } catch {
+      // keep fallback
+    }
+
+    const result = {
+      success: true,
+      topic,
+      filePath: relativePath,
+      absolutePath,
+      slideCount: bentoSlides.length,
+      outline,
+      previewUrl,
+      message: `Successfully generated presentation "${topic}" with ${bentoSlides.length} slides.`
+    };
+
+    return {
+      output: JSON.stringify(result, null, 2)
+    };
+  }
+
+  private getFallbackPresentationTemplate(): string {
+    return `<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ty-Code Bento Presentation</title>
+    <script type="application/bento+json" id="bento-doc"></script>
+    <style>
+      :root { --bg: #0b0f19; --fg: #f8fafc; --accent: #38bdf8; --card-bg: #111827; --card-border: rgba(56,189,248,0.2); }
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body { background: var(--bg); color: var(--fg); font-family: system-ui, -apple-system, sans-serif; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+      #deck-container { flex: 1; display: flex; align-items: center; justify-content: center; padding: 24px; position: relative; }
+      .slide-view { width: 100%; max-width: 1200px; aspect-ratio: 16/9; background: #0f172a; border: 1px solid var(--card-border); border-radius: 16px; padding: 48px; display: none; flex-direction: column; box-shadow: 0 20px 40px rgba(0,0,0,0.5); }
+      .slide-view.active { display: flex; }
+      .slide-header { font-size: 32px; font-weight: 700; margin-bottom: 32px; display: flex; align-items: center; gap: 12px; }
+      .slide-header i { width: 6px; height: 32px; background: var(--accent); border-radius: 3px; display: inline-block; }
+      .bento-grid { flex: 1; display: grid; gap: 20px; }
+      .bento-grid.cols-1 { grid-template-columns: 1fr; }
+      .bento-grid.cols-2 { grid-template-columns: 1fr 1fr; }
+      .bento-grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
+      .bento-grid.cols-4 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+      .bento-card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 12px; padding: 24px; display: flex; flex-direction: column; gap: 12px; }
+      .bento-num { font-size: 14px; font-weight: 800; color: var(--accent); letter-spacing: 0.05em; }
+      .bento-text { font-size: 18px; line-height: 1.5; color: #e2e8f0; }
+      #deck-nav { height: 56px; background: #090d16; border-top: 1px solid rgba(255,255,255,0.08); display: flex; align-items: center; justify-content: space-between; padding: 0 24px; font-size: 13px; }
+      .nav-btn { background: rgba(56,189,248,0.1); border: 1px solid var(--card-border); color: var(--fg); padding: 6px 14px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 12px; }
+      .nav-btn:hover { background: rgba(56,189,248,0.25); }
+    </style>
+  </head>
+  <body>
+    <div id="deck-container"></div>
+    <div id="deck-nav">
+      <span id="deck-title" style="font-weight: 600; color: var(--accent)">Ty-Code Presentation</span>
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <button class="nav-btn" id="prev-btn">◀ Previous</button>
+        <span id="slide-indicator" style="color: #94a3b8">1 / 1</span>
+        <button class="nav-btn" id="next-btn">Next ▶</button>
+      </div>
+      <span style="color: #64748b; font-size: 11px">Use ◀ ▶ Arrow Keys</span>
+    </div>
+    <script>
+      (function() {
+        const raw = document.getElementById('bento-doc')?.textContent;
+        if (!raw) return;
+        try {
+          const doc = JSON.parse(raw);
+          document.title = doc.title || 'Presentation';
+          const titleEl = document.getElementById('deck-title');
+          if (titleEl) titleEl.textContent = doc.title || 'Presentation';
+          const container = document.getElementById('deck-container');
+          const indicator = document.getElementById('slide-indicator');
+          let current = 0;
+          doc.slides.forEach((s, idx) => {
+            const slideEl = document.createElement('div');
+            slideEl.className = 'slide-view' + (idx === 0 ? ' active' : '');
+            let titleText = '';
+            const cardTexts = [];
+            (s.elements || []).forEach(el => {
+              if (el.type === 'text') {
+                if (el.id.includes('title')) titleText = el.html.replace(/<[^>]+>/g, '');
+                else if (el.id.includes('card-text')) cardTexts.push(el.html.replace(/<[^>]+>/g, ''));
+                else if (el.id.includes('subtitle') && !cardTexts.length) cardTexts.push(el.html.replace(/<[^>]+>/g, ''));
+              }
+            });
+            slideEl.innerHTML = \`<div class="slide-header"><i></i><span>\${titleText || doc.title || 'Slide ' + (idx + 1)}</span></div>
+            <div class="bento-grid cols-\${Math.min(Math.max(cardTexts.length, 1), 4)}">
+              \${cardTexts.map((txt, cIdx) => \`<div class="bento-card"><div class="bento-num">0\${cIdx + 1}</div><div class="bento-text">\${txt}</div></div>\`).join('')}
+            </div>\`;
+            container.appendChild(slideEl);
+          });
+          const update = () => {
+            const views = document.querySelectorAll('.slide-view');
+            views.forEach((v, i) => v.classList.toggle('active', i === current));
+            if (indicator) indicator.textContent = (current + 1) + ' / ' + views.length;
+          };
+          document.getElementById('prev-btn')?.addEventListener('click', () => { if (current > 0) { current--; update(); } });
+          document.getElementById('next-btn')?.addEventListener('click', () => { if (current < doc.slides.length - 1) { current++; update(); } });
+          window.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowRight' || e.key === 'Space') { if (current < doc.slides.length - 1) { current++; update(); } }
+            if (e.key === 'ArrowLeft') { if (current > 0) { current--; update(); } }
+          });
+          update();
+        } catch (e) {
+          console.error(e);
+        }
+      })();
+    </script>
+  </body>
+</html>`;
+  }
+
+  private async executeSeoQuery(toolName: string, args: Record<string, unknown>): Promise<ToolExecutionResponse> {
+    const action = String(args.action || toolName);
+    const isLocal = Boolean(args.__isLocal);
+    const result = await mcpManager.executeSeoTool(action, args, {
+      isLocal,
+      workspacePath: this.workspaceRoot
+    });
+    return {
+      output: result.output,
+      isError: result.isError
+    };
   }
 }

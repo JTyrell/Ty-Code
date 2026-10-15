@@ -7,16 +7,24 @@ import {
 import { connectionPool } from '../services/orchestration/connection-pool';
 import { providerRegistry } from '../services/orchestration/provider-registry';
 import { fccManager } from '../services/orchestration/fcc-manager';
+import { quotaTracker } from '../services/orchestration/quota-tracker';
+import { requestCache } from '../services/orchestration/request-cache';
+import { performanceManager } from '../services/orchestration/performance-manager';
 import { getPreconfiguredProvider } from '../config/provider-registry';
 import type { ProviderCandidate } from '../services/orchestration/strategies/types';
+
+import { freeProviderRegistry } from '../services/providers/free-provider-registry';
+import { modelClassifier } from '../services/providers/model-classifier';
+import { providerHealthMonitor } from '../services/providers/health-monitor';
 
 import { DEFAULT_PRESET_MODELS } from '../../preload/preset-models';
 export { DEFAULT_PRESET_MODELS };
 
 export function isFreeModel(modelId: string, providerId: string): boolean {
-  if (providerId === 'ollama' || providerId === 'fcc-proxy') return true;
+  if (freeProviderRegistry.isFreeModel(modelId, providerId)) return true;
+  if (providerId === 'ollama' || providerId === 'fcc-proxy' || providerId === 'anthropic-claude-free') return true;
   if (/:free($|:|\/)/i.test(modelId) || modelId.toLowerCase().includes(':free')) return true;
-  if (providerId === 'groq') {
+  if (providerId === 'groq' || providerId === 'groq-free') {
     const groqFree = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'gemma2-9b-it', 'mixtral-8x7b-32768'];
     if (groqFree.includes(modelId)) return true;
   }
@@ -25,7 +33,10 @@ export function isFreeModel(modelId: string, providerId: string): boolean {
 
 export function categorizeModel(modelId: string, isFree: boolean, providerId: string): 'Free' | 'Fast' | 'Premium/Reasoning' {
   if (isFree) return 'Free';
-  if (providerId === 'groq' || /(instant|flash|turbo|mini|fast|8b|3b)/i.test(modelId)) return 'Fast';
+  const tier = modelClassifier.classifyModelTier(modelId);
+  if (tier === 'tier_c_fast') return 'Fast';
+  if (tier === 'tier_s_reasoning' || tier === 'tier_a_coding') return 'Premium/Reasoning';
+  if (providerId === 'groq' || providerId === 'groq-free' || /(instant|flash|turbo|mini|fast|8b|3b)/i.test(modelId)) return 'Fast';
   return 'Premium/Reasoning';
 }
 
@@ -54,9 +65,14 @@ function appendDelta(existing: string, incoming: string | undefined): string {
 
 export class ProviderGateway {
   public static router: OmniRouteRouter = omniRouteRouter;
+  public static freeRegistry = freeProviderRegistry;
+  public static modelClassifier = modelClassifier;
+  public static healthMonitor = providerHealthMonitor;
 
   static getEndpoint(provider: ProviderType, customEndpoints: Partial<Record<ProviderType, string>> = {}): string {
     if (customEndpoints && customEndpoints[provider]) return customEndpoints[provider]!;
+    const freeProvider = freeProviderRegistry.getProvider(provider);
+    if (freeProvider?.base_url && freeProvider.base_url !== 'auto') return freeProvider.base_url;
     const preconfigured = getPreconfiguredProvider(provider);
     if (preconfigured?.baseUrl) return preconfigured.baseUrl;
     const registered = providerRegistry.getProvider(provider);
@@ -273,6 +289,7 @@ export class ProviderGateway {
           const errText = await response.text();
           if (errText) parsedError = errText.slice(0, 150);
         }
+        providerHealthMonitor.recordRequestOutcome(providerId, false, latencyMs, parsedError);
         return {
           success: false,
           latencyMs,
@@ -280,6 +297,7 @@ export class ProviderGateway {
         };
       }
 
+      providerHealthMonitor.recordRequestOutcome(providerId, true, latencyMs);
       return {
         success: true,
         latencyMs
@@ -287,6 +305,7 @@ export class ProviderGateway {
     } catch (err: unknown) {
       const latencyMs = Math.round(performance.now() - startTime);
       const message = err instanceof Error ? err.message : String(err);
+      providerHealthMonitor.recordRequestOutcome(providerId, false, latencyMs, message);
       return {
         success: false,
         latencyMs,
@@ -345,6 +364,27 @@ export class ProviderGateway {
     const modelId = candidate.model.id;
     const baseUrl = candidate.customEndpoint || this.getEndpoint(providerId, settings.customEndpoints || {});
     const apiKey = candidate.apiKey || settings.apiKeys[providerId] || '';
+
+    // Phase 5.6: Request Caching for Repeated Queries
+    const cacheKey = requestCache.computeKey(modelId, messages, tools, settings.temperature);
+    const cached = requestCache.get(cacheKey);
+    if (cached) {
+      if (cached.fullText) callbacks.onToken?.(cached.fullText);
+      if (cached.fullThought) callbacks.onThought?.(cached.fullThought);
+      callbacks.onToolCallDelta?.(cached.toolCalls.map((tc) => ({
+        id: tc.id,
+        name: tc.name,
+        arguments: JSON.stringify(tc.arguments)
+      })));
+      performanceManager.recordLatency(4);
+      return {
+        fullText: cached.fullText,
+        fullThought: cached.fullThought,
+        toolCalls: cached.toolCalls
+      };
+    }
+
+    const requestStartTime = performance.now();
 
     if (providerId === 'fcc-proxy' && !fccManager.getStatus().running) {
       await fccManager.start();
@@ -460,8 +500,29 @@ export class ProviderGateway {
       fccManager.recordTokenUsage(Math.max(10, Math.ceil(fullText.length / 4)));
     }
 
+    const promptTokens = Math.max(1, Math.ceil(JSON.stringify(messages).length / 3.8));
+    const completionTokens = Math.max(1, Math.ceil(fullText.length / 3.8));
+    quotaTracker.recordUsage(providerId, modelId, {
+      promptTokens,
+      completionTokens,
+      totalTokens: promptTokens + completionTokens
+    }, true);
+
+    const elapsedMs = Math.max(1, Math.round(performance.now() - requestStartTime));
+    performanceManager.recordLatency(elapsedMs);
+
+    requestCache.set(cacheKey, {
+      fullText,
+      fullThought,
+      toolCalls: parsedToolCalls,
+      modelId,
+      providerId,
+      promptTokens,
+      completionTokens
+    });
+
     return { fullText, fullThought, toolCalls: parsedToolCalls };
   }
 }
 
-export { omniRouteRouter, connectionPool, providerRegistry };
+export { omniRouteRouter, connectionPool, providerRegistry, quotaTracker };

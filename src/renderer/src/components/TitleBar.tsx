@@ -42,23 +42,13 @@ export const TitleBar: React.FC = () => {
     localStorage.setItem('ty_claude_theme', theme);
   }, [theme]);
 
-  // Load app info & listen to update events
+  // Load app info and wait for an explicit user request before checking for updates.
   useEffect(() => {
-    let startupCheckTimer: number | undefined;
     const savedChannel = localStorage.getItem('ty_code_update_channel');
     const channel = savedChannel === 'beta' || savedChannel === 'nightly' ? savedChannel : 'stable';
     void window.electronAPI?.setUpdateChannel?.(channel).catch((error) => console.warn('Could not restore the saved update channel:', error));
     void window.electronAPI?.getAppInfo?.().then((res) => {
-      if (res?.success && res.data) {
-        setAppInfo(res.data);
-        if (res.data.isPackaged) {
-          startupCheckTimer = window.setTimeout(() => {
-            void window.electronAPI.checkForUpdates().then((result) => {
-              if (result.error) toast.error('Update check failed', result.error);
-            }).catch((error) => toast.error('Update check failed', String(error)));
-          }, 1500);
-        }
-      }
+      if (res?.success && res.data) setAppInfo(res.data);
     });
 
     const cleanupStatus = window.electronAPI?.onUpdateStatus?.((status) => {
@@ -89,7 +79,6 @@ export const TitleBar: React.FC = () => {
     });
 
     return () => {
-      if (startupCheckTimer !== undefined) window.clearTimeout(startupCheckTimer);
       cleanupStatus?.();
       cleanupProgress?.();
     };

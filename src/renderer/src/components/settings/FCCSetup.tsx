@@ -37,7 +37,7 @@ export const FCCSetup: React.FC = () => {
       name: 'OpenRouter Free Tier',
       category: 'API Key',
       status: 'active',
-      message: 'Access to Llama 3.3 70B & Gemini 2.0 Flash with zero cost.',
+      message: 'Access to a coding model and a long-context multimodal model with no usage cost.',
       freeTokens: '200M tokens/mo'
     },
     {
@@ -50,10 +50,10 @@ export const FCCSetup: React.FC = () => {
     },
     {
       id: 'google-ai-studio',
-      name: 'Google AI Studio',
+      name: 'AI Studio',
       category: 'OAuth',
       status: 'ready',
-      message: 'Gemini 2.0 Flash with 1,000,000 token context window.',
+      message: 'Long-context model with a 1,000,000-token context window.',
       freeTokens: '300M tokens/mo'
     },
     {

@@ -5,10 +5,15 @@ import type { OpenCodeTool, ToolContext, ToolExecutionResult } from './types';
 export function resolveSafePath(workspaceRoot: string, targetPath: string): string {
   const normalized = path.resolve(workspaceRoot, targetPath);
   const relative = path.relative(workspaceRoot, normalized);
-  if (relative.startsWith('..') && !path.isAbsolute(targetPath)) {
+  if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
     throw new Error(`Path traversal denied: "${targetPath}" is outside workspace root "${workspaceRoot}".`);
   }
   return normalized;
+}
+
+export async function resolveToolPath(context: ToolContext, targetPath: string, allowMissing = false): Promise<string> {
+  if (context.securityPolicy) return context.securityPolicy.resolveFilePath(targetPath, allowMissing);
+  return resolveSafePath(context.workspaceRoot, targetPath);
 }
 
 export const viewTool: OpenCodeTool = {
@@ -46,7 +51,7 @@ export const viewTool: OpenCodeTool = {
         return { output: 'Error: "filePath" parameter is required.', isError: true };
       }
 
-      const absolutePath = resolveSafePath(context.workspaceRoot, filePath);
+      const absolutePath = await resolveToolPath(context, filePath);
       const content = await fs.readFile(absolutePath, 'utf-8');
       const lines = content.split('\n');
       const totalLines = lines.length;

@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { OpenCodeTool, ToolContext, ToolExecutionResult } from './types';
-import { resolveSafePath } from './view';
+import { resolveToolPath } from './view';
 
 interface DirItem {
   name: string;
@@ -35,7 +35,7 @@ export const lsTool: OpenCodeTool = {
   async execute(args: Record<string, unknown>, context: ToolContext): Promise<ToolExecutionResult> {
     try {
       const relPath = String(args.path || '.');
-      const absolutePath = resolveSafePath(context.workspaceRoot, relPath);
+      const absolutePath = await resolveToolPath(context, relPath);
       const showHidden = Boolean(args.showHidden);
 
       const entries = await fs.readdir(absolutePath, { withFileTypes: true });

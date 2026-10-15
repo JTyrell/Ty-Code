@@ -1,0 +1,1424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>M3E Canvas - Material 3 Expressive UI Sketcher</title>
+  <style>
+    :root {
+      --md-sys-color-primary: #6750A4;
+      --md-sys-color-on-primary: #FFFFFF;
+      --md-sys-color-primary-container: #EADDFF;
+      --md-sys-color-on-primary-container: #21005D;
+      --md-sys-color-secondary: #625B71;
+      --md-sys-color-on-secondary: #FFFFFF;
+      --md-sys-color-secondary-container: #E8DEF8;
+      --md-sys-color-surface: #1C1B1F;
+      --md-sys-color-on-surface: #E6E1E5;
+      --md-sys-color-surface-variant: #49454F;
+      --md-sys-color-on-surface-variant: #CAC4D0;
+      --md-sys-color-outline: #938F99;
+      --md-sys-color-outline-variant: #49454F;
+      --md-sys-color-background: #141218;
+      --md-sys-color-on-background: #E6E1E5;
+      --md-sys-shape-corner-xs: 4px;
+      --md-sys-shape-corner-sm: 8px;
+      --md-sys-shape-corner-md: 12px;
+      --md-sys-shape-corner-lg: 16px;
+      --md-sys-shape-corner-xl: 28px;
+      --md-sys-shape-corner-full: 9999px;
+      --elevation-1: 0 1px 3px 1px rgba(0,0,0,0.3), 0 1px 2px 0 rgba(0,0,0,0.4);
+      --elevation-2: 0 2px 6px 2px rgba(0,0,0,0.3), 0 1px 2px 0 rgba(0,0,0,0.4);
+      --elevation-3: 0 4px 8px 3px rgba(0,0,0,0.3), 0 1px 3px 0 rgba(0,0,0,0.4);
+    }
+
+    [data-theme="light"] {
+      --md-sys-color-primary: #6750A4;
+      --md-sys-color-on-primary: #FFFFFF;
+      --md-sys-color-primary-container: #EADDFF;
+      --md-sys-color-on-primary-container: #21005D;
+      --md-sys-color-surface: #FDF8FD;
+      --md-sys-color-on-surface: #1C1B1F;
+      --md-sys-color-surface-variant: #E7E0EC;
+      --md-sys-color-on-surface-variant: #49454F;
+      --md-sys-color-outline: #79747E;
+      --md-sys-color-outline-variant: #CAC4D0;
+      --md-sys-color-background: #FEF7FF;
+      --md-sys-color-on-background: #1D1B20;
+    }
+
+    [data-palette="ocean"] {
+      --md-sys-color-primary: #006494;
+      --md-sys-color-on-primary: #FFFFFF;
+      --md-sys-color-primary-container: #CBE6FF;
+      --md-sys-color-on-primary-container: #001E30;
+    }
+    [data-palette="emerald"] {
+      --md-sys-color-primary: #006D44;
+      --md-sys-color-on-primary: #FFFFFF;
+      --md-sys-color-primary-container: #92F7BE;
+      --md-sys-color-on-primary-container: #002111;
+    }
+    [data-palette="terracotta"] {
+      --md-sys-color-primary: #9B4423;
+      --md-sys-color-on-primary: #FFFFFF;
+      --md-sys-color-primary-container: #FFDBCF;
+      --md-sys-color-on-primary-container: #380D00;
+    }
+    [data-palette="violet"] {
+      --md-sys-color-primary: #7845AC;
+      --md-sys-color-on-primary: #FFFFFF;
+      --md-sys-color-primary-container: #F0DBFF;
+      --md-sys-color-on-primary-container: #2C0051;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Google Sans", sans-serif;
+      background: #111216;
+      color: #e5e7eb;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      user-select: none;
+    }
+
+    /* Top Control Bar */
+    header.sketch-header {
+      background: #18191f;
+      border-bottom: 1px solid #2a2c35;
+      padding: 8px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+
+    .brand-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      font-weight: 700;
+      color: #f3f4f6;
+    }
+    .brand-title svg {
+      color: var(--md-sys-color-primary);
+    }
+    .brand-badge {
+      font-size: 10px;
+      font-weight: 600;
+      background: rgba(103, 80, 164, 0.25);
+      color: #d8b4fe;
+      padding: 2px 6px;
+      border-radius: 999px;
+      border: 1px solid rgba(168, 85, 247, 0.3);
+    }
+
+    .header-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .control-select, .control-btn {
+      background: #23252e;
+      border: 1px solid #363945;
+      color: #d1d5db;
+      font-size: 11px;
+      font-weight: 500;
+      padding: 5px 9px;
+      border-radius: 6px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      transition: all 0.15s ease;
+    }
+    .control-btn:hover, .control-select:hover {
+      background: #2b2e3a;
+      border-color: #4b5563;
+      color: #fff;
+    }
+    .control-btn.primary {
+      background: var(--md-sys-color-primary);
+      color: var(--md-sys-color-on-primary);
+      border-color: transparent;
+      font-weight: 600;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    }
+    .control-btn.primary:hover {
+      filter: brightness(1.1);
+    }
+
+    /* Main App Layout */
+    .app-body {
+      display: flex;
+      flex: 1;
+      height: calc(100vh - 46px);
+      overflow: hidden;
+    }
+
+    /* Left Sidebar: Component Catalog */
+    .catalog-panel {
+      width: 220px;
+      background: #15161c;
+      border-right: 1px solid #272a34;
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      overflow-y: auto;
+    }
+
+    .panel-section-title {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #9ca3af;
+      padding: 12px 14px 6px 14px;
+      font-weight: 700;
+    }
+
+    .catalog-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 4px;
+      padding: 0 10px 10px 10px;
+    }
+
+    .catalog-item {
+      background: #1f212a;
+      border: 1px solid #2c303c;
+      border-radius: 6px;
+      padding: 7px 9px;
+      font-size: 11px;
+      color: #d1d5db;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.15s;
+    }
+    .catalog-item:hover {
+      background: #292d3b;
+      border-color: #4b5266;
+      color: #fff;
+      transform: translateX(2px);
+    }
+    .catalog-item svg {
+      color: var(--md-sys-color-primary);
+      flex-shrink: 0;
+    }
+
+    /* Center Area: Visual Canvas Stage */
+    .stage-area {
+      flex: 1;
+      background: #0d0e12;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      overflow: auto;
+      padding: 20px;
+      position: relative;
+    }
+
+    .stage-toolbar {
+      position: absolute;
+      top: 12px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(24, 25, 31, 0.85);
+      backdrop-filter: blur(8px);
+      border: 1px solid #363945;
+      border-radius: 999px;
+      padding: 4px 10px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      z-index: 10;
+    }
+
+    /* Device Mockup Frame */
+    .device-frame {
+      margin-top: 40px;
+      margin-bottom: 40px;
+      background: var(--md-sys-color-background);
+      color: var(--md-sys-color-on-background);
+      border-radius: 28px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.1);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      transition: width 0.25s ease, height 0.25s ease;
+      position: relative;
+      min-height: 480px;
+    }
+
+    .device-frame.mobile {
+      width: 380px;
+      min-height: 640px;
+    }
+    .device-frame.tablet {
+      width: 620px;
+      min-height: 720px;
+    }
+    .device-frame.desktop {
+      width: 820px;
+      min-height: 580px;
+    }
+    .device-frame.fluid {
+      width: 95%;
+      min-height: 600px;
+    }
+
+    /* Canvas Screen Layout */
+    .canvas-screen {
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      min-height: 100%;
+      position: relative;
+    }
+
+    .canvas-app-bar {
+      flex-shrink: 0;
+      background: var(--md-sys-color-surface);
+      color: var(--md-sys-color-on-surface);
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--md-sys-color-outline-variant);
+      box-shadow: var(--elevation-1);
+    }
+    .canvas-app-bar .app-title {
+      font-size: 15px;
+      font-weight: 600;
+    }
+
+    .canvas-content-container {
+      flex: 1;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      overflow-y: auto;
+      min-height: 300px;
+    }
+
+    .canvas-empty-guide {
+      border: 2px dashed #374151;
+      border-radius: 16px;
+      padding: 40px 20px;
+      text-align: center;
+      color: #6b7280;
+      margin: auto 0;
+    }
+
+    .canvas-nav-bar {
+      flex-shrink: 0;
+      background: var(--md-sys-color-surface);
+      border-top: 1px solid var(--md-sys-color-outline-variant);
+      padding: 8px 12px;
+      display: flex;
+      justify-content: space-around;
+      align-items: center;
+    }
+
+    /* Canvas Elements */
+    .canvas-element {
+      position: relative;
+      cursor: pointer;
+      transition: outline 0.15s ease, transform 0.1s ease;
+      outline: 2px solid transparent;
+      outline-offset: 2px;
+    }
+    .canvas-element:hover {
+      outline: 2px dashed rgba(168, 85, 247, 0.4);
+    }
+    .canvas-element.selected {
+      outline: 2px solid var(--md-sys-color-primary) !important;
+      border-radius: 8px;
+    }
+
+    .element-action-strip {
+      position: absolute;
+      top: -12px;
+      right: 6px;
+      background: #1f212a;
+      border: 1px solid #4b5563;
+      border-radius: 6px;
+      display: none;
+      align-items: center;
+      gap: 2px;
+      padding: 2px 4px;
+      z-index: 20;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+    }
+    .canvas-element.selected .element-action-strip {
+      display: flex;
+    }
+    .strip-btn {
+      background: transparent;
+      border: none;
+      color: #cbd5e1;
+      padding: 2px;
+      cursor: pointer;
+      border-radius: 4px;
+      display: flex;
+    }
+    .strip-btn:hover {
+      background: #374151;
+      color: #fff;
+    }
+    .strip-btn.delete:hover {
+      background: #ef4444;
+      color: #fff;
+    }
+
+    /* Right Sidebar: Inspector & Prompt Preview */
+    .inspector-panel {
+      width: 290px;
+      background: #15161c;
+      border-left: 1px solid #272a34;
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      overflow-y: auto;
+    }
+
+    .inspector-body {
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      flex: 1;
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    .form-group label {
+      font-size: 11px;
+      font-weight: 600;
+      color: #9ca3af;
+    }
+    .form-input, .form-textarea, .form-select {
+      background: #1f212a;
+      border: 1px solid #2d313d;
+      color: #e5e7eb;
+      font-size: 12px;
+      padding: 6px 9px;
+      border-radius: 6px;
+      outline: none;
+    }
+    .form-input:focus, .form-textarea:focus, .form-select:focus {
+      border-color: var(--md-sys-color-primary);
+    }
+    .form-textarea {
+      font-family: monospace;
+      font-size: 11px;
+      line-height: 1.4;
+      resize: vertical;
+      min-height: 140px;
+    }
+
+    /* Material 3 Expressive Component Renderers */
+    .m3e-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 10px 20px;
+      border-radius: var(--md-sys-shape-corner-xl);
+      font-size: 13px;
+      font-weight: 600;
+      border: none;
+      cursor: pointer;
+      width: 100%;
+    }
+    .m3e-btn.filled {
+      background: var(--md-sys-color-primary);
+      color: var(--md-sys-color-on-primary);
+      box-shadow: var(--elevation-1);
+    }
+    .m3e-btn.tonal {
+      background: var(--md-sys-color-primary-container);
+      color: var(--md-sys-color-on-primary-container);
+    }
+    .m3e-btn.outlined {
+      background: transparent;
+      color: var(--md-sys-color-primary);
+      border: 1px solid var(--md-sys-color-outline);
+    }
+    .m3e-btn.elevated {
+      background: var(--md-sys-color-surface);
+      color: var(--md-sys-color-primary);
+      box-shadow: var(--elevation-2);
+    }
+    .m3e-btn.text {
+      background: transparent;
+      color: var(--md-sys-color-primary);
+    }
+
+    .m3e-fab {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--md-sys-color-primary-container);
+      color: var(--md-sys-color-on-primary-container);
+      padding: 14px 20px;
+      border-radius: 16px;
+      font-weight: 600;
+      font-size: 13px;
+      box-shadow: var(--elevation-3);
+      cursor: pointer;
+      align-self: flex-end;
+    }
+
+    .m3e-card {
+      background: var(--md-sys-color-surface);
+      color: var(--md-sys-color-on-surface);
+      border-radius: var(--md-sys-shape-corner-lg);
+      padding: 16px;
+      box-shadow: var(--elevation-1);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .m3e-card.outlined {
+      background: transparent;
+      border: 1px solid var(--md-sys-color-outline-variant);
+      box-shadow: none;
+    }
+    .m3e-card.filled {
+      background: var(--md-sys-color-surface-variant);
+      color: var(--md-sys-color-on-surface-variant);
+      box-shadow: none;
+    }
+
+    .m3e-chips-row {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding: 4px 0;
+    }
+    .m3e-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--md-sys-color-outline);
+      background: transparent;
+      color: var(--md-sys-color-on-surface);
+      font-size: 11px;
+      font-weight: 500;
+    }
+    .m3e-chip.active {
+      background: var(--md-sys-color-secondary-container);
+      border-color: transparent;
+      color: var(--md-sys-color-primary);
+    }
+
+    .m3e-input {
+      background: var(--md-sys-color-surface-variant);
+      border-radius: 8px 8px 0 0;
+      border-bottom: 2px solid var(--md-sys-color-primary);
+      padding: 10px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .m3e-input.outlined {
+      background: transparent;
+      border: 1px solid var(--md-sys-color-outline);
+      border-radius: 8px;
+    }
+    .m3e-input-label {
+      font-size: 10px;
+      color: var(--md-sys-color-primary);
+    }
+    .m3e-input-val {
+      font-size: 13px;
+      color: var(--md-sys-color-on-surface);
+    }
+
+    .m3e-list-item {
+      background: var(--md-sys-color-surface);
+      border-radius: 12px;
+      padding: 12px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .m3e-list-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .m3e-avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 18px;
+      background: var(--md-sys-color-primary-container);
+      color: var(--md-sys-color-on-primary-container);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 13px;
+    }
+
+    .m3e-switch {
+      width: 44px;
+      height: 24px;
+      background: var(--md-sys-color-surface-variant);
+      border: 2px solid var(--md-sys-color-outline);
+      border-radius: 12px;
+      position: relative;
+    }
+    .m3e-switch.on {
+      background: var(--md-sys-color-primary);
+      border-color: var(--md-sys-color-primary);
+    }
+    .m3e-switch-thumb {
+      width: 14px;
+      height: 14px;
+      background: #fff;
+      border-radius: 7px;
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      transition: left 0.15s;
+    }
+    .m3e-switch.on .m3e-switch-thumb {
+      left: 23px;
+    }
+
+    /* Notification Toast */
+    .toast-banner {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%) translateY(100px);
+      background: #10b981;
+      color: #fff;
+      padding: 10px 18px;
+      border-radius: 999px;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.5);
+      font-size: 12px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      opacity: 0;
+      transition: transform 0.25s ease, opacity 0.25s ease;
+      z-index: 1000;
+    }
+    .toast-banner.show {
+      transform: translateX(-50%) translateY(0);
+      opacity: 1;
+    }
+  </style>
+</head>
+<body data-theme="dark" data-palette="violet">
+
+  <!-- Top Control Header -->
+  <header class="sketch-header">
+    <div class="brand-title">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+      <span>M3E Canvas</span>
+      <span class="brand-badge">Material 3 Expressive</span>
+    </div>
+
+    <div class="header-controls">
+      <!-- Device Preset -->
+      <select id="deviceSelector" class="control-select" title="Device Size">
+        <option value="mobile">Mobile (380px)</option>
+        <option value="tablet">Tablet (620px)</option>
+        <option value="desktop">Desktop (820px)</option>
+        <option value="fluid">Fluid Full-Width</option>
+      </select>
+
+      <!-- Palette Selector -->
+      <select id="paletteSelector" class="control-select" title="Color Palette">
+        <option value="violet">Expressive Violet</option>
+        <option value="ocean">Ocean Blue</option>
+        <option value="emerald">Forest Emerald</option>
+        <option value="terracotta">Terracotta</option>
+      </select>
+
+      <!-- Theme Mode -->
+      <button id="themeToggleBtn" class="control-btn" title="Toggle Light/Dark">
+        <span id="themeIcon">☀️ Light</span>
+      </button>
+
+      <!-- Templates -->
+      <select id="templateSelector" class="control-select" title="Preset Template">
+        <option value="">+ Load Template...</option>
+        <option value="social">Social Feed Card</option>
+        <option value="checkout">Order Checkout</option>
+        <option value="settings">Settings Screen</option>
+      </select>
+
+      <!-- Clear -->
+      <button id="clearBtn" class="control-btn" title="Clear Canvas">Clear</button>
+
+      <!-- Copy / Send Prompt -->
+      <button id="copyPromptBtn" class="control-btn" title="Copy prompt to clipboard">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+        <span>Copy Prompt</span>
+      </button>
+
+      <button id="sendToChatBtn" class="control-btn primary" title="Send generated UI prompt to Ty-Code Chat sidecar">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+        <span>Send to Ty-Code Chat</span>
+      </button>
+    </div>
+  </header>
+
+  <div class="app-body">
+    <!-- Left Catalog Panel -->
+    <aside class="catalog-panel">
+      <div class="panel-section-title">Navigation &amp; Bars</div>
+      <div class="catalog-grid">
+        <div class="catalog-item" data-type="app-bar">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="20" height="6" x="2" y="3" rx="1"/><path d="M6 12h12M6 16h8"/></svg>
+          <span>Top App Bar</span>
+        </div>
+        <div class="catalog-item" data-type="nav-bar">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="20" height="6" x="2" y="15" rx="1"/><circle cx="6" cy="18" r="1"/><circle cx="12" cy="18" r="1"/><circle cx="18" cy="18" r="1"/></svg>
+          <span>Bottom Nav Bar</span>
+        </div>
+      </div>
+
+      <div class="panel-section-title">Buttons &amp; Actions</div>
+      <div class="catalog-grid">
+        <div class="catalog-item" data-type="btn-filled">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="10" x="3" y="7" rx="5"/></svg>
+          <span>Filled Button</span>
+        </div>
+        <div class="catalog-item" data-type="btn-tonal">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="10" x="3" y="7" rx="3"/></svg>
+          <span>Tonal Button</span>
+        </div>
+        <div class="catalog-item" data-type="btn-outlined">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="10" x="3" y="7" rx="3" stroke-dasharray="2 2"/></svg>
+          <span>Outlined Button</span>
+        </div>
+        <div class="catalog-item" data-type="fab">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+          <span>Extended FAB</span>
+        </div>
+      </div>
+
+      <div class="panel-section-title">Surfaces &amp; Cards</div>
+      <div class="catalog-grid">
+        <div class="catalog-item" data-type="card-elevated">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="14" x="3" y="5" rx="2"/></svg>
+          <span>Elevated Card</span>
+        </div>
+        <div class="catalog-item" data-type="card-outlined">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="14" x="3" y="5" rx="2" stroke-dasharray="2 2"/></svg>
+          <span>Outlined Card</span>
+        </div>
+      </div>
+
+      <div class="panel-section-title">Inputs &amp; Selections</div>
+      <div class="catalog-grid">
+        <div class="catalog-item" data-type="input-outlined">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="10" x="3" y="7" rx="2"/><line x1="7" y1="12" x2="13" y2="12"/></svg>
+          <span>Text Field</span>
+        </div>
+        <div class="catalog-item" data-type="chips-row">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="8" height="6" x="2" y="9" rx="3"/><rect width="8" height="6" x="14" y="9" rx="3"/></svg>
+          <span>Filter Chips Row</span>
+        </div>
+        <div class="catalog-item" data-type="list-switch">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="20" height="8" x="2" y="8" rx="2"/><circle cx="17" cy="12" r="2"/></svg>
+          <span>Switch List Item</span>
+        </div>
+        <div class="catalog-item" data-type="list-item">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="12" r="3"/><line x1="12" y1="10" x2="20" y2="10"/><line x1="12" y1="14" x2="17" y2="14"/></svg>
+          <span>2-Line List Item</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Center Canvas Area -->
+    <main class="stage-area">
+      <!-- Device Mockup Frame -->
+      <div id="deviceFrame" class="device-frame mobile">
+        <div class="canvas-screen">
+          <!-- Top App Bar Area -->
+          <div id="canvasAppBar" class="canvas-app-bar" style="display: none;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+              <span id="canvasAppBarTitle" class="app-title">Dashboard</span>
+            </div>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+          </div>
+
+          <!-- Component Items Container -->
+          <div id="canvasContainer" class="canvas-content-container">
+            <div id="emptyGuide" class="canvas-empty-guide">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin-bottom: 8px;"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+              <div style="font-weight: 600; margin-bottom: 4px;">Canvas is empty</div>
+              <div style="font-size: 11px;">Click components on the left or load a preset template to start sketching.</div>
+            </div>
+          </div>
+
+          <!-- Bottom Navigation Bar Area -->
+          <div id="canvasNavBar" class="canvas-nav-bar" style="display: none;">
+            <div style="text-align: center; color: var(--md-sys-color-primary); font-size: 10px; font-weight: 700;">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin: 0 auto 2px auto; display: block;"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+              <span>Home</span>
+            </div>
+            <div style="text-align: center; color: var(--md-sys-color-outline); font-size: 10px;">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin: 0 auto 2px auto; display: block;"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+              <span>Explore</span>
+            </div>
+            <div style="text-align: center; color: var(--md-sys-color-outline); font-size: 10px;">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin: 0 auto 2px auto; display: block;"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              <span>Profile</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Right Inspector Panel -->
+    <aside class="inspector-panel">
+      <div class="panel-section-title">Component Inspector</div>
+      <div class="inspector-body">
+        <div id="inspectorContent">
+          <div style="font-size: 11px; color: #6b7280; text-align: center; padding: 20px 0;">
+            Select an element on the canvas to configure its properties.
+          </div>
+        </div>
+
+        <hr style="border: none; border-top: 1px solid #272a34; margin: 4px 0;">
+
+        <div class="panel-section-title" style="padding: 0; margin-bottom: -4px;">Live AI Prompt Compiler</div>
+        <div class="form-group">
+          <textarea id="livePromptBox" class="form-textarea" readonly></textarea>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- Animated Notification Toast -->
+  <div id="toastBanner" class="toast-banner">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg>
+    <span id="toastMsg">Prompt sent to Ty-Code Chat sidecar!</span>
+  </div>
+
+  <script>
+    // State Model
+    const state = {
+      theme: 'dark',
+      palette: 'violet',
+      device: 'mobile',
+      appBar: { visible: false, title: 'App Dashboard' },
+      navBar: { visible: false },
+      elements: [],
+      selectedId: null
+    };
+
+    let nextId = 1;
+
+    // Component Definition Templates
+    const COMPONENT_DEFAULTS = {
+      'btn-filled': {
+        type: 'btn-filled',
+        name: 'Filled Button',
+        label: 'Get Started',
+        variant: 'filled',
+        fullWidth: true
+      },
+      'btn-tonal': {
+        type: 'btn-tonal',
+        name: 'Tonal Button',
+        label: 'Explore Features',
+        variant: 'tonal',
+        fullWidth: true
+      },
+      'btn-outlined': {
+        type: 'btn-outlined',
+        name: 'Outlined Button',
+        label: 'Cancel',
+        variant: 'outlined',
+        fullWidth: true
+      },
+      'fab': {
+        type: 'fab',
+        name: 'Extended FAB',
+        label: 'New Task',
+        icon: 'plus'
+      },
+      'card-elevated': {
+        type: 'card-elevated',
+        name: 'Elevated Card',
+        title: 'Project Overview',
+        description: 'Track real-time progress and active sprints with Material 3 expressive tokens.',
+        actionLabel: 'View Details',
+        variant: 'elevated'
+      },
+      'card-outlined': {
+        type: 'card-outlined',
+        name: 'Outlined Card',
+        title: 'System Metrics',
+        description: 'CPU 24%, Memory 4.2GB, All microservices healthy.',
+        actionLabel: 'Inspect',
+        variant: 'outlined'
+      },
+      'input-outlined': {
+        type: 'input-outlined',
+        name: 'Text Field',
+        label: 'Email address',
+        placeholder: 'alex@example.com',
+        variant: 'outlined'
+      },
+      'chips-row': {
+        type: 'chips-row',
+        name: 'Filter Chips Row',
+        chips: ['All', 'Recent', 'Favorites', 'Archived']
+      },
+      'list-switch': {
+        type: 'list-switch',
+        name: 'Switch List Item',
+        title: 'Enable Notifications',
+        subtitle: 'Receive updates when agent finishes tasks',
+        active: true
+      },
+      'list-item': {
+        type: 'list-item',
+        name: '2-Line List Item',
+        title: 'Alex Johnson',
+        subtitle: 'Lead UX Engineer • Online',
+        initials: 'AJ'
+      }
+    };
+
+    // DOM Elements
+    const deviceFrame = document.getElementById('deviceFrame');
+    const deviceSelector = document.getElementById('deviceSelector');
+    const paletteSelector = document.getElementById('paletteSelector');
+    const themeToggleBtn = document.getElementById('themeToggleBtn');
+    const themeIcon = document.getElementById('themeIcon');
+    const templateSelector = document.getElementById('templateSelector');
+    const clearBtn = document.getElementById('clearBtn');
+    const copyPromptBtn = document.getElementById('copyPromptBtn');
+    const sendToChatBtn = document.getElementById('sendToChatBtn');
+    const canvasContainer = document.getElementById('canvasContainer');
+    const canvasAppBar = document.getElementById('canvasAppBar');
+    const canvasAppBarTitle = document.getElementById('canvasAppBarTitle');
+    const canvasNavBar = document.getElementById('canvasNavBar');
+    const emptyGuide = document.getElementById('emptyGuide');
+    const inspectorContent = document.getElementById('inspectorContent');
+    const livePromptBox = document.getElementById('livePromptBox');
+    const toastBanner = document.getElementById('toastBanner');
+    const toastMsg = document.getElementById('toastMsg');
+
+    // Show Notification Toast
+    function showToast(message) {
+      toastMsg.textContent = message;
+      toastBanner.classList.add('show');
+      setTimeout(() => {
+        toastBanner.classList.remove('show');
+      }, 2600);
+    }
+
+    // Theme & Palette Switching
+    paletteSelector.addEventListener('change', (e) => {
+      state.palette = e.target.value;
+      document.body.setAttribute('data-palette', state.palette);
+      updatePrompt();
+    });
+
+    themeToggleBtn.addEventListener('click', () => {
+      state.theme = state.theme === 'dark' ? 'light' : 'dark';
+      document.body.setAttribute('data-theme', state.theme);
+      themeIcon.textContent = state.theme === 'dark' ? '☀️ Light' : '🌙 Dark';
+      updatePrompt();
+    });
+
+    deviceSelector.addEventListener('change', (e) => {
+      state.device = e.target.value;
+      deviceFrame.className = `device-frame ${state.device}`;
+      updatePrompt();
+    });
+
+    // Template Presets
+    templateSelector.addEventListener('change', (e) => {
+      const val = e.target.value;
+      if (!val) return;
+      loadTemplate(val);
+      templateSelector.value = '';
+    });
+
+    function loadTemplate(type) {
+      state.elements = [];
+      state.selectedId = null;
+
+      if (type === 'social') {
+        state.appBar = { visible: true, title: 'Explore Feed' };
+        state.navBar = { visible: true };
+        state.elements = [
+          { id: nextId++, ...COMPONENT_DEFAULTS['chips-row'], chips: ['Trending', 'Design', 'Code', 'AI'] },
+          { id: nextId++, ...COMPONENT_DEFAULTS['card-elevated'], title: 'Expressive Design Trends', description: 'Google Material 3 Expressive introduces fluid corner curves and dynamic tonal contrast.' },
+          { id: nextId++, ...COMPONENT_DEFAULTS['list-item'], title: 'Morgan Reed', subtitle: 'Posted 2h ago • 142 likes', initials: 'MR' },
+          { id: nextId++, ...COMPONENT_DEFAULTS['fab'], label: 'Create Post' }
+        ];
+      } else if (type === 'checkout') {
+        state.appBar = { visible: true, title: 'Review & Pay' };
+        state.navBar = { visible: false };
+        state.elements = [
+          { id: nextId++, ...COMPONENT_DEFAULTS['card-outlined'], title: 'Order Summary', description: 'Ty-Code Pro Edition • 1 Year Subscription • $149.00' },
+          { id: nextId++, ...COMPONENT_DEFAULTS['input-outlined'], label: 'Cardholder Name', placeholder: 'Taylor Swift' },
+          { id: nextId++, ...COMPONENT_DEFAULTS['input-outlined'], label: 'Card Number', placeholder: '•••• •••• •••• 4242' },
+          { id: nextId++, ...COMPONENT_DEFAULTS['list-switch'], title: 'Save payment info', subtitle: 'Store encrypted token locally' },
+          { id: nextId++, ...COMPONENT_DEFAULTS['btn-filled'], label: 'Pay $149.00 Now' }
+        ];
+      } else if (type === 'settings') {
+        state.appBar = { visible: true, title: 'Preferences' };
+        state.navBar = { visible: true };
+        state.elements = [
+          { id: nextId++, ...COMPONENT_DEFAULTS['list-item'], title: 'User Account', subtitle: 'admin@ty-code.local', initials: 'TY' },
+          { id: nextId++, ...COMPONENT_DEFAULTS['list-switch'], title: 'AI Autonomous Mode', subtitle: 'Allow agent to run bash without prompting', active: false },
+          { id: nextId++, ...COMPONENT_DEFAULTS['list-switch'], title: 'Dark Mode Synced', subtitle: 'Match system color scheme', active: true },
+          { id: nextId++, ...COMPONENT_DEFAULTS['btn-tonal'], label: 'Clear Cache & Restart' }
+        ];
+      }
+      renderCanvas();
+      showToast(`Loaded ${type} template!`);
+    }
+
+    clearBtn.addEventListener('click', () => {
+      state.elements = [];
+      state.appBar.visible = false;
+      state.navBar.visible = false;
+      state.selectedId = null;
+      renderCanvas();
+      showToast('Canvas cleared');
+    });
+
+    // Add component from catalog
+    document.querySelectorAll('.catalog-item').forEach(item => {
+      item.addEventListener('click', () => {
+        const type = item.getAttribute('data-type');
+        if (type === 'app-bar') {
+          state.appBar.visible = !state.appBar.visible;
+        } else if (type === 'nav-bar') {
+          state.navBar.visible = !state.navBar.visible;
+        } else if (COMPONENT_DEFAULTS[type]) {
+          const newEl = { id: nextId++, ...JSON.parse(JSON.stringify(COMPONENT_DEFAULTS[type])) };
+          state.elements.push(newEl);
+          state.selectedId = newEl.id;
+        }
+        renderCanvas();
+      });
+    });
+
+    // Render Canvas
+    function renderCanvas() {
+      // App Bar
+      if (state.appBar.visible) {
+        canvasAppBar.style.display = 'flex';
+        canvasAppBarTitle.textContent = state.appBar.title;
+      } else {
+        canvasAppBar.style.display = 'none';
+      }
+
+      // Nav Bar
+      if (state.navBar.visible) {
+        canvasNavBar.style.display = 'flex';
+      } else {
+        canvasNavBar.style.display = 'none';
+      }
+
+      // Empty Guide
+      if (state.elements.length === 0 && !state.appBar.visible && !state.navBar.visible) {
+        emptyGuide.style.display = 'block';
+      } else {
+        emptyGuide.style.display = 'none';
+      }
+
+      // Re-populate canvas items
+      // Keep emptyGuide intact
+      const existingItems = canvasContainer.querySelectorAll('.canvas-element');
+      existingItems.forEach(el => el.remove());
+
+      state.elements.forEach(el => {
+        const itemDiv = document.createElement('div');
+        itemDiv.className = `canvas-element ${state.selectedId === el.id ? 'selected' : ''}`;
+        itemDiv.setAttribute('data-id', el.id);
+
+        // Actions strip (Up, Down, Delete)
+        itemDiv.innerHTML = `
+          <div class="element-action-strip">
+            <button class="strip-btn move-up" title="Move Up"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="18 15 12 9 6 15"/></svg></button>
+            <button class="strip-btn move-down" title="Move Down"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg></button>
+            <button class="strip-btn delete" title="Delete"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+          </div>
+          ${renderComponentHTML(el)}
+        `;
+
+        itemDiv.addEventListener('click', (e) => {
+          if (e.target.closest('.strip-btn')) return;
+          state.selectedId = el.id;
+          renderCanvas();
+        });
+
+        // Strip button handlers
+        const upBtn = itemDiv.querySelector('.move-up');
+        const downBtn = itemDiv.querySelector('.move-down');
+        const delBtn = itemDiv.querySelector('.delete');
+
+        upBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          moveElement(el.id, -1);
+        });
+        downBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          moveElement(el.id, 1);
+        });
+        delBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          deleteElement(el.id);
+        });
+
+        canvasContainer.appendChild(itemDiv);
+      });
+
+      renderInspector();
+      updatePrompt();
+    }
+
+    function moveElement(id, offset) {
+      const idx = state.elements.findIndex(x => x.id === id);
+      if (idx === -1) return;
+      const newIdx = idx + offset;
+      if (newIdx < 0 || newIdx >= state.elements.length) return;
+      const item = state.elements.splice(idx, 1)[0];
+      state.elements.splice(newIdx, 0, item);
+      renderCanvas();
+    }
+
+    function deleteElement(id) {
+      state.elements = state.elements.filter(x => x.id !== id);
+      if (state.selectedId === id) state.selectedId = null;
+      renderCanvas();
+    }
+
+    // Component HTML Generators
+    function renderComponentHTML(el) {
+      switch (el.type) {
+        case 'btn-filled':
+          return `<button class="m3e-btn filled">${escapeHtml(el.label || 'Filled Button')}</button>`;
+        case 'btn-tonal':
+          return `<button class="m3e-btn tonal">${escapeHtml(el.label || 'Tonal Button')}</button>`;
+        case 'btn-outlined':
+          return `<button class="m3e-btn outlined">${escapeHtml(el.label || 'Outlined Button')}</button>`;
+        case 'fab':
+          return `<div class="m3e-fab"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>${escapeHtml(el.label || 'FAB')}</span></div>`;
+        case 'card-elevated':
+          return `
+            <div class="m3e-card">
+              <div style="font-weight: 700; font-size: 14px;">${escapeHtml(el.title || 'Card Title')}</div>
+              <div style="font-size: 12px; opacity: 0.8; line-height: 1.4;">${escapeHtml(el.description || '')}</div>
+              ${el.actionLabel ? `<button class="m3e-btn tonal" style="margin-top: 6px; padding: 6px 12px; font-size: 11px;">${escapeHtml(el.actionLabel)}</button>` : ''}
+            </div>
+          `;
+        case 'card-outlined':
+          return `
+            <div class="m3e-card outlined">
+              <div style="font-weight: 700; font-size: 14px;">${escapeHtml(el.title || 'Card Title')}</div>
+              <div style="font-size: 12px; opacity: 0.8; line-height: 1.4;">${escapeHtml(el.description || '')}</div>
+              ${el.actionLabel ? `<button class="m3e-btn outlined" style="margin-top: 6px; padding: 6px 12px; font-size: 11px;">${escapeHtml(el.actionLabel)}</button>` : ''}
+            </div>
+          `;
+        case 'input-outlined':
+          return `
+            <div class="m3e-input outlined">
+              <span class="m3e-input-label">${escapeHtml(el.label || 'Label')}</span>
+              <span class="m3e-input-val">${escapeHtml(el.placeholder || '')}</span>
+            </div>
+          `;
+        case 'chips-row':
+          return `
+            <div class="m3e-chips-row">
+              ${(el.chips || []).map((c, i) => `<div class="m3e-chip ${i === 0 ? 'active' : ''}">${escapeHtml(c)}</div>`).join('')}
+            </div>
+          `;
+        case 'list-switch':
+          return `
+            <div class="m3e-list-item">
+              <div>
+                <div style="font-weight: 600; font-size: 13px;">${escapeHtml(el.title || 'Option')}</div>
+                <div style="font-size: 11px; opacity: 0.7;">${escapeHtml(el.subtitle || '')}</div>
+              </div>
+              <div class="m3e-switch ${el.active ? 'on' : ''}"><div class="m3e-switch-thumb"></div></div>
+            </div>
+          `;
+        case 'list-item':
+          return `
+            <div class="m3e-list-item">
+              <div class="m3e-list-left">
+                <div class="m3e-avatar">${escapeHtml(el.initials || 'UI')}</div>
+                <div>
+                  <div style="font-weight: 600; font-size: 13px;">${escapeHtml(el.title || 'Contact Name')}</div>
+                  <div style="font-size: 11px; opacity: 0.7;">${escapeHtml(el.subtitle || '')}</div>
+                </div>
+              </div>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity: 0.5;"><polyline points="9 18 15 12 9 6"/></svg>
+            </div>
+          `;
+        default:
+          return `<div>${escapeHtml(el.name)}</div>`;
+      }
+    }
+
+    // Property Inspector
+    function renderInspector() {
+      const selected = state.elements.find(x => x.id === state.selectedId);
+      if (!selected) {
+        inspectorContent.innerHTML = `
+          <div style="font-size: 11px; color: #6b7280; text-align: center; padding: 20px 0;">
+            Select an element on the canvas to configure its properties.
+          </div>
+        `;
+        return;
+      }
+
+      let formHtml = `<div style="font-weight: 700; font-size: 12px; margin-bottom: 8px; color: var(--md-sys-color-primary);">${selected.name}</div>`;
+
+      if (selected.label !== undefined) {
+        formHtml += `
+          <div class="form-group">
+            <label>Button / Chip Label</label>
+            <input type="text" class="form-input" id="propLabel" value="${escapeHtml(selected.label)}">
+          </div>
+        `;
+      }
+      if (selected.title !== undefined) {
+        formHtml += `
+          <div class="form-group">
+            <label>Title</label>
+            <input type="text" class="form-input" id="propTitle" value="${escapeHtml(selected.title)}">
+          </div>
+        `;
+      }
+      if (selected.subtitle !== undefined) {
+        formHtml += `
+          <div class="form-group">
+            <label>Subtitle / Description</label>
+            <input type="text" class="form-input" id="propSubtitle" value="${escapeHtml(selected.subtitle)}">
+          </div>
+        `;
+      }
+      if (selected.description !== undefined) {
+        formHtml += `
+          <div class="form-group">
+            <label>Card Description</label>
+            <textarea class="form-input" id="propDesc" rows="3">${escapeHtml(selected.description)}</textarea>
+          </div>
+        `;
+      }
+      if (selected.actionLabel !== undefined) {
+        formHtml += `
+          <div class="form-group">
+            <label>Action Button Label</label>
+            <input type="text" class="form-input" id="propAction" value="${escapeHtml(selected.actionLabel)}">
+          </div>
+        `;
+      }
+      if (selected.chips !== undefined) {
+        formHtml += `
+          <div class="form-group">
+            <label>Chips (comma separated)</label>
+            <input type="text" class="form-input" id="propChips" value="${escapeHtml(selected.chips.join(', '))}">
+          </div>
+        `;
+      }
+      if (selected.active !== undefined) {
+        formHtml += `
+          <div class="form-group">
+            <label>Active State</label>
+            <select class="form-select" id="propActive">
+              <option value="true" ${selected.active ? 'selected' : ''}>Active (ON)</option>
+              <option value="false" ${!selected.active ? 'selected' : ''}>Inactive (OFF)</option>
+            </select>
+          </div>
+        `;
+      }
+
+      inspectorContent.innerHTML = formHtml;
+
+      // Event listeners for inputs
+      const pLabel = document.getElementById('propLabel');
+      if (pLabel) pLabel.addEventListener('input', (e) => { selected.label = e.target.value; renderCanvas(); });
+
+      const pTitle = document.getElementById('propTitle');
+      if (pTitle) pTitle.addEventListener('input', (e) => { selected.title = e.target.value; renderCanvas(); });
+
+      const pSubtitle = document.getElementById('propSubtitle');
+      if (pSubtitle) pSubtitle.addEventListener('input', (e) => { selected.subtitle = e.target.value; renderCanvas(); });
+
+      const pDesc = document.getElementById('propDesc');
+      if (pDesc) pDesc.addEventListener('input', (e) => { selected.description = e.target.value; renderCanvas(); });
+
+      const pAction = document.getElementById('propAction');
+      if (pAction) pAction.addEventListener('input', (e) => { selected.actionLabel = e.target.value; renderCanvas(); });
+
+      const pChips = document.getElementById('propChips');
+      if (pChips) pChips.addEventListener('input', (e) => {
+        selected.chips = e.target.value.split(',').map(s => s.trim()).filter(Boolean);
+        renderCanvas();
+      });
+
+      const pActive = document.getElementById('propActive');
+      if (pActive) pActive.addEventListener('change', (e) => {
+        selected.active = e.target.value === 'true';
+        renderCanvas();
+      });
+    }
+
+    // Compile AI Prompt
+    function generatePrompt() {
+      const paletteNames = {
+        violet: 'Expressive Violet (Primary: #7845AC, Accent: #F0DBFF)',
+        ocean: 'Ocean Blue (Primary: #006494, Accent: #CBE6FF)',
+        emerald: 'Forest Emerald (Primary: #006D44, Accent: #92F7BE)',
+        terracotta: 'Terracotta Amber (Primary: #9B4423, Accent: #FFDBCF)'
+      };
+
+      const deviceMap = {
+        mobile: 'Mobile Device (380px viewport width, portrait)',
+        tablet: 'Tablet Device (620px viewport width)',
+        desktop: 'Desktop / Web View (820px+ viewport width)',
+        fluid: 'Responsive Fluid Full-Width Layout'
+      };
+
+      let p = `Please implement a Material 3 Expressive (M3E) UI component layout based on this visual sketch:\n\n`;
+      p += `### Design Specifications\n`;
+      p += `- **Design System**: Google Material 3 Expressive (M3E)\n`;
+      p += `- **Target Frame**: ${deviceMap[state.device] || state.device}\n`;
+      p += `- **Color Theme**: ${state.theme.toUpperCase()} MODE\n`;
+      p += `- **Color Palette**: ${paletteNames[state.palette] || state.palette}\n\n`;
+
+      p += `### Layout Hierarchy & Components\n`;
+
+      if (state.appBar.visible) {
+        p += `1. **Top App Bar**: Title: "${state.appBar.title}" with navigation icon and trailing action menu.\n`;
+      }
+
+      if (state.elements.length > 0) {
+        p += `2. **Main Content Container** (padding: 16px, vertical gap: 12px):\n`;
+        state.elements.forEach((el, index) => {
+          p += `   - **Item ${index + 1} (${el.name})**:\n`;
+          if (el.label) p += `     • Label: "${el.label}"\n`;
+          if (el.title) p += `     • Title: "${el.title}"\n`;
+          if (el.subtitle) p += `     • Subtitle: "${el.subtitle}"\n`;
+          if (el.description) p += `     • Description: "${el.description}"\n`;
+          if (el.actionLabel) p += `     • Action Button: "${el.actionLabel}"\n`;
+          if (el.chips) p += `     • Chips: [${el.chips.map(c => `"${c}"`).join(', ')}]\n`;
+          if (el.placeholder) p += `     • Placeholder: "${el.placeholder}"\n`;
+          if (el.active !== undefined) p += `     • Active State: ${el.active ? 'Checked / ON' : 'Unchecked / OFF'}\n`;
+          if (el.variant) p += `     • Variant: ${el.variant}\n`;
+        });
+      } else {
+        p += `2. **Main Content**: (Blank layout canvas)\n`;
+      }
+
+      if (state.navBar.visible) {
+        p += `3. **Bottom Navigation Bar**: 3 standard tabs ("Home", "Explore", "Profile") with active indicator.\n`;
+      }
+
+      p += `\n### Code Generation Instructions\n`;
+      p += `- Generate clean, modular React TypeScript code with Tailwind CSS (or inline styles).\n`;
+      p += `- Adhere to Material 3 Expressive corner radii (rounded-2xl / rounded-3xl) and subtle elevation shadows.\n`;
+      p += `- Implement smooth interactive hover states, micro-transitions, and responsive touch targets.\n`;
+      p += `- Include proper semantic HTML tags and accessible ARIA attributes.`;
+
+      return p;
+    }
+
+    function updatePrompt() {
+      const promptText = generatePrompt();
+      livePromptBox.value = promptText;
+    }
+
+    // Export & Bridge Logic
+    function dispatchPromptToTyCode(promptText) {
+      // 1. Dispatch postMessage to parent window (Catches inside Ty-Code CanvasWebview component)
+      try {
+        if (window.parent && window.parent !== window) {
+          window.parent.postMessage({
+            type: 'TY_CODE_PROMPT_EXPORT',
+            prompt: promptText,
+            timestamp: Date.now()
+          }, '*');
+        }
+      } catch (err) {
+        console.warn('postMessage to parent failed:', err);
+      }
+
+      // 2. Dispatch via Electron IPC if available in window.electronAPI
+      try {
+        if (window.electronAPI && typeof window.electronAPI.sketcherSendPrompt === 'function') {
+          window.electronAPI.sketcherSendPrompt(promptText);
+        }
+      } catch (err) {
+        console.warn('IPC sketcherSendPrompt failed:', err);
+      }
+
+      // 3. System clipboard write fallback
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(promptText).catch(() => {});
+        }
+      } catch {}
+    }
+
+    // "Send to Ty-Code Chat" button click
+    sendToChatBtn.addEventListener('click', () => {
+      const prompt = generatePrompt();
+      dispatchPromptToTyCode(prompt);
+      showToast('Prompt sent directly to Ty-Code Chat sidecar!');
+    });
+
+    // "Copy Prompt" action interception
+    copyPromptBtn.addEventListener('click', () => {
+      const prompt = generatePrompt();
+      dispatchPromptToTyCode(prompt);
+      showToast('Prompt copied & sent to Ty-Code Chat sidecar!');
+    });
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    // Initial render
+    loadTemplate('social');
+  </script>
+</body>
+</html>

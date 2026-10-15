@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { OpenCodeTool, ToolContext, ToolExecutionResult } from './types';
-import { resolveSafePath } from './view';
+import { resolveToolPath } from './view';
 
 const DEFAULT_IGNORE = ['.git', 'node_modules', '.ty-code', 'dist', 'out', 'build', '.cache'];
 
@@ -99,7 +99,7 @@ export const globTool: OpenCodeTool = {
       }
 
       const cwdSubpath = String(args.cwd || '.');
-      const searchRoot = resolveSafePath(context.workspaceRoot, cwdSubpath);
+      const searchRoot = await resolveToolPath(context, cwdSubpath);
       const userIgnore = Array.isArray(args.ignore) ? args.ignore.map(String) : [];
       const ignore = [...DEFAULT_IGNORE, ...userIgnore];
 

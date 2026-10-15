@@ -97,6 +97,7 @@ export const ModelSelectorDropdown: React.FC<ModelSelectorDropdownProps> = ({
             {models.length} discovered
           </span>
         </div>
+        {onRefreshModels && <p className="model-provider-disclosure">Refresh contacts the selected provider to retrieve its model list.</p>}
 
         {onRefreshModels && (
           <button
@@ -114,7 +115,7 @@ export const ModelSelectorDropdown: React.FC<ModelSelectorDropdownProps> = ({
               cursor: isLoading ? 'wait' : 'pointer',
               padding: '2px 6px'
             }}
-            title="Refresh models from provider API"
+            title="Contact the selected provider to refresh its available model list"
           >
             <RefreshCw size={11} className={isLoading ? 'spin' : ''} />
             <span>Refresh</span>

@@ -16,6 +16,8 @@ interface ChatState {
   contextLimit: number;
   isSettingsOpen: boolean;
   isTerminalOpen: boolean;
+  draftPrompt: string;
+  setDraftPrompt: (prompt: string) => void;
   setAgentMode: (mode: AgentMode) => void;
   setContextTokens: (tokens: number) => void;
   initSettings: () => Promise<void>;
@@ -30,6 +32,7 @@ interface ChatState {
 
 let activeStreamUnsubscribe: (() => void) | null = null;
 let settingsChangedUnsubscribe: (() => void) | null = null;
+let sketcherPromptUnsubscribe: (() => void) | null = null;
 function createId(prefix: string): string { return `${prefix}_${globalThis.crypto.randomUUID()}`; }
 function finalizePartialMessage(messages: ChatMessage[], text: string, reasoning: string): ChatMessage[] {
   if (!text && !reasoning) return messages;
@@ -55,7 +58,9 @@ function updateToolStatus(messages: ChatMessage[], toolCallId: string, status: T
 export const useChatStore = create<ChatState>((set, get) => ({
   messages: [], isRunning: false, currentTaskId: null, pendingApproval: null, currentStatus: '', currentThought: '', streamingText: '',
   settings: null, agentMode: 'build', contextTokens: 1200, contextLimit: 128_000, isSettingsOpen: false, isTerminalOpen: false,
+  draftPrompt: '',
 
+  setDraftPrompt: (prompt: string) => set({ draftPrompt: prompt }),
   setAgentMode: (mode: AgentMode) => set({ agentMode: mode }),
   setContextTokens: (tokens: number) => set({ contextTokens: tokens }),
 
@@ -69,6 +74,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
     };
     if (!settingsChangedUnsubscribe) {
       settingsChangedUnsubscribe = window.electronAPI.onSettingsChanged(() => { void refreshSettings(); });
+    }
+    if (!sketcherPromptUnsubscribe && window.electronAPI?.onSketcherPrompt) {
+      sketcherPromptUnsubscribe = window.electronAPI.onSketcherPrompt((prompt: string) => {
+        set({ draftPrompt: prompt });
+      });
     }
     await refreshSettings();
   },

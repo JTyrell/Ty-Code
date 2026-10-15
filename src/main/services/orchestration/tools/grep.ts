@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { OpenCodeTool, ToolContext, ToolExecutionResult } from './types';
-import { resolveSafePath } from './view';
+import { resolveToolPath } from './view';
 
 const IGNORED_DIRS = new Set([
   'node_modules',
@@ -79,7 +79,7 @@ export const grepTool: OpenCodeTool = {
       }
 
       const searchSubpath = String(args.path || '.');
-      const searchTarget = resolveSafePath(context.workspaceRoot, searchSubpath);
+      const searchTarget = await resolveToolPath(context, searchSubpath);
       const isCaseSensitive = Boolean(args.caseSensitive);
       const includeFilter = args.include ? String(args.include).replace(/^\*/, '') : '';
 

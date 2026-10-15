@@ -18,7 +18,7 @@
   - **DeepSeek Direct**: Official API support.
   - **Local Ollama / LM Studio**: 100% private, offline inference (`qwen2.5-coder`, `deepseek-r1`).
   - **Free-Claude-Code Proxy**: Direct compatibility with `Alishahryar1/free-claude-code` proxy servers (`http://localhost:8082`).
-- 🛡️ **Security Sandboxing**: Hardware-encrypted API keys via Electron `safeStorage`, strict context isolation, and workspace boundary sanitization.
+- 🛡️ **Security Sandboxing**: API credentials use Electron `safeStorage` backed by the operating-system credential store; saving is disabled when secure storage is unavailable. Telemetry is off by default and never transmitted by the current build.
 - 📦 **Cross-Platform**: Ready to package as a standalone executable for Windows (`.exe`), macOS (`.dmg`), and Linux (`.AppImage`).
 
 ---
@@ -96,7 +96,7 @@ ty-code/
 
 ### 2. Installation
 ```bash
-npm install
+npm ci
 ```
 
 ### 3. Launch Development Server
@@ -123,6 +123,19 @@ npm run build
 | `grep_search` | Rapidly searches for patterns or regex across workspace files. |
 
 ---
+
+## Cloudflare Pages website
+
+The public Ty-Code download site is maintained separately from the Electron renderer in `website/` and deploys from the repository root with the Pages Functions in `functions/`:
+
+```bash
+npm run dev:website
+npm run typecheck:website
+npm run test:website
+npm run build:website
+```
+
+Configure Cloudflare Pages to use the repository root, build command `npm run build:website`, and output directory `website-dist`. See [docs/WEBSITE_SECURITY.md](docs/WEBSITE_SECURITY.md) for the WAF, TLS, HTTP headers, release verification, and privacy setup checklist. A public release with a matching `SHA256SUMS.txt` is required before download links appear.
 
 ## License
 MIT

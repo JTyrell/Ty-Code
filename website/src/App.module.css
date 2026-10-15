@@ -1,0 +1,38 @@
+.site { min-height: 100vh; overflow-x: clip; }
+.main, .footerWrap { width: min(100% - 48px, var(--content-width)); margin-inline: auto; }
+.intro {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.95fr) minmax(180px, 0.48fr);
+  align-items: end;
+  justify-content: space-between;
+  gap: 28px;
+  padding-block: clamp(50px, 7vw, 78px) 32px;
+}
+.introCopy { max-width: 680px; }
+.intro h1 {
+  max-width: 660px;
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: clamp(38px, 5.6vw, 68px);
+  font-weight: 610;
+  line-height: 1.04;
+  letter-spacing: -0.06em;
+}
+.introCopy p { max-width: 610px; margin: 20px 0 0; color: var(--color-text-secondary); font-size: clamp(15px, 1.55vw, 18px); line-height: 1.65; }
+.localNote { display: flex; align-items: center; gap: 10px; justify-self: end; padding-bottom: 3px; color: var(--color-text-muted); font-size: 13px; white-space: nowrap; }
+.localNote i { display: inline-block; width: 3px; height: 3px; margin: 0 8px 3px; border-radius: 50%; background: var(--color-border-strong); }
+.localMark { width: 8px; height: 8px; border-radius: 50%; background: var(--color-accent-verify); box-shadow: 0 0 0 4px rgba(6, 182, 212, .1); }
+.footerWrap { padding-bottom: 18px; }
+
+@media (max-width: 800px) {
+  .main, .footerWrap { width: calc(100% - 36px); }
+  .intro { grid-template-columns: 1fr; align-items: start; gap: 22px; padding-block: 48px 28px; }
+  .intro h1 { max-width: 600px; font-size: clamp(38px, 8vw, 60px); }
+  .localNote { justify-self: start; }
+}
+
+@media (max-width: 420px) {
+  .intro { padding-top: 40px; }
+  .intro h1 { font-size: 38px; }
+  .localNote { font-size: 12px; }
+}

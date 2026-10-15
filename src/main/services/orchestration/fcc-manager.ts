@@ -12,6 +12,7 @@ import { spawn, type ChildProcess } from 'child_process';
 import { providerRegistry } from './provider-registry';
 
 export interface FCCServerStatus {
+  installed?: boolean;
   running: boolean;
   port: number;
   pid?: number;
@@ -58,6 +59,7 @@ export class FCCServerManager {
       : 0;
 
     return {
+      installed: true,
       running: this.running,
       port: this.port,
       pid: this.childProcess?.pid,

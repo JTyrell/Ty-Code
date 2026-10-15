@@ -103,7 +103,7 @@ Configuration supports:
   - `AppImage`: Universal Linux distribution.
   - `deb`: Debian / Ubuntu packaging with desktop menu integration.
   - `rpm`: Fedora / RHEL packaging.
-  - [`build/icon.svg`](../build/icon.svg) is the editable vector master, [`build/icon.png`](../build/icon.png) is the 1024px raster source, and [`build/icons/`](../build/icons/) contains the Linux hicolor sizes. `electron-builder` 25.1.8 converts the PNG to Windows `.ico` and macOS `.icns`; Linux packaging consumes the explicit PNG set. The packaged window also receives the PNG from `extraResources`. Regenerate raster assets with `python scripts/generate-brand-icon.py` (requires Pillow). Actual signed package appearance still needs per-OS smoke validation.
+  - [`build/icon.svg`](../build/icon.svg) is the editable vector master, [`build/icon.png`](../build/icon.png) is the 1024px raster source, and [`build/icons/`](../build/icons/) contains the Linux hicolor sizes. `electron-builder` 26.15.3 converts the PNG to Windows `.ico` and macOS `.icns`; Linux packaging consumes the explicit PNG set. The packaged window also receives the PNG from `extraResources`. Regenerate raster assets with `python scripts/generate-brand-icon.py` (requires Pillow). Actual signed package appearance still needs per-OS smoke validation.
 
 ### 4.2 GitHub Actions Pipeline (`.github/workflows/build.yml`)
 CI validates and builds on Windows, macOS, and Linux. Package jobs are configured for NSIS/portable, universal DMG/ZIP, AppImage/DEB/RPM; updater YAML manifests and blockmaps are included in uploaded artifacts. A tag release is published once by the dedicated release job; package commands use `--publish never`.

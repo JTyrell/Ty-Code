@@ -23,7 +23,9 @@ node_modules/
 dist/
 dist-electron/
 out/
+dist-release/
 release/
+website-dist/
 
 # Environment files
 .env
@@ -47,4 +49,9 @@ Thumbs.db
 
 # Tooling / Local config
 .kombai/
+.ty-code/
+
+# Local test & validation scripts
+scripts/validate-*.mjs
+scripts/fetch-ecc-assets.mjs
 

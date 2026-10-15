@@ -4,6 +4,8 @@ import path from 'path';
 import { BrowserWindow } from 'electron';
 import * as pty from 'node-pty';
 import type { CommandExecutionOptions, CommandResult, IpcResponse, PtySessionInfo, PtySpawnOptions, ShellInfo } from '../../preload/types';
+import { SecurityPolicyEngine } from '../services/security-policy';
+import { settingsManager } from '../services/settings-manager';
 
 interface ActivePty {
   process: pty.IPty;
@@ -139,9 +141,161 @@ export function attachPty(ptyId: string): IpcResponse<void> {
   return { success: true };
 }
 
+interface PendingPtyApproval {
+  ptyId: string;
+  command: string;
+  data: string;
+  window: BrowserWindow;
+  timer: ReturnType<typeof setTimeout>;
+}
+
+const pendingPtyApprovals = new Map<string, PendingPtyApproval>();
+const ptyInputBuffers = new Map<string, string>();
+
 export function writePty(ptyId: string, data: string): void {
   if (data.length > 64_000) return;
-  try { activePtys.get(ptyId)?.process.write(data); } catch { /* Process exited. */ }
+  const session = activePtys.get(ptyId);
+  if (!session) return;
+
+  // Intercept submitted commands against security policy
+  const hasNewline = data.includes('\r') || data.includes('\n');
+  if (hasNewline) {
+    const buffered = ptyInputBuffers.get(ptyId) || '';
+    ptyInputBuffers.delete(ptyId);
+    const lineCandidate = (buffered + data).split(/[\r\n]/)[0].trim();
+    if (lineCandidate) {
+      const policy = new SecurityPolicyEngine(process.cwd(), settingsManager);
+      void policy.checkTerminalCommand(lineCandidate).then((check) => {
+        if (check.blocked || check.status === 'BLOCK') {
+          if (!session.window.isDestroyed() && !session.window.webContents.isDestroyed()) {
+            session.window.webContents.send('toast:show', {
+              type: 'error',
+              title: 'Command Blocked',
+              message: 'Command blocked by Restricted Mode'
+            });
+            session.window.webContents.send('pty:command-blocked', { ptyId, command: lineCandidate, reason: check.reason });
+          }
+          try {
+            session.process.write('\x03\r\n\x1b[31mCommand blocked by Restricted Mode\x1b[0m\r\n');
+          } catch {}
+          return;
+        }
+
+        if (check.ask || check.status === 'ASK') {
+          const approvalId = `pty_approval_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+          if (!session.window.isDestroyed() && !session.window.webContents.isDestroyed()) {
+            session.window.webContents.send('pty:approval-required', {
+              approvalId,
+              ptyId,
+              command: lineCandidate,
+              reason: check.reason
+            });
+          }
+          pendingPtyApprovals.set(approvalId, {
+            ptyId,
+            command: lineCandidate,
+            data,
+            window: session.window,
+            timer: setTimeout(() => resolvePtyApproval(approvalId, false), 120_000)
+          });
+          return;
+        }
+
+        try {
+          session.process.write(data);
+        } catch {}
+      }).catch(() => {
+        try { session.process.write(data); } catch {}
+      });
+      return;
+    }
+  } else {
+    const current = (ptyInputBuffers.get(ptyId) || '') + data;
+    ptyInputBuffers.set(ptyId, current);
+  }
+
+  try { session.process.write(data); } catch { /* Process exited. */ }
+}
+
+export function resolvePtyApproval(approvalId: string, approved: boolean): IpcResponse<void> {
+  const pending = pendingPtyApprovals.get(approvalId);
+  if (!pending) return { success: false, error: 'Approval request not found or expired.' };
+  clearTimeout(pending.timer);
+  pendingPtyApprovals.delete(approvalId);
+  const session = activePtys.get(pending.ptyId);
+
+  if (session) {
+    if (approved) {
+      try {
+        session.process.write(pending.data);
+      } catch {
+        return { success: false, error: 'Failed to write to terminal.' };
+      }
+    } else {
+      try {
+        session.process.write('\x03\r\n\x1b[33mCommand rejected by user\x1b[0m\r\n');
+      } catch {}
+    }
+  }
+  return { success: true };
+}
+
+export async function executePtyCommand(
+  ptyId: string,
+  cmd: string,
+  win?: BrowserWindow
+): Promise<{ executed: boolean; status: 'executed' | 'blocked' | 'ask'; reason?: string; approvalId?: string }> {
+  const session = activePtys.get(ptyId);
+  const targetWin = win || session?.window;
+  const policy = new SecurityPolicyEngine(process.cwd(), settingsManager);
+  const check = await policy.checkTerminalCommand(cmd);
+
+  if (check.blocked || check.status === 'BLOCK') {
+    if (targetWin && !targetWin.isDestroyed() && !targetWin.webContents.isDestroyed()) {
+      targetWin.webContents.send('toast:show', {
+        type: 'error',
+        title: 'Command Blocked',
+        message: 'Command blocked by Restricted Mode'
+      });
+      targetWin.webContents.send('pty:command-blocked', { ptyId, command: cmd, reason: check.reason });
+    }
+    return { executed: false, status: 'blocked', reason: check.reason };
+  }
+
+  if (check.ask || check.status === 'ASK') {
+    const approvalId = `pty_approval_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    if (targetWin && !targetWin.isDestroyed() && !targetWin.webContents.isDestroyed()) {
+      targetWin.webContents.send('pty:approval-required', {
+        approvalId,
+        ptyId,
+        command: cmd,
+        reason: check.reason
+      });
+    }
+    pendingPtyApprovals.set(approvalId, {
+      ptyId,
+      command: cmd,
+      data: `${cmd}\r`,
+      window: targetWin as BrowserWindow,
+      timer: setTimeout(() => resolvePtyApproval(approvalId, false), 120_000)
+    });
+    return { executed: false, status: 'ask', reason: check.reason, approvalId };
+  }
+
+  if (session) {
+    try {
+      session.process.write(`${cmd}\r`);
+    } catch {}
+  }
+  return { executed: true, status: 'executed' };
+}
+
+export async function checkTerminalCommand(
+  command: string,
+  cwd?: string
+): Promise<{ decision: 'allow' | 'ask' | 'block'; status: 'ALLOW' | 'ASK' | 'BLOCK'; reason: string; allowed: boolean; blocked: boolean; ask: boolean }> {
+  const policy = new SecurityPolicyEngine(cwd || process.cwd(), settingsManager);
+  return policy.checkTerminalCommand(command);
 }
 
 export function syncPtyCwd(ptyId: string, targetCwd: string, shellId: string): void {
@@ -187,11 +341,21 @@ export function cleanupAllPtys(): void {
 }
 
 export async function runCommand(options: CommandExecutionOptions): Promise<IpcResponse<CommandResult>> {
+  const cwd = options.cwd || process.cwd();
+  const policy = new SecurityPolicyEngine(cwd, settingsManager);
+  const check = await policy.checkTerminalCommand(options.command);
+
+  if (check.blocked) {
+    return {
+      success: false,
+      error: `Command blocked by Restricted Mode: ${check.reason}`
+    };
+  }
+
   return new Promise((resolve) => {
     const isWin = process.platform === 'win32';
     const shell = isWin ? 'powershell.exe' : '/bin/bash';
     const args = isWin ? ['-NoProfile', '-Command', options.command] : ['-c', options.command];
-    const cwd = options.cwd || process.cwd();
     const timeout = options.timeoutMs || 45000;
     let stdout = '';
     let stderr = '';
