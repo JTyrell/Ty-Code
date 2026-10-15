@@ -6,7 +6,11 @@
   "analytics_engine_datasets": [
     {
       "binding": "SITE_ANALYTICS",
-      "dataset": "ty_code_site"
+      "dataset": "ty-code"
+    },
+    {
+      "binding": "ty-code-analytics-eng",
+      "dataset": "ty-code"
     }
   ]
 }

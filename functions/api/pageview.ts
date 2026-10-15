@@ -10,7 +10,10 @@ interface AnalyticsEngineBinding {
 
 interface PageContext {
   request: Request;
-  env: { SITE_ANALYTICS?: AnalyticsEngineBinding };
+  env: {
+    SITE_ANALYTICS?: AnalyticsEngineBinding;
+    'ty-code-analytics-eng'?: AnalyticsEngineBinding;
+  };
 }
 
 function privacySignalPresent(request: Request): boolean {
@@ -68,7 +71,8 @@ export async function onRequestPost(context: PageContext): Promise<Response> {
   if (event.event !== 'page_view' || Object.keys(event).length !== 1) return emptyResponse(400);
 
   try {
-    env.SITE_ANALYTICS?.writeDataPoint({
+    const analytics = env.SITE_ANALYTICS ?? env['ty-code-analytics-eng'];
+    analytics?.writeDataPoint({
       blobs: ['website', 'page_view'],
       doubles: [1]
     });
