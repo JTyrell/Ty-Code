@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { useWorkspaceStore } from '../state/workspace-store';
 import { useChatStore } from '../state/chat-store';
+import { useEditorNavigationStore } from '../state/editor-navigation-store';
 import { useCodeReviewStore } from '../state/code-review-store';
 import { usePairProgrammingStore } from '../state/pair-programming-store';
 import { toast } from '../state/toast-store';
@@ -40,6 +41,8 @@ interface CommandPaletteProps {
   onToggleWordWrap?: () => void;
   onToggleZenMode?: () => void;
   onSplitEditor?: (orientation: 'horizontal' | 'vertical') => void;
+  onOpenWorkspaceSymbols?: () => void;
+  onOpenQuickOpen?: (initialQuery: string) => void;
 }
 
 export const CommandPalette: React.FC<CommandPaletteProps> = ({
@@ -49,7 +52,9 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   onToggleMinimap,
   onToggleWordWrap,
   onToggleZenMode,
-  onSplitEditor
+  onSplitEditor,
+  onOpenWorkspaceSymbols,
+  onOpenQuickOpen
 }) => {
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -79,6 +84,22 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
           void saveActiveFile();
           onClose();
         }
+      },
+      {
+        id: 'workbench.action.gotoLine',
+        title: 'Go to Line',
+        category: 'Editor',
+        shortcut: 'Ctrl+G',
+        icon: <Search size={14} color="var(--accent-amber)" />,
+        action: () => { onOpenQuickOpen?.(':'); onClose(); }
+      },
+      {
+        id: 'workbench.action.gotoSymbol',
+        title: 'Go to Symbol in File',
+        category: 'Editor',
+        shortcut: 'Ctrl+Shift+O',
+        icon: <Code2 size={14} color="var(--accent-cyan)" />,
+        action: () => { onOpenQuickOpen?.('@'); onClose(); }
       },
       {
         id: 'editor.toggleMinimap',
@@ -189,6 +210,54 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
           toggleSettings();
           onClose();
         }
+      },
+      {
+        id: 'workbench.action.workspaceSymbol',
+        title: 'Go to Workspace Symbol',
+        category: 'LSP',
+        shortcut: 'Ctrl+T',
+        icon: <Search size={14} color="var(--accent-cyan)" />,
+        action: () => { onOpenWorkspaceSymbols?.(); onClose(); }
+      },
+      {
+        id: 'editor.action.rename',
+        title: 'Rename Symbol',
+        category: 'LSP',
+        shortcut: 'F2',
+        icon: <Code2 size={14} color="var(--accent-cyan)" />,
+        action: () => { useEditorNavigationStore.getState().runAction('renameSymbol'); onClose(); }
+      },
+      {
+        id: 'editor.action.goToDefinition',
+        title: 'Go to Definition',
+        category: 'LSP',
+        shortcut: 'F12',
+        icon: <FileCode size={14} color="var(--accent-primary)" />,
+        action: () => { useEditorNavigationStore.getState().runAction('goToDefinition'); onClose(); }
+      },
+      {
+        id: 'editor.action.findReferences',
+        title: 'Find References',
+        category: 'LSP',
+        shortcut: 'Shift+F12',
+        icon: <Search size={14} color="var(--accent-cyan)" />,
+        action: () => { useEditorNavigationStore.getState().runAction('findReferences'); onClose(); }
+      },
+      {
+        id: 'editor.action.goToImplementation',
+        title: 'Go to Implementation',
+        category: 'LSP',
+        shortcut: 'Ctrl+F12',
+        icon: <Code2 size={14} color="var(--accent-primary)" />,
+        action: () => { useEditorNavigationStore.getState().runAction('goToImplementation'); onClose(); }
+      },
+      {
+        id: 'editor.action.quickFix',
+        title: 'Show Code Actions',
+        category: 'LSP',
+        shortcut: 'Ctrl+.',
+        icon: <Check size={14} color="var(--accent-amber)" />,
+        action: () => { useEditorNavigationStore.getState().runAction('quickFix'); onClose(); }
       },
       {
         id: 'lsp.restartServers',

@@ -341,7 +341,7 @@ export const CodeReviewPanel: React.FC = () => {
                             gap: '4px'
                           }}
                         >
-                          <Sparkles size={11} /> Apply Fix
+                          <Sparkles size={11} /> Review Fix
                         </button>
                       </div>
                     )}

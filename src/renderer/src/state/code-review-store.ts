@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import type { CodeReviewFinding, CodeReviewResult, CodeReviewRule } from '../../../preload/types';
 import { toast } from './toast-store';
+import { useWorkspaceEditStore } from './workspace-edit-store';
+import { handleAutoAppliedTransaction } from '../services/workspace-edit-commands';
 
 interface CodeReviewState {
   result: CodeReviewResult | null;
@@ -79,47 +81,35 @@ export const useCodeReviewStore = create<CodeReviewState>((set, get) => ({
   applyFix: async (finding: CodeReviewFinding) => {
     if (!finding.suggestedFix) return false;
     try {
-      const readRes = await window.electronAPI.readFile(finding.filePath);
-      if (!readRes.success || readRes.data === undefined) {
-        toast.error('Could not read file to apply fix');
-        return false;
-      }
-      const original = readRes.data;
-      if (!original.includes(finding.suggestedFix.originalText)) {
-        toast.error('Cannot apply fix: Target code changed on disk.');
-        return false;
-      }
-
-      const updated = original.replace(finding.suggestedFix.originalText, finding.suggestedFix.replacementText);
-      const writeRes = await window.electronAPI.writeFile(finding.filePath, updated);
-      if (writeRes.success) {
-        toast.success('Fix applied', `Updated ${finding.filePath}:${finding.line}`);
-        // Remove fixed finding from list
-        const currentResult = get().result;
-        if (currentResult) {
-          const remaining = currentResult.findings.filter((f) => f.id !== finding.id);
-          set({
-            result: {
-              ...currentResult,
-              findings: remaining,
-              summary: {
-                ...currentResult.summary,
-                total: remaining.length,
-                bugs: remaining.filter((f) => f.category === 'bug').length,
-                security: remaining.filter((f) => f.category === 'security').length,
-                performance: remaining.filter((f) => f.category === 'performance').length,
-                style: remaining.filter((f) => f.category === 'style').length
-              }
-            }
-          });
-        }
+      const request = {
+        filePath: finding.filePath,
+        lineNumber: finding.line,
+        originalText: finding.suggestedFix.originalText,
+        replacementText: finding.suggestedFix.replacementText,
+        title: `Review code-review fix · ${finding.title}`,
+        forcePreview: useWorkspaceEditStore.getState().forcePreviewAll
+      };
+      const response = await window.electronAPI.previewSnippetEdit(request);
+      if (!response.success || !response.data) throw new Error(response.error || 'Could not create the code-review fix preview.');
+      if (response.data.applied) {
+        handleAutoAppliedTransaction(response.data.applied);
         return true;
-      } else {
-        toast.error('Could not write file', writeRes.error);
-        return false;
       }
+      const preview = response.data.preview;
+      if (!preview) throw new Error('The code-review fix preview was empty.');
+      useWorkspaceEditStore.getState().setRequest({
+        preview,
+        isStale: false,
+        refresh: async () => {
+          const refreshed = await window.electronAPI.previewSnippetEdit({ ...request, forcePreview: true });
+          if (!refreshed.success || !refreshed.data?.preview) throw new Error(refreshed.error || 'Could not refresh the code-review fix preview.');
+          return refreshed.data.preview;
+        }
+      });
+      toast.info('Review code fix', `Inspect ${finding.filePath}:${finding.line} before applying.`);
+      return true;
     } catch (err) {
-      toast.error('Apply fix error', String(err));
+      toast.error('Could not prepare code-review fix', String(err));
       return false;
     }
   }

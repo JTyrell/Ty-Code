@@ -13,6 +13,10 @@ files:
   - "!node_modules/**/*.map"
   - "!node_modules/*-test*/**"
 
+extraResources:
+  - from: build/icon.png
+    to: icon.png
+
 asar: true
 asarUnpack:
   - "**/*.node"
@@ -39,6 +43,7 @@ fileAssociations:
     role: Editor
 
 win:
+  icon: icon.png
   target:
     - target: nsis
       arch:
@@ -48,8 +53,10 @@ win:
         - x64
   legalTrademarks: Ty-Code
   requestedExecutionLevel: asInvoker
+  artifactName: Ty-Code-${version}-${arch}.${ext}
 
 nsis:
+  artifactName: Ty-Code-Setup-${version}.${ext}
   oneClick: false
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: always
@@ -58,7 +65,12 @@ nsis:
   deleteAppDataOnUninstall: false
   runAfterFinish: true
 
+portable:
+  artifactName: Ty-Code-${version}-portable.${ext}
+
 mac:
+  icon: icon.png
+  artifactName: Ty-Code-${version}-mac.${ext}
   target:
     - target: dmg
       arch:
@@ -80,6 +92,8 @@ dmg:
     height: 380
 
 linux:
+  icon: icons/
+  artifactName: Ty-Code-${version}-${arch}.${ext}
   target:
     - target: AppImage
       arch:

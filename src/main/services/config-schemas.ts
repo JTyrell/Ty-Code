@@ -87,7 +87,6 @@ export const DEFAULT_KEYBINDINGS: KeybindingItem[] = [
   { command: 'workbench.action.gotoLine', key: 'Ctrl+G', mac: 'Cmd+G', category: 'Navigation', description: 'Go to Line' },
   { command: 'workbench.action.gotoSymbol', key: 'Ctrl+Shift+O', mac: 'Cmd+Shift+O', category: 'Navigation', description: 'Go to Symbol in File' },
   { command: 'workbench.action.workspaceSymbol', key: 'Ctrl+T', mac: 'Cmd+T', category: 'Navigation', description: 'Go to Symbol in Workspace' },
-  { command: 'editor.action.formatDocument', key: 'Shift+Alt+F', mac: 'Shift+Option+F', category: 'Editor', description: 'Format Document' },
   { command: 'editor.action.rename', key: 'F2', mac: 'F2', category: 'LSP', description: 'Rename Symbol' },
   { command: 'editor.action.goToDefinition', key: 'F12', mac: 'F12', category: 'LSP', description: 'Go to Definition' },
   { command: 'editor.action.findReferences', key: 'Shift+F12', mac: 'Shift+F12', category: 'LSP', description: 'Find All References' },

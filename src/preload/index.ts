@@ -96,6 +96,7 @@ const api: ElectronAPI = {
   previewReplace: (options: any) => ipcRenderer.invoke('fs:preview-replace', options),
   applyWorkspaceEdit: (previewId: string) => ipcRenderer.invoke('workspace-edit:apply', previewId),
   previewLspWorkspaceEdit: (params: { edit: unknown; title: string; origin: 'lsp-rename' | 'refactor'; forcePreview?: boolean }) => ipcRenderer.invoke('workspace-edit:preview-lsp', params),
+  previewSnippetEdit: (params: any) => ipcRenderer.invoke('workspace-edit:preview-snippet', params),
   cancelWorkspaceEdit: (previewId: string) => ipcRenderer.invoke('workspace-edit:cancel', previewId),
   undoWorkspaceEdit: (transactionId?: string) => ipcRenderer.invoke('workspace-edit:undo', transactionId),
   getRecentWorkspaceEdits: () => ipcRenderer.invoke('workspace-edit:recent-undo'),
@@ -179,7 +180,14 @@ const api: ElectronAPI = {
   parseNaturalLanguageCommand: (request) => ipcRenderer.invoke('ai:parse-nl-command', request),
   getConversationMemories: (query) => ipcRenderer.invoke('ai:get-memories', query),
   addConversationMemory: (memory) => ipcRenderer.invoke('ai:add-memory', memory),
-  getPairProgrammingSuggestions: (event) => ipcRenderer.invoke('ai:pair-suggestions', event)
+  getPairProgrammingSuggestions: (event) => ipcRenderer.invoke('ai:pair-suggestions', event),
+
+  // Phase 5.2: FCC Server Integration (Layer 3)
+  fccGetStatus: () => ipcRenderer.invoke('fcc:get-status'),
+  fccStart: () => ipcRenderer.invoke('fcc:start'),
+  fccStop: () => ipcRenderer.invoke('fcc:stop'),
+  fccRestart: () => ipcRenderer.invoke('fcc:restart'),
+  fccAutoSetup: (providerId?: string) => ipcRenderer.invoke('fcc:auto-setup', providerId)
 };
 
 contextBridge.exposeInMainWorld('electronAPI', api);

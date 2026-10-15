@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import Editor, { DiffEditor, useMonaco } from '@monaco-editor/react';
+import Editor, { DiffEditor } from '@monaco-editor/react';
 import {
   X,
   Check,
@@ -20,6 +20,7 @@ import { useWorkspaceStore } from '../state/workspace-store';
 import { useChatStore } from '../state/chat-store';
 import { useWorkspaceEditStore } from '../state/workspace-edit-store';
 import { useEditorNavigationStore } from '../state/editor-navigation-store';
+import { useLspStore } from '../state/lsp-store';
 import { handleAutoAppliedTransaction, undoWorkspaceEditFromEditor } from '../services/workspace-edit-commands';
 import { toast } from '../state/toast-store';
 import { WelcomePage } from './WelcomePage';
@@ -35,6 +36,7 @@ import {
   applyStoredDiagnostics
 } from '../services/monaco-lsp-adapter';
 import { registerMonacoInlineCompletionProvider } from '../services/monaco-inline-completion';
+import { ensureMonaco, useMonacoRuntime } from '../services/monaco-runtime';
 import { usePairProgrammingStore } from '../state/pair-programming-store';
 
 interface SplitPaneState {
@@ -58,8 +60,10 @@ export const EditorArea: React.FC = () => {
     applyDiff
   } = useWorkspaceStore();
 
-  const monaco = useMonaco();
+  const monacoRuntime = useMonacoRuntime();
+  const monaco = monacoRuntime.monaco;
   const { settings } = useChatStore();
+  const { servers: languageServers } = useLspStore();
   const [minimapEnabled, setMinimapEnabled] = useState(true);
   const [wordWrap, setWordWrap] = useState<'off' | 'on' | 'wordWrapColumn' | 'bounded'>('off');
   const [isZenMode, setIsZenMode] = useState(false);
@@ -80,6 +84,13 @@ export const EditorArea: React.FC = () => {
   const editorRef = useRef<any>(null);
   const activeTab = openTabs.find((t) => t.path === activeTabPath);
   const secondaryTab = openTabs.find((t) => t.path === splitState.secondaryTabPath) || openTabs[1] || null;
+  const shouldLoadMonaco = Boolean(activeTab || diffReview?.isOpen);
+
+  useEffect(() => {
+    if (shouldLoadMonaco && monacoRuntime.status === 'idle') {
+      void ensureMonaco().catch((error) => toast.error('Editor failed to load', String(error)));
+    }
+  }, [shouldLoadMonaco, monacoRuntime.status]);
 
   useEffect(() => () => cursorListenerRef.current?.dispose(), []);
 
@@ -88,8 +99,11 @@ export const EditorArea: React.FC = () => {
     setWordWrap(settings?.editor?.wordWrap ?? 'off');
   }, [settings?.editor?.minimap, settings?.editor?.wordWrap]);
 
+  const previousActivePath = useRef<string | null>(activeTabPath);
   useEffect(() => {
     const autoSave = settings?.editor?.autoSave ?? 'afterDelay';
+    if (autoSave === 'onFocusChange' && previousActivePath.current && previousActivePath.current !== activeTabPath) void saveFile(previousActivePath.current);
+    previousActivePath.current = activeTabPath;
     if (autoSave === 'off') return;
     const timers: number[] = [];
     if (autoSave === 'afterDelay') {
@@ -144,8 +158,10 @@ export const EditorArea: React.FC = () => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
         const editorNode = editorRef.current?.getDomNode?.() as HTMLElement | null;
         const activeElement = document.activeElement;
+        const isEditorFocused = Boolean(editorNode?.contains(activeElement));
+        const isOtherTextField = !isEditorFocused && (activeElement instanceof HTMLInputElement || activeElement instanceof HTMLTextAreaElement || (activeElement instanceof HTMLElement && activeElement.isContentEditable));
         const editState = useWorkspaceEditStore.getState();
-        if (editorNode?.contains(activeElement) && editState.lastAppliedTransactionId && editState.lastAppliedEditorRevision === editState.editorRevision) {
+        if (!isOtherTextField && editState.lastAppliedTransactionId && editState.lastAppliedEditorRevision === editState.editorRevision) {
           e.preventDefault();
           e.stopImmediatePropagation();
           void undoWorkspaceEditFromEditor();
@@ -173,17 +189,22 @@ export const EditorArea: React.FC = () => {
       toggleWordWrap: () => setWordWrap((value) => value === 'on' ? 'off' : 'on'),
       toggleZenMode: () => setIsZenMode((value) => !value),
       splitVertical: () => toggleSplit('vertical'),
-      splitHorizontal: () => toggleSplit('horizontal')
+      splitHorizontal: () => toggleSplit('horizontal'),
+      renameSymbol: () => { void editorRef.current?.getAction('editor.action.rename')?.run(); },
+      findReferences: () => { void editorRef.current?.getAction('editor.action.findReferences')?.run(); },
+      goToDefinition: () => { void editorRef.current?.getAction('editor.action.goToDefinition')?.run(); },
+      goToImplementation: () => { void editorRef.current?.getAction('editor.action.goToImplementation')?.run(); },
+      quickFix: () => { void editorRef.current?.getAction('editor.action.quickFix')?.run(); }
     });
   }, [openTabs, activeTabPath]);
 
   useEffect(() => {
     if (!navigationRequest || openingNavigationId.current === navigationRequest.id) return;
     openingNavigationId.current = navigationRequest.id;
-    const targetPath = navigationRequest.target.filePath
-      ? (navigationRequest.target.filePath.startsWith(workspacePath) || /^[A-Za-z]:[\\/]|^\\\\/.test(navigationRequest.target.filePath)
-        ? navigationRequest.target.filePath
-        : `${workspacePath.replace(/[\\/]+$/, '')}${workspacePath.includes('\\') ? '\\' : '/'}${navigationRequest.target.filePath.replace(/[\\/]/g, workspacePath.includes('\\') ? '\\' : '/')}`)
+    const requestedPath = navigationRequest.target.filePath;
+    const isAbsoluteTarget = Boolean(requestedPath && (/^[A-Za-z]:[\\/]/.test(requestedPath) || requestedPath.startsWith('/') || requestedPath.startsWith('\\\\')));
+    const targetPath = requestedPath
+      ? (isAbsoluteTarget ? requestedPath : `${workspacePath.replace(/[\\/]+$/, '')}${workspacePath.includes('\\') ? '\\' : '/'}${requestedPath.replace(/[\\/]/g, workspacePath.includes('\\') ? '\\' : '/')}`)
       : activeTabPath;
     const navigate = async () => {
       if (targetPath && targetPath !== activeTabPath) {
@@ -682,7 +703,11 @@ export const EditorArea: React.FC = () => {
             </React.Fragment>
           ))}
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px' }}>
-            <span style={{ color: 'var(--accent-cyan)' }}>LSP Active</span>
+            {(() => {
+              const languageId = activeTab.language === 'javascript' ? 'typescript' : activeTab.language === 'c' ? 'cpp' : activeTab.language;
+              const server = languageServers.find((item) => item.languageId === languageId);
+              return <span title={server?.error || server?.resolvedPath || activeTab.language} style={{ color: server?.status === 'running' ? 'var(--accent-green)' : server?.status === 'error' ? 'var(--accent-red)' : 'var(--text-muted)' }}>{server?.status === 'running' ? 'LSP Running' : server?.isAvailable ? 'LSP Ready' : 'LSP Unavailable'}</span>;
+            })()}
             <span>{activeTab.language}</span>
           </div>
         </div>
@@ -690,7 +715,12 @@ export const EditorArea: React.FC = () => {
 
       {/* Main Monaco Surface (Single or Split Pane) */}
       <div style={{ flex: 1, position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: splitState.orientation === 'horizontal' ? 'column' : 'row' }}>
-        {diffReview?.isOpen ? (
+        {(activeTab || diffReview?.isOpen) && !monaco ? (
+          <div role={monacoRuntime.error ? 'alert' : 'status'} style={{ margin: 'auto', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span>{monacoRuntime.error ? `Editor failed to load: ${monacoRuntime.error}` : 'Loading editor…'}</span>
+            {monacoRuntime.error && <button type="button" onClick={() => { void ensureMonaco().catch((error) => toast.error('Editor failed to load', String(error))); }}>Retry</button>}
+          </div>
+        ) : diffReview?.isOpen ? (
           <DiffEditor
             original={diffReview.diff.originalContent}
             modified={diffReview.diff.proposedContent}

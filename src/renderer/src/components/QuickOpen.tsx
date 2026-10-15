@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Search, FileCode, Hash, AtSign, ChevronRight } from 'lucide-react';
+import { ensureMonaco, useMonacoRuntime } from '../services/monaco-runtime';
 import { useWorkspaceStore } from '../state/workspace-store';
 import { useEditorNavigationStore } from '../state/editor-navigation-store';
 
@@ -7,13 +8,15 @@ interface QuickOpenProps {
   isOpen: boolean;
   onClose: () => void;
   onSwitchToCommandPalette?: () => void;
-  onNavigateToLine?: (lineNumber: number) => void;
+  onNavigateToLine?: (lineNumber: number, filePath?: string) => void;
+  initialQuery?: string;
 }
 
 interface SymbolItem {
   name: string;
   kindName: string;
   line: number;
+  filePath?: string;
 }
 
 function joinWorkspacePath(root: string, relativePath: string): string {
@@ -25,8 +28,10 @@ export const QuickOpen: React.FC<QuickOpenProps> = ({
   isOpen,
   onClose,
   onSwitchToCommandPalette,
-  onNavigateToLine
+  onNavigateToLine,
+  initialQuery = ''
 }) => {
+  const monaco = useMonacoRuntime().monaco;
   const [query, setQuery] = useState('');
   const [files, setFiles] = useState<string[]>([]);
   const [symbols, setSymbols] = useState<SymbolItem[]>([]);
@@ -37,7 +42,7 @@ export const QuickOpen: React.FC<QuickOpenProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      setQuery('');
+      setQuery(initialQuery);
       setSelectedIndex(0);
       setSymbols([]);
       setTimeout(() => inputRef.current?.focus(), 50);
@@ -50,7 +55,7 @@ export const QuickOpen: React.FC<QuickOpenProps> = ({
       });
 
       // If active tab exists, pre-fetch symbols
-      if (activeTabPath) {
+      if (activeTabPath && !initialQuery.startsWith('#')) {
         void window.electronAPI.lspDocumentSymbols({ filePath: activeTabPath }).then((res) => {
           if (res.success && Array.isArray(res.data)) {
             const flattened: SymbolItem[] = [];
@@ -70,7 +75,32 @@ export const QuickOpen: React.FC<QuickOpenProps> = ({
         });
       }
     }
-  }, [isOpen, activeTabPath]);
+  }, [isOpen, activeTabPath, initialQuery]);
+
+  const loadWorkspaceSymbols = async (searchTerm: string) => {
+    const response = await window.electronAPI.lspWorkspaceSymbols({ query: searchTerm });
+    if (!response.success || !Array.isArray(response.data)) {
+      setSymbols([]);
+      return;
+    }
+    setSymbols(response.data.flatMap((item: any) => {
+      const location = item.location || item;
+      if (!location.uri || !location.range) return [];
+      let filePath = location.uri;
+      try { filePath = monaco?.Uri.parse(location.uri).fsPath || location.uri; } catch { /* retain URI for safe failure */ }
+      return [{ name: item.name, kindName: item.containerName || item.detail || 'Workspace symbol', line: (location.range.start?.line ?? 0) + 1, filePath }];
+    }));
+  };
+
+  useEffect(() => {
+    if (!isOpen || !initialQuery.startsWith('#')) return;
+    let cancelled = false;
+    void ensureMonaco().then(() => {
+      if (!cancelled) return loadWorkspaceSymbols('');
+      return undefined;
+    }).catch(() => setSymbols([]));
+    return () => { cancelled = true; };
+  }, [isOpen, initialQuery]);
 
   const handleQueryChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
@@ -81,6 +111,16 @@ export const QuickOpen: React.FC<QuickOpenProps> = ({
     if (val.startsWith('>')) {
       onClose();
       onSwitchToCommandPalette?.();
+      return;
+    }
+
+    if (val.startsWith('#')) {
+      try {
+        await ensureMonaco();
+        await loadWorkspaceSymbols(val.slice(1).trim());
+      } catch {
+        setSymbols([]);
+      }
       return;
     }
 
@@ -105,12 +145,13 @@ export const QuickOpen: React.FC<QuickOpenProps> = ({
   };
 
   const handleSelectSymbol = (sym: SymbolItem) => {
-    onNavigateToLine?.(sym.line);
+    onNavigateToLine?.(sym.line, sym.filePath);
     onClose();
   };
 
   const isLineMode = query.startsWith(':');
-  const isSymbolMode = query.startsWith('@');
+  const isWorkspaceSymbolMode = query.startsWith('#');
+  const isSymbolMode = query.startsWith('@') || isWorkspaceSymbolMode;
 
   const filteredSymbols = symbols.filter((s) => {
     const search = query.slice(1).toLowerCase().trim();
@@ -190,7 +231,7 @@ export const QuickOpen: React.FC<QuickOpenProps> = ({
           {isLineMode ? (
             <Hash size={16} color="var(--accent-amber)" />
           ) : isSymbolMode ? (
-            <AtSign size={16} color="var(--accent-cyan)" />
+            isWorkspaceSymbolMode ? <Hash size={16} color="var(--accent-cyan)" /> : <AtSign size={16} color="var(--accent-cyan)" />
           ) : (
             <Search size={16} color="var(--accent-primary)" />
           )}
@@ -201,7 +242,7 @@ export const QuickOpen: React.FC<QuickOpenProps> = ({
             value={query}
             onChange={handleQueryChange}
             onKeyDown={handleKeyDown}
-            placeholder="Search files by name (type :line to jump, @symbol for outline, > for commands)..."
+            placeholder="Search files; use :line, @file symbol, #workspace symbol, or >command..."
             style={{
               flex: 1,
               background: 'transparent',

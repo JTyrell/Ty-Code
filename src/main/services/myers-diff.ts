@@ -31,12 +31,31 @@ export interface MyersDiffResult {
 }
 
 export class MyersDiff {
+  public static readonly MAX_INPUT_CHARS = 200_000;
+  public static readonly MAX_EDIT_DISTANCE = 2_000;
+
+  private static coarseDiff(a: string[], b: string[], contextLines: number): MyersDiffResult {
+    const edits: DiffEdit[] = [
+      ...a.map((text, index) => ({ operation: 'delete' as const, text, oldLineNumber: index + 1 })),
+      ...b.map((text, index) => ({ operation: 'insert' as const, text, newLineNumber: index + 1 }))
+    ];
+    const hunks = this.buildHunks(edits, contextLines);
+    return {
+      edits,
+      unifiedDiff: hunks.map((hunk) => `${hunk.header}\n${hunk.lines.join('\n')}`).join('\n'),
+      hunks,
+      additions: b.length,
+      deletions: a.length,
+      isIdentical: false
+    };
+  }
+
   /**
    * Split string into lines while preserving empty trailing lines appropriately.
    */
   public static splitLines(text: string): string[] {
     if (text.length === 0) return [];
-    return text.split(/\r?\n/);
+    return text.split('\n');
   }
 
   /**
@@ -53,6 +72,10 @@ export class MyersDiff {
         deletions: 0,
         isIdentical: true
       };
+    }
+
+    if (textA.length + textB.length > this.MAX_INPUT_CHARS) {
+      throw new Error(`Diff input exceeds the ${this.MAX_INPUT_CHARS.toLocaleString()} character limit.`);
     }
 
     const a = this.splitLines(textA);
@@ -109,13 +132,15 @@ export class MyersDiff {
     v.fill(-1);
     v[offset + 1] = 0;
 
-    // History to trace back the edit script
-    const trace: Int32Array[] = [];
+    // Store only the frontier needed to backtrack each edit-distance layer.
+    const trace: Array<{ d: number; values: Int32Array }> = [];
 
     let reached = false;
     for (let d = 0; d <= MAX; d++) {
-      const vCopy = new Int32Array(v);
-      trace.push(vCopy);
+      if (d > this.MAX_EDIT_DISTANCE) return this.coarseDiff(a, b, contextLines);
+      const frontier = new Int32Array(2 * d + 3);
+      for (let k = -d - 1; k <= d + 1; k++) frontier[k + d + 1] = v[offset + k];
+      trace.push({ d, values: frontier });
 
       for (let k = -d; k <= d; k += 2) {
         let x: number;
@@ -149,18 +174,19 @@ export class MyersDiff {
     let x = N;
     let y = M;
 
-    for (let d = trace.length - 1; d >= 0; d--) {
-      const currentV = trace[d];
+    for (let index = trace.length - 1; index >= 0; index--) {
+      const { d, values: currentV } = trace[index];
       const k = x - y;
+      const getFrontier = (diagonal: number) => currentV[diagonal + d + 1];
 
       let prevK: number;
-      if (k === -d || (k !== d && currentV[offset + k - 1] < currentV[offset + k + 1])) {
+      if (k === -d || (k !== d && getFrontier(k - 1) < getFrontier(k + 1))) {
         prevK = k + 1;
       } else {
         prevK = k - 1;
       }
 
-      const prevX = currentV[offset + prevK];
+      const prevX = getFrontier(prevK);
       const prevY = prevX - prevK;
 
       // Diagonal snake in reverse

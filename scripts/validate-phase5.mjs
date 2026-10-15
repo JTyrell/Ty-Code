@@ -30,13 +30,15 @@ await Promise.all([
   bundleConfig('src/main/ipc/fs-handlers.ts', 'fs-handlers.cjs'),
   bundleConfig('src/main/services/config-schemas.ts', 'config-schemas.cjs'),
   bundleConfig('src/main/services/workspace-edit-preview.ts', 'workspace-edit-preview.cjs'),
-  bundleConfig('src/main/services/lsp-path-utils.ts', 'lsp-path-utils.cjs')
+  bundleConfig('src/main/services/lsp-path-utils.ts', 'lsp-path-utils.cjs'),
+  bundleConfig('src/main/services/myers-diff.ts', 'myers-diff.cjs')
 ]);
 
 const { LspClient } = require(path.join(bundleDir, 'lsp-client.cjs'));
 const { LspManager, SUPPORTED_LANGUAGE_SERVERS } = require(path.join(bundleDir, 'lsp-manager.cjs'));
-const { WorkspaceEditPreviewService } = require(path.join(bundleDir, 'workspace-edit-preview.cjs'));
+const { WorkspaceEditPreviewService, classifySingleFileEdit } = require(path.join(bundleDir, 'workspace-edit-preview.cjs'));
 const { toFileUri, fromFileUri } = require(path.join(bundleDir, 'lsp-path-utils.cjs'));
+const { MyersDiff } = require(path.join(bundleDir, 'myers-diff.cjs'));
 const { searchInWorkspaceFiles, replaceInWorkspaceFiles } = require(path.join(bundleDir, 'fs-handlers.cjs'));
 const { DEFAULT_KEYBINDINGS, DEFAULT_EDITOR_SETTINGS, SETTINGS_JSON_SCHEMA, KEYBINDINGS_JSON_SCHEMA } = require(path.join(bundleDir, 'config-schemas.cjs'));
 
@@ -108,6 +110,28 @@ async function runPhase5Validation() {
   assert.strictEqual(diagnosticsReceived.diagnostics[0].severity, 1, 'Diagnostic severity preserved');
   console.log('✓ LSP diagnostics event dispatched and handled');
 
+  // Real subprocess fixture verifies the stdio initialize/request/notification lifecycle without relying on installed language servers.
+  const fakeServerPath = path.join(projectRoot, 'scripts', 'fixtures', 'fake-lsp-server.mjs');
+  const fakeClient = new LspClient({ command: process.execPath, args: [fakeServerPath], workspacePath: testDir, languageId: 'typescript' });
+  let fixtureDiagnostics = null;
+  fakeClient.on('diagnostics', (payload) => { fixtureDiagnostics = payload; });
+  await fakeClient.start();
+  const fixtureUri = toFileUri(path.join(testDir, 'fixture.ts'));
+  fakeClient.didOpen(fixtureUri, 'typescript', 1, 'x');
+  const fakeCompletion = await fakeClient.completion(fixtureUri, { line: 0, character: 1 });
+  assert.strictEqual(fakeCompletion.items[0].label, 'fakeCompletion', 'Fake stdio server answers an LSP completion request');
+  await new Promise((resolve, reject) => {
+    const deadline = setTimeout(() => reject(new Error('Fake server diagnostics timed out.')), 1000);
+    const poll = () => {
+      if (fixtureDiagnostics) { clearTimeout(deadline); resolve(); }
+      else setTimeout(poll, 10);
+    };
+    poll();
+  });
+  assert.strictEqual(fixtureDiagnostics.diagnostics[0].message, 'fixture diagnostic', 'Fake server diagnostics survive stdio framing');
+  await fakeClient.stop();
+  console.log('✓ Fake stdio LSP process initializes, answers requests, emits diagnostics, and shuts down');
+
   // --- Assertion 3: Language Server Discovery & Multi-Language Registry ---
   console.log('\n--- Assertion 3: Multi-Language Server Support & File Routing ---');
   const manager = new LspManager(testDir, { resolveSystemExecutable: async () => ({}) });
@@ -122,6 +146,7 @@ async function runPhase5Validation() {
   assert.ok(ids.includes('go'), 'Go support registered');
   assert.ok(ids.includes('java'), 'Java support registered');
   assert.ok(ids.includes('cpp'), 'C/C++ support registered');
+  for (const server of allServers) assert.strictEqual(server.installCommands?.length, 3, `${server.languageId} has guidance for Windows, macOS, and Linux`);
 
   // Extension resolution
   assert.strictEqual(manager.getLanguageIdForFile('src/index.ts'), 'typescript');
@@ -263,6 +288,12 @@ async function runPhase5Validation() {
   assert.strictEqual(await fs.readFile(firstFile, 'utf-8'), firstOriginal, 'Stale validation writes nothing to other files');
   await fs.writeFile(secondFile, secondOriginal, 'utf-8');
 
+  const versionPreview = await editService.createLspPreview(makeRenameEdit(), 'Rename oldName');
+  transactionManager.onDocumentChanged(firstFile, `${firstOriginal}// typed after request\n`);
+  await assert.rejects(editService.applyPreview(versionPreview.previewId), /document .* changed since/i, 'Open-document version changes block the transaction');
+  assert.strictEqual(await fs.readFile(secondFile, 'utf-8'), secondOriginal, 'Document-version rejection leaves the other file untouched');
+  transactionManager.onDocumentOpened(firstFile, 'typescript', firstOriginal);
+
   const applyPreview = await editService.createLspPreview(makeRenameEdit(), 'Rename oldName');
   const applied = await editService.applyPreview(applyPreview.previewId);
   assert.strictEqual(applied.files.length, 2, 'Apply reports the complete transaction');
@@ -288,6 +319,37 @@ async function runPhase5Validation() {
 
   const unsupportedRefactor = { documentChanges: [{ kind: 'rename', oldUri: toFileUri(firstFile), newUri: toFileUri(path.join(transactionWorkspace, 'src', 'renamed.ts')) }] };
   await assert.rejects(editService.createLspPreview(unsupportedRefactor, 'Rename file'), /not supported/i, 'Unsupported resource operations are rejected before writes');
+
+  const classifierSample = (originalContent, modifiedContent) => ({
+    originalContent,
+    modifiedContent,
+    diff: MyersDiff.diff(originalContent, modifiedContent),
+    editCount: 1,
+    filePath: 'src/sample.ts'
+  });
+  assert.strictEqual(classifySingleFileEdit(classifierSample('const value = 1;\n', '// comment\nconst value = 1;\n')).safe, true, 'Low-risk comment addition is classifier-approved');
+  assert.strictEqual(classifySingleFileEdit(classifierSample('const value = 1;\n', 'deleteManyThings();\n')).safe, false, 'Unknown code addition is not auto-applied');
+  assert.strictEqual(classifySingleFileEdit(classifierSample('const value = 1;\n', 'const value = 2;\n')).safe, false, 'Code changes require explicit review');
+  const autoManager = new LspManager(transactionWorkspace, { resolveSystemExecutable: async () => ({}) });
+  const autoFile = path.join(transactionWorkspace, 'src', 'auto.ts');
+  const autoContent = '// TODO: follow up\nconst value = 1;\n';
+  await fs.writeFile(autoFile, autoContent, 'utf-8');
+  await autoManager.onDocumentOpened(autoFile, 'typescript', autoContent);
+  const autoService = new WorkspaceEditPreviewService(transactionWorkspace, autoManager, { isTracked: async () => true });
+  const autoPreview = await autoService.createSearchReplacePreview({ query: 'TODO', replacement: 'FIXME', isCaseSensitive: true });
+  assert.strictEqual(await autoService.tryAutoApplyPreview(autoPreview.previewId, { enabled: true, forcePreviewAll: true }), null, 'Session force-preview disables otherwise safe auto-apply');
+  const permittedAutoPreview = await autoService.createSearchReplacePreview({ query: 'TODO', replacement: 'FIXME', isCaseSensitive: true });
+  const autoResult = await autoService.tryAutoApplyPreview(permittedAutoPreview.previewId, { enabled: true, forcePreviewAll: false });
+  assert.strictEqual(autoResult?.autoApplied, true, 'Safe tracked single-file comment edit may auto-apply under the opt-in policy');
+  assert.ok(autoService.getRecentUndo().some((entry) => entry.transactionId === autoResult?.transactionId), 'Auto-applied edit is present in the audit list');
+  await autoService.undoTransaction(autoResult?.transactionId);
+  const packageFile = path.join(transactionWorkspace, 'package.json');
+  await fs.writeFile(packageFile, '{"name":"todo"}\n', 'utf-8');
+  const protectedService = new WorkspaceEditPreviewService(transactionWorkspace, autoManager, { isTracked: async () => true });
+  const protectedPreview = await protectedService.createSearchReplacePreview({ query: 'todo', replacement: 'fix', isCaseSensitive: true, filePaths: [packageFile] });
+  assert.strictEqual(await protectedService.tryAutoApplyPreview(protectedPreview.previewId, { enabled: true, forcePreviewAll: false }), null, 'Protected package manifests always remain review-first');
+  assert.ok((await fs.readFile(packageFile, 'utf-8')).includes('todo'), 'Protected-file auto-apply refusal does not write');
+  console.log('✓ Risk classifier defaults unknown edits to review, tracks safe auto-applies, and blocks protected paths');
   console.log('✓ Local binaries stay inert; preview/cancel/stale/apply/undo preserve all-or-nothing semantics');
 
   // --- Assertion 9: Command Palette & Keybinding Schema Integrity ---
@@ -308,7 +370,14 @@ async function runPhase5Validation() {
   assert.ok(SETTINGS_JSON_SCHEMA.properties['lsp.servers'], 'LSP servers property configured');
   assert.ok(SETTINGS_JSON_SCHEMA.properties['editor.minimap.enabled'], 'Minimap setting configured');
   assert.ok(SETTINGS_JSON_SCHEMA.properties['editor.wordWrap'], 'Word wrap setting configured');
-  console.log('✓ VS Code keybindings and schema configurations verified');
+  assert.ok(SETTINGS_JSON_SCHEMA.properties['editor.reviewPolicy'], 'Risk-based review policy is declared with a safe default');
+  assert.ok(SETTINGS_JSON_SCHEMA.properties['lsp.servers'].additionalProperties.properties.path, 'Per-language explicit server path is declared');
+  const rendererHtml = await fs.readFile(path.join(projectRoot, 'src', 'renderer', 'index.html'), 'utf-8');
+  const workerBootstrap = await fs.readFile(path.join(projectRoot, 'src', 'renderer', 'src', 'services', 'monaco-workers.ts'), 'utf-8');
+  assert.match(rendererHtml, /script-src 'self'/, 'Production renderer CSP allows only local scripts');
+  assert.doesNotMatch(rendererHtml, /cdn\.jsdelivr\.net\/npm\/monaco-editor/i, 'Renderer does not load Monaco from a CDN');
+  assert.match(workerBootstrap, /getWorker\(_workerId/, 'Monaco workers are configured from bundled worker modules');
+  console.log('✓ VS Code keybindings, safe settings, and local Monaco CSP configuration verified');
 
   // Clean test workspace
   try {

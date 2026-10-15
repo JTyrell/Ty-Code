@@ -15,14 +15,18 @@ import {
   RotateCw,
   Search,
   Check,
-  Copy
+  Copy,
+  Zap
 } from 'lucide-react';
 import { useChatStore } from '../state/chat-store';
 import type { EditReviewPolicy, ProviderType, ShellInfo, TerminalProfile, LanguageServerStatus } from '../../../preload/types';
 import { DEFAULT_KEYBINDINGS, type KeybindingItem } from '../../../main/services/config-schemas';
 import { useLspStore } from '../state/lsp-store';
+import { toast } from '../state/toast-store';
+import { FCCSetup } from './settings/FCCSetup';
 
-type SettingsTab = 'keys' | 'endpoints' | 'params' | 'terminal' | 'lsp' | 'editor' | 'shortcuts' | 'extensions';
+type UpdateChannelPreference = 'stable' | 'beta' | 'nightly';
+type SettingsTab = 'fcc' | 'keys' | 'endpoints' | 'params' | 'terminal' | 'lsp' | 'editor' | 'shortcuts' | 'extensions';
 
 function createProfileId(): string {
   return `profile_${globalThis.crypto.randomUUID()}`;
@@ -62,10 +66,24 @@ export const SettingsModal: React.FC = () => {
   const [editorWordWrap, setEditorWordWrap] = useState<'off' | 'on' | 'wordWrapColumn' | 'bounded'>('off');
   const [reviewPolicy, setReviewPolicy] = useState<EditReviewPolicy>('alwaysReview');
   const [lspAutoStart, setLspAutoStart] = useState(true);
+  const [updateChannel, setUpdateChannel] = useState<UpdateChannelPreference>(() => {
+    const saved = localStorage.getItem('ty_code_update_channel');
+    return saved === 'beta' || saved === 'nightly' ? saved : 'stable';
+  });
+  const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
 
   // Keybindings state
   const [keybindingSearch, setKeybindingSearch] = useState('');
   const [thirdPartyRuntimeEnabled, setThirdPartyRuntimeEnabled] = useState(false);
+
+  useEffect(() => {
+    const saved = localStorage.getItem('ty_code_update_channel');
+    const channel: UpdateChannelPreference = saved === 'beta' || saved === 'nightly' ? saved : 'stable';
+    setUpdateChannel(channel);
+    void window.electronAPI.setUpdateChannel(channel).then((response) => {
+      if (!response.success) console.warn('Could not restore the saved update channel:', response.error);
+    }).catch((reason: unknown) => console.warn('Could not restore the saved update channel:', reason));
+  }, []);
 
   useEffect(() => {
     if (!settings) return;
@@ -217,6 +235,35 @@ export const SettingsModal: React.FC = () => {
     }
   };
 
+  const handleUpdateChannelChange = async (channel: UpdateChannelPreference) => {
+    const previous = updateChannel;
+    setUpdateChannel(channel);
+    try {
+      const result = await window.electronAPI.setUpdateChannel(channel);
+      if (!result.success) throw new Error(result.error || 'Could not change the update channel.');
+      localStorage.setItem('ty_code_update_channel', channel);
+      toast.success('Update channel changed', `Ty-Code will check the ${channel} release channel.`);
+    } catch (reason) {
+      setUpdateChannel(previous);
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  };
+
+  const handleCheckForUpdates = async () => {
+    setIsCheckingUpdate(true);
+    setError('');
+    try {
+      const result = await window.electronAPI.checkForUpdates();
+      if (result.error) throw new Error(result.error);
+      if (!result.updateAvailable) toast.success('Up to date', `Ty-Code v${result.currentVersion} is the latest version.`);
+      // The TitleBar listens for the update:available event and supplies the Download action.
+    } catch (reason) {
+      toast.error('Update check failed', reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setIsCheckingUpdate(false);
+    }
+  };
+
   const handleSave = async () => {
     setError('');
     const saved = await saveSettings({
@@ -288,6 +335,7 @@ export const SettingsModal: React.FC = () => {
         </header>
 
         <nav className="settings-tabs" aria-label="Settings sections">
+          <button className={activeTab === 'fcc' ? 'is-active' : ''} onClick={() => setActiveTab('fcc')} style={{ color: activeTab === 'fcc' ? 'var(--accent-primary)' : undefined }}><Zap size={13} color="#f59e0b" />Free Models (FCC)</button>
           <button className={activeTab === 'keys' ? 'is-active' : ''} onClick={() => setActiveTab('keys')}><Key size={13} />API Keys</button>
           <button className={activeTab === 'endpoints' ? 'is-active' : ''} onClick={() => setActiveTab('endpoints')}><Server size={13} />Endpoints</button>
           <button className={activeTab === 'params' ? 'is-active' : ''} onClick={() => setActiveTab('params')}><Sliders size={13} />Inference</button>
@@ -299,6 +347,8 @@ export const SettingsModal: React.FC = () => {
         </nav>
 
         <div className="settings-body" style={{ maxHeight: '420px', overflowY: 'auto' }}>
+          {activeTab === 'fcc' && <FCCSetup />}
+
           {activeTab === 'keys' && <>
             {renderApiKey('openrouter', 'OpenRouter API key', openRouterKey, setOpenRouterKey, 'sk-or-v1-…')}
             {renderApiKey('groq', 'Groq API key', groqKey, setGroqKey, 'gsk_…')}
@@ -385,7 +435,7 @@ export const SettingsModal: React.FC = () => {
                     {server.isAvailable && <div className="settings-hint">
                       Found at <code>{server.resolvedPath}</code>{server.version ? <> · Version {server.version}</> : ' · Version unavailable'}
                     </div>}
-                    {!server.isAvailable && server.workspaceCandidates?.map((candidate) => (
+                    {server.workspaceCandidates?.map((candidate) => (
                       <div className="settings-hint" key={candidate.path}>
                         Project-local candidate (not run): <code>{candidate.path}</code>. Configure its absolute path below only if you trust this workspace.
                       </div>
@@ -514,6 +564,19 @@ export const SettingsModal: React.FC = () => {
                   style={{ width: '100%' }}
                 />
               </div>
+              <section className="settings-section" aria-labelledby="updates-heading">
+                <h3 id="updates-heading" className="settings-field-label">Application updates</h3>
+                <label className="settings-field-label" htmlFor="update-channel">Release channel</label>
+                <select id="update-channel" value={updateChannel} onChange={(event) => void handleUpdateChannelChange(event.target.value as UpdateChannelPreference)} style={{ width: '100%' }}>
+                  <option value="stable">Stable</option>
+                  <option value="beta">Beta</option>
+                  <option value="nightly">Nightly</option>
+                </select>
+                <p className="settings-hint">Beta and nightly builds are available only when matching prerelease releases and update manifests are published.</p>
+                <button type="button" className="settings-save" onClick={() => void handleCheckForUpdates()} disabled={isCheckingUpdate}>
+                  {isCheckingUpdate ? 'Checking for updates…' : 'Check for Updates'}
+                </button>
+              </section>
             </div>
           )}
 

@@ -7,6 +7,7 @@ import { build } from 'esbuild';
 
 const require = createRequire(import.meta.url);
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const packageJson = JSON.parse(await fs.readFile(path.join(projectRoot, 'package.json'), 'utf-8'));
 const testDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ty-code-phase6-'));
 const bundleDir = path.join(testDir, 'bundle');
 await fs.mkdir(bundleDir, { recursive: true });
@@ -14,7 +15,8 @@ await fs.mkdir(bundleDir, { recursive: true });
 const mockElectronPath = path.join(testDir, 'mock-electron.cjs');
 await fs.writeFile(
   mockElectronPath,
-  `module.exports = {
+  `const path = require('node:path');
+module.exports = {
   app: {
     getPath: (name) => path.join('${testDir.replace(/\\/g, '\\\\')}', 'userdata'),
     getVersion: () => '0.1.0',
@@ -108,6 +110,14 @@ async function runValidation() {
   verify(restoredState.x === 120 && restoredState.y === 80, 'Window coordinates persisted and restored correctly');
   verify(restoredState.width === 1400 && restoredState.height === 900, 'Window dimensions saved accurately');
 
+  const recentManager = new RecentWorkspacesManager(path.join(testDir, 'recent-workspaces.json'));
+  const recent = recentManager.addRecent(path.join(testDir, 'sample-project'));
+  verify(recent[0]?.name === 'sample-project' && recentManager.getRecent().length === 1, 'Recent workspaces persist and load from disk');
+  recentManager.addRecent(path.join(testDir, 'sample-project'));
+  verify(recentManager.getRecent().length === 1, 'Opening the same project updates rather than duplicates its entry');
+  recentManager.clearRecent();
+  verify(recentManager.getRecent().length === 0, 'Recent workspaces can be cleared');
+
   // --- 2. Myers Diff Algorithm ---
   console.log('\n--- Assertion 2: Myers Diff Shortest Edit Script (SES) & Unified Diff ---');
   const textA = 'function add(a, b) {\n  return a + b;\n}\n';
@@ -126,20 +136,59 @@ async function runValidation() {
   const disjointResult = MyersDiff.diff('foo', 'bar');
   verify(disjointResult.deletions === 1 && disjointResult.additions === 1, 'Disjoint lines identified as 1 deletion and 1 addition');
 
+  const lineEndingResult = MyersDiff.diff('alpha\r\nbeta\r\n', 'alpha\nbeta\n');
+  verify(!lineEndingResult.isIdentical && lineEndingResult.additions > 0 && lineEndingResult.deletions > 0, 'CRLF-to-LF changes are visible in the diff');
+  const overLimitDiff = (() => {
+    try { MyersDiff.diff('a'.repeat(100_001), 'b'.repeat(100_001)); return false; } catch (error) { return String(error).includes('character limit'); }
+  })();
+  verify(overLimitDiff, 'Rejects total text beyond the bounded diff input size');
+  const coarseDiff = MyersDiff.diff(
+    Array.from({ length: 1_001 }, (_, index) => `old-${index}`).join('\n'),
+    Array.from({ length: 1_001 }, (_, index) => `new-${index}`).join('\n')
+  );
+  verify(coarseDiff.additions === 1_001 && coarseDiff.deletions === 1_001, 'Uses a bounded-memory replacement fallback for highly divergent text');
+
   // --- 3. Auto-Update Service & Channels ---
   console.log('\n--- Assertion 3: Auto-Update Channels & Lifecycle ---');
-  const updateManager = new UpdateManager();
-  verify(updateManager.getChannel() === 'stable', 'Default update channel is stable');
+  let updaterResult = {
+    isUpdateAvailable: true,
+    updateInfo: { version: '0.2.0', releaseNotes: 'Update notes', releaseDate: '2026-10-14' }
+  };
+  const fakeUpdater = {
+    autoDownload: true,
+    autoInstallOnAppQuit: false,
+    allowPrerelease: false,
+    channel: 'latest',
+    on: () => {},
+    checkForUpdates: async () => updaterResult,
+    downloadUpdate: async () => []
+  };
+  const updateManager = new UpdateManager({ updater: fakeUpdater, isPackaged: true, currentVersion: '0.1.0' });
+  verify(updateManager.getChannel() === 'stable' && fakeUpdater.autoDownload === false, 'Default update channel is stable and updater waits for approval');
 
   updateManager.setChannel('beta');
-  verify(updateManager.getChannel() === 'beta', 'Channel dynamically switched to beta');
+  verify(updateManager.getChannel() === 'beta' && fakeUpdater.channel === 'beta' && fakeUpdater.allowPrerelease, 'Beta channel configures prerelease update source');
 
   updateManager.setChannel('nightly');
-  verify(updateManager.getChannel() === 'nightly', 'Channel dynamically switched to nightly');
+  verify(updateManager.getChannel() === 'nightly' && fakeUpdater.channel === 'nightly', 'Nightly channel is applied to the updater');
+  let invalidChannelRejected = false;
+  try { updateManager.setChannel('preview'); } catch { invalidChannelRejected = true; }
+  verify(invalidChannelRejected, 'Unknown update channels are rejected');
 
-  const checkResult = await updateManager.checkForUpdates();
-  verify(typeof checkResult.updateAvailable === 'boolean', 'Update check returns boolean availability');
-  verify(typeof checkResult.currentVersion === 'string', 'Update check reports current package version');
+  const updateResult = await updateManager.checkForUpdates();
+  verify(updateResult.updateAvailable && updateResult.latestVersion === '0.2.0', 'Real updater result reports an available update and release details');
+  updaterResult = { isUpdateAvailable: false, updateInfo: { version: '0.0.9' } };
+  const downgradeResult = await updateManager.checkForUpdates();
+  verify(!downgradeResult.updateAvailable && downgradeResult.latestVersion === '0.0.9', 'Older channel release is not offered as an update');
+  verify((await updateManager.downloadUpdate()).success, 'Approved update download is delegated to electron-updater');
+
+  const failingManager = new UpdateManager({
+    updater: { ...fakeUpdater, checkForUpdates: async () => { throw new Error('network unavailable'); } },
+    isPackaged: true,
+    currentVersion: '0.1.0'
+  });
+  const failedCheck = await failingManager.checkForUpdates();
+  verify(failedCheck.error === 'network unavailable', 'Updater failures are returned for visible renderer feedback');
 
   // --- 4. Virtual File Tree (10,000+ Files Flattening & Slice Window) ---
   console.log('\n--- Assertion 4: Virtual Scrolling File Tree (10,000+ File Nodes) ---');
@@ -199,7 +248,7 @@ async function runValidation() {
   verify(renderedCount < 45, `Virtual window bounds active DOM elements to ${renderedCount} nodes (<45 max DOM nodes)`);
 
   // --- 5. Storage Cache & TTL Persistence ---
-  console.log('\n--- Assertion 5: Storage Cache with TTL Expiration & LRU Eviction ---');
+  console.log('\n--- Assertion 5: Storage Cache TTL & Memory Fallback ---');
   const cache = new StorageCache('test_cache_' + Date.now(), 'store');
   await cache.set('user_pref', { theme: 'dark', fontSize: 14 });
   const cachedVal = await cache.get('user_pref');
@@ -240,14 +289,44 @@ async function runValidation() {
   verify(builderYaml.includes('appId: com.tycode.app'), 'AppId is configured');
   verify(builderYaml.includes('target: nsis') && builderYaml.includes('target: portable'), 'Windows installer and portable targets configured');
   verify(builderYaml.includes('target: dmg') && builderYaml.includes('target: zip'), 'macOS DMG and ZIP targets configured');
-  verify(builderYaml.includes('target: AppImage') && builderYaml.includes('target: deb'), 'Linux AppImage and DEB targets configured');
+  verify(builderYaml.includes('target: AppImage') && builderYaml.includes('target: deb') && builderYaml.includes('target: rpm'), 'Linux AppImage, DEB, and RPM targets configured');
+  verify(builderYaml.includes('hardenedRuntime: true') && builderYaml.includes('artifactName:'), 'Hardened runtime and deterministic artifact names are configured');
+  for (const platform of ['win', 'mac']) {
+    verify(new RegExp(`${platform}:\\s*\\n\\s+icon:\\s*icon\\.png`).test(builderYaml), `${platform} packaging uses the shared branded PNG icon source`);
+  }
+  verify(builderYaml.includes('linux:\n  icon: icons/'), 'Linux packaging uses the generated hicolor icon set');
+  verify(builderYaml.includes('from: build/icon.png') && builderYaml.includes('to: icon.png'), 'Packaged app includes the runtime window icon resource');
+  const iconSvg = await fs.readFile(path.join(projectRoot, 'build/icon.svg'), 'utf-8');
+  verify(iconSvg.includes('viewBox="0 0 1024 1024"') && iconSvg.includes('#8B5CF6') && iconSvg.includes('#06B6D4'), 'Branded vector master has a square high-resolution canvas and Ty-Code accent colors');
+  const iconPng = await fs.readFile(path.join(projectRoot, 'build/icon.png'));
+  verify(iconPng.toString('hex', 0, 8) === '89504e470d0a1a0a' && iconPng.readUInt32BE(16) === 1024 && iconPng.readUInt32BE(20) === 1024, 'Branded PNG icon is a valid 1024px square raster');
+  for (const size of [16, 24, 32, 48, 64, 128, 256, 512]) {
+    const linuxIconPath = path.join(projectRoot, 'build/icons', `${size}x${size}.png`);
+    const linuxIcon = await fs.readFile(linuxIconPath).catch(() => null);
+    verify(linuxIcon?.toString('hex', 0, 8) === '89504e470d0a1a0a' && linuxIcon.readUInt32BE(16) === size && linuxIcon.readUInt32BE(20) === size, `Linux icon set contains a valid ${size}x${size} PNG`);
+  }
+  for (const relativePath of ['build/entitlements.mac.plist', 'build/entitlements.mac.inherit.plist']) {
+    const exists = await fs.stat(path.join(projectRoot, relativePath)).then((stats) => stats.isFile()).catch(() => false);
+    verify(exists, `Configured macOS resource exists: ${relativePath}`);
+  }
+  verify(packageJson.scripts.package?.includes('--publish never') && packageJson.scripts['package:all']?.includes('--publish never'), 'Packaging scripts defer publishing to the release job');
 
   // --- 9. GitHub Actions CI/CD Pipeline ---
   console.log('\n--- Assertion 9: GitHub Actions CI/CD Workflow ---');
   const workflowYaml = await fs.readFile(path.join(projectRoot, '.github/workflows/build.yml'), 'utf-8');
   verify(workflowYaml.includes('matrix:'), 'Matrix build strategy configured');
-  verify(workflowYaml.includes('windows-latest') && workflowYaml.includes('macos-latest') && workflowYaml.includes('ubuntu-latest'), 'Covers Windows, macOS, and Linux runners');
+  verify(workflowYaml.includes('windows-latest') && workflowYaml.includes('macos-latest') && workflowYaml.includes('ubuntu-latest'), 'Test and package jobs cover Windows, macOS, and Linux');
   verify(workflowYaml.includes('npm test'), 'Includes automated test suite execution');
+  verify(workflowYaml.includes('dist-release/*.yml') && workflowYaml.includes('dist-release/*.blockmap'), 'Uploads electron-updater manifests and differential metadata');
+  verify(workflowYaml.includes('dist-release/*.zip') && workflowYaml.includes('dist-release/*.deb') && workflowYaml.includes('dist-release/*.rpm'), 'Uploads macOS ZIP and Linux DEB/RPM formats');
+  verify(workflowYaml.includes('if-no-files-found: error') && !workflowYaml.includes('sha256sum * > SHA256SUMS.txt || true'), 'Missing release artifacts and checksum failures fail the workflow');
+  verify(workflowYaml.includes('WIN_CSC_LINK') && workflowYaml.includes('APPLE_APP_SPECIFIC_PASSWORD'), 'Tagged distribution requires signing and notarization secrets');
+  verify(workflowYaml.includes('Ensure release tag matches package version'), 'Tagged releases reject a package-version mismatch');
+  const settingsUi = await fs.readFile(path.join(projectRoot, 'src/renderer/src/components/SettingsModal.tsx'), 'utf-8');
+  verify(settingsUi.includes('ty_code_update_channel') && settingsUi.includes('Check for Updates') && settingsUi.includes('setUpdateChannel'), 'Settings exposes a persistent release channel and manual update check');
+  const rendererEntry = await fs.readFile(path.join(projectRoot, 'src/renderer/src/main.tsx'), 'utf-8');
+  const monacoRuntime = await fs.readFile(path.join(projectRoot, 'src/renderer/src/services/monaco-runtime.ts'), 'utf-8');
+  verify(!rendererEntry.includes('monaco-editor') && monacoRuntime.includes("import('monaco-editor')"), 'Monaco core is loaded only by the deferred editor runtime');
 
   // --- 10. Automated Release Notes Generator ---
   console.log('\n--- Assertion 10: Release Notes Generator & Conventional Commits ---');
@@ -255,10 +334,12 @@ async function runValidation() {
   verify(notes.includes('# Ty-Code v0.1.0'), 'Release notes header contains package version');
   verify(notes.includes('Highlights'), 'Highlights section included');
   verify(notes.includes('Download Packages'), 'Download packages section included');
+  verify(notes.includes('Ty-Code-0.1.0-mac.dmg') && notes.includes('Ty-Code-0.1.0-x64.AppImage'), 'Release note package names match configured artifacts');
 
   console.log('\n================================================================');
   console.log(`  PHASE 6 VALIDATION SUMMARY: ${passedTests} Passed | ${failedTests} Failed`);
   console.log('================================================================\n');
+  await fs.rm(testDir, { recursive: true, force: true });
 
   if (failedTests > 0) {
     process.exit(1);

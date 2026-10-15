@@ -53,7 +53,7 @@ export const useWorkspaceEditStore = create<WorkspaceEditState>((set) => ({
   clearRequest: () => set({ request: null }),
   setForcePreviewAll: (forcePreviewAll) => set({ forcePreviewAll }),
   markEditorChanged: (filePath, content) => set((state) => ({ editorRevision: state.editorRevision + 1, pendingEditorContents: { ...state.pendingEditorContents, [filePath]: content } })),
-  markTransactionApplied: (transactionId: string) => set((state) => ({ lastAppliedEditorRevision: state.editorRevision, lastAppliedTransactionId: transactionId, pendingEditorContents: {} })),
+  markTransactionApplied: (transactionId: string) => set((state) => ({ lastAppliedEditorRevision: state.editorRevision, lastAppliedTransactionId: transactionId })),
   invalidateUndoShortcut: () => set({ lastAppliedEditorRevision: -1, lastAppliedTransactionId: null }),
   consumePendingEditorContent: (filePath) => {
     let value: string | undefined;

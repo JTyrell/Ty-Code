@@ -1,20 +1,16 @@
 import type { ModelConfig, ProviderSettings, ProviderType } from '../../preload/types';
 import { parseSSELines, type StreamPayload } from './sse-parser';
+import {
+  OmniRouteRouter,
+  omniRouteRouter
+} from '../services/orchestration/router';
+import { connectionPool } from '../services/orchestration/connection-pool';
+import { providerRegistry } from '../services/orchestration/provider-registry';
+import { fccManager } from '../services/orchestration/fcc-manager';
+import type { ProviderCandidate } from '../services/orchestration/strategies/types';
 
-export const DEFAULT_PRESET_MODELS: ModelConfig[] = [
-  { id: 'deepseek/deepseek-chat', name: 'DeepSeek V3 (OpenRouter)', provider: 'openrouter', isFree: false, description: 'Top coding capabilities at ultra-low price' },
-  { id: 'deepseek/deepseek-r1', name: 'DeepSeek R1 Reasoning (OpenRouter)', provider: 'openrouter', isFree: false, description: 'Advanced mathematical & architectural reasoning' },
-  { id: 'qwen/qwen-2.5-coder-32b-instruct', name: 'Qwen 2.5 Coder 32B (OpenRouter)', provider: 'openrouter', isFree: false, description: 'Specialized competitive coding model' },
-  { id: 'meta-llama/llama-3.3-70b-instruct:free', name: 'Llama 3.3 70B (Free OpenRouter)', provider: 'openrouter', isFree: true, description: 'Free tier Llama 3.3 70B' },
-  { id: 'google/gemini-2.0-flash-exp:free', name: 'Gemini 2.0 Flash (Free OpenRouter)', provider: 'openrouter', isFree: true, description: 'High-speed free multimodal model' },
-  { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B (Groq)', provider: 'groq', isFree: false, description: 'Ultra-fast token streaming (~300 tokens/sec)' },
-  { id: 'qwen-2.5-coder-32b', name: 'Qwen 2.5 Coder 32B (Groq)', provider: 'groq', isFree: false, description: 'Blazing fast dedicated coder' },
-  { id: 'deepseek-chat', name: 'DeepSeek V3 (Direct)', provider: 'deepseek', isFree: false, description: 'Direct official DeepSeek endpoint' },
-  { id: 'deepseek-reasoner', name: 'DeepSeek R1 (Direct)', provider: 'deepseek', isFree: false, description: 'Direct official DeepSeek reasoning model' },
-  { id: 'qwen2.5-coder:latest', name: 'Qwen 2.5 Coder (Local Ollama)', provider: 'ollama', isFree: true, description: '100% private offline local inference' },
-  { id: 'deepseek-r1:latest', name: 'DeepSeek R1 (Local Ollama)', provider: 'ollama', isFree: true, description: 'Private offline reasoning model' },
-  { id: 'claude-3-5-sonnet-20241022', name: 'FCC Proxy Claude 3.5 Sonnet', provider: 'fcc-proxy', isFree: true, description: 'Proxied through local free-claude-code instance' }
-];
+import { DEFAULT_PRESET_MODELS } from '../../preload/preset-models';
+export { DEFAULT_PRESET_MODELS };
 
 export interface ChatCompletionMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
@@ -28,6 +24,7 @@ export interface StreamEventCallbacks {
   onToken?: (token: string) => void;
   onThought?: (thought: string) => void;
   onToolCallDelta?: (toolCalls: Array<{ id: string; name: string; arguments: string }>) => void;
+  onFailoverNotice?: (notice: { attempt: number; failedProvider: string; nextProvider?: string; error: string }) => void;
 }
 
 interface AccumulatedToolCall { id: string; name: string; args: string; }
@@ -39,8 +36,12 @@ function appendDelta(existing: string, incoming: string | undefined): string {
 }
 
 export class ProviderGateway {
+  public static router: OmniRouteRouter = omniRouteRouter;
+
   static getEndpoint(provider: ProviderType, customEndpoints: Partial<Record<ProviderType, string>>): string {
     if (customEndpoints[provider]) return customEndpoints[provider]!;
+    const registered = providerRegistry.getProvider(provider);
+    if (registered?.defaultEndpoint) return registered.defaultEndpoint;
     switch (provider) {
       case 'openrouter': return 'https://openrouter.ai/api/v1';
       case 'groq': return 'https://api.groq.com/openai/v1';
@@ -58,36 +59,99 @@ export class ProviderGateway {
     callbacks: StreamEventCallbacks,
     abortSignal?: AbortSignal
   ): Promise<{ fullText: string; fullThought: string; toolCalls: Array<{ id: string; name: string; arguments: Record<string, unknown> }> }> {
-    const provider = settings.activeProvider;
-    const baseUrl = this.getEndpoint(provider, settings.customEndpoints || {});
-    const apiKey = settings.apiKeys[provider] || '';
+    // Determine primary task based on tools or message signals
+    const hasTools = tools && tools.length > 0;
+    const taskType = hasTools ? 'coding' : 'general';
+
+    const executionResult = await this.router.executeWithFailover({
+      context: {
+        taskType,
+        requiredCapabilities: { tools: hasTools },
+        manualSelection: {
+          providerId: settings.activeProvider,
+          modelId: settings.activeModel
+        }
+      },
+      settings,
+      messages,
+      onFailover: (event) => {
+        callbacks.onFailoverNotice?.({
+          attempt: event.attempt,
+          failedProvider: event.failedProvider,
+          nextProvider: event.nextProvider,
+          error: event.error
+        });
+      },
+      execute: async (candidate: ProviderCandidate, reconciledMessages: ChatCompletionMessage[]) => {
+        return this.streamWithCandidate(candidate, settings, reconciledMessages, tools, callbacks, abortSignal);
+      }
+    });
+
+    return executionResult.result;
+  }
+
+  private static async streamWithCandidate(
+    candidate: ProviderCandidate,
+    settings: ProviderSettings,
+    messages: ChatCompletionMessage[],
+    tools: unknown[],
+    callbacks: StreamEventCallbacks,
+    abortSignal?: AbortSignal
+  ): Promise<{ fullText: string; fullThought: string; toolCalls: Array<{ id: string; name: string; arguments: Record<string, unknown> }> }> {
+    const providerId = candidate.provider.id as ProviderType;
+    const modelId = candidate.model.id;
+    const baseUrl = candidate.customEndpoint || this.getEndpoint(providerId, settings.customEndpoints || {});
+    const apiKey = candidate.apiKey || settings.apiKeys[providerId] || '';
+
+    if (providerId === 'fcc-proxy' && !fccManager.getStatus().running) {
+      await fccManager.start();
+    }
+
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
-    if (provider === 'openrouter') {
+    if (candidate.provider.headersFactory) {
+      Object.assign(headers, candidate.provider.headersFactory({ apiKey }));
+    } else if (providerId === 'fcc-proxy' || providerId === 'openrouter') {
+      headers['User-Agent'] = 'free-claude-code/0.9.4 (Ty-Code Desktop Sidecar)';
       headers['HTTP-Referer'] = 'https://github.com/Alishahryar1/free-claude-code';
       headers['X-Title'] = 'Ty-Code Desktop';
+      if (providerId === 'fcc-proxy') {
+        headers['X-FCC-Client'] = 'ty-code';
+      }
     }
+
     const body: Record<string, unknown> = {
-      model: settings.activeModel,
+      model: modelId,
       messages,
       stream: true,
       temperature: settings.temperature ?? 0.2,
-      max_tokens: settings.maxTokens ?? 4096
+      max_tokens: Math.min(settings.maxTokens ?? 4096, candidate.model.maxOutputTokens || 4096)
     };
-    if (tools.length > 0) { body.tools = tools; body.tool_choice = 'auto'; }
+    if (tools && tools.length > 0) {
+      body.tools = tools;
+      body.tool_choice = 'auto';
+    }
+
     const response = await fetch(`${baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-      method: 'POST', headers, body: JSON.stringify(body), signal: abortSignal
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+      signal: abortSignal
     });
+
     if (!response.ok) {
       const errorText = await response.text();
       let parsedError = errorText;
       try {
         const errorJson = JSON.parse(errorText) as { error?: { message?: string }; message?: string };
         parsedError = errorJson.error?.message || errorJson.message || errorText;
-      } catch { /* Use provider's raw error response. */ }
-      throw new Error(`[${provider}] API Error (${response.status}): ${parsedError}`);
+      } catch {
+        // Use provider's raw error response
+      }
+      throw new Error(`[${providerId}] API Error (${response.status}): ${parsedError}`);
     }
-    if (!response.body) throw new Error('Response body is empty');
+
+    if (!response.body) throw new Error(`[${providerId}] Response body is empty`);
 
     let fullText = '';
     let fullThought = '';
@@ -95,12 +159,19 @@ export class ProviderGateway {
     const reader = response.body.getReader();
     const decoder = new TextDecoder('utf-8');
     let buffer = '';
+
     const consume = (payload: StreamPayload) => {
       const delta = payload.choices?.[0]?.delta;
       if (!delta) return;
-      if (delta.content) { fullText += delta.content; callbacks.onToken?.(delta.content); }
+      if (delta.content) {
+        fullText += delta.content;
+        callbacks.onToken?.(delta.content);
+      }
       const thought = delta.reasoning_content || delta.reasoning;
-      if (thought) { fullThought += thought; callbacks.onThought?.(thought); }
+      if (thought) {
+        fullThought += thought;
+        callbacks.onThought?.(thought);
+      }
       if (!delta.tool_calls) return;
       delta.tool_calls.forEach((toolCall, offset) => {
         const index = Number.isInteger(toolCall.index)
@@ -141,6 +212,13 @@ export class ProviderGateway {
       }
       return { id: toolCall.id || `call_${crypto.randomUUID()}`, name: toolCall.name, arguments: args };
     });
+
+    if (providerId === 'fcc-proxy') {
+      fccManager.recordTokenUsage(Math.max(10, Math.ceil(fullText.length / 4)));
+    }
+
     return { fullText, fullThought, toolCalls: parsedToolCalls };
   }
 }
+
+export { omniRouteRouter, connectionPool, providerRegistry };

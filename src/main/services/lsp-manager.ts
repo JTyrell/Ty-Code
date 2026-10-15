@@ -5,7 +5,7 @@
  */
 
 import { execFile } from 'node:child_process';
-import { stat } from 'node:fs/promises';
+import { realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import crossSpawn from 'cross-spawn';
@@ -250,7 +250,16 @@ export class LspManager {
     if (cached && cached.expiresAt > Date.now()) return cached;
     if (this.injectedExecutableResolver) {
       const injected = await this.injectedExecutableResolver(command);
-      const result = { ...injected, expiresAt: Date.now() + 30_000 };
+      let resolvedPath = injected.resolvedPath;
+      if (resolvedPath) {
+        const workspaceRoot = await realpath(this.workspacePath).catch(() => path.resolve(this.workspacePath));
+        const targetPath = resolvedPath;
+        const resolvedCandidate = await realpath(targetPath).catch(() => path.resolve(targetPath));
+        const relativeCandidate = path.relative(workspaceRoot, resolvedCandidate);
+        if (relativeCandidate === '' || relativeCandidate === '..' || relativeCandidate.startsWith(`..${path.sep}`) || path.isAbsolute(relativeCandidate)) resolvedPath = undefined;
+        else resolvedPath = resolvedCandidate;
+      }
+      const result = { ...injected, resolvedPath, version: resolvedPath ? injected.version : undefined, expiresAt: Date.now() + 30_000 };
       this.binaryCache.set(key, result);
       return result;
     }
@@ -259,10 +268,13 @@ export class LspManager {
     try {
       const resolver = process.platform === 'win32' ? 'where.exe' : 'which';
       const { stdout } = await execFileAsync(resolver, [command], { timeout: 2_000, windowsHide: true, maxBuffer: 16_384 });
-      const candidate = stdout.split(/\r?\n/).map((item) => item.trim()).find(Boolean);
-      if (candidate) {
-        const candidateStats = await stat(candidate);
-        if (candidateStats.isFile()) resolvedPath = path.resolve(candidate);
+      const workspaceRoot = await realpath(this.workspacePath).catch(() => path.resolve(this.workspacePath));
+      for (const candidate of stdout.split(/\r?\n/).map((item) => item.trim()).filter(Boolean)) {
+        const realCandidate = await realpath(candidate).catch(() => path.resolve(candidate));
+        const relativeCandidate = path.relative(workspaceRoot, realCandidate);
+        if (relativeCandidate === '' || relativeCandidate === '..' || relativeCandidate.startsWith(`..${path.sep}`) || path.isAbsolute(relativeCandidate)) continue;
+        const candidateStats = await stat(realCandidate).catch(() => null);
+        if (candidateStats?.isFile()) { resolvedPath = realCandidate; break; }
       }
     } catch {
       // PATH lookup failure means unavailable; local project candidates are informational only.

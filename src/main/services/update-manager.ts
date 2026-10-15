@@ -25,6 +25,13 @@ export interface UpdateCheckResult {
   error?: string;
 }
 
+export interface UpdateManagerOptions {
+  /** Injectable updater and app metadata keep update behavior testable without network access. */
+  updater?: AppUpdater | null;
+  isPackaged?: boolean;
+  currentVersion?: string;
+}
+
 export class UpdateManager {
   private updater: AppUpdater | null = null;
   private currentChannel: UpdateChannel = 'stable';
@@ -32,9 +39,30 @@ export class UpdateManager {
   private isChecking = false;
   private isDownloading = false;
   private updateDownloaded = false;
+  private readonly isPackagedOverride?: boolean;
+  private readonly currentVersionOverride?: string;
 
-  constructor() {
+  private get isAppPackaged(): boolean {
+    return this.isPackagedOverride ?? Boolean(app?.isPackaged);
+  }
+
+  constructor(options: UpdateManagerOptions = {}) {
+    this.isPackagedOverride = options.isPackaged;
+    this.currentVersionOverride = options.currentVersion;
+    if (Object.prototype.hasOwnProperty.call(options, 'updater')) {
+      this.updater = options.updater || null;
+      this.configureUpdater();
+      return;
+    }
     this.initUpdater();
+  }
+
+  private configureUpdater(): void {
+    if (!this.updater) return;
+    this.updater.autoDownload = false;
+    this.updater.autoInstallOnAppQuit = true;
+    this.updater.allowPrerelease = this.currentChannel !== 'stable';
+    this.setupListeners();
   }
 
   private initUpdater(): void {
@@ -42,11 +70,7 @@ export class UpdateManager {
       // Dynamically require electron-updater
       const { autoUpdater } = require('electron-updater') as { autoUpdater: AppUpdater };
       this.updater = autoUpdater;
-      this.updater.autoDownload = false;
-      this.updater.autoInstallOnAppQuit = true;
-      this.updater.allowPrerelease = this.currentChannel !== 'stable';
-
-      this.setupListeners();
+      this.configureUpdater();
     } catch (err) {
       console.warn('[UpdateManager] electron-updater not initialized or in test environment:', err);
       this.updater = null;
@@ -62,6 +86,9 @@ export class UpdateManager {
   }
 
   public setChannel(channel: UpdateChannel): void {
+    if (channel !== 'stable' && channel !== 'beta' && channel !== 'nightly') {
+      throw new Error('Update channel must be stable, beta, or nightly.');
+    }
     this.currentChannel = channel;
     if (this.updater) {
       this.updater.allowPrerelease = channel !== 'stable';
@@ -76,7 +103,7 @@ export class UpdateManager {
   }
 
   public async checkForUpdates(): Promise<UpdateCheckResult> {
-    const currentVersion = app?.getVersion ? app.getVersion() : '0.1.0';
+    const currentVersion = this.currentVersionOverride || (app?.getVersion ? app.getVersion() : '0.1.0');
 
     if (this.isChecking) {
       return { updateAvailable: false, currentVersion, error: 'Update check already in progress' };
@@ -86,7 +113,7 @@ export class UpdateManager {
     this.sendToRenderer('update:checking', { channel: this.currentChannel });
 
     // In dev mode or without updater binary
-    if (!this.updater || !app?.isPackaged) {
+    if (!this.updater || !this.isAppPackaged) {
       this.isChecking = false;
       this.sendToRenderer('update:not-available', { currentVersion });
       return {
@@ -102,7 +129,7 @@ export class UpdateManager {
       this.isChecking = false;
 
       if (result && result.updateInfo) {
-        const hasUpdate = result.updateInfo.version !== currentVersion;
+        const hasUpdate = Boolean(result.isUpdateAvailable);
         const releaseNotes = typeof result.updateInfo.releaseNotes === 'string'
           ? result.updateInfo.releaseNotes
           : Array.isArray(result.updateInfo.releaseNotes)
@@ -133,7 +160,6 @@ export class UpdateManager {
     } catch (err) {
       this.isChecking = false;
       const errorMsg = err instanceof Error ? err.message : String(err);
-      this.sendToRenderer('update:error', { error: errorMsg });
       return { updateAvailable: false, currentVersion, error: errorMsg };
     }
   }
@@ -143,7 +169,7 @@ export class UpdateManager {
       return { success: false, error: 'Download already in progress' };
     }
 
-    if (!this.updater || !app?.isPackaged) {
+    if (!this.updater || !this.isAppPackaged) {
       // Simulate download for testing / dev environment
       this.isDownloading = true;
       let progress = 0;
@@ -176,7 +202,7 @@ export class UpdateManager {
   }
 
   public quitAndInstall(): { success: boolean; error?: string } {
-    if (!this.updater || !app?.isPackaged) {
+    if (!this.updater || !this.isAppPackaged) {
       console.log('[UpdateManager] Simulated quit and install in development mode.');
       return { success: true };
     }
@@ -211,9 +237,10 @@ export class UpdateManager {
     });
 
     this.updater.on('error', (err) => {
+      const checkWillReportError = this.isChecking;
       this.isChecking = false;
       this.isDownloading = false;
-      this.sendToRenderer('update:error', { error: err.message });
+      if (!checkWillReportError) this.sendToRenderer('update:error', { error: err.message });
     });
   }
 

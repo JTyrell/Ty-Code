@@ -9,6 +9,7 @@ import { useWorkspaceEditStore } from '../state/workspace-edit-store';
 import { useEditorNavigationStore } from '../state/editor-navigation-store';
 import { handleAutoAppliedTransaction } from './workspace-edit-commands';
 import { useLspStore } from '../state/lsp-store';
+import { toast } from '../state/toast-store';
 
 const changeDebounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
@@ -17,6 +18,7 @@ type Monaco = typeof monacoType;
 const REGISTERED_LANGUAGES = ['typescript', 'javascript', 'python', 'rust', 'go', 'cpp', 'c', 'java'];
 let isAdapterRegistered = false;
 let editorOpenerRegistered = false;
+let reviewCommandRegistered = false;
 
 // Conversion helpers from LSP to Monaco types
 function toMonacoRange(range: any): monacoType.IRange {
@@ -115,6 +117,30 @@ function toMonacoLocations(monaco: Monaco, result: any): monacoType.languages.Lo
 
 const LSP_MARKER_OWNER = 'ty-code-lsp';
 
+async function requestWorkspaceEditPreview(
+  edit: unknown,
+  title: string,
+  origin: 'lsp-rename' | 'refactor',
+  forcePreview: boolean
+): Promise<void> {
+  const response = await window.electronAPI.previewLspWorkspaceEdit({ edit, title, origin, forcePreview });
+  if (!response.success || !response.data) throw new Error(response.error || 'Could not create the workspace edit preview.');
+  if (response.data.applied) {
+    handleAutoAppliedTransaction(response.data.applied);
+    return;
+  }
+  if (!response.data.preview) throw new Error('The workspace edit preview was empty.');
+  useWorkspaceEditStore.getState().setRequest({
+    preview: response.data.preview,
+    isStale: false,
+    refresh: async () => {
+      const refreshed = await window.electronAPI.previewLspWorkspaceEdit({ edit, title, origin, forcePreview: true });
+      if (!refreshed.success || !refreshed.data?.preview) throw new Error(refreshed.error || 'Could not refresh the workspace edit preview.');
+      return refreshed.data.preview;
+    }
+  });
+}
+
 function toMonacoMarkerSeverity(monaco: Monaco, severity?: number): monacoType.MarkerSeverity {
   switch (severity) {
     case 1: return monaco.MarkerSeverity.Error;
@@ -163,6 +189,14 @@ export function registerMonacoLspProviders(monaco: Monaco): void {
   const javascriptMode = monaco.languages.typescript.javascriptDefaults;
   typescriptMode.setModeConfiguration({ ...typescriptMode.modeConfiguration, rename: false });
   javascriptMode.setModeConfiguration({ ...javascriptMode.modeConfiguration, rename: false });
+  if (!reviewCommandRegistered) {
+    reviewCommandRegistered = true;
+    monaco.editor.registerCommand('tycode.lsp.applyReviewedEdit', (_accessor, edit: unknown, title: string) => {
+      void requestWorkspaceEditPreview(edit, title, 'refactor', useWorkspaceEditStore.getState().forcePreviewAll).catch((error: unknown) => {
+        toast.error('Code action failed', error instanceof Error ? error.message : String(error));
+      });
+    });
+  }
   if (!editorOpenerRegistered) {
     editorOpenerRegistered = true;
     monaco.editor.registerEditorOpener({
@@ -305,6 +339,47 @@ export function registerMonacoLspProviders(monaco: Monaco): void {
       }
     });
 
+    // Type and implementation navigation
+    monaco.languages.registerTypeDefinitionProvider(lang, {
+      provideTypeDefinition: async (model, position) => {
+        const response = await window.electronAPI.lspTypeDefinition({ filePath: getModelPath(model), line: position.lineNumber - 1, character: position.column - 1 });
+        return response.success && response.data ? toMonacoLocations(monaco, response.data) : null;
+      }
+    });
+    monaco.languages.registerImplementationProvider(lang, {
+      provideImplementation: async (model, position) => {
+        const response = await window.electronAPI.lspImplementation({ filePath: getModelPath(model), line: position.lineNumber - 1, character: position.column - 1 });
+        return response.success && response.data ? toMonacoLocations(monaco, response.data) : null;
+      }
+    });
+
+    // Code actions with text edits are converted to review commands, never returned as implicit writes.
+    monaco.languages.registerCodeActionProvider(lang, {
+      provideCodeActions: async (model, range, context) => {
+        const response = await window.electronAPI.lspCodeActions({
+          filePath: getModelPath(model),
+          range: {
+            start: { line: range.startLineNumber - 1, character: range.startColumn - 1 },
+            end: { line: range.endLineNumber - 1, character: range.endColumn - 1 }
+          },
+          context: { diagnostics: context.markers.map((marker) => ({ message: marker.message, severity: marker.severity })) }
+        });
+        if (!response.success || !Array.isArray(response.data)) return { actions: [], dispose: () => undefined };
+        const actions: monacoType.languages.CodeAction[] = response.data.map((action: any) => ({
+          title: action.title || 'Language-server action',
+          kind: action.kind,
+          diagnostics: context.markers,
+          disabled: action.edit ? undefined : 'This server command is not supported yet.',
+          command: action.edit ? {
+            id: 'tycode.lsp.applyReviewedEdit',
+            title: action.title || 'Review language-server edit',
+            arguments: [action.edit, action.title || 'Review language-server edit']
+          } : undefined
+        }));
+        return { actions, dispose: () => undefined };
+      }
+    });
+
     // 4. Reference Provider (Shift+F12)
     monaco.languages.registerReferenceProvider(lang, {
       provideReferences: async (model, position, context) => {
@@ -440,6 +515,14 @@ export function notifyDocumentChanged(filePath: string, content: string): void {
   }, 250));
 }
 
+export async function flushDocumentChanged(filePath: string, content: string): Promise<void> {
+  if (!window.electronAPI) return;
+  const timer = changeDebounceTimers.get(filePath);
+  if (timer) clearTimeout(timer);
+  changeDebounceTimers.delete(filePath);
+  await window.electronAPI.lspDidChange({ filePath, text: content });
+}
+
 export function notifyDocumentSaved(filePath: string, content?: string): void {
   if (!window.electronAPI) return;
   void window.electronAPI.lspDidSave({ filePath, text: content });
@@ -447,5 +530,8 @@ export function notifyDocumentSaved(filePath: string, content?: string): void {
 
 export function notifyDocumentClosed(filePath: string): void {
   if (!window.electronAPI) return;
+  const timer = changeDebounceTimers.get(filePath);
+  if (timer) clearTimeout(timer);
+  changeDebounceTimers.delete(filePath);
   void window.electronAPI.lspDidClose({ filePath });
 }

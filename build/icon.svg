@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" role="img" aria-labelledby="title">
+  <title id="title">Ty-Code</title>
+  <defs>
+    <linearGradient id="brand" x1="128" y1="104" x2="896" y2="920" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8B5CF6" />
+      <stop offset="1" stop-color="#06B6D4" />
+    </linearGradient>
+  </defs>
+  <rect x="40" y="40" width="944" height="944" rx="224" fill="url(#brand)" />
+  <g stroke="#FFFFFF" stroke-linecap="round" stroke-linejoin="round" stroke-width="52">
+    <rect x="280" y="280" width="464" height="464" rx="104" />
+    <path d="M400 280v-76M512 280v-76M624 280v-76M400 820v-76M512 820v-76M624 820v-76" />
+    <path d="M280 400h-76M280 512h-76M280 624h-76M820 400h-76M820 512h-76M820 624h-76" />
+    <path d="m442 438-74 74 74 74M582 438l74 74-74 74M548 422l-72 180" />
+  </g>
+</svg>

@@ -26,6 +26,7 @@ import { useEditorNavigationStore } from './state/editor-navigation-store';
 export const App: React.FC = () => {
   const [activityTab, setActivityTab] = useState<ActivityTab>('explorer');
   const [isQuickOpenOpen, setIsQuickOpenOpen] = useState(false);
+  const [quickOpenInitialQuery, setQuickOpenInitialQuery] = useState('');
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
 
   // Resizable Sidebars State
@@ -34,7 +35,7 @@ export const App: React.FC = () => {
   const [isDraggingLeft, setIsDraggingLeft] = useState(false);
   const [isDraggingRight, setIsDraggingRight] = useState(false);
 
-  const { initSettings, toggleTerminal } = useChatStore();
+  const { initSettings, toggleTerminal, toggleSettings } = useChatStore();
   const { setWorkspacePath, setFileTree } = useWorkspaceStore();
   const navigateTo = useEditorNavigationStore((state) => state.navigateTo);
 
@@ -70,6 +71,27 @@ export const App: React.FC = () => {
       } else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'g') {
         e.preventDefault();
         setActivityTab('source-control');
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 't') {
+        e.preventDefault();
+        setQuickOpenInitialQuery('#');
+        setIsQuickOpenOpen(true);
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'g') {
+        e.preventDefault();
+        setQuickOpenInitialQuery(':');
+        setIsQuickOpenOpen(true);
+      } else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'o') {
+        e.preventDefault();
+        setQuickOpenInitialQuery('@');
+        setIsQuickOpenOpen(true);
+      } else if ((e.ctrlKey || e.metaKey) && e.key === ',') {
+        e.preventDefault();
+        toggleSettings();
+      } else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'x') {
+        e.preventDefault();
+        setActivityTab('extensions');
+      } else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'm') {
+        e.preventDefault();
+        useEditorNavigationStore.getState().runAction('toggleMinimap');
       } else if ((e.ctrlKey || e.metaKey) && e.key === '`') {
         e.preventDefault();
         toggleTerminal();
@@ -78,7 +100,7 @@ export const App: React.FC = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [toggleTerminal]);
+  }, [toggleTerminal, toggleSettings]);
 
   // Handle Left Sidebar Resizing
   const handleLeftMouseDown = (e: React.MouseEvent) => {
@@ -202,9 +224,10 @@ export const App: React.FC = () => {
       {/* Quick Open File (Ctrl+P, :line, @symbol) */}
       <QuickOpen
         isOpen={isQuickOpenOpen}
-        onClose={() => setIsQuickOpenOpen(false)}
+        initialQuery={quickOpenInitialQuery}
+        onClose={() => { setIsQuickOpenOpen(false); setQuickOpenInitialQuery(''); }}
         onSwitchToCommandPalette={() => setIsCommandPaletteOpen(true)}
-        onNavigateToLine={(lineNumber) => navigateTo({ line: lineNumber })}
+        onNavigateToLine={(lineNumber, filePath) => navigateTo({ line: lineNumber, filePath })}
       />
 
       {/* Command Palette (Ctrl+Shift+P) */}
@@ -216,6 +239,8 @@ export const App: React.FC = () => {
         onToggleWordWrap={() => useEditorNavigationStore.getState().runAction('toggleWordWrap')}
         onToggleZenMode={() => useEditorNavigationStore.getState().runAction('toggleZenMode')}
         onSplitEditor={(orientation) => useEditorNavigationStore.getState().runAction(orientation === 'vertical' ? 'splitVertical' : 'splitHorizontal')}
+        onOpenWorkspaceSymbols={() => { setQuickOpenInitialQuery('#'); setIsQuickOpenOpen(true); }}
+        onOpenQuickOpen={(initialQuery) => { setQuickOpenInitialQuery(initialQuery); setIsQuickOpenOpen(true); }}
       />
 
       {/* Settings Modal */}

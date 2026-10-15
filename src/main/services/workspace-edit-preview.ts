@@ -124,8 +124,9 @@ export function classifySingleFileEdit(file: WorkspaceEditPreviewFile): { safe: 
   if (stripCommentsAndStrings(original).replace(/\s+/g, '') === stripCommentsAndStrings(modified).replace(/\s+/g, '')) return { safe: true, reason: 'Comments or string literals changed without changing code structure.' };
   const withoutImports = (text: string) => text.split(/\r?\n/).filter((line) => !/^\s*(?:import\b|from\s+\S+\s+import\b|export\s+\{)/.test(line)).join('\n');
   if (withoutImports(original) === withoutImports(modified)) return { safe: true, reason: 'Import-only change.' };
-  const changedLines = file.diff.edits.filter((edit) => edit.operation === 'insert').map((edit) => edit.text);
-  if (file.diff.deletions === 0 && changedLines.length > 0 && changedLines.length < 20) return { safe: true, reason: 'Small additions-only change.' };
+  const changedLines = file.diff.edits.filter((edit) => edit.operation === 'insert').map((edit) => edit.text).filter((line) => line.trim());
+  const harmlessAddition = /^(?:\s*(?:\/\/|#|\/\*|\*|\*\/).*$|\s*(?:export\s+)?const\s+[A-Za-z_$][\w$]*\s*=\s*(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`[^`]*`|\d+(?:\.\d+)?|true|false|null)\s*;?\s*)$/;
+  if (file.diff.deletions === 0 && changedLines.length > 0 && changedLines.length < 20 && changedLines.every((line) => harmlessAddition.test(line))) return { safe: true, reason: 'Fewer than 20 comment or literal-only addition lines.' };
   return { safe: false, reason: 'The change could not be classified as low risk.' };
 }
 
@@ -179,8 +180,11 @@ export class WorkspaceEditPreviewService {
     const originalBufferContent = tracked?.text ?? originalDiskContent;
     const originalBufferWasDirty = tracked?.isDirty ?? false;
     const comparisonContent = origin === 'search-replace' ? originalDiskContent : originalBufferContent;
-    const diff = MyersDiff.diff(comparisonContent, modifiedContent);
+    if (comparisonContent.length + modifiedContent.length > MyersDiff.MAX_INPUT_CHARS) {
+      throw new Error(`Edit preview diff exceeds the ${MyersDiff.MAX_INPUT_CHARS.toLocaleString()} character limit: ${safeRelativePath}`);
+    }
     const bytes = Buffer.byteLength(originalDiskContent, 'utf8') + Buffer.byteLength(modifiedContent, 'utf8');
+    const diff = MyersDiff.diff(comparisonContent, modifiedContent);
     if (bytes > MAX_FILE_BYTES * 2) throw new Error(`Edit target exceeds the ${MAX_FILE_BYTES / 1024 / 1024} MiB preview limit: ${safeRelativePath}`);
     return {
       filePath: safeRelativePath,
@@ -280,6 +284,20 @@ export class WorkspaceEditPreviewService {
     return this.savePreview('search-replace', title, files);
   }
 
+  public async createSnippetEditPreview(request: { filePath: string; lineNumber: number; originalText: string; replacementText: string; title: string }): Promise<WorkspaceEditPreview> {
+    if (!Number.isInteger(request.lineNumber) || request.lineNumber < 1) throw new Error('A valid line number is required for a code-review fix.');
+    const { absolutePath, relativePath } = await this.resolveTarget(request.filePath);
+    const originalContent = await fs.readFile(absolutePath, 'utf8');
+    const lines = originalContent.split(/(?<=\n)/);
+    const lineIndex = request.lineNumber - 1;
+    const originalLine = lines[lineIndex];
+    if (originalLine === undefined || !originalLine.includes(request.originalText)) throw new Error('The finding is stale: source code changed since the review. Run the review again.');
+    lines[lineIndex] = originalLine.replace(request.originalText, request.replacementText);
+    const modifiedContent = lines.join('');
+    const snapshot = await this.makeSnapshot(relativePath, modifiedContent, 1, 'refactor');
+    return this.savePreview('refactor', request.title, [snapshot]);
+  }
+
   public async createRefactorPreview(
     relativePath: string,
     originalOrModifiedContent: string,
@@ -293,6 +311,8 @@ export class WorkspaceEditPreviewService {
     if (optionalTitle !== undefined) {
       modifiedContent = modifiedContentOrTitle!;
       title = optionalTitle;
+      const current = await fs.readFile(absolutePath, 'utf8');
+      if (current !== originalOrModifiedContent) throw new Error(`Refactor preview is stale: ${safeRelativePath} changed since analysis. Refresh the preview.`);
     } else {
       modifiedContent = originalOrModifiedContent;
       title = modifiedContentOrTitle || 'AI Refactoring';
@@ -338,13 +358,13 @@ export class WorkspaceEditPreviewService {
   private async commitContents(
     files: Array<{ absolutePath: string; content: string; rollbackContent: string; mode: number }>,
     transactionId: string,
-    beforeCommit?: () => Promise<void>
+    beforeCommit?: (nextIndex: number) => Promise<void>
   ): Promise<void> {
     const staged = await this.stageFiles(files, transactionId);
     const committed: number[] = [];
     try {
-      await beforeCommit?.();
       for (let index = 0; index < files.length; index++) {
+        await beforeCommit?.(index);
         await this.renameFile(staged[index], files[index].absolutePath);
         committed.push(index);
       }
@@ -395,8 +415,8 @@ export class WorkspaceEditPreviewService {
       this.undoEntries.push(undoEntry);
       const writeFiles = stored.files.map((file) => ({ absolutePath: file.absolutePath, content: file.modifiedContent, rollbackContent: file.originalDiskContent, mode: file.mode }));
       try {
-        await this.commitContents(writeFiles, transactionId, async () => {
-          for (const file of stored.files) await this.validateFreshness(file, stored.publicPreview.origin);
+        await this.commitContents(writeFiles, transactionId, async (nextIndex) => {
+          for (const file of stored.files.slice(nextIndex)) await this.validateFreshness(file, stored.publicPreview.origin);
         });
       } catch (error) {
         this.undoEntries = this.undoEntries.filter((item) => item !== undoEntry);
@@ -429,8 +449,8 @@ export class WorkspaceEditPreviewService {
     if (!entry || entry.status !== 'applied') throw new Error('There is no current workspace edit transaction to undo.');
     this.transactionInFlight = true;
     try {
-      const validateUndo = async () => {
-        for (const file of entry.files) {
+      const validateUndo = async (startIndex = 0) => {
+        for (const file of entry.files.slice(startIndex)) {
           const current = await fs.readFile(file.absolutePath, 'utf8');
           if (hashContent(current) !== file.afterHash) throw new Error(`Cannot undo the entire operation because ${file.filePath} changed after it was applied. No files were changed.`);
           const tracked = this.lspManager?.getTrackedDocument(file.absolutePath);

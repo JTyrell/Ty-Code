@@ -17,7 +17,9 @@ export interface FileNode {
   children?: FileNode[];
 }
 
-export type ProviderType = 'openrouter' | 'groq' | 'deepseek' | 'ollama' | 'fcc-proxy' | 'custom';
+export type RoutingStrategyType = 'auto' | 'free-first' | 'fastest' | 'balanced' | 'manual';
+
+export type ProviderType = 'openrouter' | 'groq' | 'deepseek' | 'ollama' | 'fcc-proxy' | 'custom' | (string & {});
 
 export interface ModelConfig {
   id: string;
@@ -49,14 +51,33 @@ export interface EditorPreferences {
   formatOnSave?: boolean;
 }
 
+export type AgentHarnessType =
+  | 'claude-code'
+  | 'codex'
+  | 'opencode'
+  | 'pi'
+  | 'cline'
+  | 'aider'
+  | 'hermes'
+  | 'deepseek'
+  | 'grok-build'
+  | 'muse-code'
+  | 'vscode-chat';
+
 export interface ProviderSettings {
   activeProvider: ProviderType;
   activeModel: string;
+  activeHarness?: AgentHarnessType;
   apiKeys: Partial<Record<ProviderType, string>>;
   apiKeysConfigured?: Partial<Record<ProviderType, boolean>>;
   customEndpoints: Partial<Record<ProviderType, string>>;
   temperature: number;
   maxTokens: number;
+  routingStrategy?: RoutingStrategyType;
+  enableFailover?: boolean;
+  maxFailoverRetries?: number;
+  healthMonitoringEnabled?: boolean;
+  healthCheckIntervalMs?: number;
   terminalProfiles?: TerminalProfile[];
   defaultTerminalProfileId?: string;
   thirdPartyRuntimeEnabled?: boolean;
@@ -396,7 +417,8 @@ export interface ElectronAPI {
   replaceInFiles: (options: ReplaceInFilesOptions) => Promise<IpcResponse<{ replacedCount: number; filesChanged: number; results: ReplaceResult[] }>>;
   previewReplace: (options: ReplaceInFilesOptions) => Promise<IpcResponse<WorkspaceEditFlowResult>>;
   applyWorkspaceEdit: (previewId: string) => Promise<IpcResponse<WorkspaceEditTransactionResult>>;
-  previewLspWorkspaceEdit: (params: { edit: unknown; title: string; forcePreview?: boolean }) => Promise<IpcResponse<WorkspaceEditFlowResult>>;
+  previewLspWorkspaceEdit: (params: { edit: unknown; title: string; origin: 'lsp-rename' | 'refactor'; forcePreview?: boolean }) => Promise<IpcResponse<WorkspaceEditFlowResult>>;
+  previewSnippetEdit: (params: SnippetEditPreviewRequest) => Promise<IpcResponse<WorkspaceEditFlowResult>>;
   cancelWorkspaceEdit: (previewId: string) => Promise<IpcResponse<void>>;
   undoWorkspaceEdit: (transactionId?: string) => Promise<IpcResponse<WorkspaceEditTransactionResult>>;
   getRecentWorkspaceEdits: () => Promise<IpcResponse<Array<{ transactionId: string; origin: WorkspaceEditOrigin; createdAt: number; fileCount: number; autoApplied: true }>>>;
@@ -458,6 +480,39 @@ export interface ElectronAPI {
   getConversationMemories: (query?: MemoryQuery) => Promise<IpcResponse<ConversationMemoryEntry[]>>;
   addConversationMemory: (memory: Partial<ConversationMemoryEntry>) => Promise<IpcResponse<ConversationMemoryEntry>>;
   getPairProgrammingSuggestions: (event: PairProgrammingEvent) => Promise<IpcResponse<PairProgrammingSuggestion[]>>;
+
+  // Phase 5.2: FCC Server Integration (Layer 3)
+  fccGetStatus: () => Promise<IpcResponse<FCCServerStatus>>;
+  fccStart: () => Promise<IpcResponse<boolean>>;
+  fccStop: () => Promise<IpcResponse<void>>;
+  fccRestart: () => Promise<IpcResponse<boolean>>;
+  fccAutoSetup: (providerId?: string) => Promise<IpcResponse<FCCAutoSetupResult | FCCAutoSetupResult[]>>;
+}
+
+export interface FCCServerStatus {
+  running: boolean;
+  port: number;
+  pid?: number;
+  health: 'healthy' | 'degraded' | 'stopped';
+  restartCount: number;
+  uptimeSeconds: number;
+  version: string;
+  mode: 'native-sidecar' | 'external-process';
+  providersCount: number;
+  freeTokensAllocated: number;
+  freeTokensUsed: number;
+  lastPingTimestamp: number;
+}
+
+export interface FCCAutoSetupResult {
+  providerId: string;
+  providerName: string;
+  success: boolean;
+  message: string;
+  apiKey?: string;
+  endpoint?: string;
+  modelsFound?: string[];
+  freeMonthlyTokens?: number;
 }
 
 export interface RecentWorkspace {
@@ -563,6 +618,15 @@ export interface WorkspaceEditPreview {
 export interface WorkspaceEditFlowResult {
   preview?: WorkspaceEditPreview;
   applied?: WorkspaceEditTransactionResult;
+}
+
+export interface SnippetEditPreviewRequest {
+  filePath: string;
+  lineNumber: number;
+  originalText: string;
+  replacementText: string;
+  title: string;
+  forcePreview?: boolean;
 }
 
 export interface WorkspaceEditTransactionResult {

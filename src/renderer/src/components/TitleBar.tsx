@@ -17,7 +17,7 @@ import {
 import { useWorkspaceStore } from '../state/workspace-store';
 import { useChatStore } from '../state/chat-store';
 import { toast } from '../state/toast-store';
-import { DEFAULT_PRESET_MODELS } from '../../../main/providers/provider-gateway';
+import { DEFAULT_PRESET_MODELS } from '../../../preload/preset-models';
 import type { AppInfo } from '../../../preload/types';
 
 const appRegion = (region: 'drag' | 'no-drag'): React.CSSProperties => ({ WebkitAppRegion: region } as React.CSSProperties);
@@ -44,9 +44,20 @@ export const TitleBar: React.FC = () => {
 
   // Load app info & listen to update events
   useEffect(() => {
+    let startupCheckTimer: number | undefined;
+    const savedChannel = localStorage.getItem('ty_code_update_channel');
+    const channel = savedChannel === 'beta' || savedChannel === 'nightly' ? savedChannel : 'stable';
+    void window.electronAPI?.setUpdateChannel?.(channel).catch((error) => console.warn('Could not restore the saved update channel:', error));
     void window.electronAPI?.getAppInfo?.().then((res) => {
       if (res?.success && res.data) {
         setAppInfo(res.data);
+        if (res.data.isPackaged) {
+          startupCheckTimer = window.setTimeout(() => {
+            void window.electronAPI.checkForUpdates().then((result) => {
+              if (result.error) toast.error('Update check failed', result.error);
+            }).catch((error) => toast.error('Update check failed', String(error)));
+          }, 1500);
+        }
       }
     });
 
@@ -54,7 +65,10 @@ export const TitleBar: React.FC = () => {
       if (status.type === 'checking') setUpdateStatus('checking');
       else if (status.type === 'available') {
         setUpdateStatus('available');
-        toast.info('New update available', `Version ${status.version || ''}`);
+        toast.info('New update available', `Version ${status.version || ''}`, {
+          label: 'Download',
+          onClick: () => { void window.electronAPI.downloadUpdate(); }
+        });
       } else if (status.type === 'not-available') {
         setUpdateStatus('idle');
       } else if (status.type === 'downloaded') {
@@ -65,6 +79,7 @@ export const TitleBar: React.FC = () => {
         });
       } else if (status.type === 'error') {
         setUpdateStatus('idle');
+        toast.error('Update check failed', status.error || 'The update service could not complete the request.');
       }
     });
 
@@ -74,6 +89,7 @@ export const TitleBar: React.FC = () => {
     });
 
     return () => {
+      if (startupCheckTimer !== undefined) window.clearTimeout(startupCheckTimer);
       cleanupStatus?.();
       cleanupProgress?.();
     };
@@ -116,14 +132,12 @@ export const TitleBar: React.FC = () => {
     setUpdateStatus('checking');
     try {
       const res = await window.electronAPI.checkForUpdates();
-      if (res.updateAvailable) {
+      if (res.error) {
+        setUpdateStatus('idle');
+        toast.error('Update check failed', res.error);
+      } else if (res.updateAvailable) {
+        // The update:available event owns the notification so a manual check never double-toasts.
         setUpdateStatus('available');
-        toast.info('Update found', `v${res.latestVersion}`, {
-          label: 'Download',
-          onClick: () => {
-            void window.electronAPI.downloadUpdate();
-          }
-        });
       } else {
         setUpdateStatus('idle');
         toast.success('Up to date', `Ty-Code v${res.currentVersion} is the latest version.`);

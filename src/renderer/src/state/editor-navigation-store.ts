@@ -6,7 +6,7 @@ export interface EditorNavigationTarget {
   column?: number;
 }
 
-type EditorActionName = 'toggleMinimap' | 'toggleWordWrap' | 'toggleZenMode' | 'splitVertical' | 'splitHorizontal';
+type EditorActionName = 'toggleMinimap' | 'toggleWordWrap' | 'toggleZenMode' | 'splitVertical' | 'splitHorizontal' | 'renameSymbol' | 'findReferences' | 'goToDefinition' | 'goToImplementation' | 'quickFix';
 type EditorActionHandlers = Partial<Record<EditorActionName, () => void>>;
 
 interface EditorNavigationState {

@@ -1,13 +1,15 @@
-import type { AgentStreamChunk, AgentToolApproval, ChatMessage, ProviderSettings, ToolCall } from '../../preload/types';
+import type { AgentHarnessType, AgentStreamChunk, AgentToolApproval, ChatMessage, ProviderSettings, ToolCall } from '../../preload/types';
 import { ProviderGateway, type ChatCompletionMessage } from '../providers/provider-gateway';
 import { buildSystemPrompt, AGENT_TOOLS_DEFINITIONS } from './system-prompt';
 import { ToolExecutor } from './tool-executor';
+import { getHarness } from '../services/orchestration/harnesses';
 
 export interface RunAgentParams {
   prompt: string;
   workspacePath: string;
   history: ChatMessage[];
   settings: ProviderSettings;
+  harness?: AgentHarnessType;
   activeFilePath?: string;
   activeFileContent?: string;
   onChunk: (chunk: AgentStreamChunk) => void;
@@ -24,7 +26,9 @@ export class AgentEngine {
 
   async run(params: RunAgentParams): Promise<void> {
     const { prompt, workspacePath, history, settings, activeFilePath, activeFileContent, onChunk, requestApproval, abortSignal } = params;
-    const systemPrompt = buildSystemPrompt(workspacePath, activeFilePath, activeFileContent);
+    const harnessType = params.harness || settings.activeHarness || 'claude-code';
+    const harness = getHarness(harnessType);
+    const systemPrompt = harness.formatSystemPrompt(workspacePath, activeFilePath, activeFileContent) || buildSystemPrompt(workspacePath, activeFilePath, activeFileContent);
     const messages: ChatCompletionMessage[] = [{ role: 'system', content: systemPrompt }];
     for (const message of history.slice(-10)) {
       if (message.role === 'user' || message.role === 'assistant') {
@@ -34,7 +38,7 @@ export class AgentEngine {
     messages.push({ role: 'user', content: prompt });
 
     const maxSteps = 10;
-    onChunk({ type: 'status', content: 'Agent thinking…' });
+    onChunk({ type: 'status', content: `Agent thinking (${harness.metadata.name})…` });
 
     for (let step = 0; step < maxSteps; step++) {
       if (abortSignal?.aborted) {
@@ -42,10 +46,11 @@ export class AgentEngine {
         return;
       }
       try {
+        const tools = harness.formatTools(AGENT_TOOLS_DEFINITIONS);
         const streamResult = await ProviderGateway.streamChat(
           settings,
-          messages,
-          AGENT_TOOLS_DEFINITIONS,
+          harness.formatMessages(messages),
+          tools,
           {
             onToken: (content) => onChunk({ type: 'token', content }),
             onThought: (content) => onChunk({ type: 'thought', content })
@@ -53,22 +58,25 @@ export class AgentEngine {
           abortSignal
         );
 
-        if (!streamResult.toolCalls.length) {
+        const parsedResponse = harness.parseResponse(streamResult.fullText, streamResult.toolCalls);
+        const toolCallsToExecute = parsedResponse.toolCalls;
+
+        if (!toolCallsToExecute.length) {
           onChunk({ type: 'done' });
           return;
         }
 
         messages.push({
           role: 'assistant',
-          content: streamResult.fullText || '',
-          tool_calls: streamResult.toolCalls.map((toolCall) => ({
+          content: parsedResponse.text || streamResult.fullText || '',
+          tool_calls: toolCallsToExecute.map((toolCall) => ({
             id: toolCall.id,
             type: 'function',
             function: { name: toolCall.name, arguments: JSON.stringify(toolCall.arguments) }
           }))
         });
 
-        for (const toolCall of streamResult.toolCalls) {
+        for (const toolCall of toolCallsToExecute) {
           if (abortSignal?.aborted) {
             onChunk({ type: 'cancelled' });
             return;

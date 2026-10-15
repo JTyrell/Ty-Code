@@ -57,7 +57,7 @@ export function updateAiServicesWorkspace(workspacePath: string): void {
   projectIndexer?.setWorkspace(workspacePath);
   memoryService?.setWorkspace(workspacePath);
   reviewService?.setWorkspace(workspacePath);
-  refactorService?.setWorkspace(workspacePath);
+  refactorService?.setWorkspace(workspacePath, getWorkspaceEditPreviewService());
 }
 
 export function registerAiFeatureHandlers(): void {

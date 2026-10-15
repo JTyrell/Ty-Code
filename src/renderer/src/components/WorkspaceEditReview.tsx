@@ -6,6 +6,7 @@ import { useWorkspaceEditStore } from '../state/workspace-edit-store';
 import { useWorkspaceStore } from '../state/workspace-store';
 import { toast } from '../state/toast-store';
 import { undoWorkspaceEditTransaction, updateOpenTabsFromTransaction } from '../services/workspace-edit-commands';
+import { ensureMonaco, useMonacoRuntime } from '../services/monaco-runtime';
 import './WorkspaceEditReview.css';
 
 function fullPath(workspacePath: string, relativePath: string): string {
@@ -22,6 +23,7 @@ export const WorkspaceEditReview: React.FC = () => {
   const { request, clearRequest, updatePreview, refreshRecentEdits, markTransactionApplied } = useWorkspaceEditStore();
   const { workspacePath, openTabs, refreshFileTree } = useWorkspaceStore();
   const [selectedFile, setSelectedFile] = useState(0);
+  const monacoRuntime = useMonacoRuntime();
   const [isApplying, setIsApplying] = useState(false);
   const [error, setError] = useState('');
 
@@ -29,6 +31,10 @@ export const WorkspaceEditReview: React.FC = () => {
     setSelectedFile(0);
     setError('');
   }, [request?.preview.previewId]);
+
+  useEffect(() => {
+    if (request && monacoRuntime.status === 'idle') void ensureMonaco().catch(() => undefined);
+  }, [request, monacoRuntime.status]);
 
   useEffect(() => {
     if (request) void refreshRecentEdits();
@@ -122,7 +128,8 @@ export const WorkspaceEditReview: React.FC = () => {
           ))}
         </nav>
         <div className="workspace-edit-review__diff" aria-label={selected ? `Diff for ${selected.filePath}` : 'No file selected'}>
-          {selected && <DiffEditor
+          {selected && !monacoRuntime.monaco && <div role={monacoRuntime.error ? 'alert' : 'status'} style={{ padding: 16, color: 'var(--text-muted)' }}>{monacoRuntime.error || 'Loading diff editor…'}</div>}
+          {selected && monacoRuntime.monaco && <DiffEditor
             original={selected.originalContent}
             modified={selected.modifiedContent}
             language={openTabs.find((tab) => normalizePath(tab.path) === normalizePath(fullPath(workspacePath, selected.filePath)))?.language || 'plaintext'}

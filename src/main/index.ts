@@ -47,6 +47,8 @@ import type { CommandExecutionOptions, ProposedDiff, PtySpawnOptions, ReplaceInF
 import { fileURLToPath } from 'url';
 
 import { initAiFeatureServices, updateAiServicesWorkspace, registerAiFeatureHandlers } from './ipc/ai-features-handlers';
+import { fccManager } from './services/orchestration/fcc-manager';
+import { providerAutoSetup } from './services/orchestration/provider-auto-setup';
 
 let mainWindow: BrowserWindow | null = null;
 let currentWorkspacePath = process.cwd();
@@ -158,7 +160,22 @@ function registerIpcHandlers(): void {
       const settings = (await getSettings()).data;
       const applied = payload.forcePreview ? null : await service.tryAutoApplyPreview(preview.previewId, {
         enabled: settings?.['editor.reviewPolicy'] === 'autoApplySafeSingleFile',
-        forcePreviewAll: payload.forcePreview === true
+        forcePreviewAll: false
+      });
+      return { success: true, data: applied ? { applied } : { preview } };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+  ipcMain.handle('workspace-edit:preview-snippet', async (_event, request: { filePath: string; lineNumber: number; originalText: string; replacementText: string; title: string; forcePreview?: boolean }) => {
+    try {
+      if (!request || !Number.isInteger(request.lineNumber) || typeof request.originalText !== 'string' || typeof request.replacementText !== 'string') throw new Error('Invalid snippet edit preview request.');
+      const service = getWorkspaceEditPreviewService();
+      const preview = await service.createSnippetEditPreview(request);
+      const settings = (await getSettings()).data;
+      const applied = request.forcePreview ? null : await service.tryAutoApplyPreview(preview.previewId, {
+        enabled: settings?.['editor.reviewPolicy'] === 'autoApplySafeSingleFile',
+        forcePreviewAll: false
       });
       return { success: true, data: applied ? { applied } : { preview } };
     } catch (error) {
@@ -318,9 +335,8 @@ function registerIpcHandlers(): void {
     handleConfigureLspServer(payload.languageId, payload.config, currentWorkspacePath)
   );
   ipcMain.handle('lsp:did-open', async (_event, payload: { filePath: string; languageId: string; text: string }) => {
-    const result = await handleLspDidOpen(payload, currentWorkspacePath);
     ensureLspDiagnosticsBridge();
-    return result;
+    return handleLspDidOpen(payload, currentWorkspacePath);
   });
   ipcMain.handle('lsp:did-change', (_event, payload: { filePath: string; text: string }) =>
     handleLspDidChange(payload, currentWorkspacePath)
@@ -386,9 +402,14 @@ function registerIpcHandlers(): void {
   ipcMain.handle('update:download', () => getUpdateManager().downloadUpdate());
   ipcMain.handle('update:install', () => getUpdateManager().quitAndInstall());
   ipcMain.handle('update:get-channel', () => ({ success: true, data: getUpdateManager().getChannel() }));
-  ipcMain.handle('update:set-channel', (_event, channel: UpdateChannel) => {
-    getUpdateManager().setChannel(channel);
-    return { success: true };
+  ipcMain.handle('update:set-channel', (_event, channel: unknown) => {
+    try {
+      if (channel !== 'stable' && channel !== 'beta' && channel !== 'nightly') throw new Error('Update channel must be stable, beta, or nightly.');
+      getUpdateManager().setChannel(channel as UpdateChannel);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
   });
 
   // Recent Workspaces IPC Handlers
@@ -401,8 +422,13 @@ function registerIpcHandlers(): void {
 
   // High-performance Myers Diff IPC Handler
   ipcMain.handle('diff:compute-myers', (_event, payload: { original: string; modified: string; contextLines?: number }) => {
-    const result = MyersDiff.diff(payload.original || '', payload.modified || '', payload.contextLines ?? 3);
-    return { success: true, data: result };
+    try {
+      if (typeof payload?.original !== 'string' || typeof payload?.modified !== 'string') throw new Error('Diff inputs must be strings.');
+      const result = MyersDiff.diff(payload.original, payload.modified, payload.contextLines ?? 3);
+      return { success: true, data: result };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
   });
 
   // System & Application Information
@@ -420,6 +446,28 @@ function registerIpcHandlers(): void {
   // Phase 7: Advanced AI Features & Competitive Differentiation
   initAiFeatureServices(currentWorkspacePath);
   registerAiFeatureHandlers();
+
+  // Phase 5.2: FCC Server Integration (Layer 3)
+  registerFccHandlers();
+}
+
+function registerFccHandlers(): void {
+  ipcMain.handle('fcc:get-status', async () => ({ success: true, data: fccManager.getStatus() }));
+  ipcMain.handle('fcc:start', async () => ({ success: true, data: await fccManager.start() }));
+  ipcMain.handle('fcc:stop', async () => { await fccManager.stop(); return { success: true }; });
+  ipcMain.handle('fcc:restart', async () => ({ success: true, data: await fccManager.restart() }));
+  ipcMain.handle('fcc:auto-setup', async (_event, providerId?: string) => {
+    try {
+      if (providerId === 'openrouter') return { success: true, data: await providerAutoSetup.setupOpenRouter() };
+      if (providerId === 'github-copilot') return { success: true, data: await providerAutoSetup.setupGitHubCopilot() };
+      if (providerId === 'google-ai-studio') return { success: true, data: await providerAutoSetup.setupGoogleAIStudio() };
+      if (providerId === 'huggingchat') return { success: true, data: await providerAutoSetup.setupHuggingChat() };
+      if (providerId === 'ollama') return { success: true, data: await providerAutoSetup.setupLocalOllama() };
+      return { success: true, data: await providerAutoSetup.setupAllTopFreeProviders() };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
 }
 
 function cleanupAllResources(): void {
@@ -428,6 +476,11 @@ function cleanupAllResources(): void {
     getLspManager().cleanupAll();
   } catch {
     // Ignore cleanup error
+  }
+  try {
+    void fccManager.stop();
+  } catch {
+    // Ignore FCC cleanup error
   }
 }
 
@@ -444,6 +497,9 @@ function createWindow(): void {
     title: 'Ty-Code - Desktop AI Coding Assistant',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     backgroundColor: '#121316',
+    icon: app.isPackaged
+      ? path.join(process.resourcesPath, 'icon.png')
+      : path.join(__dirname, '../../build/icon.png'),
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -476,6 +532,7 @@ app.whenReady().then(() => {
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
   registerIpcHandlers();
   createWindow();
+  void fccManager.start();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
 app.on('before-quit', cleanupAllResources);

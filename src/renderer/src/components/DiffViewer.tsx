@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { DiffEditor } from '@monaco-editor/react';
 import type * as Monaco from 'monaco-editor';
 import { Check, ChevronDown, ChevronUp, Columns, Minus, Plus, RotateCcw, Split, X } from 'lucide-react';
+import { ensureMonaco, useMonacoRuntime } from '../services/monaco-runtime';
 import { useGitStore } from '../state/git-store';
 
 export const DiffViewer: React.FC = () => {
@@ -10,11 +11,18 @@ export const DiffViewer: React.FC = () => {
     stageFile, unstageFile, discardChanges, applyHunk
   } = useGitStore();
   const [hunkIndex, setHunkIndex] = useState(0);
+  const monacoRuntime = useMonacoRuntime();
   const diffEditorRef = useRef<Monaco.editor.IStandaloneDiffEditor | null>(null);
 
   useEffect(() => {
     setHunkIndex(0);
   }, [activeDiff?.filePath, activeDiff?.isStaged]);
+
+  useEffect(() => {
+    if (activeDiff && monacoRuntime.status === 'idle') {
+      void ensureMonaco().catch(() => undefined);
+    }
+  }, [activeDiff, monacoRuntime.status]);
 
   useEffect(() => {
     setHunkIndex((current) => Math.max(0, Math.min(current, activeHunks.length - 1)));
@@ -89,7 +97,7 @@ export const DiffViewer: React.FC = () => {
       </div>
     </header>
     <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
-      <DiffEditor
+      {!monacoRuntime.monaco ? <div role={monacoRuntime.error ? 'alert' : 'status'} style={{ padding: 16, color: 'var(--text-muted)' }}>{monacoRuntime.error || 'Loading diff editor…'}</div> : <DiffEditor
         original={activeDiff.originalContent}
         modified={activeDiff.modifiedContent}
         language={language}
@@ -107,7 +115,7 @@ export const DiffViewer: React.FC = () => {
           originalEditable: false,
           minimap: { enabled: false }
         }}
-      />
+      />}
     </div>
   </div>;
 };

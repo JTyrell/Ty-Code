@@ -10,13 +10,18 @@ export class AiRefactorService {
     this.workspacePath = workspacePath;
   }
 
-  setWorkspace(workspacePath: string): void {
+  setWorkspace(workspacePath: string, workspaceEditService?: WorkspaceEditPreviewService): void {
     this.workspacePath = workspacePath;
+    if (workspaceEditService) this.workspaceEditService = workspaceEditService;
   }
 
   async previewRefactor(req: RefactorRequest): Promise<RefactorResult> {
-    if (!this.workspaceEditService) throw new Error('Workspace edit preview service is not initialized.');
-    const fullPath = path.isAbsolute(req.filePath) ? req.filePath : path.join(this.workspacePath, req.filePath);
+    const previewService = this.workspaceEditService;
+    if (!previewService) throw new Error('Workspace edit preview service is not initialized.');
+    const workspaceRoot = path.resolve(this.workspacePath);
+    const fullPath = path.resolve(path.isAbsolute(req.filePath) ? req.filePath : path.join(workspaceRoot, req.filePath));
+    const relativeCheck = path.relative(workspaceRoot, fullPath);
+    if (!relativeCheck || relativeCheck === '..' || relativeCheck.startsWith(`..${path.sep}`) || path.isAbsolute(relativeCheck)) throw new Error('Refactor target must be a file inside the active workspace.');
     const originalContent = await fs.readFile(fullPath, 'utf8');
 
     let modifiedContent = originalContent;
@@ -162,13 +167,8 @@ export class AiRefactorService {
     }
 
     // Generate Myers diff and WorkspaceEditPreview
-    if (!this.workspaceEditService) {
-      throw new Error('WorkspaceEditPreviewService is required to generate refactoring previews.');
-    }
     const relativePath = path.relative(this.workspacePath, fullPath).replace(/\\/g, '/');
-    const workspaceEditService = this.workspaceEditService;
-    if (!workspaceEditService) throw new Error('Workspace edit preview service is not initialized.');
-    const preview = await workspaceEditService.createRefactorPreview(
+    const preview = await previewService.createRefactorPreview(
       relativePath,
       originalContent,
       modifiedContent,

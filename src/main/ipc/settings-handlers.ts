@@ -3,6 +3,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import type { IpcResponse, ProviderSettings, ProviderType, EditReviewPolicy, LanguageServerConfig } from '../../preload/types';
 import { z } from 'zod';
+import { migrateProviderSettings, DEFAULT_OMNIROUTE_SETTINGS } from '../services/orchestration/migration';
 
 const SETTINGS_FILE = path.join(app.getPath('userData'), 'ty-code-settings.json');
 const LEGACY_SETTINGS_FILE = path.join(app.getPath('userData'), 'ty-claude-settings.json');
@@ -24,21 +25,26 @@ const LanguageServerConfigSchema = z.object({
 }).strict();
 const LanguageServersSchema = z.record(z.string().regex(/^[a-z][a-z0-9-]{0,31}$/), LanguageServerConfigSchema);
 
+function migrateLanguageServers(value: unknown): ProviderSettings['languageServers'] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const migrated: Record<string, LanguageServerConfig> = {};
+  for (const [languageId, raw] of Object.entries(value)) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue;
+    const entry = raw as Record<string, unknown>;
+    const legacyCommand = typeof entry.command === 'string' && (path.isAbsolute(entry.command) || path.win32.isAbsolute(entry.command)) ? entry.command : undefined;
+    const candidate = {
+      enabled: entry.enabled !== false,
+      ...(Array.isArray(entry.args) && entry.args.every((arg) => typeof arg === 'string') ? { args: entry.args } : {}),
+      ...(typeof entry.path === 'string' ? { path: entry.path } : typeof entry.customPath === 'string' ? { path: entry.customPath } : legacyCommand ? { path: legacyCommand } : {})
+    };
+    const parsed = LanguageServerConfigSchema.safeParse(candidate);
+    if (parsed.success) migrated[languageId] = parsed.data;
+  }
+  return migrated;
+}
+
 const DEFAULT_SETTINGS: ProviderSettings = {
-  activeProvider: 'openrouter',
-  activeModel: 'deepseek/deepseek-chat',
-  apiKeys: {},
-  apiKeysConfigured: {},
-  customEndpoints: { ollama: 'http://localhost:11434/v1', 'fcc-proxy': 'http://localhost:8082/v1' },
-  temperature: 0.2,
-  maxTokens: 4096,
-  terminalProfiles: [],
-  defaultTerminalProfileId: '',
-  thirdPartyRuntimeEnabled: false,
-  'editor.reviewPolicy': 'alwaysReview',
-  'lsp.autoStart': true,
-  editor: { fontSize: 13, tabSize: 2, minimap: true, bracketPairs: true, autoSave: 'afterDelay', autoSaveDelay: 1000, wordWrap: 'off', formatOnSave: false },
-  languageServers: {}
+  ...DEFAULT_OMNIROUTE_SETTINGS
 };
 
 type StoredSettings = Partial<Omit<ProviderSettings, 'apiKeys' | 'apiKeysConfigured'>> & {
@@ -77,15 +83,17 @@ async function readDecryptedSettings(): Promise<ProviderSettings> {
     for (const [provider, value] of Object.entries(parsed.apiKeys || {})) {
       if (typeof value === 'string') apiKeys[provider as ProviderType] = decryptSecret(value);
     }
-    return {
-      ...DEFAULT_SETTINGS,
+    const migrated = migrateProviderSettings({
       ...parsed,
-      apiKeys,
+      apiKeys
+    });
+    return {
+      ...migrated,
       thirdPartyRuntimeEnabled: parsed.thirdPartyRuntimeEnabled === true,
       'editor.reviewPolicy': parsed['editor.reviewPolicy'] === 'autoApplySafeSingleFile' ? 'autoApplySafeSingleFile' : 'alwaysReview',
       'lsp.autoStart': typeof parsed['lsp.autoStart'] === 'boolean' ? parsed['lsp.autoStart'] : DEFAULT_SETTINGS['lsp.autoStart'],
       editor: { ...DEFAULT_SETTINGS.editor, ...(EditorPreferencesSchema.safeParse(parsed.editor).success ? EditorPreferencesSchema.parse(parsed.editor) : {}) },
-      languageServers: { ...DEFAULT_SETTINGS.languageServers, ...(LanguageServersSchema.safeParse(parsed.languageServers).success ? LanguageServersSchema.parse(parsed.languageServers) : {}) },
+      languageServers: { ...DEFAULT_SETTINGS.languageServers, ...migrateLanguageServers(parsed.languageServers) },
       apiKeysConfigured: undefined
     };
   } catch {
@@ -142,6 +150,11 @@ export async function saveSettings(updates: Partial<ProviderSettings>): Promise<
       ...updates,
       apiKeys,
       customEndpoints: { ...current.customEndpoints, ...updates.customEndpoints },
+      routingStrategy: updates.routingStrategy ?? current.routingStrategy ?? 'manual',
+      enableFailover: updates.enableFailover !== undefined ? updates.enableFailover : current.enableFailover ?? true,
+      maxFailoverRetries: updates.maxFailoverRetries ?? current.maxFailoverRetries ?? 3,
+      healthMonitoringEnabled: updates.healthMonitoringEnabled !== undefined ? updates.healthMonitoringEnabled : current.healthMonitoringEnabled ?? true,
+      healthCheckIntervalMs: updates.healthCheckIntervalMs ?? current.healthCheckIntervalMs ?? 30_000,
       terminalProfiles: updates.terminalProfiles ?? current.terminalProfiles,
       defaultTerminalProfileId: updates.defaultTerminalProfileId ?? current.defaultTerminalProfileId,
       'editor.reviewPolicy': updates['editor.reviewPolicy'] ?? current['editor.reviewPolicy'],

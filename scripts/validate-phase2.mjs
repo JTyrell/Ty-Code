@@ -168,8 +168,8 @@ async function runValidation() {
 
     console.log('\n====================================================');
     console.log(`  Results: ${passedTests} Passed | ${failedTests} Failed`);
-    console.log('====================================================\n');
-    if (failedTests > 0) process.exitCode = 1;
+    if (failedTests > 0) process.exit(1);
+    else process.exit(0);
   } finally {
     globalThis.fetch = originalFetch;
     await fs.rm(testDir, { recursive: true, force: true });
