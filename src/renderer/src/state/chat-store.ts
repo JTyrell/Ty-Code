@@ -27,6 +27,8 @@ interface ChatState {
   respondToApproval: (approved: boolean) => Promise<void>;
   clearChat: () => void;
   toggleSettings: () => void;
+  openSettings: (tab?: string) => void;
+  activeSettingsTab?: string;
   toggleTerminal: () => void;
 }
 
@@ -268,6 +270,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (taskId) void window.electronAPI.stopAgentTask(taskId);
     set({ messages: [], isRunning: false, currentTaskId: null, pendingApproval: null, streamingText: '', currentThought: '', currentStatus: '', contextTokens: 1200 });
   },
-  toggleSettings: () => set((state) => ({ isSettingsOpen: !state.isSettingsOpen })),
+  toggleSettings: () => set((state) => ({ isSettingsOpen: !state.isSettingsOpen, activeSettingsTab: undefined })),
+  openSettings: (tab?: string) => set({ isSettingsOpen: true, activeSettingsTab: tab }),
   toggleTerminal: () => set((state) => ({ isTerminalOpen: !state.isTerminalOpen }))
 }));

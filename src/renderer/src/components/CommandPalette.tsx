@@ -14,7 +14,8 @@ import {
   Check,
   Zap,
   Bookmark,
-  Sparkles
+  Sparkles,
+  Activity
 } from 'lucide-react';
 import { useWorkspaceStore } from '../state/workspace-store';
 import { useChatStore } from '../state/chat-store';
@@ -208,6 +209,16 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         icon: <Settings size={14} color="var(--text-secondary)" />,
         action: () => {
           toggleSettings();
+          onClose();
+        }
+      },
+      {
+        id: 'tycode.diagnostics.run',
+        title: 'Ty-Code: Run Connection Diagnostics',
+        category: 'General',
+        icon: <Activity size={14} color="#38bdf8" />,
+        action: () => {
+          useChatStore.getState().openSettings('diagnostics');
           onClose();
         }
       },

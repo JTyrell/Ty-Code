@@ -26,7 +26,81 @@ import type {
   ProviderDashboardData,
   QuotaAlertItem
 } from '../shared/types/quota-dashboard';
+import type {
+  DiagnosticErrorCode,
+  DiagnosticStep,
+  DiagnosticStatus,
+  StepResult,
+  ProviderDiagnosticResult,
+  DiagnosticRunSummary,
+  CapabilityScenarioId,
+  ScenarioEvidence,
+  ScenarioResult,
+  CapabilitySuiteSummary,
+  RemediationCategory,
+  WorkingNowItem,
+  MissingFromYouItem,
+  MissingFromCodeItem,
+  ExternalOutageItem,
+  RecommendedAction,
+  RemediationReport,
+  SmokeTestStep,
+  SMOKE_TEST_STEPS,
+  SMOKE_TEST_FAILURE_PROTOCOL,
+  FleetHealthState,
+  ProviderHealthState,
+  ProviderHealthDetail,
+  DiagnosticsFleetHealth,
+  FailoverNoticeInfo
+} from '../shared/types/diagnostics';
+import type {
+  MarketplaceExtensionEntry,
+  MarketplaceSearchOptions,
+  MarketplaceSearchResult,
+  InstallResult,
+  InstallProgressEvent,
+  InstallStep,
+  ExtensionInstallState,
+  ExtensionEnabledState
+} from '../shared/types/marketplace';
+export type {
+  MarketplaceExtensionEntry,
+  MarketplaceSearchOptions,
+  MarketplaceSearchResult,
+  InstallResult,
+  InstallProgressEvent,
+  InstallStep,
+  ExtensionInstallState,
+  ExtensionEnabledState
+};
 export type { FreeProvider, ModelTier, TierClassification, ProviderHealthStatus };
+export type {
+  DiagnosticErrorCode,
+  DiagnosticStep,
+  DiagnosticStatus,
+  StepResult,
+  ProviderDiagnosticResult,
+  DiagnosticRunSummary,
+  CapabilityScenarioId,
+  ScenarioEvidence,
+  ScenarioResult,
+  CapabilitySuiteSummary,
+  RemediationCategory,
+  WorkingNowItem,
+  MissingFromYouItem,
+  MissingFromCodeItem,
+  ExternalOutageItem,
+  RecommendedAction,
+  RemediationReport,
+  SmokeTestStep,
+  FleetHealthState,
+  ProviderHealthState,
+  ProviderHealthDetail,
+  DiagnosticsFleetHealth,
+  FailoverNoticeInfo
+};
+export { SMOKE_TEST_STEPS, SMOKE_TEST_FAILURE_PROTOCOL };
+
 export type { DetectedApiKey, CustomProviderConfig, StoredKeySummary, ByokExportBundle, ByokImportResult, KeyDetectionSource };
 export type { OpenCodeDetectionResult, OpenCodeFreeTierSummary, OpenCodeImportResult, AgentFramework };
 export type {
@@ -301,7 +375,7 @@ export interface PtySessionInfo {
 
 export type ExtensionManifest = z.infer<typeof ExtensionManifestSchema>;
 export type ExtensionCapability = z.infer<typeof ExtensionCapabilitySchema>;
-export type ExtensionExecutionState = 'built-in' | 'metadata-only';
+export type ExtensionExecutionState = 'built-in' | 'metadata-only' | 'installed';
 
 export interface InstalledExtension {
   id: string;
@@ -513,6 +587,12 @@ export interface ElectronAPI {
   getExtensionDetails: (namespace: string, name: string) => Promise<IpcResponse<Record<string, unknown>>>;
   getAvailableSkills: (workspacePath: string) => Promise<IpcResponse<SkillDefinition[]>>;
 
+  // Open VSX Marketplace APIs
+  marketplaceSearch: (options: MarketplaceSearchOptions | string) => Promise<IpcResponse<MarketplaceSearchResult>>;
+  marketplaceMetadata: (namespace: string, extension: string) => Promise<IpcResponse<MarketplaceExtensionEntry | null>>;
+  marketplaceInstall: (entry: MarketplaceExtensionEntry | { id: string; downloadUrl?: string; sha256?: string; [key: string]: unknown }) => Promise<IpcResponse<InstallResult>>;
+  marketplaceUninstall: (id: string) => Promise<IpcResponse<boolean>>;
+
   // Extension Management APIs
   getInstalledExtensions: () => Promise<IpcResponse<InstalledExtension[]>>;
   installExtension: (ext: ExtensionMetadata) => Promise<IpcResponse<InstalledExtension>>;
@@ -718,7 +798,29 @@ export interface ElectronAPI {
   dashboardGetRecommendations?: () => Promise<IpcResponse<OptimizationRecommendation[]>>;
   dashboardDismissRecommendation?: (recommendationId: string) => Promise<IpcResponse<boolean>>;
   dashboardRecordActivity?: (record: any) => Promise<IpcResponse<RecentActivityRecord>>;
+
+  // Diagnostics 1: Provider Connection Diagnostic Harness & Error Taxonomy
+  runDiagnostics?: (providerId?: string) => Promise<IpcResponse<DiagnosticRunSummary>>;
+  getDiagnosticReport?: (summary?: DiagnosticRunSummary) => Promise<IpcResponse<string>>;
+
+  // Diagnostics 2: End-to-End Capability Test Suite
+  runCapabilitySuite?: (options?: { providerId?: string; modelId?: string }) => Promise<IpcResponse<CapabilitySuiteSummary>>;
+  getCapabilityReport?: () => Promise<IpcResponse<string>>;
+
+  // Diagnostics 3: Remediation Report Engine
+  getRemediationReport?: () => Promise<IpcResponse<RemediationReport>>;
+
+  // Diagnostics 5: Background Health Monitoring and Auto-Failover
+  diagnosticsGetFleetHealth?: () => Promise<IpcResponse<DiagnosticsFleetHealth>>;
+  diagnosticsSetQuietMode?: (enabled: boolean) => Promise<IpcResponse<DiagnosticsFleetHealth>>;
+  diagnosticsSetBatterySaver?: (enabled: boolean) => Promise<IpcResponse<DiagnosticsFleetHealth>>;
+  diagnosticsSetMeteredConnection?: (enabled: boolean) => Promise<IpcResponse<DiagnosticsFleetHealth>>;
+  diagnosticsTriggerPing?: (providerId?: string) => Promise<IpcResponse<DiagnosticsFleetHealth>>;
+  diagnosticsSimulateOutage?: (providerId: string, type?: 'RATE_LIMITED' | 'PROVIDER_DOWN', cooldownMs?: number) => Promise<IpcResponse<DiagnosticsFleetHealth>>;
+  diagnosticsSimulateRecovery?: (providerId: string) => Promise<IpcResponse<DiagnosticsFleetHealth>>;
+  onDiagnosticsFleetHealthChanged?: (callback: (health: DiagnosticsFleetHealth) => void) => () => void;
 }
+
 
 export interface McpSeoConfigStatus {
   enabled: boolean;

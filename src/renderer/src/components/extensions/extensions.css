@@ -1,0 +1,428 @@
+/**
+ * Ty-Code Desktop IDE - Extensions Obsidian Cyber Styling
+ * Token-based CSS for ExtensionCard, ExtensionList, virtualization, container queries,
+ * and WCAG AA accessible responsive breakpoints.
+ */
+
+@keyframes skeleton-shimmer {
+  0% {
+    background-color: var(--bg-hover);
+    opacity: 0.6;
+  }
+  50% {
+    background-color: var(--bg-tertiary);
+    opacity: 0.9;
+  }
+  100% {
+    background-color: var(--bg-hover);
+    opacity: 0.6;
+  }
+}
+
+/* Reduced motion preference support for accessibility */
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-shimmer-box,
+  .logo-shimmer {
+    animation: none !important;
+    transition: none !important;
+    opacity: 0.8 !important;
+  }
+}
+
+/* Container Query Root Element */
+.extension-list-container {
+  container-type: inline-size;
+  container-name: extension-list;
+  width: 100%;
+  height: 100%;
+  overflow-x: hidden;
+  box-sizing: border-box;
+}
+
+/* Extension Card Grid Layout (Default: Medium / Wide) */
+.extension-card {
+  display: grid;
+  grid-template-columns: 40px 1fr auto;
+  gap: 12px;
+  padding: 10px 12px;
+  align-items: center;
+  border-bottom: 1px solid var(--border-subtle);
+  background-color: transparent;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+  cursor: pointer;
+  box-sizing: border-box;
+  min-height: 84px;
+  max-height: 84px;
+  height: 84px;
+  outline: none;
+  width: 100%;
+  overflow-x: hidden;
+}
+
+.extension-card:hover {
+  background-color: var(--bg-hover);
+}
+
+.extension-card:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: -2px;
+  background-color: var(--bg-hover);
+}
+
+/* Content block within grid */
+.extension-card-content {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: hidden;
+}
+
+/* Line 1: Name and Badges Header */
+.extension-card-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.extension-card-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.3;
+}
+
+.extension-version-chip {
+  font-size: 12px;
+  color: var(--text-muted);
+  background-color: var(--bg-primary);
+  border: 1px solid var(--border-subtle);
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-weight: 500;
+  flex-shrink: 0;
+  line-height: 1.2;
+}
+
+.extension-builtin-badge {
+  font-size: 12px;
+  background-color: rgba(139, 92, 246, 0.15);
+  color: var(--accent-primary);
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-weight: 600;
+  flex-shrink: 0;
+  line-height: 1.2;
+}
+
+/* Line 2: Publisher and Download Count Meta Row */
+.extension-card-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.extension-card-publisher {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.extension-download-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Line 3: Description */
+.extension-card-desc {
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--text-secondary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: break-word;
+}
+
+/* Action column (Right) */
+.extension-card-action {
+  min-width: 76px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-shrink: 0;
+  margin-left: 4px;
+}
+
+/* Action buttons - WCAG AA Accessible text */
+.extension-btn-install {
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  background-color: var(--accent-primary);
+  color: #ffffff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  transition: background-color 0.15s ease;
+}
+
+.extension-btn-install:hover {
+  background-color: var(--accent-primary-hover);
+}
+
+.extension-btn-install:focus-visible {
+  outline: 2px solid #ffffff;
+  outline-offset: 1px;
+}
+
+.extension-btn-retry {
+  padding: 3px 8px;
+  font-size: 12px;
+  font-weight: 500;
+  background-color: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 3px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: background-color 0.15s ease;
+}
+
+.extension-btn-retry:hover {
+  background-color: rgba(239, 68, 68, 0.25);
+}
+
+/* Skeleton Loading Card */
+.extension-skeleton-row {
+  display: grid;
+  grid-template-columns: 40px 1fr auto;
+  gap: 12px;
+  padding: 10px 12px;
+  align-items: center;
+  border-bottom: 1px solid var(--border-subtle);
+  height: 84px;
+  box-sizing: border-box;
+  overflow-x: hidden;
+}
+
+.skeleton-shimmer-box {
+  background-color: var(--bg-hover);
+  animation: skeleton-shimmer 1.5s infinite linear;
+  border-radius: 4px;
+}
+
+/* ==========================================================================
+   CONTAINER QUERIES & FALLBACK BUCKET ATTRIBUTES
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   1. Compact Bucket: < 260px
+   - Logo 32px; hide download count and version chip
+   - Description clamped to 1 line
+   - Action column collapses to icon-only buttons
+   - Height 70px
+   -------------------------------------------------------------------------- */
+@container extension-list (max-width: 259px) {
+  .extension-card {
+    grid-template-columns: 32px 1fr auto;
+    gap: 8px;
+    padding: 8px 10px;
+    min-height: 70px;
+    max-height: 70px;
+    height: 70px;
+  }
+
+  .extension-card .extension-logo-container {
+    width: 32px !important;
+    height: 32px !important;
+    min-width: 32px !important;
+    min-height: 32px !important;
+    max-width: 32px !important;
+    max-height: 32px !important;
+  }
+
+  .extension-card .extension-version-chip,
+  .extension-card .extension-download-count {
+    display: none !important;
+  }
+
+  .extension-card-desc {
+    -webkit-line-clamp: 1 !important;
+  }
+
+  .extension-card-action {
+    min-width: 32px;
+  }
+
+  .extension-btn-install {
+    padding: 6px;
+    border-radius: 4px;
+  }
+
+  .extension-btn-install span,
+  .extension-btn-retry span,
+  .extension-installing-text,
+  .extension-failed-text {
+    display: none !important;
+  }
+
+  .extension-skeleton-row {
+    grid-template-columns: 32px 1fr auto;
+    gap: 8px;
+    padding: 8px 10px;
+    height: 70px;
+  }
+
+  .extension-skeleton-row .skeleton-logo {
+    width: 32px !important;
+    height: 32px !important;
+  }
+}
+
+/* Fallback for older engines via data-width-bucket="compact" */
+[data-width-bucket="compact"] .extension-card {
+  grid-template-columns: 32px 1fr auto;
+  gap: 8px;
+  padding: 8px 10px;
+  min-height: 70px;
+  max-height: 70px;
+  height: 70px;
+}
+
+[data-width-bucket="compact"] .extension-card .extension-logo-container {
+  width: 32px !important;
+  height: 32px !important;
+  min-width: 32px !important;
+  min-height: 32px !important;
+  max-width: 32px !important;
+  max-height: 32px !important;
+}
+
+[data-width-bucket="compact"] .extension-card .extension-version-chip,
+[data-width-bucket="compact"] .extension-card .extension-download-count {
+  display: none !important;
+}
+
+[data-width-bucket="compact"] .extension-card-desc {
+  -webkit-line-clamp: 1 !important;
+}
+
+[data-width-bucket="compact"] .extension-card-action {
+  min-width: 32px;
+}
+
+[data-width-bucket="compact"] .extension-btn-install {
+  padding: 6px;
+  border-radius: 4px;
+}
+
+[data-width-bucket="compact"] .extension-btn-install span,
+[data-width-bucket="compact"] .extension-btn-retry span,
+[data-width-bucket="compact"] .extension-installing-text,
+[data-width-bucket="compact"] .extension-failed-text {
+  display: none !important;
+}
+
+[data-width-bucket="compact"] .extension-skeleton-row {
+  grid-template-columns: 32px 1fr auto;
+  gap: 8px;
+  padding: 8px 10px;
+  height: 70px;
+}
+
+[data-width-bucket="compact"] .extension-skeleton-row .skeleton-logo {
+  width: 32px !important;
+  height: 32px !important;
+}
+
+/* --------------------------------------------------------------------------
+   2. Medium Bucket: 260px to 360px
+   - Logo 40px; description 2 lines; version chip hidden; publisher shown
+   - Height 84px
+   -------------------------------------------------------------------------- */
+@container extension-list (min-width: 260px) and (max-width: 360px) {
+  .extension-card .extension-version-chip,
+  .extension-card .extension-download-count {
+    display: none !important;
+  }
+
+  .extension-card-desc {
+    -webkit-line-clamp: 2 !important;
+  }
+}
+
+/* Fallback for older engines via data-width-bucket="medium" */
+[data-width-bucket="medium"] .extension-card .extension-version-chip,
+[data-width-bucket="medium"] .extension-card .extension-download-count {
+  display: none !important;
+}
+
+[data-width-bucket="medium"] .extension-card-desc {
+  -webkit-line-clamp: 2 !important;
+}
+
+/* --------------------------------------------------------------------------
+   3. Wide Bucket: > 360px
+   - Full meta row: version chip + download count (formatted 1.2k/3.4M) + publisher
+   - Description 2 lines; action column shows text buttons
+   - Height 84px
+   -------------------------------------------------------------------------- */
+@container extension-list (min-width: 361px) {
+  .extension-card .extension-version-chip {
+    display: inline-flex !important;
+  }
+
+  .extension-card .extension-download-count {
+    display: inline-flex !important;
+  }
+
+  .extension-card-desc {
+    -webkit-line-clamp: 2 !important;
+  }
+
+  .extension-btn-install span,
+  .extension-btn-retry span {
+    display: inline !important;
+  }
+}
+
+/* Fallback for older engines via data-width-bucket="wide" */
+[data-width-bucket="wide"] .extension-card .extension-version-chip {
+  display: inline-flex !important;
+}
+
+[data-width-bucket="wide"] .extension-card .extension-download-count {
+  display: inline-flex !important;
+}
+
+[data-width-bucket="wide"] .extension-card-desc {
+  -webkit-line-clamp: 2 !important;
+}
+
+[data-width-bucket="wide"] .extension-btn-install span,
+[data-width-bucket="wide"] .extension-btn-retry span {
+  display: inline !important;
+}

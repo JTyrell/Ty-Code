@@ -80,6 +80,12 @@ const api: ElectronAPI = {
   searchExtensions: (query: string) => ipcRenderer.invoke('extensions:search', query),
   getExtensionDetails: (namespace: string, name: string) => ipcRenderer.invoke('extensions:details', { namespace, name }),
   getAvailableSkills: (workspacePath: string) => ipcRenderer.invoke('skills:get', workspacePath),
+
+  // Open VSX Marketplace APIs
+  marketplaceSearch: (options) => ipcRenderer.invoke('marketplace:search', options),
+  marketplaceMetadata: (namespace, extension) => ipcRenderer.invoke('marketplace:metadata', { namespace, extension }),
+  marketplaceInstall: (entry) => ipcRenderer.invoke('marketplace:install', entry),
+  marketplaceUninstall: (id) => ipcRenderer.invoke('marketplace:uninstall', id),
   getInstalledExtensions: () => ipcRenderer.invoke('extensions:get-installed'),
   installExtension: (ext: ExtensionMetadata) => ipcRenderer.invoke('extensions:install', ext),
   uninstallExtension: (id: string) => ipcRenderer.invoke('extensions:uninstall', id),
@@ -318,7 +324,34 @@ const api: ElectronAPI = {
   dashboardGetAnalytics: () => ipcRenderer.invoke('dashboard:get-analytics'),
   dashboardGetRecommendations: () => ipcRenderer.invoke('dashboard:get-recommendations'),
   dashboardDismissRecommendation: (recommendationId: string) => ipcRenderer.invoke('dashboard:dismiss-recommendation', recommendationId),
-  dashboardRecordActivity: (record: any) => ipcRenderer.invoke('dashboard:record-activity', record)
+  dashboardRecordActivity: (record: any) => ipcRenderer.invoke('dashboard:record-activity', record),
+
+  // Diagnostics 1: Provider Connection Diagnostic Harness & Error Taxonomy
+  runDiagnostics: (providerId?: string) => ipcRenderer.invoke('diagnostics:run', providerId),
+  getDiagnosticReport: (summary?: any) => ipcRenderer.invoke('diagnostics:report', summary),
+
+  // Diagnostics 2: End-to-End Capability Test Suite
+  runCapabilitySuite: (options?: any) => ipcRenderer.invoke('diagnostics:run-capabilities', options),
+  getCapabilityReport: () => ipcRenderer.invoke('diagnostics:get-capability-report'),
+
+  // Diagnostics 3: Remediation Report Engine
+  getRemediationReport: () => ipcRenderer.invoke('diagnostics:get-remediation-report'),
+
+  // Diagnostics 5: Background Health Monitoring and Auto-Failover
+  diagnosticsGetFleetHealth: () => ipcRenderer.invoke('diagnostics:get-fleet-health'),
+  diagnosticsSetQuietMode: (enabled: boolean) => ipcRenderer.invoke('diagnostics:set-quiet-mode', enabled),
+  diagnosticsSetBatterySaver: (enabled: boolean) => ipcRenderer.invoke('diagnostics:set-battery-saver', enabled),
+  diagnosticsSetMeteredConnection: (enabled: boolean) => ipcRenderer.invoke('diagnostics:set-metered-connection', enabled),
+  diagnosticsTriggerPing: (providerId?: string) => ipcRenderer.invoke('diagnostics:trigger-ping', providerId),
+  diagnosticsSimulateOutage: (providerId: string, type?: 'RATE_LIMITED' | 'PROVIDER_DOWN', cooldownMs?: number) =>
+    ipcRenderer.invoke('diagnostics:simulate-outage', providerId, type, cooldownMs),
+  diagnosticsSimulateRecovery: (providerId: string) => ipcRenderer.invoke('diagnostics:simulate-recovery', providerId),
+  onDiagnosticsFleetHealthChanged: (callback: (health: any) => void) => {
+    const listener = (_event: any, health: any) => callback(health);
+    ipcRenderer.on('diagnostics:fleet-health-changed', listener);
+    return () => ipcRenderer.removeListener('diagnostics:fleet-health-changed', listener);
+  }
 };
+
 
 contextBridge.exposeInMainWorld('electronAPI', api);

@@ -229,7 +229,7 @@ export class ExtensionManager {
         try {
           const safePath = this.extensionPathForId(id);
           if (!rawRecord || typeof rawRecord !== 'object' || Array.isArray(rawRecord)) continue;
-          const record = rawRecord as { enabled?: unknown; settings?: unknown; manifest?: unknown };
+          const record = rawRecord as { enabled?: unknown; settings?: unknown; manifest?: unknown; executionState?: unknown; installPath?: unknown };
           const builtIn = this.installedExtensions.get(id);
           if (builtIn) {
             const settings = record.settings === undefined ? builtIn.settings : this.validateSettings(builtIn.manifest, record.settings);
@@ -241,15 +241,25 @@ export class ExtensionManager {
           const manifest = ExtensionManifestSchema.parse(record.manifest);
           if (`${manifest.publisher}.${manifest.name}` !== id) continue;
           const settings = record.settings === undefined ? {} : this.validateSettings(manifest, record.settings);
+          const executionState = record.executionState === 'installed' ? 'installed' : 'metadata-only';
+          let installPath = safePath;
+          if (typeof record.installPath === 'string' && record.installPath) {
+            const resolved = path.resolve(record.installPath);
+            const base = path.resolve(this.extensionsDir);
+            if (resolved.startsWith(`${base}${path.sep}`)) {
+              installPath = resolved;
+            }
+          }
+          const enabled = executionState === 'installed' && typeof record.enabled === 'boolean' ? record.enabled : false;
           this.installedExtensions.set(id, {
             id,
             manifest,
-            enabled: false,
+            enabled,
             isBuiltIn: false,
-            installPath: safePath,
+            installPath,
             installedAt: Date.now(),
             settings,
-            executionState: 'metadata-only'
+            executionState
           });
         } catch (error) {
           console.warn(`[Extensions] Ignoring invalid stored extension "${id}":`, error);
@@ -267,13 +277,15 @@ export class ExtensionManager {
     this.initialized = true;
   }
 
-  private async persist(): Promise<void> {
-    const records: Record<string, { enabled: boolean; settings?: Record<string, unknown>; manifest?: ExtensionManifest }> = {};
+  async persist(): Promise<void> {
+    const records: Record<string, { enabled: boolean; settings?: Record<string, unknown>; manifest?: ExtensionManifest; executionState?: string; installPath?: string }> = {};
     for (const [id, ext] of this.installedExtensions.entries()) {
       records[id] = {
         enabled: ext.enabled,
         settings: ext.settings,
-        manifest: ext.isBuiltIn ? undefined : ext.manifest
+        manifest: ext.isBuiltIn ? undefined : ext.manifest,
+        executionState: ext.executionState,
+        installPath: ext.installPath
       };
     }
     const tempFile = `${this.installedFile}.${process.pid}.${Date.now()}.tmp`;
@@ -283,6 +295,12 @@ export class ExtensionManager {
 
   getInstalledExtensions(): InstalledExtension[] {
     return Array.from(this.installedExtensions.values());
+  }
+
+  async registerInstalledExtension(installed: InstalledExtension): Promise<void> {
+    await this.init();
+    this.installedExtensions.set(installed.id, installed);
+    await this.persist();
   }
 
   async installExtension(metadata: ExtensionMetadata | ExtensionManifest): Promise<InstalledExtension> {
@@ -345,9 +363,15 @@ export class ExtensionManager {
     if (ext.isBuiltIn) throw new Error(`Built-in extension "${id}" cannot be uninstalled. Disable it instead.`);
 
     const safePath = this.extensionPathForId(id);
-    if (path.resolve(ext.installPath) !== safePath) throw new Error('Stored extension path failed containment validation.');
+    const resolvedPath = path.resolve(ext.installPath);
+    const base = path.resolve(this.extensionsDir);
+    if (resolvedPath !== safePath && !resolvedPath.startsWith(`${base}${path.sep}`)) {
+      throw new Error('Stored extension path failed containment validation.');
+    }
+    if (ext.executionState === 'installed' && existsSync(ext.installPath)) {
+      await fs.rm(ext.installPath, { recursive: true, force: true }).catch(() => undefined);
+    }
     this.installedExtensions.delete(id);
-    // Metadata-only records have no extension files. Never recursively delete paths from registry state.
     await this.persist();
   }
 
@@ -355,7 +379,9 @@ export class ExtensionManager {
     await this.init();
     const ext = this.installedExtensions.get(ExtensionIdSchema.parse(id));
     if (!ext) throw new Error(`Extension "${id}" not found.`);
-    if (enabled && !ext.isBuiltIn) throw new Error('Community extension execution is disabled until the third-party runtime completes security review.');
+    if (enabled && !ext.isBuiltIn && ext.executionState === 'metadata-only') {
+      throw new Error('Community extension execution is disabled until the third-party runtime completes security review.');
+    }
     if (typeof enabled !== 'boolean') throw new Error('Extension enabled state must be boolean.');
 
     ext.enabled = enabled;
@@ -374,9 +400,19 @@ export class ExtensionManager {
     await this.persist();
   }
 
-  async installFromVsix(_filePath: string): Promise<InstalledExtension> {
+  async installFromVsix(filePath: string): Promise<InstalledExtension> {
     await this.init();
-    throw new Error('VSIX installation is unavailable until package extraction, manifest validation, and artifact review are implemented.');
+    if (!filePath || !existsSync(filePath)) {
+      throw new Error('VSIX package file is unavailable or does not exist at specified path.');
+    }
+    // Delegate to installer
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { extensionInstaller } = require('./marketplace/installer');
+    const result = await extensionInstaller.installFromVsix(filePath);
+    if (!result.success || !result.installedExtension) {
+      throw new Error(result.error || 'VSIX installation failed.');
+    }
+    return result.installedExtension as InstalledExtension;
   }
 }
 

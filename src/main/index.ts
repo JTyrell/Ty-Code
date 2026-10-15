@@ -30,6 +30,10 @@ import {
   handleInstallExtension, handleUninstallExtension, handleToggleExtension,
   handleUpdateExtensionSettings, handleInstallExtensionFromVsix, handleExtensionCapability
 } from './ipc/extensions-handlers';
+import {
+  handleMarketplaceSearch, handleMarketplaceMetadata,
+  handleMarketplaceInstall, handleMarketplaceUninstall
+} from './ipc/marketplace-handlers';
 import { getAvailableSkills } from './ipc/skills-handlers';
 import {
   handleGitIsRepo, handleGitInit, handleGitGetStatus, handleGitGetDiff,
@@ -80,6 +84,10 @@ import { TelemetryManager } from './services/telemetry-manager';
 import type { TelemetryFeature } from '../preload/types';
 
 import { recordLspDiagnostics } from './services/orchestration/tools/diagnostics';
+import { diagnosticService } from './services/diagnostics/diagnostic-service';
+import { capabilitySuite } from './services/diagnostics/capability-suite';
+import { remediationEngine } from './services/diagnostics/remediation-engine';
+import { diagnosticsHealthMonitor } from './services/diagnostics/health-monitor';
 
 let mainWindow: BrowserWindow | null = null;
 let currentWorkspacePath = process.cwd();
@@ -1009,6 +1017,116 @@ function registerIpcHandlers(): void {
     }
   });
 
+  // Diagnostics 1: Provider Connection Diagnostic Harness & Error Taxonomy
+  ipcMain.handle('diagnostics:run', async (event, providerId?: string) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      const summary = await diagnosticService.runDiagnostics(providerId);
+      return { success: true, data: summary };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('diagnostics:report', async (event, summary?: any) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      const report = diagnosticService.generateMarkdownReport(summary);
+      return { success: true, data: report };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  // Diagnostics 2: End-to-End Capability Test Suite
+  ipcMain.handle('diagnostics:run-capabilities', async (event, options?: any) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      const summary = await capabilitySuite.runCapabilitySuite({
+        ...options,
+        workspacePath: currentWorkspacePath
+      });
+      return { success: true, data: summary };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('diagnostics:get-capability-report', async (event) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      const summary = capabilitySuite.getLatestSummary();
+      if (!summary) {
+        return { success: false, error: 'No capability tests have been executed yet.' };
+      }
+      const report = capabilitySuite.generateMarkdownReport(summary);
+      return { success: true, data: report };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  // Diagnostics 3: Remediation Report Engine
+  ipcMain.handle('diagnostics:get-remediation-report', async (event) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      const report = remediationEngine.generateRemediationReport(null, null, currentWorkspacePath);
+      return { success: true, data: report };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  // Diagnostics 5: Background Health Monitoring and Auto-Failover
+  ipcMain.handle('diagnostics:get-fleet-health', async (event) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    return { success: true, data: diagnosticsHealthMonitor.getFleetHealth() };
+  });
+
+  ipcMain.handle('diagnostics:set-quiet-mode', async (event, enabled: boolean) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    diagnosticsHealthMonitor.setQuietMode(enabled);
+    return { success: true, data: diagnosticsHealthMonitor.getFleetHealth() };
+  });
+
+  ipcMain.handle('diagnostics:set-battery-saver', async (event, enabled: boolean) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    diagnosticsHealthMonitor.setBatterySaver(enabled);
+    return { success: true, data: diagnosticsHealthMonitor.getFleetHealth() };
+  });
+
+  ipcMain.handle('diagnostics:set-metered-connection', async (event, enabled: boolean) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    diagnosticsHealthMonitor.setMeteredConnection(enabled);
+    return { success: true, data: diagnosticsHealthMonitor.getFleetHealth() };
+  });
+
+  ipcMain.handle('diagnostics:trigger-ping', async (event, providerId?: string) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      if (providerId) {
+        await diagnosticsHealthMonitor.pingProvider(providerId);
+      } else {
+        await diagnosticsHealthMonitor.checkHealth();
+      }
+      return { success: true, data: diagnosticsHealthMonitor.getFleetHealth() };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('diagnostics:simulate-outage', async (event, providerId: string, type?: 'RATE_LIMITED' | 'PROVIDER_DOWN', cooldownMs?: number) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    const health = diagnosticsHealthMonitor.simulateProviderOutage(providerId, type, cooldownMs);
+    return { success: true, data: health };
+  });
+
+  ipcMain.handle('diagnostics:simulate-recovery', async (event, providerId: string) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    const health = diagnosticsHealthMonitor.simulateProviderRecovery(providerId);
+    return { success: true, data: health };
+  });
+
   ipcMain.handle('pty:run-command', (_event, options: CommandExecutionOptions) => runCommand({
     ...options,
     cwd: options.cwd || currentWorkspacePath
@@ -1029,6 +1147,25 @@ function registerIpcHandlers(): void {
   ipcMain.on('pty:resize', (_event, payload: { ptyId: string; cols: number; rows: number }) => resizePty(payload.ptyId, payload.cols, payload.rows));
   ipcMain.on('pty:sync-cwd', (_event, payload: { ptyId: string; targetCwd: string; shellId: string }) => syncPtyCwd(payload.ptyId, payload.targetCwd, payload.shellId));
   ipcMain.handle('pty:kill', (_event, ptyId: string) => killPty(ptyId));
+
+  // Marketplace Connection Layer IPC (Open VSX)
+  ipcMain.handle('marketplace:search', (event, options: unknown) => isTrustedExtensionFrame(event)
+    ? handleMarketplaceSearch(options as any)
+    : { success: false, error: 'Untrusted renderer frame.' });
+  ipcMain.handle('marketplace:metadata', (event, payload: unknown) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    const value = payload && typeof payload === 'object' ? payload as Record<string, unknown> : {};
+    return handleMarketplaceMetadata(
+      typeof value.namespace === 'string' ? value.namespace : '',
+      typeof (value.extension || value.name) === 'string' ? String(value.extension || value.name) : ''
+    );
+  });
+  ipcMain.handle('marketplace:install', (event, entry: unknown) => isTrustedExtensionFrame(event)
+    ? handleMarketplaceInstall(entry as any)
+    : { success: false, error: 'Untrusted renderer frame.' });
+  ipcMain.handle('marketplace:uninstall', (event, id: unknown) => isTrustedExtensionFrame(event)
+    ? handleMarketplaceUninstall(typeof id === 'string' ? id : '')
+    : { success: false, error: 'Untrusted renderer frame.' });
 
   ipcMain.handle('extensions:search', (event, query: unknown) => isTrustedExtensionFrame(event)
     ? searchOpenVsxExtensions(typeof query === 'string' ? query : '')
@@ -1364,6 +1501,12 @@ function cleanupAllResources(): void {
     // Ignore monitor cleanup error
   }
   try {
+    diagnosticsHealthMonitor.stopMonitoring();
+  } catch {
+    // Ignore diagnostics monitor cleanup error
+  }
+
+  try {
     opencodeIntegration.stopConfigWatcher();
   } catch {
     // Ignore OpenCode watcher cleanup error
@@ -1422,7 +1565,14 @@ app.whenReady().then(async () => {
   createWindow();
   void fccManager.start();
   providerHealthMonitor.startMonitoring();
+  diagnosticsHealthMonitor.startMonitoring();
+  diagnosticsHealthMonitor.onFleetHealthChange((health) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('diagnostics:fleet-health-changed', health);
+    }
+  });
   void opencodeIntegration.startConfigWatcher();
+
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
 app.on('before-quit', cleanupAllResources);

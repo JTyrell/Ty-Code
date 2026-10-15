@@ -22,7 +22,8 @@ import {
   Layers,
   Gauge,
   Eye,
-  LockKeyhole
+  LockKeyhole,
+  Activity
 } from 'lucide-react';
 import { useChatStore } from '../state/chat-store';
 import { useUsageDashboardStore } from '../state/usage-dashboard-store';
@@ -56,11 +57,12 @@ import { ProviderCards } from './settings/ProviderCards';
 import { AdvancedProviderConfig } from './settings/AdvancedProviderConfig';
 import { APIKeyManager } from './settings/APIKeyManager';
 import { OpenCodeIntegration } from './settings/OpenCodeIntegration';
+import { DiagnosticsPanel } from './settings/DiagnosticsPanel';
 import type { FreeProvider } from '../../../shared/types/free-providers';
 import type { StoredKeySummary, CustomProviderConfig } from '../../../shared/types/byok';
 
 type UpdateChannelPreference = 'stable' | 'beta' | 'nightly';
-type SettingsTab = 'providers' | 'byok' | 'openkilo' | 'opencode' | 'integrations' | 'orchestration' | 'fcc' | 'endpoints' | 'params' | 'terminal' | 'lsp' | 'editor' | 'shortcuts' | 'extensions' | 'security' | 'privacy';
+type SettingsTab = 'providers' | 'byok' | 'openkilo' | 'opencode' | 'integrations' | 'orchestration' | 'fcc' | 'endpoints' | 'params' | 'terminal' | 'lsp' | 'editor' | 'shortcuts' | 'extensions' | 'security' | 'privacy' | 'diagnostics';
 
 const DEFAULT_SECURITY_SETTINGS: SecurityPolicySettings = {
   terminalPolicy: 'restricted',
@@ -122,8 +124,14 @@ const FALLBACK_PROVIDERS: PreConfiguredProvider[] = [
 ];
 
 export const SettingsModal: React.FC = () => {
-  const { isSettingsOpen, toggleSettings, settings, saveSettings } = useChatStore();
+  const { isSettingsOpen, toggleSettings, settings, saveSettings, activeSettingsTab } = useChatStore();
   const [activeTab, setActiveTab] = useState<SettingsTab>('providers');
+
+  useEffect(() => {
+    if (activeSettingsTab) {
+      setActiveTab(activeSettingsTab as SettingsTab);
+    }
+  }, [activeSettingsTab]);
 
   // AI Providers Onboarding state
   const [registryProviders, setRegistryProviders] = useState<PreConfiguredProvider[]>(FALLBACK_PROVIDERS);
@@ -839,6 +847,14 @@ export const SettingsModal: React.FC = () => {
           <button className={activeTab === 'editor' ? 'is-active' : ''} onClick={() => setActiveTab('editor')}><Sliders size={13} />Editor Polish</button>
           <button className={activeTab === 'shortcuts' ? 'is-active' : ''} onClick={() => setActiveTab('shortcuts')}><Keyboard size={13} />Keybindings</button>
           <button className={activeTab === 'extensions' ? 'is-active' : ''} onClick={() => setActiveTab('extensions')}><ShieldCheck size={13} />Extensions</button>
+          <button
+            className={activeTab === 'diagnostics' ? 'is-active' : ''}
+            onClick={() => setActiveTab('diagnostics')}
+            style={{ color: activeTab === 'diagnostics' ? '#38bdf8' : undefined }}
+            id="tab-btn-diagnostics"
+          >
+            <Activity size={13} color="#38bdf8" />Connection Diagnostics
+          </button>
           <button className={activeTab === 'privacy' ? 'is-active' : ''} onClick={() => { setActiveTab('privacy'); setTelemetryInspectorOpen(false); }}><LockKeyhole size={13} />Privacy &amp; About</button>
         </nav>
 
@@ -1734,6 +1750,11 @@ export const SettingsModal: React.FC = () => {
                 </button>
               </div>
             </div>
+          )}
+
+          {/* Tab: Provider Connection Diagnostic Harness (Phase Diagnostics 1) */}
+          {activeTab === 'diagnostics' && (
+            <DiagnosticsPanel />
           )}
 
           {error && <div className="settings-error" role="alert">{error}</div>}

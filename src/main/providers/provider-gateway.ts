@@ -52,7 +52,7 @@ export interface StreamEventCallbacks {
   onToken?: (token: string) => void;
   onThought?: (thought: string) => void;
   onToolCallDelta?: (toolCalls: Array<{ id: string; name: string; arguments: string }>) => void;
-  onFailoverNotice?: (notice: { attempt: number; failedProvider: string; nextProvider?: string; error: string }) => void;
+  onFailoverNotice?: (notice: { attempt: number; failedProvider: string; nextProvider?: string; nextModel?: string; error: string }) => void;
 }
 
 interface AccumulatedToolCall { id: string; name: string; args: string; }
@@ -336,11 +336,13 @@ export class ProviderGateway {
       },
       settings,
       messages,
+      abortSignal,
       onFailover: (event) => {
         callbacks.onFailoverNotice?.({
           attempt: event.attempt,
           failedProvider: event.failedProvider,
           nextProvider: event.nextProvider,
+          nextModel: event.nextModel,
           error: event.error
         });
       },

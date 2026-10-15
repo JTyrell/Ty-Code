@@ -1,0 +1,261 @@
+/**
+ * Error Taxonomy Engine (Phase Diagnostics 1)
+ *
+ * Classifies every failure into exactly one diagnostic error code
+ * with a human-readable 'what is needed' message and actionable remedy.
+ *
+ * Brand: Ty-Code
+ */
+
+import type { DiagnosticErrorCode, DiagnosticStep } from '../../../shared/types/diagnostics';
+
+export interface DiagnosticErrorContext {
+  step?: DiagnosticStep;
+  statusCode?: number;
+  errorMessage?: string;
+  responseBody?: string;
+  headers?: Record<string, string>;
+  signupUrl?: string;
+  providerName?: string;
+  configuredModel?: string;
+  validFreeModels?: string[];
+  rawEvidenceChunk?: string;
+}
+
+export interface ClassifiedError {
+  code: DiagnosticErrorCode;
+  humanMessage: string;
+  remedy: string;
+  actionUrl?: string;
+  actionLabel?: string;
+  suggestedFallback?: string;
+  validFreeModels?: string[];
+  retryAfterSec?: number;
+  rawEvidence?: string;
+}
+
+export const ERROR_CODE_DESCRIPTIONS: Record<DiagnosticErrorCode, string> = {
+  CONFIG_MISSING: 'No API key configured for a provider that requires one',
+  CONFIG_INVALID: 'Key rejected (401/403)',
+  MODEL_UNAVAILABLE: 'Model ID not found or not free (404)',
+  NETWORK_BLOCKED: 'DNS/conn/CSP/proxy failure',
+  RATE_LIMITED: '429',
+  QUOTA_EXCEEDED: 'quota error',
+  FORMAT_MISMATCH: 'SSE/tool-call parse failure',
+  TIMEOUT: 'no first token within 30s',
+  PROVIDER_DOWN: '5xx'
+};
+
+/**
+ * Standard suggested fallback providers for rate limits or outages
+ */
+export const DEFAULT_FALLBACK_PROVIDERS: Record<string, string> = {
+  'openrouter-free': 'OpenKilo (zero-config anonymous free tier)',
+  'groq-free': 'OpenKilo or OpenRouter Free',
+  'together-ai-free': 'Groq (Free Tier) or OpenKilo',
+  'fireworks-ai-free': 'OpenKilo or Groq',
+  'huggingface-free': 'OpenKilo or Together AI',
+  'google-ai-studio-free': 'OpenRouter Free or OpenKilo',
+  'anthropic-claude-free': 'OpenRouter Free (deepseek-r1:free)'
+};
+
+/**
+ * Classifies any error encountered during diagnostic tests into the fixed taxonomy.
+ */
+export function classifyDiagnosticError(
+  providerId: string,
+  error: unknown,
+  context: DiagnosticErrorContext = {}
+): ClassifiedError {
+  const errMsg = (error instanceof Error ? error.message : typeof error === 'string' ? error : context.errorMessage || '').trim();
+  const lowerMsg = errMsg.toLowerCase();
+  const status = context.statusCode;
+  const rawBody = context.responseBody || context.rawEvidenceChunk || '';
+  const lowerBody = rawBody.toLowerCase();
+  const signupUrl = context.signupUrl || 'https://openrouter.ai/keys';
+  const fallback = DEFAULT_FALLBACK_PROVIDERS[providerId] || 'OpenKilo (Kilo Gateway Free Tier)';
+
+  // 1. CONFIG_MISSING
+  if (
+    lowerMsg.includes('config_missing') ||
+    lowerMsg.includes('no api key configured') ||
+    lowerMsg.includes('api key is required') ||
+    lowerMsg.includes('missing api key')
+  ) {
+    return {
+      code: 'CONFIG_MISSING',
+      humanMessage: 'No API key configured for a provider that requires one',
+      remedy: 'Add a key in Settings > Providers (one-click link included)',
+      actionUrl: signupUrl,
+      actionLabel: 'Add API Key in Settings'
+    };
+  }
+
+  // 2. TIMEOUT (30s first token limit or explicit timeout)
+  if (
+    context.step === 'streaming' &&
+    (lowerMsg.includes('timeout') || lowerMsg.includes('timed out') || lowerMsg.includes('30s') || lowerMsg.includes('aborted'))
+  ) {
+    return {
+      code: 'TIMEOUT',
+      humanMessage: 'no first token within 30s',
+      remedy: 'Provider too slow or hung; last raw bytes attached',
+      rawEvidence: rawBody || errMsg || 'Connection timed out after 30000ms with 0 tokens received.'
+    };
+  }
+
+  // 3. FORMAT_MISMATCH (SSE / tool-call parse failure)
+  if (
+    context.step === 'streaming' &&
+    (lowerMsg.includes('sse') || lowerMsg.includes('parse') || lowerMsg.includes('json') || lowerMsg.includes('chunk') || lowerMsg.includes('format'))
+  ) {
+    return {
+      code: 'FORMAT_MISMATCH',
+      humanMessage: 'SSE/tool-call parse failure',
+      remedy: 'Provider response format changed; raw chunk attached; code fix needed in sse-parser.ts',
+      rawEvidence: rawBody || errMsg
+    };
+  }
+
+  if (
+    context.step === 'tool_call' &&
+    (lowerMsg.includes('tool_call') || lowerMsg.includes('tool') || lowerMsg.includes('function') || lowerMsg.includes('schema') || lowerMsg.includes('format'))
+  ) {
+    return {
+      code: 'FORMAT_MISMATCH',
+      humanMessage: 'SSE/tool-call parse failure',
+      remedy: 'Provider response format changed; raw chunk attached; code fix needed in sse-parser.ts',
+      rawEvidence: rawBody || errMsg
+    };
+  }
+
+  // 4. RATE_LIMITED (429 or explicit rate limit)
+  if (status === 429 || lowerMsg.includes('rate limit') || lowerMsg.includes('too many requests') || lowerBody.includes('rate_limit')) {
+    let retryAfter = 60;
+    if (context.headers && context.headers['retry-after']) {
+      const parsed = parseInt(context.headers['retry-after'], 10);
+      if (!isNaN(parsed) && parsed > 0) retryAfter = parsed;
+    } else {
+      const match = lowerMsg.match(/try again in (\d+)/i) || lowerBody.match(/try again in (\d+)/i) || lowerMsg.match(/after (\d+)s/i);
+      if (match) retryAfter = parseInt(match[1], 10);
+    }
+    return {
+      code: 'RATE_LIMITED',
+      humanMessage: '429',
+      remedy: `Rate limited; retry-after ${retryAfter}s; fallback provider suggested: ${fallback}`,
+      retryAfterSec: retryAfter,
+      suggestedFallback: fallback,
+      rawEvidence: rawBody || errMsg
+    };
+  }
+
+  // 5. QUOTA_EXCEEDED (insufficient quota, balance, free credits expired)
+  if (
+    lowerMsg.includes('quota') ||
+    lowerMsg.includes('credit') ||
+    lowerMsg.includes('insufficient_quota') ||
+    lowerMsg.includes('balance') ||
+    lowerMsg.includes('exhausted') ||
+    lowerBody.includes('quota') ||
+    lowerBody.includes('insufficient_quota')
+  ) {
+    const alternatives = ['OpenKilo Free', 'Groq Free Tier', 'OpenRouter Free Tier'].join(', ');
+    return {
+      code: 'QUOTA_EXCEEDED',
+      humanMessage: 'quota error',
+      remedy: `Free quota exhausted for today; next reset midnight UTC; alternatives: ${alternatives}`,
+      suggestedFallback: fallback,
+      rawEvidence: rawBody || errMsg
+    };
+  }
+
+  // 6. CONFIG_INVALID (401/403 or invalid credentials)
+  if (
+    status === 401 ||
+    status === 403 ||
+    lowerMsg.includes('unauthorized') ||
+    lowerMsg.includes('forbidden') ||
+    lowerMsg.includes('invalid api key') ||
+    lowerMsg.includes('invalid key') ||
+    lowerMsg.includes('authentication') ||
+    lowerBody.includes('invalid_api_key')
+  ) {
+    return {
+      code: 'CONFIG_INVALID',
+      humanMessage: 'Key rejected (401/403)',
+      remedy: `Key is invalid or revoked; regenerate at ${signupUrl}`,
+      actionUrl: signupUrl,
+      actionLabel: 'Regenerate API Key',
+      rawEvidence: rawBody || errMsg
+    };
+  }
+
+  // 7. MODEL_UNAVAILABLE (404 or model not found)
+  if (
+    status === 404 ||
+    lowerMsg.includes('model not found') ||
+    lowerMsg.includes('model unavailable') ||
+    lowerMsg.includes('does not exist') ||
+    lowerMsg.includes('not free') ||
+    lowerBody.includes('model_not_found')
+  ) {
+    const freeList = context.validFreeModels && context.validFreeModels.length > 0
+      ? context.validFreeModels.join(', ')
+      : 'deepseek/deepseek-r1:free, meta-llama/llama-3.3-70b-instruct:free, qwen/qwen3-coder:free';
+    return {
+      code: 'MODEL_UNAVAILABLE',
+      humanMessage: 'Model ID not found or not free (404)',
+      remedy: `Model unavailable; here are the currently valid free models: ${freeList}`,
+      validFreeModels: context.validFreeModels,
+      rawEvidence: rawBody || errMsg
+    };
+  }
+
+  // 8. PROVIDER_DOWN (5xx server error)
+  if (
+    (typeof status === 'number' && status >= 500 && status < 600) ||
+    lowerMsg.includes('bad gateway') ||
+    lowerMsg.includes('service unavailable') ||
+    lowerMsg.includes('internal server error') ||
+    lowerMsg.includes('502') ||
+    lowerMsg.includes('503') ||
+    lowerMsg.includes('504')
+  ) {
+    return {
+      code: 'PROVIDER_DOWN',
+      humanMessage: '5xx',
+      remedy: 'Provider outage; auto-failover engaged',
+      suggestedFallback: fallback,
+      rawEvidence: rawBody || errMsg
+    };
+  }
+
+  // 9. NETWORK_BLOCKED (DNS, connection refused, proxy, offline, fetch failed)
+  if (
+    lowerMsg.includes('econnrefused') ||
+    lowerMsg.includes('enotfound') ||
+    lowerMsg.includes('eai_again') ||
+    lowerMsg.includes('fetch failed') ||
+    lowerMsg.includes('network') ||
+    lowerMsg.includes('blocked') ||
+    lowerMsg.includes('proxy') ||
+    lowerMsg.includes('dns') ||
+    lowerMsg.includes('certificate') ||
+    lowerMsg.includes('ssl')
+  ) {
+    return {
+      code: 'NETWORK_BLOCKED',
+      humanMessage: 'DNS/conn/CSP/proxy failure',
+      remedy: `Network path blocked: ${errMsg || 'Connection refused or DNS failure'}; check proxy/firewall`,
+      rawEvidence: errMsg || 'Network unreachable'
+    };
+  }
+
+  // Default fallback classification
+  return {
+    code: 'NETWORK_BLOCKED',
+    humanMessage: 'DNS/conn/CSP/proxy failure',
+    remedy: `Network path blocked: ${errMsg}; check proxy/firewall`,
+    rawEvidence: rawBody || errMsg
+  };
+}

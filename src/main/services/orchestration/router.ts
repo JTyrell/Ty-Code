@@ -21,7 +21,9 @@ export interface FailoverEvent {
   failedProvider: string;
   error: string;
   nextProvider?: string;
+  nextModel?: string;
 }
+
 
 export interface RoutingExecutionResult<T> {
   result: T;
@@ -37,6 +39,7 @@ export interface ExecuteWithFailoverOptions<T> {
   messages: ChatCompletionMessage[];
   execute: (candidate: ProviderCandidate, reconciledMessages: ChatCompletionMessage[]) => Promise<T>;
   onFailover?: (event: FailoverEvent) => void;
+  abortSignal?: AbortSignal;
 }
 
 export class OmniRouteRouter {
@@ -330,7 +333,7 @@ export class OmniRouteRouter {
           latencyMs: Date.now() - startTime
         };
       } catch (err: unknown) {
-        if (err instanceof Error && (err.name === 'AbortError' || err.message.toLowerCase().includes('abort'))) {
+        if (options.abortSignal?.aborted) {
           throw err;
         }
         const errorMsg = err instanceof Error ? err.message : String(err);
@@ -353,6 +356,7 @@ export class OmniRouteRouter {
           const peekContext: RoutingContext = { ...routeContext, excludedProviders };
           const next = this.route(peekContext, settings);
           event.nextProvider = next?.provider.id;
+          event.nextModel = next?.model.id;
           onFailover?.(event);
         } else {
           // Out of retry attempts

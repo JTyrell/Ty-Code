@@ -123,7 +123,7 @@ export const App: React.FC = () => {
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
       const delta = moveEvent.clientX - startX;
-      const newWidth = Math.max(180, Math.min(550, startWidth + delta));
+      const newWidth = Math.max(180, Math.min(800, startWidth + delta));
       setLeftWidth(newWidth);
     };
 

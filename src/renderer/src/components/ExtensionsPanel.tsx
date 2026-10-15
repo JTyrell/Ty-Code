@@ -1,4 +1,9 @@
-import React, { useState, useEffect } from 'react';
+/**
+ * Ty-Code Desktop IDE - Extensions Sidecar View Panel
+ * Integrates Installed and Marketplace tabs with ExtensionList and ExtensionCard.
+ */
+
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Boxes,
   Search,
@@ -12,12 +17,34 @@ import {
   ToggleRight,
   Package,
   Layers,
-  Sparkles
+  Sparkles,
+  AlertCircle,
+  Sliders
 } from 'lucide-react';
 import type { ExtensionMetadata, InstalledExtension } from '../../../preload/types';
+import type { MarketplaceExtensionEntry } from '../../../shared/types/marketplace';
 import { useExtensionStore } from '../state/extension-store';
 import { ExtensionDetail } from './ExtensionDetail';
 import { ExtensionSettings } from './ExtensionSettings';
+import { ExtensionList } from './extensions/ExtensionList';
+import { ExtensionWidthSimulator } from './extensions/ExtensionWidthSimulator';
+
+/**
+ * Formats SemVer version comparison to detect available updates.
+ */
+export function isVersionNewer(registryVer?: string, installedVer?: string): boolean {
+  if (!registryVer || !installedVer) return false;
+  const regParts = registryVer.split('.').map((p) => parseInt(p, 10) || 0);
+  const instParts = installedVer.split('.').map((p) => parseInt(p, 10) || 0);
+  const maxLen = Math.max(regParts.length, instParts.length);
+  for (let i = 0; i < maxLen; i++) {
+    const r = regParts[i] || 0;
+    const inst = instParts[i] || 0;
+    if (r > inst) return true;
+    if (r < inst) return false;
+  }
+  return false;
+}
 
 export const ExtensionsPanel: React.FC = () => {
   const {
@@ -26,22 +53,35 @@ export const ExtensionsPanel: React.FC = () => {
     activeTab,
     selectedCategory,
     query,
+    sortBy,
     isLoading,
     isMarketplaceLoading,
+    isOfflineCache,
+    offlineMessage,
+    rateLimited,
+    retryAfterSec,
+    installingMap,
+    errorMap,
     error,
     activeDetail,
     activeSettings,
     setActiveTab,
     setSelectedCategory,
     setQuery,
+    setSortBy,
     setActiveDetail,
     setActiveSettings,
     loadInstalled,
     searchMarketplace,
     installExtension,
+    uninstallExtension,
     toggleExtension,
-    installFromVsix
+    installFromVsix,
+    retryInstall,
+    retrySearch
   } = useExtensionStore();
+
+  const [showSimulator, setShowSimulator] = useState(false);
 
   useEffect(() => {
     void loadInstalled();
@@ -50,12 +90,20 @@ export const ExtensionsPanel: React.FC = () => {
 
   useEffect(() => {
     if (activeTab !== 'marketplace' || query.trim().length < 3) return;
-    const timer = window.setTimeout(() => { void searchMarketplace(query); }, 300);
+    const timer = window.setTimeout(() => { void searchMarketplace(query); }, 250);
     return () => {
       window.clearTimeout(timer);
       useExtensionStore.getState().cancelMarketplaceSearch();
     };
   }, [activeTab, query, searchMarketplace]);
+
+  // Determine installed extensions that have newer versions in registry
+  const updatesAvailableCount = useMemo(() => {
+    return installed.filter((inst) => {
+      const match = marketplace.find((m) => m.id === inst.id);
+      return match && isVersionNewer(match.version, inst.manifest.version);
+    }).length;
+  }, [installed, marketplace]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -133,17 +181,38 @@ export const ExtensionsPanel: React.FC = () => {
           >
             <RefreshCw size={13} className={isLoading ? 'animate-spin' : ''} />
           </button>
+          <button
+            onClick={() => setShowSimulator((s) => !s)}
+            style={{
+              padding: '3px 6px',
+              borderRadius: '4px',
+              color: showSimulator ? 'var(--accent-primary)' : 'var(--text-secondary)',
+              backgroundColor: showSimulator ? 'rgba(139, 92, 246, 0.15)' : 'transparent',
+              border: 'none',
+              cursor: 'pointer'
+            }}
+            title="Toggle Container Width Simulator"
+            aria-label="Toggle Container Width Simulator"
+          >
+            <Sliders size={13} />
+          </button>
         </div>
       </div>
 
-      {/* Tabs: Installed vs Marketplace */}
-      <div
-        style={{
-          display: 'flex',
-          borderBottom: '1px solid var(--border-subtle)',
-          backgroundColor: 'var(--bg-tertiary)'
-        }}
-      >
+      {showSimulator ? (
+        <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+          <ExtensionWidthSimulator onClose={() => setShowSimulator(false)} />
+        </div>
+      ) : (
+        <>
+          {/* Tabs: Installed vs Marketplace */}
+          <div
+            style={{
+              display: 'flex',
+              borderBottom: '1px solid var(--border-subtle)',
+              backgroundColor: 'var(--bg-tertiary)'
+            }}
+          >
         <button
           onClick={() => setActiveTab('installed')}
           style={{
@@ -161,6 +230,23 @@ export const ExtensionsPanel: React.FC = () => {
         >
           <Layers size={12} />
           <span>Installed ({installed.length})</span>
+          {updatesAvailableCount > 0 && (
+            <span
+              data-testid="updates-available-badge"
+              style={{
+                fontSize: '10px',
+                fontWeight: 700,
+                backgroundColor: 'var(--accent-primary)',
+                color: '#ffffff',
+                padding: '1px 5px',
+                borderRadius: '10px',
+                lineHeight: 1.2
+              }}
+              title={`${updatesAvailableCount} update(s) available`}
+            >
+              {updatesAvailableCount}
+            </span>
+          )}
         </button>
 
         <button
@@ -234,206 +320,149 @@ export const ExtensionsPanel: React.FC = () => {
             );
           })}
         </div>
+
+        {/* Result Count and Sort By Selector */}
+        <div
+          data-testid="extension-results-header"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginTop: '6px',
+            padding: '0 2px',
+            fontSize: '11px',
+            color: 'var(--text-muted)'
+          }}
+        >
+          <span data-testid="extension-result-count">
+            {activeTab === 'marketplace'
+              ? `${marketplace.length} result${marketplace.length === 1 ? '' : 's'}`
+              : `${filteredInstalled.length} installed`}
+          </span>
+
+          {activeTab === 'marketplace' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <span>Sort by:</span>
+              <select
+                data-testid="extension-sort-selector"
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as 'relevance' | 'downloadCount' | 'rating')}
+                style={{
+                  fontSize: '11px',
+                  backgroundColor: 'var(--bg-primary)',
+                  color: 'var(--text-primary)',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: '3px',
+                  padding: '1px 4px',
+                  outline: 'none',
+                  cursor: 'pointer'
+                }}
+                aria-label="Sort extensions"
+              >
+                <option value="relevance">Relevance</option>
+                <option value="downloadCount">Downloads</option>
+                <option value="rating">Rating</option>
+              </select>
+            </div>
+          )}
+        </div>
       </div>
+
+      {/* Rate Limited Banner */}
+      {rateLimited && (
+        <div
+          data-testid="rate-limited-banner"
+          style={{
+            margin: '8px 10px 0 10px',
+            padding: '6px 10px',
+            backgroundColor: 'rgba(239, 68, 68, 0.12)',
+            border: '1px solid rgba(239, 68, 68, 0.3)',
+            borderRadius: '4px',
+            color: 'var(--accent-red)',
+            fontSize: '11px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px'
+          }}
+        >
+          <AlertCircle size={14} />
+          <span>Registry rate limited, retry in {retryAfterSec}s</span>
+        </div>
+      )}
+
+      {/* Offline Cached Results Banner */}
+      {isOfflineCache && (
+        <div
+          data-testid="offline-cached-banner"
+          style={{
+            margin: '8px 10px 0 10px',
+            padding: '6px 10px',
+            backgroundColor: 'rgba(234, 179, 8, 0.12)',
+            border: '1px solid rgba(234, 179, 8, 0.3)',
+            borderRadius: '4px',
+            color: 'var(--accent-amber)',
+            fontSize: '11px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <AlertCircle size={14} />
+            <span>{offlineMessage || 'offline — cached results'}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => void retrySearch()}
+            style={{
+              fontSize: '10px',
+              padding: '2px 7px',
+              borderRadius: '3px',
+              backgroundColor: 'var(--bg-tertiary)',
+              color: 'var(--text-primary)',
+              border: '1px solid rgba(234, 179, 8, 0.3)',
+              cursor: 'pointer'
+            }}
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
       {/* Main Extension List */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '6px' }}>
-        {error && <div role="alert" className="settings-error" style={{ margin: '4px 2px 8px' }}>{error}</div>}
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         {activeTab === 'installed' ? (
-          /* INSTALLED VIEW */
-          filteredInstalled.length === 0 ? (
-            <div style={{ padding: '30px 16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '12px' }}>
-              No installed extensions match filter.
-            </div>
-          ) : (
-            filteredInstalled.map((ext) => {
-              const isEnabled = ext.enabled;
-              const hasConfig = Boolean(ext.manifest.contributes?.configuration?.properties);
-
-              return (
-                <div
-                  key={ext.id}
-                  onClick={() => setActiveDetail(ext)}
-                  style={{
-                    padding: '8px 10px',
-                    borderRadius: '6px',
-                    border: '1px solid var(--border-subtle)',
-                    marginBottom: '6px',
-                    backgroundColor: 'var(--bg-tertiary)',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '6px'
-                  }}
-                  className="file-item-hover"
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
-                      <Boxes size={18} color={isEnabled ? 'var(--accent-primary)' : 'var(--text-muted)'} style={{ flexShrink: 0 }} />
-                      <div style={{ overflow: 'hidden' }}>
-                        <div style={{ fontSize: '12px', fontWeight: 600, color: isEnabled ? 'var(--text-primary)' : 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {ext.manifest.displayName || ext.manifest.name}
-                        </div>
-                        <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-                          {ext.manifest.publisher} • v{ext.manifest.version}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Enable/Disable Toggle & Actions */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
-                      {hasConfig && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setActiveSettings(ext);
-                          }}
-                          style={{ padding: '3px', borderRadius: '3px', color: 'var(--text-secondary)' }}
-                          title="Configure Settings"
-                        >
-                          <Settings size={13} />
-                        </button>
-                      )}
-
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (ext.isBuiltIn) void toggleExtension(ext.id, !isEnabled);
-                        }}
-                        disabled={!ext.isBuiltIn}
-                        style={{
-                          padding: '2px',
-                          color: isEnabled ? 'var(--accent-green)' : 'var(--text-muted)',
-                          cursor: ext.isBuiltIn ? 'pointer' : 'not-allowed'
-                        }}
-                        title={ext.isBuiltIn ? (isEnabled ? 'Click to Disable' : 'Click to Enable') : 'Community package is metadata-only'}
-                        aria-label={ext.isBuiltIn ? (isEnabled ? 'Disable extension' : 'Enable extension') : 'Community extension cannot run'}
-                      >
-                        {isEnabled ? <ToggleRight size={22} /> : <ToggleLeft size={22} />}
-                      </button>
-                    </div>
-                  </div>
-
-                  {ext.manifest.description && (
-                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)', lineHeight: 1.3, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                      {ext.manifest.description}
-                    </div>
-                  )}
-
-                  {ext.isBuiltIn && (
-                    <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
-                      <span style={{ fontSize: '9px', backgroundColor: 'rgba(139, 92, 246, 0.15)', color: 'var(--accent-primary)', padding: '1px 5px', borderRadius: '3px', fontWeight: 600 }}>
-                        BUILT-IN
-                      </span>
-                    </div>
-                  )}
-                </div>
-              );
-            })
-          )
+          <ExtensionList
+            items={filteredInstalled}
+            installed={installed}
+            onSelect={setActiveDetail}
+            onToggle={toggleExtension}
+            onConfigure={setActiveSettings}
+            onClearSearch={() => setQuery('')}
+          />
         ) : (
-          /* MARKETPLACE VIEW */
-          isMarketplaceLoading ? (
-            <div style={{ padding: '30px 16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '12px' }}>
-Searching extension registry…
-            </div>
-          ) : marketplace.length === 0 ? (
-            <div style={{ padding: '30px 16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '12px' }}>
-              No marketplace extensions found.
-            </div>
-          ) : (
-            marketplace.map((ext) => {
-              const isAlreadyInstalled = installed.some((i) => i.id === ext.id);
-
-              return (
-                <div
-                  key={ext.id}
-                  onClick={() => setActiveDetail(ext)}
-                  style={{
-                    padding: '8px 10px',
-                    borderRadius: '6px',
-                    border: '1px solid var(--border-subtle)',
-                    marginBottom: '6px',
-                    backgroundColor: 'var(--bg-tertiary)',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    gap: '10px'
-                  }}
-                  className="file-item-hover"
-                >
-                  <div
-                    style={{
-                      width: '36px',
-                      height: '36px',
-                      borderRadius: '6px',
-                      backgroundColor: 'var(--bg-primary)',
-                      border: '1px solid var(--border-subtle)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      overflow: 'hidden',
-                      flexShrink: 0
-                    }}
-                  >
-                        {ext.iconUrl ? (
-                      <img src={ext.iconUrl} alt={`${ext.displayName} extension icon`} referrerPolicy="no-referrer" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-                    ) : (
-                      <Boxes size={20} color="var(--accent-primary)" />
-                    )}
-                  </div>
-
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {ext.displayName || ext.name}
-                      </span>
-                      <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>v{ext.version}</span>
-                    </div>
-
-                    <div style={{ fontSize: '10px', color: 'var(--accent-cyan)' }}>
-                      {ext.namespace}
-                    </div>
-
-                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: '2px' }}>
-                      {ext.description}
-                    </div>
-
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '6px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '10px', color: 'var(--text-muted)' }}>
-                        <span>⬇ {ext.downloadCount?.toLocaleString() || 0}</span>
-                        {ext.rating && (
-                          <span style={{ display: 'flex', alignItems: 'center', gap: '2px', color: 'var(--accent-amber)' }}>
-                            <Star size={10} fill="var(--accent-amber)" /> {ext.rating}
-                          </span>
-                        )}
-                      </div>
-
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (!isAlreadyInstalled) void installExtension(ext);
-                        }}
-                        style={{
-                          padding: '2px 8px',
-                          fontSize: '10px',
-                          backgroundColor: isAlreadyInstalled ? 'var(--bg-primary)' : 'var(--accent-primary)',
-                          color: isAlreadyInstalled ? 'var(--accent-green)' : '#fff',
-                          border: isAlreadyInstalled ? '1px solid var(--accent-green)' : 'none',
-                          borderRadius: '3px',
-                          fontWeight: 500,
-                          cursor: isAlreadyInstalled ? 'default' : 'pointer'
-                        }}
-                      >
-                        {isAlreadyInstalled ? 'Saved' : 'Save metadata'}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              );
-            })
-          )
+          <ExtensionList
+            items={marketplace}
+            installed={installed}
+            isLoading={isMarketplaceLoading}
+            error={error}
+            isOfflineCache={isOfflineCache}
+            offlineMessage={offlineMessage}
+            installingMap={installingMap}
+            errorMap={errorMap}
+            onSelect={setActiveDetail}
+            onInstall={(item) => { void installExtension(item); }}
+            onUninstall={(id) => { void uninstallExtension(id); }}
+            onToggle={toggleExtension}
+            onConfigure={setActiveSettings}
+            onRetryInstall={retryInstall}
+            onRetrySearch={retrySearch}
+            onClearSearch={() => setQuery('')}
+          />
         )}
       </div>
+    </>
+  )}
 
       {/* Extension Detail Modal */}
       {activeDetail && (

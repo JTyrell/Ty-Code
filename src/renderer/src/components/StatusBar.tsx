@@ -9,6 +9,7 @@ import { useWorkspaceEditStore } from '../state/workspace-edit-store';
 import { undoWorkspaceEditTransaction } from '../services/workspace-edit-commands';
 import { AgentStatusBar } from './AgentStatusBar';
 import { useUsageDashboardStore } from '../state/usage-dashboard-store';
+import { FleetHealthIndicator } from './FleetHealthIndicator';
 
 function getServerLanguage(language: string): string {
   if (language === 'javascript') return 'typescript';
@@ -109,7 +110,11 @@ export const StatusBar: React.FC = () => {
         <span>Ln 1, Col 1</span><span>Spaces: {settings?.editor?.tabSize || 2}</span><span>UTF-8</span>
         <span style={{ textTransform: 'capitalize', color: 'var(--accent-cyan)' }}>{language}</span>
 
+        {/* Phase Diagnostics 5: Fleet Health Indicator */}
+        <FleetHealthIndicator />
+
         {/* Smart Orchestrator: Model / Provider / Quota Indicator */}
+
         <button
           type="button"
           id="status-bar-active-model-btn"

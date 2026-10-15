@@ -13,11 +13,12 @@ import {
   Tag
 } from 'lucide-react';
 import type { InstalledExtension, ExtensionMetadata } from '../../../preload/types';
+import type { MarketplaceExtensionEntry } from '../../../shared/types/marketplace';
 import { useExtensionStore } from '../state/extension-store';
 import { ExtensionSettings } from './ExtensionSettings';
 
 interface ExtensionDetailProps {
-  item: InstalledExtension | ExtensionMetadata;
+  item: InstalledExtension | ExtensionMetadata | MarketplaceExtensionEntry;
   onClose: () => void;
 }
 
@@ -38,7 +39,7 @@ export const ExtensionDetail: React.FC<ExtensionDetailProps> = ({ item, onClose 
   const isInstalledObj = 'manifest' in item;
   const installedRecord = isInstalledObj
     ? (item as InstalledExtension)
-    : installed.find((ext) => ext.id === (item as ExtensionMetadata).id);
+    : installed.find((ext) => ext.id === item.id);
 
   const isInstalled = Boolean(installedRecord);
   const isEnabled = installedRecord?.enabled ?? false;
@@ -47,11 +48,11 @@ export const ExtensionDetail: React.FC<ExtensionDetailProps> = ({ item, onClose 
   const manifest = isInstalledObj
     ? (item as InstalledExtension).manifest
     : {
-        name: (item as ExtensionMetadata).name,
-        publisher: (item as ExtensionMetadata).namespace,
-        version: (item as ExtensionMetadata).version,
-        displayName: (item as ExtensionMetadata).displayName,
-        description: (item as ExtensionMetadata).description,
+        name: (item as ExtensionMetadata).name || item.id.split('.')[1] || item.id,
+        publisher: (item as ExtensionMetadata).namespace || item.id.split('.')[0] || '',
+        version: item.version,
+        displayName: item.displayName,
+        description: (item as ExtensionMetadata).description || (item as MarketplaceExtensionEntry).shortDescription || '',
         categories: (item as ExtensionMetadata).categories || ['Tools'],
         contributes: {}
       };

@@ -38,6 +38,9 @@ interface DownloadAsset {
 
 interface PagesContext {
   request: Request;
+  env?: {
+    GITHUB_TOKEN?: string;
+  };
 }
 
 function classifyInstaller(name: string): Omit<DownloadAsset, 'name' | 'size' | 'downloadUrl' | 'sha256'> | null {
@@ -140,10 +143,17 @@ async function readTextLimited(response: Response, limit: number): Promise<strin
   return new TextDecoder().decode(content);
 }
 
-async function fetchChecksumAsset(url: string): Promise<Response> {
+async function fetchChecksumAsset(url: string, context?: PagesContext): Promise<Response> {
   let currentUrl = url;
   for (let redirects = 0; redirects <= 3; redirects++) {
+    const headers: Record<string, string> = {
+      'User-Agent': 'Ty-Code-Website/1.0 (+https://ty-code.com)'
+    };
+    if (context?.env?.GITHUB_TOKEN) {
+      headers['Authorization'] = `Bearer ${context.env.GITHUB_TOKEN}`;
+    }
     const response = await fetch(currentUrl, {
+      headers,
       redirect: 'manual',
       signal: AbortSignal.timeout(8_000)
     });
@@ -161,7 +171,7 @@ async function fetchChecksumAsset(url: string): Promise<Response> {
   throw new Error('The release checksum URL could not be retrieved.');
 }
 
-async function getVerifiedRelease(): Promise<{
+async function getVerifiedRelease(context?: PagesContext): Promise<{
   status: 'verified';
   tag: string;
   name: string;
@@ -169,14 +179,25 @@ async function getVerifiedRelease(): Promise<{
   releaseUrl: string;
   assets: DownloadAsset[];
 }> {
+  const headers: Record<string, string> = {
+    'User-Agent': 'Ty-Code-Website/1.0 (+https://ty-code.com)',
+    Accept: 'application/vnd.github+json',
+    'X-GitHub-Api-Version': '2022-11-28'
+  };
+  if (context?.env?.GITHUB_TOKEN) {
+    headers['Authorization'] = `Bearer ${context.env.GITHUB_TOKEN}`;
+  }
   const releaseResponse = await fetch(RELEASES_API, {
-    headers: {
-      Accept: 'application/vnd.github+json',
-      'X-GitHub-Api-Version': '2022-11-28'
-    },
-    redirect: 'error',
+    headers,
+    redirect: 'manual',
     signal: AbortSignal.timeout(8_000)
   });
+  if ([301, 302, 303, 307, 308].includes(releaseResponse.status)) {
+    throw new Error('GitHub releases request redirected unexpectedly.');
+  }
+  if (releaseResponse.status === 404) {
+    throw new Error('GitHub releases request failed (404).');
+  }
   if (!releaseResponse.ok) throw new Error(`GitHub releases request failed (${releaseResponse.status}).`);
 
   const releaseBody = await readTextLimited(releaseResponse, 1024 * 1024);
@@ -195,7 +216,7 @@ async function getVerifiedRelease(): Promise<{
     throw new Error('The release checksum URL is outside the official repository.');
   }
 
-  const checksumResponse = await fetchChecksumAsset(checksumAsset.browser_download_url);
+  const checksumResponse = await fetchChecksumAsset(checksumAsset.browser_download_url, context);
   if (!checksumResponse.ok) throw new Error('The release checksum file could not be retrieved.');
   const hashes = parseSha256Manifest(await readTextLimited(checksumResponse, MAX_MANIFEST_BYTES));
 
@@ -223,10 +244,10 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
     return jsonResponse({ status: 'error', message: 'Only GET is supported.' }, 405);
   }
   try {
-    return jsonResponse(await getVerifiedRelease(), 200, RELEASE_CACHE);
+    return jsonResponse(await getVerifiedRelease(context), 200, RELEASE_CACHE);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Release verification failed.';
-    if (/\(404\)/.test(message)) {
+    if (/\((?:404|403)\)/.test(message)) {
       return jsonResponse({
         status: 'missing_release',
         message: 'No public release is available from the configured GitHub source yet.',
@@ -239,3 +260,4 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
     }, 502);
   }
 }
+

@@ -8,6 +8,8 @@ import { SecurityPolicyEngine } from '../services/security-policy';
 import { settingsManager, type SettingsManager } from '../services/settings-manager';
 import { moduleRegistry } from '../services/module-registry';
 import { mcpManager } from '../services/mcp-manager';
+import { diagnosticsHealthMonitor } from '../services/diagnostics/health-monitor';
+
 
 export interface RunAgentParams {
   prompt: string;
@@ -26,9 +28,9 @@ export class AgentEngine {
   private toolExecutor: ToolExecutor;
   private securityPolicy: SecurityPolicyEngine;
 
-  constructor(private workspacePath: string, settingsSource: Pick<SettingsManager, 'getEffectiveSettings'> = settingsManager) {
-    this.securityPolicy = new SecurityPolicyEngine(workspacePath, settingsSource);
-    this.toolExecutor = new ToolExecutor(workspacePath, this.securityPolicy);
+  constructor(private workspacePath: string = process.cwd(), settingsSource: Pick<SettingsManager, 'getEffectiveSettings'> = settingsManager) {
+    this.securityPolicy = new SecurityPolicyEngine(this.workspacePath, settingsSource);
+    this.toolExecutor = new ToolExecutor(this.workspacePath, this.securityPolicy);
   }
 
   async run(params: RunAgentParams): Promise<void> {
@@ -71,6 +73,9 @@ export class AgentEngine {
     const maxSteps = 10;
     onChunk({ type: 'status', content: `Agent thinking (${harness.metadata.name})…` });
 
+    let currentSettings = { ...settings };
+    const failedProviders = new Set<string>();
+
     for (let step = 0; step < maxSteps; step++) {
       if (abortSignal?.aborted) {
         onChunk({ type: 'cancelled' });
@@ -78,19 +83,84 @@ export class AgentEngine {
       }
       try {
         const tools = harness.formatTools(AGENT_TOOLS_DEFINITIONS);
-        const streamResult = await ProviderGateway.streamChat(
-          settings,
-          harness.formatMessages(messages),
-          tools,
-          {
-            onToken: (content) => onChunk({ type: 'token', content }),
-            onThought: (content) => onChunk({ type: 'thought', content })
-          },
-          abortSignal
-        );
+        let streamResult;
+        const maxRetries = currentSettings.enableFailover !== false ? (currentSettings.maxFailoverRetries ?? 3) : 1;
+        let attempt = 0;
+
+        while (attempt < maxRetries) {
+          attempt++;
+          try {
+            streamResult = await ProviderGateway.streamChat(
+              currentSettings,
+              harness.formatMessages(messages),
+              tools,
+              {
+                onToken: (content) => onChunk({ type: 'token', content }),
+                onThought: (content) => onChunk({ type: 'thought', content }),
+                onFailoverNotice: (notice) => {
+                  const target = notice.nextModel || notice.nextProvider || 'fallback model';
+                  const modelLabel = target.split('/').pop() || target;
+                  if (notice.error?.includes('429') || notice.error?.toLowerCase().includes('rate limit')) {
+                    diagnosticsHealthMonitor.recordRateLimit(notice.failedProvider);
+                  } else {
+                    diagnosticsHealthMonitor.recordProviderDown(notice.failedProvider);
+                  }
+                  onChunk({ type: 'status', content: `Switched to ${modelLabel}…` });
+                  onChunk({ type: 'token', content: `\n\n*[Switched to ${modelLabel}]*\n\n` });
+                }
+              },
+              abortSignal
+            );
+            break; // Stream succeeded
+          } catch (streamErr: unknown) {
+            if (abortSignal?.aborted) {
+              onChunk({ type: 'cancelled' });
+              return;
+            }
+
+            const errorMsg = streamErr instanceof Error ? streamErr.message : String(streamErr);
+            failedProviders.add(currentSettings.activeProvider);
+
+            if (errorMsg.includes('429') || errorMsg.toLowerCase().includes('rate limit')) {
+              diagnosticsHealthMonitor.recordRateLimit(currentSettings.activeProvider);
+            } else {
+              diagnosticsHealthMonitor.recordProviderDown(currentSettings.activeProvider);
+            }
+
+            if (attempt >= maxRetries) {
+              throw streamErr;
+            }
+
+            // Route to next healthy fallback candidate
+            const fallbackCandidate = ProviderGateway.router.route({
+              taskType: 'coding',
+              excludedProviders: failedProviders
+            }, currentSettings);
+
+            if (!fallbackCandidate) {
+              throw streamErr;
+            }
+
+            const fallbackModel = fallbackCandidate.model.id;
+            const modelLabel = fallbackModel.split('/').pop() || fallbackModel;
+            onChunk({ type: 'status', content: `Switched to ${modelLabel}…` });
+            onChunk({ type: 'token', content: `\n\n*[Switched to ${modelLabel}]*\n\n` });
+
+            currentSettings = {
+              ...currentSettings,
+              activeProvider: fallbackCandidate.provider.id as any,
+              activeModel: fallbackCandidate.model.id
+            };
+          }
+        }
+
+        if (!streamResult) {
+          throw new Error('Streaming failed across all available providers.');
+        }
 
         const parsedResponse = harness.parseResponse(streamResult.fullText, streamResult.toolCalls);
         const toolCallsToExecute = parsedResponse.toolCalls;
+
 
         if (!toolCallsToExecute.length) {
           onChunk({ type: 'done' });
