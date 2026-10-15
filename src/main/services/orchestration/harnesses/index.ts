@@ -5,12 +5,14 @@
 import type { AgentHarness, AgentHarnessType, HarnessMetadata } from './types';
 import { ClaudeCodeHarness } from './claude-code-harness';
 import { CodexHarness } from './codex-harness';
+import { OpenCodeHarness } from './opencode-harness';
 import type { ChatCompletionMessage } from '../../../providers/provider-gateway';
 import type { ToolCall } from '../../../../preload/types';
 
 export * from './types';
 export * from './claude-code-harness';
 export * from './codex-harness';
+export * from './opencode-harness';
 
 class GenericHarness implements AgentHarness {
   constructor(public readonly metadata: HarnessMetadata) {}
@@ -40,17 +42,7 @@ class GenericHarness implements AgentHarness {
 const harnesses: Record<AgentHarnessType, AgentHarness> = {
   'claude-code': new ClaudeCodeHarness(),
   codex: new CodexHarness(),
-  opencode: new GenericHarness({
-    id: 'opencode',
-    name: 'OpenCode CLI',
-    cliName: 'opencode-cli',
-    description: 'Open-source autonomous CLI harness for multi-provider coding',
-    defaultModel: 'deepseek/deepseek-chat',
-    promptFormat: 'opencode-standard',
-    toolProtocol: 'json-function',
-    systemPromptRole: 'Autonomous OpenCode Developer',
-    supportedFeatures: ['multi-model', 'local-ollama', 'command-execution']
-  }),
+  opencode: new OpenCodeHarness(),
   pi: new GenericHarness({
     id: 'pi',
     name: 'Pi CLI Harness',

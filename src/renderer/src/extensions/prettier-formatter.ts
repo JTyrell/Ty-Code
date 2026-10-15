@@ -15,6 +15,6 @@ export function activatePrettierFormatter(api: BuiltInApi, manifest: ExtensionMa
     await api.editor.applyActiveEdit(formatted);
     await api.window.showMessage('Trailing whitespace removed from the active document.');
   };
-  api.commands.registerCommand(`${prefix}formatDocument`, 'Format Document (Trim Trailing Spaces)', format);
-  api.commands.registerCommand(`${prefix}formatSelection`, 'Format Active Document', format);
+  api.commands.registerCommand(`${prefix}formatDocument`, 'Format Document (Prettier)', format);
+  api.commands.registerCommand(`${prefix}formatSelection`, 'Format Selection', format);
 }

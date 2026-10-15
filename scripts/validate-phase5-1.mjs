@@ -94,7 +94,7 @@ async function runValidation() {
     // 1. Auto strategy: coding task
     const codingRoute = router.route({ taskType: 'coding' }, { ...mockSettings, routingStrategy: 'auto' });
     verify(
-      codingRoute !== null && ['openrouter', 'deepseek', 'groq', 'ollama'].includes(codingRoute.provider.id),
+      codingRoute !== null && ['openrouter', 'deepseek', 'groq', 'ollama', 'openkilo'].includes(codingRoute.provider.id),
       `Auto strategy routes coding task to capable provider (Selected: ${codingRoute?.provider.id} / ${codingRoute?.model.id})`
     );
 
@@ -205,7 +205,7 @@ async function runValidation() {
     verify(executionCalls === 2, `Failover retried request (Total execution attempts: ${executionCalls})`);
     verify(executedProviders[0] === 'openrouter', `First attempt was primary provider (openrouter)`);
     verify(
-      ['groq', 'deepseek'].includes(executedProviders[1]),
+      ['groq', 'deepseek', 'openkilo'].includes(executedProviders[1]),
       `Secondary attempt switched to healthy backup provider (${executedProviders[1]})`
     );
     verify(
@@ -430,6 +430,8 @@ async function runValidation() {
 
   if (failedTests > 0) {
     process.exit(1);
+  } else {
+    process.exit(0);
   }
 }
 

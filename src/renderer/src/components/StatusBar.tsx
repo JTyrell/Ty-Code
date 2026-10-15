@@ -7,6 +7,7 @@ import { usePairProgrammingStore } from '../state/pair-programming-store';
 import { useLspStore } from '../state/lsp-store';
 import { useWorkspaceEditStore } from '../state/workspace-edit-store';
 import { undoWorkspaceEditTransaction } from '../services/workspace-edit-commands';
+import { AgentStatusBar } from './AgentStatusBar';
 
 function getServerLanguage(language: string): string {
   if (language === 'javascript') return 'typescript';
@@ -53,6 +54,8 @@ export const StatusBar: React.FC = () => {
           <AlertCircle size={11} /><span>{errors} errors · {warnings} warnings</span>
         </div>
         {server && <span title={server.error || server.resolvedPath || server.name} style={{ color: server.status === 'running' ? 'var(--accent-green)' : server.status === 'error' ? 'var(--accent-red)' : 'var(--text-muted)' }}>LSP {server.status === 'running' ? 'Running' : server.status === 'error' ? 'Error' : server.isAvailable ? 'Ready' : 'Unavailable'}</span>}
+        <span style={{ width: '1px', height: '12px', background: 'var(--border-subtle)' }} />
+        <AgentStatusBar />
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>

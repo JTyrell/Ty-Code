@@ -391,7 +391,7 @@ async function runPhase5Validation() {
   console.log('=============================================================\n');
 }
 
-runPhase5Validation().catch((err) => {
+runPhase5Validation().then(() => process.exit(0)).catch((err) => {
   console.error('\n❌ PHASE 5 VALIDATION FAILED:', err);
   process.exit(1);
 });

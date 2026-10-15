@@ -94,7 +94,8 @@ async function runValidation() {
         temperature: 0,
         maxTokens: 512
       },
-      onChunk: (chunk) => streamChunks.push(chunk)
+      onChunk: (chunk) => streamChunks.push(chunk),
+      requestApproval: async () => true
     });
 
     verify(providerRequests.length === 2, 'Agent loops through tool calls and returns a final model response');

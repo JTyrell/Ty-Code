@@ -13,7 +13,8 @@ export const DEFAULT_OMNIROUTE_SETTINGS: ProviderSettings = {
   apiKeysConfigured: {},
   customEndpoints: {
     ollama: 'http://localhost:11434/v1',
-    'fcc-proxy': 'http://localhost:8082/v1'
+    'fcc-proxy': 'http://localhost:8082/v1',
+    openkilo: 'https://api.openkilo.com/v1'
   },
   temperature: 0.2,
   maxTokens: 4096,
@@ -25,6 +26,12 @@ export const DEFAULT_OMNIROUTE_SETTINGS: ProviderSettings = {
   terminalProfiles: [],
   defaultTerminalProfileId: '',
   thirdPartyRuntimeEnabled: false,
+  security: {
+    terminalPolicy: 'restricted',
+    fileAccessPolicy: 'workspace-only',
+    systemAccessConfirmed: false,
+    reviewPolicy: 'always-ask'
+  },
   'editor.reviewPolicy': 'alwaysReview',
   'lsp.autoStart': true,
   editor: {
@@ -60,7 +67,7 @@ export function migrateProviderSettings(raw: unknown): ProviderSettings {
   const input = raw as Record<string, unknown>;
 
   // 1. Preserve all existing API keys
-  const apiKeys: Partial<Record<ProviderType, string>> = {};
+  const apiKeys: Record<string, string | undefined> = {};
   if (input.apiKeys && typeof input.apiKeys === 'object' && !Array.isArray(input.apiKeys)) {
     for (const [provider, key] of Object.entries(input.apiKeys as Record<string, unknown>)) {
       if (typeof key === 'string' && key.trim()) {
@@ -70,7 +77,7 @@ export function migrateProviderSettings(raw: unknown): ProviderSettings {
   }
 
   // 2. Preserve all custom endpoints
-  const customEndpoints: Partial<Record<ProviderType, string>> = {
+  const customEndpoints: Record<string, string | undefined> = {
     ...DEFAULT_OMNIROUTE_SETTINGS.customEndpoints
   };
   if (input.customEndpoints && typeof input.customEndpoints === 'object' && !Array.isArray(input.customEndpoints)) {

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { AgentStreamChunk, AgentToolApproval, ChatMessage, ProviderSettings, ProviderType, ToolExecutionStatus } from '../../../preload/types';
+import type { AgentMode, AgentStreamChunk, AgentToolApproval, ChatMessage, ProviderSettings, ProviderType, ToolExecutionStatus } from '../../../preload/types';
 import { useGitStore } from './git-store';
 
 interface ChatState {
@@ -11,8 +11,13 @@ interface ChatState {
   currentThought: string;
   streamingText: string;
   settings: ProviderSettings | null;
+  agentMode: AgentMode;
+  contextTokens: number;
+  contextLimit: number;
   isSettingsOpen: boolean;
   isTerminalOpen: boolean;
+  setAgentMode: (mode: AgentMode) => void;
+  setContextTokens: (tokens: number) => void;
   initSettings: () => Promise<void>;
   saveSettings: (updates: Partial<ProviderSettings>) => Promise<boolean>;
   sendMessage: (prompt: string, workspacePath: string, activeFilePath?: string, activeFileContent?: string, appendUserMessage?: boolean) => Promise<void>;
@@ -24,6 +29,7 @@ interface ChatState {
 }
 
 let activeStreamUnsubscribe: (() => void) | null = null;
+let settingsChangedUnsubscribe: (() => void) | null = null;
 function createId(prefix: string): string { return `${prefix}_${globalThis.crypto.randomUUID()}`; }
 function finalizePartialMessage(messages: ChatMessage[], text: string, reasoning: string): ChatMessage[] {
   if (!text && !reasoning) return messages;
@@ -48,14 +54,23 @@ function updateToolStatus(messages: ChatMessage[], toolCallId: string, status: T
 
 export const useChatStore = create<ChatState>((set, get) => ({
   messages: [], isRunning: false, currentTaskId: null, pendingApproval: null, currentStatus: '', currentThought: '', streamingText: '',
-  settings: null, isSettingsOpen: false, isTerminalOpen: false,
+  settings: null, agentMode: 'build', contextTokens: 1200, contextLimit: 128_000, isSettingsOpen: false, isTerminalOpen: false,
+
+  setAgentMode: (mode: AgentMode) => set({ agentMode: mode }),
+  setContextTokens: (tokens: number) => set({ contextTokens: tokens }),
 
   initSettings: async () => {
-    try {
-      const response = await window.electronAPI.getSettings();
-      if (response.success && response.data) set({ settings: response.data });
-      else if (response.error) console.error('Failed to load settings:', response.error);
-    } catch (err) { console.error('Failed to load settings:', err); }
+    const refreshSettings = async () => {
+      try {
+        const response = await window.electronAPI.getSettings();
+        if (response.success && response.data) set({ settings: response.data });
+        else if (response.error) console.error('Failed to load settings:', response.error);
+      } catch (err) { console.error('Failed to load settings:', err); }
+    };
+    if (!settingsChangedUnsubscribe) {
+      settingsChangedUnsubscribe = window.electronAPI.onSettingsChanged(() => { void refreshSettings(); });
+    }
+    await refreshSettings();
   },
 
   saveSettings: async (updates) => {
@@ -109,9 +124,21 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const handleChunk = (chunk: AgentStreamChunk) => {
       if (chunk.taskId !== taskId || get().currentTaskId !== taskId) return;
       switch (chunk.type) {
-        case 'token': set((state) => ({ streamingText: state.streamingText + (chunk.content || '') })); break;
+        case 'token':
+          set((state) => ({
+            streamingText: state.streamingText + (chunk.content || ''),
+            contextTokens: state.contextTokens + Math.ceil((chunk.content?.length || 0) / 4)
+          }));
+          break;
         case 'thought': set((state) => ({ currentThought: state.currentThought + (chunk.content || '') })); break;
-        case 'status': set({ currentStatus: chunk.content || '' }); break;
+        case 'status':
+          set((state) => ({
+            currentStatus: chunk.content || '',
+            contextTokens: chunk.content?.includes('compacting')
+              ? Math.floor(state.contextLimit * 0.35)
+              : state.contextTokens
+          }));
+          break;
         case 'approval_request': {
           if (chunk.approvalRequest) set({ pendingApproval: chunk.approvalRequest, currentStatus: 'Waiting for your approval…' });
           break;
@@ -129,7 +156,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
           if (result) {
             set((state) => ({
               messages: updateToolStatus(state.messages, result.toolCallId, result.isError ? 'error' : 'success', result.output, result.isError),
-              pendingApproval: state.pendingApproval?.toolCall.id === result.toolCallId ? null : state.pendingApproval
+              pendingApproval: state.pendingApproval?.toolCall.id === result.toolCallId ? null : state.pendingApproval,
+              contextTokens: state.contextTokens + Math.ceil((result.output?.length || 0) / 4)
             }));
             if (result.name.startsWith('git_')) void useGitStore.getState().refreshStatus();
           }
@@ -172,7 +200,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     activeStreamUnsubscribe = window.electronAPI.onAgentStream(handleChunk);
     try {
-      const response = await window.electronAPI.startAgentTask({ taskId, prompt, workspacePath, history: requestHistory, activeFilePath, activeFileContent });
+      const response = await window.electronAPI.startAgentTask({
+        taskId,
+        prompt,
+        workspacePath,
+        history: requestHistory,
+        agentMode: get().agentMode,
+        activeFilePath,
+        activeFileContent
+      });
       if (get().currentTaskId !== taskId) return;
       if (!response.success || !response.data) {
         const state = get();
@@ -220,7 +256,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     activeStreamUnsubscribe?.();
     activeStreamUnsubscribe = null;
     if (taskId) void window.electronAPI.stopAgentTask(taskId);
-    set({ messages: [], isRunning: false, currentTaskId: null, pendingApproval: null, streamingText: '', currentThought: '', currentStatus: '' });
+    set({ messages: [], isRunning: false, currentTaskId: null, pendingApproval: null, streamingText: '', currentThought: '', currentStatus: '', contextTokens: 1200 });
   },
   toggleSettings: () => set((state) => ({ isSettingsOpen: !state.isSettingsOpen })),
   toggleTerminal: () => set((state) => ({ isTerminalOpen: !state.isTerminalOpen }))

@@ -11,7 +11,7 @@ export default defineConfig({
       name: 'ty-code-development-csp',
       transformIndexHtml(html, context) {
         if (!context.server) return html;
-        const policy = "default-src 'self'; script-src 'self' 'unsafe-inline'; worker-src 'self'; child-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https://open-vsx.org; connect-src 'self' http://localhost:5173 ws://localhost:5173";
+        const policy = "default-src 'self'; script-src 'self' 'unsafe-inline'; worker-src 'self' blob:; child-src 'self' blob:; frame-src 'none'; object-src 'none'; base-uri 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https://open-vsx.org; connect-src 'self' http://localhost:5173 ws://localhost:5173";
         return html.replace(/(<meta http-equiv=\"Content-Security-Policy\" content=\")[^\"]*(\"\s*\/?>)/i, `$1${policy}$2`);
       }
     }

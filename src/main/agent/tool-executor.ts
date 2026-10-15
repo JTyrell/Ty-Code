@@ -1,8 +1,11 @@
+import { createHash } from 'node:crypto';
 import fs from 'fs/promises';
 import path from 'path';
 import { spawn } from 'child_process';
 import type { AgentToolApproval, ProposedDiff, ToolCall } from '../../preload/types';
 import { gitService } from '../services/git-service';
+import { SecurityPolicyEngine } from '../services/security-policy';
+import { settingsManager } from '../services/settings-manager';
 
 export interface ToolExecutionResponse {
   output: string;
@@ -12,18 +15,15 @@ export interface ToolExecutionResponse {
 
 export class ToolExecutor {
   private readonly workspaceRoot: string;
+  private readonly securityPolicy: SecurityPolicyEngine;
 
-  constructor(workspaceRoot: string) {
+  constructor(workspaceRoot: string, securityPolicy?: SecurityPolicyEngine) {
     this.workspaceRoot = path.resolve(workspaceRoot);
+    this.securityPolicy = securityPolicy || new SecurityPolicyEngine(this.workspaceRoot, settingsManager);
   }
 
-  private resolveSafePath(relativePath: string): string {
-    const resolved = path.resolve(this.workspaceRoot, relativePath || '.');
-    const relativeCheck = path.relative(this.workspaceRoot, resolved);
-    if (relativeCheck === '..' || relativeCheck.startsWith(`..${path.sep}`) || path.isAbsolute(relativeCheck)) {
-      throw new Error(`Security Exception: Access denied to path outside workspace: "${relativePath}"`);
-    }
-    return resolved;
+  private resolveSafePath(relativePath: string, allowMissing = false): Promise<string> {
+    return this.securityPolicy.resolveFilePath(relativePath || '.', allowMissing);
   }
 
   private async atomicWrite(filePath: string, content: string): Promise<void> {
@@ -64,7 +64,7 @@ export class ToolExecutor {
   private async readFile(args: Record<string, unknown>): Promise<ToolExecutionResponse> {
     const filePath = String(args.filePath || '');
     if (!filePath) return { output: 'Error: filePath is required', isError: true };
-    const absolutePath = this.resolveSafePath(filePath);
+    const absolutePath = await this.resolveSafePath(filePath);
     const content = await fs.readFile(absolutePath, 'utf-8');
     const lines = content.split('\n');
     const startLine = typeof args.startLine === 'number' && args.startLine > 0 ? args.startLine : 1;
@@ -80,8 +80,12 @@ export class ToolExecutor {
     const replacementContent = String(args.replacementContent ?? '');
     if (!filePath) return { output: 'Error: filePath is required', isError: true };
     if (!targetContent) return { output: 'Error: targetContent is required', isError: true };
-    const absolutePath = this.resolveSafePath(filePath);
+    const absolutePath = await this.resolveSafePath(filePath);
     const original = await fs.readFile(absolutePath, 'utf-8');
+    if (typeof args.__approvedOriginalHash === 'string'
+      && createHash('sha256').update(original, 'utf8').digest('hex') !== args.__approvedOriginalHash) {
+      return { output: `Error: ${filePath} changed after approval. Review the updated file before applying this change.`, isError: true };
+    }
     if (!original.includes(targetContent)) {
       return { output: `Error: targetContent was not found in ${filePath}. Verify line numbers and whitespace by reading the file first.`, isError: true };
     }
@@ -108,7 +112,7 @@ export class ToolExecutor {
     const content = String(args.content ?? '');
     const overwrite = Boolean(args.overwrite);
     if (!filePath) return { output: 'Error: filePath is required', isError: true };
-    const absolutePath = this.resolveSafePath(filePath);
+    const absolutePath = await this.resolveSafePath(filePath, true);
     let original = '';
     let fileExisted = false;
     try {
@@ -116,6 +120,12 @@ export class ToolExecutor {
       fileExisted = true;
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+    }
+    if (typeof args.__approvedOriginalHash === 'string') {
+      const currentHash = createHash('sha256').update(original, 'utf8').digest('hex');
+      if (currentHash !== args.__approvedOriginalHash || fileExisted !== (args.__approvedOriginalExists === true)) {
+        return { output: `Error: ${filePath} changed after approval. Review the updated file before applying this change.`, isError: true };
+      }
     }
     if (fileExisted && !overwrite) {
       return { output: `Error: File ${filePath} already exists. Set overwrite: true if you intend to replace it completely.`, isError: true };
@@ -139,7 +149,7 @@ export class ToolExecutor {
     if (abortSignal?.aborted) return { output: 'Command execution cancelled.', isError: true };
     const requestedTimeout = typeof args.timeoutMs === 'number' ? args.timeoutMs : 30_000;
     const timeout = Math.min(Math.max(requestedTimeout, 1_000), 120_000);
-    const subCwd = args.cwd ? this.resolveSafePath(String(args.cwd)) : this.workspaceRoot;
+    const subCwd = args.cwd ? await this.resolveSafePath(String(args.cwd)) : this.workspaceRoot;
 
     return new Promise((resolve) => {
       const isWin = process.platform === 'win32';
@@ -182,7 +192,7 @@ export class ToolExecutor {
   private async listDir(args: Record<string, unknown>): Promise<ToolExecutionResponse> {
     const directoryPath = String(args.directoryPath || '');
     const recursive = Boolean(args.recursive);
-    const absolutePath = this.resolveSafePath(directoryPath);
+    const absolutePath = await this.resolveSafePath(directoryPath);
     const ignored = new Set(['.git', '.kombai', 'node_modules', 'dist', 'dist-electron', 'out']);
     const scan = async (current: string, depth = 0): Promise<string[]> => {
       const entries = await fs.readdir(current, { withFileTypes: true });

@@ -58,7 +58,11 @@ export const useExtensionStore = create<ExtensionStoreState>((set, get) => ({
       const res = await window.electronAPI.getInstalledExtensions();
       if (res.success && res.data) {
         // Activate only trusted built-ins in the isolated Worker runtime before exposing commands.
-        await extensionHost.initializeExtensions(res.data);
+        try {
+          await extensionHost.initializeExtensions(res.data);
+        } catch (initErr) {
+          console.warn('[ExtensionStore] Extension worker initialization warning:', initErr);
+        }
         set({ installed: res.data, isLoading: false });
       } else {
         set({ error: res.error || 'Failed to load extensions', isLoading: false });

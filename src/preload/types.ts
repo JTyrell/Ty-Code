@@ -1,5 +1,6 @@
 import type { z } from 'zod';
 import type { ExtensionCapabilitySchema, ExtensionManifestSchema } from './extension-schemas';
+import type { SecurityPolicySettings, SettingsData, SettingsPatch, SettingsScope, WorkspaceSettingsPatch } from '../shared/types/settings';
 
 export interface IpcResponse<T = unknown> {
   success: boolean;
@@ -19,7 +20,37 @@ export interface FileNode {
 
 export type RoutingStrategyType = 'auto' | 'free-first' | 'fastest' | 'balanced' | 'manual';
 
-export type ProviderType = 'openrouter' | 'groq' | 'deepseek' | 'ollama' | 'fcc-proxy' | 'custom' | (string & {});
+export type ProviderSetupType = 'api_key' | 'zero_config';
+
+export interface PreConfiguredProvider {
+  id: string;
+  name: string;
+  baseUrl: string;
+  setupType: ProviderSetupType;
+  notes?: string;
+  signupUrl?: string;
+  defaultModel?: string;
+  icon?: string;
+}
+
+export interface DiscoveredModel {
+  id: string;
+  name: string;
+  provider: string;
+  isFree?: boolean;
+  category?: 'Free' | 'Fast' | 'Premium/Reasoning';
+  contextLength?: number;
+  description?: string;
+}
+
+export interface TestConnectionResult {
+  success: boolean;
+  latencyMs: number;
+  error?: string;
+  modelsFound?: number;
+}
+
+export type ProviderType = 'openrouter' | 'openkilo' | 'opencode' | 'groq' | 'deepseek' | 'ollama' | 'fcc-proxy' | 'custom' | (string & {});
 
 export interface ModelConfig {
   id: string;
@@ -51,6 +82,8 @@ export interface EditorPreferences {
   formatOnSave?: boolean;
 }
 
+export type AgentMode = 'build' | 'plan' | 'general';
+
 export type AgentHarnessType =
   | 'claude-code'
   | 'codex'
@@ -68,9 +101,9 @@ export interface ProviderSettings {
   activeProvider: ProviderType;
   activeModel: string;
   activeHarness?: AgentHarnessType;
-  apiKeys: Partial<Record<ProviderType, string>>;
+  apiKeys: Record<string, string | undefined>;
   apiKeysConfigured?: Partial<Record<ProviderType, boolean>>;
-  customEndpoints: Partial<Record<ProviderType, string>>;
+  customEndpoints: Record<string, string | undefined>;
   temperature: number;
   maxTokens: number;
   routingStrategy?: RoutingStrategyType;
@@ -85,6 +118,7 @@ export interface ProviderSettings {
   'lsp.autoStart'?: boolean;
   editor?: EditorPreferences;
   languageServers?: Record<string, LanguageServerConfig>;
+  security?: SecurityPolicySettings;
 }
 
 export interface ToolCall {
@@ -127,6 +161,9 @@ export interface AgentToolApproval {
   toolCall: ToolCall;
   reason: string;
   affectedPaths?: string[];
+  reviewDiff?: ProposedDiff;
+  addedLines?: number;
+  removedLines?: number;
 }
 
 export interface AgentStreamChunk {
@@ -343,11 +380,18 @@ export interface ElectronAPI {
   searchFiles: (query: string) => Promise<IpcResponse<string[]>>;
   getSettings: () => Promise<IpcResponse<ProviderSettings>>;
   saveSettings: (settings: Partial<ProviderSettings>) => Promise<IpcResponse<void>>;
+  getSettingsLayer: (scope: SettingsScope) => Promise<IpcResponse<SettingsData | WorkspaceSettingsPatch>>;
+  saveSettingsLayer: (scope: SettingsScope, settings: SettingsPatch | WorkspaceSettingsPatch) => Promise<IpcResponse<void>>;
+  getSecurityPolicy: () => Promise<IpcResponse<SecurityPolicySettings>>;
+  saveSecurityPolicy: (policy: Partial<SecurityPolicySettings>) => Promise<IpcResponse<void>>;
+  onSettingsChanged: (callback: () => void) => () => void;
   startAgentTask: (params: {
     taskId?: string;
     prompt: string;
     workspacePath: string;
     history: ChatMessage[];
+    agentMode?: AgentMode;
+    sessionId?: string;
     activeFilePath?: string;
     activeFileContent?: string;
     skills?: SkillDefinition[];
@@ -487,6 +531,28 @@ export interface ElectronAPI {
   fccStop: () => Promise<IpcResponse<void>>;
   fccRestart: () => Promise<IpcResponse<boolean>>;
   fccAutoSetup: (providerId?: string) => Promise<IpcResponse<FCCAutoSetupResult | FCCAutoSetupResult[]>>;
+
+  // Phase 5.4: OpenKilo Plugin Integration (Layer 5)
+  openkiloGetStatus: () => Promise<IpcResponse<OpenKiloStatus>>;
+  openkiloRefreshModels: (apiKey?: string) => Promise<IpcResponse<DiscoveredModel[]>>;
+  openkiloStartOAuth: () => Promise<IpcResponse<{ authUrl: string; state: string }>>;
+  openkiloCompleteOAuth: (code: string) => Promise<IpcResponse<{ success: boolean; apiKey?: string; error?: string }>>;
+  openkiloEnableAnonymous: () => Promise<IpcResponse<OpenKiloStatus>>;
+
+  // Phase 2.1: Provider Onboarding & Dynamic Discovery
+  providerGetRegistry: () => Promise<IpcResponse<PreConfiguredProvider[]>>;
+  providerGetModels: (params: { providerId: string; apiKey?: string; customEndpoint?: string }) => Promise<IpcResponse<DiscoveredModel[]>>;
+  providerTestConnection: (params: { providerId: string; apiKey?: string; modelId?: string; customEndpoint?: string }) => Promise<IpcResponse<TestConnectionResult>>;
+  openExternal: (url: string) => Promise<IpcResponse<void>>;
+}
+
+export interface OpenKiloStatus {
+  authMode: 'anonymous' | 'oauth' | 'api_key';
+  isAuthenticated: boolean;
+  apiKey?: string;
+  userEmail?: string;
+  freeTierActive: boolean;
+  totalModelsAvailable: number;
 }
 
 export interface FCCServerStatus {

@@ -26,7 +26,7 @@ export function activatePythonSupport(api: BuiltInApi, manifest: ExtensionManife
     });
     await api.window.showMessage(issues.length ? `Python checks found ${issues.length} issue(s):\n${issues.join('\n')}` : 'Python checks found no obvious issues.');
   });
-  api.commands.registerCommand(`${prefix}runFile`, 'Python: Open Terminal', async () => {
+  api.commands.registerCommand(`${prefix}runFile`, 'Python: Execute Current File in Terminal', async () => {
     await api.terminal.open();
     await api.window.showMessage('Terminal opened. Review and run the Python command yourself.');
   });

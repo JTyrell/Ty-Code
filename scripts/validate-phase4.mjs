@@ -250,3 +250,4 @@ try {
 } finally {
   await fs.rm(testDir, { recursive: true, force: true }).catch(() => undefined);
 }
+process.exit(0);

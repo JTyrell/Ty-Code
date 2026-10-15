@@ -1,9 +1,10 @@
 import { BrowserWindow } from 'electron';
 import fs from 'fs/promises';
 import path from 'path';
-import type { AgentStreamChunk, AgentToolApproval, ChatMessage, IpcResponse, ProposedDiff, ProviderSettings } from '../../preload/types';
+import type { AgentMode, AgentStreamChunk, AgentToolApproval, ChatMessage, IpcResponse, ProposedDiff, ProviderSettings } from '../../preload/types';
 import { getProviderSettings } from './settings-handlers';
 import { AgentEngine } from '../agent/agent-engine';
+import { OpenCodeAgentManager } from '../services/orchestration/agent-manager';
 
 interface ActiveTask {
   controller: AbortController;
@@ -68,6 +69,8 @@ export async function startAgentTask(
     prompt: string;
     workspacePath: string;
     history: ChatMessage[];
+    agentMode?: AgentMode;
+    sessionId?: string;
     activeFilePath?: string;
     activeFileContent?: string;
   }
@@ -83,7 +86,8 @@ export async function startAgentTask(
     activeTasks.delete(taskId);
     return { success: false, error: settingsResponse.error || 'Provider settings are unavailable.' };
   }
-  const engine = new AgentEngine(params.workspacePath);
+
+  const useOpenCode = Boolean(params.agentMode || settings.activeHarness === 'opencode');
   const emit = (chunk: AgentStreamChunk) => {
     if (task.finished || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) return;
     mainWindow.webContents.send('agent:stream', { ...chunk, taskId } satisfies AgentStreamChunk);
@@ -92,17 +96,35 @@ export async function startAgentTask(
 
   void (async () => {
     try {
-      await engine.run({
-        prompt: params.prompt,
-        workspacePath: params.workspacePath,
-        history: params.history,
-        settings,
-        activeFilePath: params.activeFilePath,
-        activeFileContent: params.activeFileContent,
-        abortSignal: abortController.signal,
-        requestApproval: (approval) => requestTaskApproval(taskId, approval, abortController.signal),
-        onChunk: emit
-      });
+      if (useOpenCode) {
+        const opencode = new OpenCodeAgentManager(params.workspacePath);
+        await opencode.run({
+          prompt: params.prompt,
+          workspacePath: params.workspacePath,
+          history: params.history,
+          settings,
+          agentMode: params.agentMode || 'build',
+          sessionId: params.sessionId,
+          activeFilePath: params.activeFilePath,
+          activeFileContent: params.activeFileContent,
+          abortSignal: abortController.signal,
+          requestApproval: (approval) => requestTaskApproval(taskId, approval, abortController.signal),
+          onChunk: emit
+        });
+      } else {
+        const engine = new AgentEngine(params.workspacePath);
+        await engine.run({
+          prompt: params.prompt,
+          workspacePath: params.workspacePath,
+          history: params.history,
+          settings,
+          activeFilePath: params.activeFilePath,
+          activeFileContent: params.activeFileContent,
+          abortSignal: abortController.signal,
+          requestApproval: (approval) => requestTaskApproval(taskId, approval, abortController.signal),
+          onChunk: emit
+        });
+      }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       emit({ type: abortController.signal.aborted ? 'cancelled' : 'error', error: message });

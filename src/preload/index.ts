@@ -17,6 +17,15 @@ const api: ElectronAPI = {
   searchFiles: (query: string) => ipcRenderer.invoke('fs:search-files', query),
   getSettings: () => ipcRenderer.invoke('settings:get'),
   saveSettings: (settings) => ipcRenderer.invoke('settings:save', settings),
+  getSettingsLayer: (scope) => ipcRenderer.invoke('settings:layer:get', scope),
+  saveSettingsLayer: (scope, settings) => ipcRenderer.invoke('settings:layer:save', { scope, settings }),
+  getSecurityPolicy: () => ipcRenderer.invoke('settings:security:get'),
+  saveSecurityPolicy: (policy) => ipcRenderer.invoke('settings:security:save', policy),
+  onSettingsChanged: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on('settings:changed', listener);
+    return () => ipcRenderer.removeListener('settings:changed', listener);
+  },
   startAgentTask: (params) => ipcRenderer.invoke('agent:start-task', params),
   stopAgentTask: (taskId: string) => ipcRenderer.invoke('agent:stop-task', taskId),
   respondAgentApproval: (approvalId: string, approved: boolean) => ipcRenderer.invoke('agent:respond-approval', { approvalId, approved }),
@@ -187,7 +196,20 @@ const api: ElectronAPI = {
   fccStart: () => ipcRenderer.invoke('fcc:start'),
   fccStop: () => ipcRenderer.invoke('fcc:stop'),
   fccRestart: () => ipcRenderer.invoke('fcc:restart'),
-  fccAutoSetup: (providerId?: string) => ipcRenderer.invoke('fcc:auto-setup', providerId)
+  fccAutoSetup: (providerId?: string) => ipcRenderer.invoke('fcc:auto-setup', providerId),
+
+  // Phase 5.4: OpenKilo Plugin Integration (Layer 5)
+  openkiloGetStatus: () => ipcRenderer.invoke('openkilo:get-status'),
+  openkiloRefreshModels: (apiKey?: string) => ipcRenderer.invoke('openkilo:refresh-models', apiKey),
+  openkiloStartOAuth: () => ipcRenderer.invoke('openkilo:start-oauth'),
+  openkiloCompleteOAuth: (code: string) => ipcRenderer.invoke('openkilo:complete-oauth', code),
+  openkiloEnableAnonymous: () => ipcRenderer.invoke('openkilo:enable-anonymous'),
+
+  // Phase 2.1: Provider Onboarding & Dynamic Discovery
+  providerGetRegistry: () => ipcRenderer.invoke('provider:get-registry'),
+  providerGetModels: (params) => ipcRenderer.invoke('provider:get-models', params),
+  providerTestConnection: (params) => ipcRenderer.invoke('provider:test-connection', params),
+  openExternal: (url: string) => ipcRenderer.invoke('app:open-external', url)
 };
 
 contextBridge.exposeInMainWorld('electronAPI', api);

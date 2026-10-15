@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   X,
   Key,
@@ -16,28 +16,109 @@ import {
   Search,
   Check,
   Copy,
-  Zap
+  Zap,
+  Globe,
+  Sparkles,
+  Layers
 } from 'lucide-react';
 import { useChatStore } from '../state/chat-store';
-import type { EditReviewPolicy, ProviderType, ShellInfo, TerminalProfile, LanguageServerStatus } from '../../../preload/types';
+import type {
+  EditReviewPolicy,
+  ProviderType,
+  ShellInfo,
+  TerminalProfile,
+  LanguageServerStatus,
+  PreConfiguredProvider,
+  DiscoveredModel,
+  TestConnectionResult
+} from '../../../preload/types';
+import type { SecurityPolicySettings, SettingsData, SettingsScope, WorkspaceSettingsPatch } from '../../../shared/types/settings';
 import { DEFAULT_KEYBINDINGS, type KeybindingItem } from '../../../main/services/config-schemas';
+import { DEFAULT_PRESET_MODELS } from '../../../preload/preset-models';
 import { useLspStore } from '../state/lsp-store';
 import { toast } from '../state/toast-store';
 import { FCCSetup } from './settings/FCCSetup';
+import { OpenKiloSetup } from './settings/OpenKiloSetup';
+import { ProviderSelectionGrid, type ProviderStatusInfo } from './settings/ProviderSelectionGrid';
+import { ProviderSetupForm } from './settings/ProviderSetupForm';
+import { ModelSelectorDropdown } from './settings/ModelSelectorDropdown';
+import { CustomProviderForm } from './settings/CustomProviderForm';
 
 type UpdateChannelPreference = 'stable' | 'beta' | 'nightly';
-type SettingsTab = 'fcc' | 'keys' | 'endpoints' | 'params' | 'terminal' | 'lsp' | 'editor' | 'shortcuts' | 'extensions';
+type SettingsTab = 'providers' | 'openkilo' | 'fcc' | 'endpoints' | 'params' | 'terminal' | 'lsp' | 'editor' | 'shortcuts' | 'extensions' | 'security';
+
+const DEFAULT_SECURITY_SETTINGS: SecurityPolicySettings = {
+  terminalPolicy: 'restricted',
+  fileAccessPolicy: 'workspace-only',
+  systemAccessConfirmed: false,
+  reviewPolicy: 'always-ask'
+};
 
 function createProfileId(): string {
   return `profile_${globalThis.crypto.randomUUID()}`;
 }
 
+const FALLBACK_PROVIDERS: PreConfiguredProvider[] = [
+  {
+    id: 'openrouter',
+    name: 'OpenRouter',
+    baseUrl: 'https://openrouter.ai/api/v1',
+    setupType: 'api_key',
+    notes: 'Fetch models from /models endpoint. Highlight free models (e.g., deepseek/deepseek-r1:free).',
+    signupUrl: 'https://openrouter.ai/keys',
+    defaultModel: 'meta-llama/llama-3.3-70b-instruct:free'
+  },
+  {
+    id: 'openkilo',
+    name: 'OpenKilo',
+    baseUrl: 'https://api.openkilo.com/v1',
+    setupType: 'api_key',
+    notes: 'Standard OpenAI-compatible format.',
+    signupUrl: 'https://openkilo.com',
+    defaultModel: 'kilo-1'
+  },
+  {
+    id: 'opencode',
+    name: 'OpenCode',
+    baseUrl: 'https://api.opencode.ai/v1',
+    setupType: 'api_key',
+    notes: 'Standard OpenAI-compatible format.',
+    signupUrl: 'https://opencode.ai',
+    defaultModel: 'opencode-v1'
+  },
+  {
+    id: 'groq',
+    name: 'Groq',
+    baseUrl: 'https://api.groq.com/openai/v1',
+    setupType: 'api_key',
+    notes: 'Highlight ultra-fast free tier models (llama-3.3-70b-versatile, etc.).',
+    signupUrl: 'https://console.groq.com/keys',
+    defaultModel: 'llama-3.3-70b-versatile'
+  },
+  {
+    id: 'ollama',
+    name: 'Ollama (Local)',
+    baseUrl: 'http://localhost:11434/v1',
+    setupType: 'zero_config',
+    notes: 'No API key required. Just check if localhost:11434 is reachable.',
+    signupUrl: 'https://ollama.com/download',
+    defaultModel: 'qwen2.5-coder:latest'
+  }
+];
+
 export const SettingsModal: React.FC = () => {
   const { isSettingsOpen, toggleSettings, settings, saveSettings } = useChatStore();
-  const [activeTab, setActiveTab] = useState<SettingsTab>('keys');
-  const [openRouterKey, setOpenRouterKey] = useState('');
-  const [groqKey, setGroqKey] = useState('');
-  const [deepseekKey, setDeepseekKey] = useState('');
+  const [activeTab, setActiveTab] = useState<SettingsTab>('providers');
+
+  // AI Providers Onboarding state
+  const [registryProviders, setRegistryProviders] = useState<PreConfiguredProvider[]>(FALLBACK_PROVIDERS);
+  const [selectedGridProviderId, setSelectedGridProviderId] = useState<string>('openrouter');
+  const [isCustomSelected, setIsCustomSelected] = useState<boolean>(false);
+  const [providerStatuses, setProviderStatuses] = useState<Record<string, ProviderStatusInfo>>({});
+  const [discoveredModels, setDiscoveredModels] = useState<Record<string, DiscoveredModel[]>>({});
+  const [loadingModels, setLoadingModels] = useState(false);
+
+  // Endpoints & Inference state
   const [ollamaUrl, setOllamaUrl] = useState('http://localhost:11434/v1');
   const [fccProxyUrl, setFccProxyUrl] = useState('http://localhost:8082/v1');
   const [temperature, setTemperature] = useState(0.2);
@@ -75,21 +156,32 @@ export const SettingsModal: React.FC = () => {
   // Keybindings state
   const [keybindingSearch, setKeybindingSearch] = useState('');
   const [thirdPartyRuntimeEnabled, setThirdPartyRuntimeEnabled] = useState(false);
+  const [settingsScope, setSettingsScope] = useState<SettingsScope>('global');
+  const [securitySettings, setSecuritySettings] = useState<SecurityPolicySettings>(DEFAULT_SECURITY_SETTINGS);
+  const [securitySaving, setSecuritySaving] = useState(false);
 
+  // Load Registry Providers from IPC
+  useEffect(() => {
+    if (!window.electronAPI?.providerGetRegistry) return;
+    void window.electronAPI.providerGetRegistry().then((res) => {
+      if (res.success && res.data && res.data.length > 0) {
+        setRegistryProviders(res.data);
+      }
+    }).catch((err) => console.warn('Could not fetch provider registry:', err));
+  }, []);
+
+  // Sync state from settings
   useEffect(() => {
     const saved = localStorage.getItem('ty_code_update_channel');
     const channel: UpdateChannelPreference = saved === 'beta' || saved === 'nightly' ? saved : 'stable';
     setUpdateChannel(channel);
-    void window.electronAPI.setUpdateChannel(channel).then((response) => {
-      if (!response.success) console.warn('Could not restore the saved update channel:', response.error);
+    void window.electronAPI?.setUpdateChannel?.(channel).then((response) => {
+      if (response && !response.success) console.warn('Could not restore the saved update channel:', response.error);
     }).catch((reason: unknown) => console.warn('Could not restore the saved update channel:', reason));
   }, []);
 
   useEffect(() => {
     if (!settings) return;
-    setOpenRouterKey('');
-    setGroqKey('');
-    setDeepseekKey('');
     setOllamaUrl(settings.customEndpoints?.ollama || 'http://localhost:11434/v1');
     setFccProxyUrl(settings.customEndpoints?.['fcc-proxy'] || 'http://localhost:8082/v1');
     setTemperature(settings.temperature ?? 0.2);
@@ -106,7 +198,48 @@ export const SettingsModal: React.FC = () => {
     setAutoSaveDelay(settings.editor?.autoSaveDelay ?? 1000);
     setAutoSaveMode(settings.editor?.autoSave ?? 'afterDelay');
     setEditorWordWrap(settings.editor?.wordWrap ?? 'off');
-  }, [settings]);
+
+    // Update statuses based on configured keys
+    const statuses: Record<string, ProviderStatusInfo> = {};
+    for (const p of registryProviders) {
+      if (settings.apiKeysConfigured?.[p.id as ProviderType]) {
+        statuses[p.id] = { status: 'connected' };
+      } else {
+        statuses[p.id] = { status: 'disconnected' };
+      }
+    }
+    setProviderStatuses((prev) => ({ ...statuses, ...prev }));
+
+    if (settings.activeProvider && registryProviders.some((p) => p.id === settings.activeProvider)) {
+      setSelectedGridProviderId(settings.activeProvider);
+      setIsCustomSelected(false);
+    } else if (settings.activeProvider === 'custom') {
+      setIsCustomSelected(true);
+    }
+  }, [settings, registryProviders]);
+
+  useEffect(() => {
+    if (!isSettingsOpen) return;
+    let cancelled = false;
+    const load = async () => {
+      const [globalResponse, layerResponse] = await Promise.all([
+        window.electronAPI.getSettingsLayer('global'),
+        window.electronAPI.getSettingsLayer(settingsScope)
+      ]);
+      if (cancelled || !globalResponse.success || !globalResponse.data || !layerResponse.success || !layerResponse.data) return;
+      const globalData = globalResponse.data as SettingsData;
+      const layerData = layerResponse.data as SettingsData | WorkspaceSettingsPatch;
+      const baseSecurity = globalData.security || settings?.security || DEFAULT_SECURITY_SETTINGS;
+      setSecuritySettings({
+        ...DEFAULT_SECURITY_SETTINGS,
+        ...baseSecurity,
+        ...(settingsScope === 'workspace' ? layerData.security : {}),
+        systemAccessConfirmed: baseSecurity.systemAccessConfirmed
+      });
+    };
+    void load().catch((reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason)));
+    return () => { cancelled = true; };
+  }, [isSettingsOpen, settingsScope, settings?.security]);
 
   useEffect(() => {
     if (!window.electronAPI) return;
@@ -125,6 +258,31 @@ export const SettingsModal: React.FC = () => {
 
     return () => { cancelled = true; };
   }, []);
+
+  // Fetch models for active/selected provider
+  const fetchModelsForProvider = useCallback(async (providerId: string) => {
+    if (!window.electronAPI?.providerGetModels) return;
+    setLoadingModels(true);
+    try {
+      const res = await window.electronAPI.providerGetModels({
+        providerId,
+        customEndpoint: settings?.customEndpoints?.[providerId as ProviderType]
+      });
+      if (res.success && res.data && res.data.length > 0) {
+        setDiscoveredModels((prev) => ({ ...prev, [providerId]: res.data! }));
+      }
+    } catch {
+      // Fallback
+    } finally {
+      setLoadingModels(false);
+    }
+  }, [settings?.customEndpoints]);
+
+  useEffect(() => {
+    if (selectedGridProviderId && !isCustomSelected && !discoveredModels[selectedGridProviderId]) {
+      void fetchModelsForProvider(selectedGridProviderId);
+    }
+  }, [selectedGridProviderId, isCustomSelected, fetchModelsForProvider, discoveredModels]);
 
   const refreshLspServers = async () => {
     if (!window.electronAPI?.lspGetServers) return;
@@ -188,8 +346,6 @@ export const SettingsModal: React.FC = () => {
   };
 
   if (!isSettingsOpen) return null;
-
-  const apiKeyConfigured = (provider: ProviderType) => Boolean(settings?.apiKeysConfigured?.[provider]);
 
   const handleAddProfile = () => {
     setError('');
@@ -256,7 +412,6 @@ export const SettingsModal: React.FC = () => {
       const result = await window.electronAPI.checkForUpdates();
       if (result.error) throw new Error(result.error);
       if (!result.updateAvailable) toast.success('Up to date', `Ty-Code v${result.currentVersion} is the latest version.`);
-      // The TitleBar listens for the update:available event and supplies the Download action.
     } catch (reason) {
       toast.error('Update check failed', reason instanceof Error ? reason.message : String(reason));
     } finally {
@@ -264,10 +419,30 @@ export const SettingsModal: React.FC = () => {
     }
   };
 
+  const handleSaveSecurity = async () => {
+    setError('');
+    setSecuritySaving(true);
+    try {
+      const { systemAccessConfirmed, ...workspacePolicy } = securitySettings;
+      const policy = settingsScope === 'global'
+        ? securitySettings
+        : workspacePolicy;
+      const response = await window.electronAPI.saveSettingsLayer(settingsScope, { security: policy });
+      if (!response.success) throw new Error(response.error || 'Security settings could not be saved.');
+      toast.success('Security settings saved', settingsScope === 'global' ? 'Global policy is active immediately.' : 'Workspace policy overrides are active immediately.');
+      if (settingsScope === 'global' && settings) {
+        useChatStore.setState({ settings: { ...settings, security: securitySettings } });
+      }
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setSecuritySaving(false);
+    }
+  };
+
   const handleSave = async () => {
     setError('');
     const saved = await saveSettings({
-      apiKeys: { openrouter: openRouterKey, groq: groqKey, deepseek: deepseekKey },
       customEndpoints: { ollama: ollamaUrl, 'fcc-proxy': fccProxyUrl },
       temperature: Number(temperature),
       maxTokens: Number(maxTokens),
@@ -286,75 +461,184 @@ export const SettingsModal: React.FC = () => {
     toggleSettings();
   };
 
-  const renderApiKey = (
-    provider: ProviderType,
-    label: string,
-    value: string,
-    onChange: (next: string) => void,
-    placeholder: string
-  ) => {
-    const configured = apiKeyConfigured(provider);
-    return (
-      <div className="settings-field-group" key={provider}>
-        <div className="settings-field-header">
-          <label className="settings-field-label">{label}</label>
-          <span className={`settings-status-pill ${configured ? 'is-configured' : 'is-missing'}`}>
-            {configured ? 'Configured' : 'Missing'}
-          </span>
-        </div>
-        <input
-          type="password"
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          placeholder={configured ? 'Saved in secure storage — enter a new key to update' : placeholder}
-          autoComplete="off"
-          spellCheck={false}
-          style={{ width: '100%' }}
-        />
-      </div>
-    );
+  // Provider Onboarding Handlers
+  const handleSaveProviderKey = async (providerId: string, apiKey: string, customEndpoint?: string): Promise<boolean> => {
+    setError('');
+    const updates: Record<string, unknown> = {};
+    if (apiKey) {
+      updates.apiKeys = { [providerId]: apiKey };
+    }
+    if (customEndpoint) {
+      updates.customEndpoints = { [providerId]: customEndpoint };
+    }
+    // Also set active provider
+    updates.activeProvider = providerId as ProviderType;
+
+    const saved = await saveSettings(updates);
+    if (saved) {
+      setProviderStatuses((prev) => ({
+        ...prev,
+        [providerId]: { status: 'connected' }
+      }));
+      toast.success('Provider Saved', `${providerId} credentials securely encrypted and saved.`);
+      return true;
+    } else {
+      setError(`Failed to save ${providerId} settings.`);
+      return false;
+    }
   };
+
+  const handleSaveCustom = async (config: { name: string; baseUrl: string; apiKey?: string; selectedModel?: string }): Promise<boolean> => {
+    const updates: Record<string, unknown> = {
+      activeProvider: 'custom',
+      customEndpoints: { custom: config.baseUrl }
+    };
+    if (config.apiKey) {
+      updates.apiKeys = { custom: config.apiKey };
+    }
+    if (config.selectedModel) {
+      updates.activeModel = config.selectedModel;
+    }
+
+    const saved = await saveSettings(updates);
+    if (saved) {
+      toast.success('Custom Provider Configured', `${config.name} set as active provider.`);
+      return true;
+    }
+    return false;
+  };
+
+  const handleProviderTested = (providerId: string, result: TestConnectionResult, models?: DiscoveredModel[]) => {
+    if (result.success) {
+      setProviderStatuses((prev) => ({
+        ...prev,
+        [providerId]: { status: 'connected', latencyMs: result.latencyMs }
+      }));
+      if (models && models.length > 0) {
+        setDiscoveredModels((prev) => ({ ...prev, [providerId]: models }));
+      }
+    } else {
+      setProviderStatuses((prev) => ({
+        ...prev,
+        [providerId]: { status: 'error', error: result.error }
+      }));
+    }
+  };
+
+  const handleSelectModel = (modelId: string, model?: DiscoveredModel) => {
+    const targetProvider = (model?.provider || selectedGridProviderId) as ProviderType;
+    void saveSettings({
+      activeModel: modelId,
+      activeProvider: targetProvider
+    });
+    toast.success('Model Activated', `Switched active model to ${model?.name || modelId}`);
+  };
+
+  const currentProvider = registryProviders.find((p) => p.id === selectedGridProviderId) || registryProviders[0];
+
+  const currentModels = useMemo(() => {
+    if (discoveredModels[selectedGridProviderId]?.length) {
+      return discoveredModels[selectedGridProviderId];
+    }
+    // Fallback to preset models for this provider
+    return DEFAULT_PRESET_MODELS.filter((m) => m.provider === selectedGridProviderId).map((m) => ({
+      id: m.id,
+      name: m.name,
+      provider: m.provider,
+      isFree: m.isFree,
+      category: m.isFree ? ('Free' as const) : ('Premium/Reasoning' as const),
+      description: m.description
+    }));
+  }, [discoveredModels, selectedGridProviderId]);
 
   const filteredKeybindings = DEFAULT_KEYBINDINGS.filter((kb) => {
     if (!keybindingSearch.trim()) return true;
     const q = keybindingSearch.toLowerCase();
-    return (
-      kb.command.toLowerCase().includes(q) ||
-      kb.key.toLowerCase().includes(q) ||
-      (kb.description && kb.description.toLowerCase().includes(q)) ||
-      (kb.category && kb.category.toLowerCase().includes(q))
-    );
+    return kb.command.toLowerCase().includes(q) || kb.key.toLowerCase().includes(q) || (kb.description && kb.description.toLowerCase().includes(q));
   });
 
   return (
     <div className="settings-backdrop" onClick={toggleSettings}>
-      <section className="settings-modal" onClick={(event) => event.stopPropagation()} aria-modal="true" role="dialog" style={{ maxWidth: '780px' }}>
+      <section className="settings-modal" onClick={(event) => event.stopPropagation()} aria-modal="true" role="dialog" style={{ maxWidth: '820px' }}>
         <header className="settings-header">
           <div className="settings-title"><Key size={16} color="var(--accent-primary)" /><span>Ty-Code Preferences &amp; Configuration</span></div>
           <button onClick={toggleSettings} className="settings-close" aria-label="Close settings"><X size={14} /></button>
         </header>
 
         <nav className="settings-tabs" aria-label="Settings sections">
-          <button className={activeTab === 'fcc' ? 'is-active' : ''} onClick={() => setActiveTab('fcc')} style={{ color: activeTab === 'fcc' ? 'var(--accent-primary)' : undefined }}><Zap size={13} color="#f59e0b" />Free Models (FCC)</button>
-          <button className={activeTab === 'keys' ? 'is-active' : ''} onClick={() => setActiveTab('keys')}><Key size={13} />API Keys</button>
+          <button className={activeTab === 'providers' ? 'is-active' : ''} onClick={() => setActiveTab('providers')} style={{ color: activeTab === 'providers' ? 'var(--accent-primary)' : undefined }}>
+            <Key size={13} color="var(--accent-primary)" />AI Providers &amp; Models
+          </button>
+          <button className={activeTab === 'openkilo' ? 'is-active' : ''} onClick={() => setActiveTab('openkilo')} style={{ color: activeTab === 'openkilo' ? '#10b981' : undefined }}>
+            <Sparkles size={13} color="#10b981" />OpenKilo (Free Backup)
+          </button>
+          <button className={activeTab === 'fcc' ? 'is-active' : ''} onClick={() => setActiveTab('fcc')} style={{ color: activeTab === 'fcc' ? '#f59e0b' : undefined }}>
+            <Zap size={13} color="#f59e0b" />Free Models (FCC)
+          </button>
           <button className={activeTab === 'endpoints' ? 'is-active' : ''} onClick={() => setActiveTab('endpoints')}><Server size={13} />Endpoints</button>
           <button className={activeTab === 'params' ? 'is-active' : ''} onClick={() => setActiveTab('params')}><Sliders size={13} />Inference</button>
           <button className={activeTab === 'terminal' ? 'is-active' : ''} onClick={() => setActiveTab('terminal')}><Terminal size={13} />Terminal</button>
+          <button className={activeTab === 'security' ? 'is-active' : ''} onClick={() => setActiveTab('security')}><ShieldCheck size={13} />Security</button>
           <button className={activeTab === 'lsp' ? 'is-active' : ''} onClick={() => setActiveTab('lsp')}><Code2 size={13} />Language Servers (LSP)</button>
           <button className={activeTab === 'editor' ? 'is-active' : ''} onClick={() => setActiveTab('editor')}><Sliders size={13} />Editor Polish</button>
           <button className={activeTab === 'shortcuts' ? 'is-active' : ''} onClick={() => setActiveTab('shortcuts')}><Keyboard size={13} />Keybindings</button>
           <button className={activeTab === 'extensions' ? 'is-active' : ''} onClick={() => setActiveTab('extensions')}><ShieldCheck size={13} />Extensions</button>
         </nav>
 
-        <div className="settings-body" style={{ maxHeight: '420px', overflowY: 'auto' }}>
-          {activeTab === 'fcc' && <FCCSetup />}
+        <div className="settings-body" style={{ maxHeight: '480px', overflowY: 'auto' }}>
+          {/* Tab 1: AI Provider Onboarding, Configuration & Dynamic Model Discovery */}
+          {activeTab === 'providers' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {/* Provider Selection Grid */}
+              <ProviderSelectionGrid
+                providers={registryProviders}
+                selectedProviderId={selectedGridProviderId}
+                onSelectProvider={(id) => {
+                  setSelectedGridProviderId(id);
+                  setIsCustomSelected(false);
+                }}
+                providerStatuses={providerStatuses}
+                onSelectCustom={() => setIsCustomSelected(true)}
+                isCustomSelected={isCustomSelected}
+              />
 
-          {activeTab === 'keys' && <>
-            {renderApiKey('openrouter', 'OpenRouter API key', openRouterKey, setOpenRouterKey, 'sk-or-v1-…')}
-            {renderApiKey('groq', 'Groq API key', groqKey, setGroqKey, 'gsk_…')}
-            {renderApiKey('deepseek', 'DeepSeek API key', deepseekKey, setDeepseekKey, 'sk-…')}
-            <div className="settings-secure-note"><ShieldCheck size={14} /><span>Credentials remain in the main process and are encrypted with Electron safeStorage.</span></div>
-          </>}
+              {/* Provider Setup / Custom Form */}
+              {isCustomSelected ? (
+                <CustomProviderForm
+                  onSaveCustom={handleSaveCustom}
+                  initialBaseUrl={settings?.customEndpoints?.custom || 'http://localhost:1234/v1'}
+                  onCancel={() => setIsCustomSelected(false)}
+                />
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                  <ProviderSetupForm
+                    key={currentProvider.id}
+                    provider={currentProvider}
+                    isConfigured={Boolean(settings?.apiKeysConfigured?.[currentProvider.id as ProviderType])}
+                    customEndpoint={settings?.customEndpoints?.[currentProvider.id as ProviderType]}
+                    onSave={handleSaveProviderKey}
+                    onConnectionTested={handleProviderTested}
+                    onSelectModel={handleSelectModel}
+                    activeModelId={settings?.activeModel}
+                  />
+
+                  {/* Dynamic Model Discovery Dropdown */}
+                  <ModelSelectorDropdown
+                    models={currentModels}
+                    selectedModelId={settings?.activeModel || currentProvider.defaultModel || ''}
+                    onSelectModel={handleSelectModel}
+                    isLoading={loadingModels}
+                    onRefreshModels={() => void fetchModelsForProvider(currentProvider.id)}
+                    providerName={currentProvider.name}
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'openkilo' && <OpenKiloSetup />}
+
+          {activeTab === 'fcc' && <FCCSetup />}
 
           {activeTab === 'endpoints' && <>
             <div><label className="settings-field-label">Local Ollama base URL</label><input type="url" value={ollamaUrl} onChange={(event) => setOllamaUrl(event.target.value)} placeholder="http://localhost:11434/v1" style={{ width: '100%' }} /></div>
@@ -400,6 +684,53 @@ export const SettingsModal: React.FC = () => {
             </div>
             <div className="settings-hint">Session scrollback and shell profile are saved locally.</div>
           </>}
+
+          {/* Security Policy Settings Tab */}
+          {activeTab === 'security' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <p style={{ color: 'var(--text-secondary)', fontSize: 12, margin: 0 }}>
+                Choose where these rules apply. Workspace settings override the global policy for this project, but cannot grant access to files outside the workspace.
+              </p>
+              <div>
+                <label className="settings-field-label" htmlFor="security-settings-scope">Settings scope</label>
+                <select id="security-settings-scope" value={settingsScope} onChange={(event) => setSettingsScope(event.target.value as SettingsScope)} style={{ width: '100%' }}>
+                  <option value="global">Global — all projects</option>
+                  <option value="workspace">Current workspace</option>
+                </select>
+              </div>
+              <div>
+                <label className="settings-field-label" htmlFor="security-terminal-policy">Terminal policy</label>
+                <select id="security-terminal-policy" value={securitySettings.terminalPolicy} onChange={(event) => setSecuritySettings((current) => ({ ...current, terminalPolicy: event.target.value as SecurityPolicySettings['terminalPolicy'] }))} style={{ width: '100%' }}>
+                  <option value="always-ask">Always Ask — approve every command</option>
+                  <option value="always-proceed">Always Proceed — run commands automatically</option>
+                  <option value="restricted">Restricted Mode — approve only unlisted commands</option>
+                </select>
+                <p className="settings-hint">Restricted Mode auto-approves ls, cat, git status, and npm install. Destructive operations are blocked or require approval.</p>
+              </div>
+              <div>
+                <label className="settings-field-label" htmlFor="security-file-access">Agent file access</label>
+                <select id="security-file-access" value={securitySettings.fileAccessPolicy} onChange={(event) => setSecuritySettings((current) => ({ ...current, fileAccessPolicy: event.target.value as SecurityPolicySettings['fileAccessPolicy'] }))} style={{ width: '100%' }}>
+                  <option value="workspace-only">Workspace Only</option>
+                  <option value="system-access">System Access</option>
+                </select>
+                <p className="settings-hint">System Access requires the explicit global confirmation below. Workspace-level settings cannot enable it.</p>
+                {settingsScope === 'global' && <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, color: 'var(--text-primary)', fontSize: 12, marginTop: 8 }}>
+                  <input type="checkbox" checked={securitySettings.systemAccessConfirmed} onChange={(event) => setSecuritySettings((current) => ({ ...current, systemAccessConfirmed: event.target.checked }))} aria-describedby="system-access-confirm-help" />
+                  <span>I understand the Agent may read or write files outside the active workspace.</span>
+                </label>}
+                <p id="system-access-confirm-help" className="settings-hint">System Access is effective only when selected above and explicitly confirmed in Global Settings.</p>
+              </div>
+              <div>
+                <label className="settings-field-label" htmlFor="security-review-policy">Agent file change policy</label>
+                <select id="security-review-policy" value={securitySettings.reviewPolicy} onChange={(event) => setSecuritySettings((current) => ({ ...current, reviewPolicy: event.target.value as SecurityPolicySettings['reviewPolicy'] }))} style={{ width: '100%' }}>
+                  <option value="always-ask">Always Ask — review each proposed change</option>
+                  <option value="auto-apply-safe">Auto-Apply Safe — apply changes under five lines</option>
+                </select>
+                <p className="settings-hint">Larger changes still require review. Approval is checked against the file contents before applying.</p>
+              </div>
+              {securitySettings.fileAccessPolicy === 'system-access' && !securitySettings.systemAccessConfirmed && <div className="settings-hint" role="status">System Access is selected but remains inactive until Global Settings explicitly confirm it.</div>}
+            </div>
+          )}
 
           {/* LSP Settings Tab */}
           {activeTab === 'lsp' && (
@@ -524,94 +855,83 @@ export const SettingsModal: React.FC = () => {
                 >
                   <option value={2}>2 spaces</option>
                   <option value={4}>4 spaces</option>
-                  <option value={8}>8 spaces</option>
                 </select>
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <input
-                  type="checkbox"
-                  id="minimap-toggle"
-                  checked={minimap}
-                  onChange={(e) => setMinimap(e.target.checked)}
-                />
-                <label htmlFor="minimap-toggle" style={{ fontSize: '12px', color: 'var(--text-primary)', cursor: 'pointer' }}>
-                  Enable Minimap code overview on right side
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '12px' }}>
+                  <input
+                    type="checkbox"
+                    checked={minimap}
+                    onChange={(e) => setMinimap(e.target.checked)}
+                  />
+                  <span>Show Minimap</span>
+                </label>
+
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '12px' }}>
+                  <input
+                    type="checkbox"
+                    checked={bracketPairs}
+                    onChange={(e) => setBracketPairs(e.target.checked)}
+                  />
+                  <span>Bracket Pair Colorization</span>
                 </label>
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <input
-                  type="checkbox"
-                  id="bracket-toggle"
-                  checked={bracketPairs}
-                  onChange={(e) => setBracketPairs(e.target.checked)}
-                />
-                <label htmlFor="bracket-toggle" style={{ fontSize: '12px', color: 'var(--text-primary)', cursor: 'pointer' }}>
-                  Enable Bracket Pair Colorization & Guides
-                </label>
-              </div>
+              {/* Updates Section */}
+              <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '12px' }}>
+                <div className="settings-section-heading">
+                  <strong>Software Updates</strong>
+                  <span>Manage update release channels and check for application updates.</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '8px' }}>
+                  <select
+                    value={updateChannel}
+                    onChange={(e) => void handleUpdateChannelChange(e.target.value as UpdateChannelPreference)}
+                    style={{ padding: '5px 8px', fontSize: '11px' }}
+                  >
+                    <option value="stable">Stable channel</option>
+                    <option value="beta">Beta preview</option>
+                    <option value="nightly">Nightly build</option>
+                  </select>
 
-              <div>
-                <label className="settings-field-label">Auto-Save Delay ({autoSaveDelay}ms)</label>
-                <input
-                  type="number"
-                  min="200"
-                  max="10000"
-                  step="200"
-                  value={autoSaveDelay}
-                  onChange={(e) => setAutoSaveDelay(Number(e.target.value))}
-                  style={{ width: '100%' }}
-                />
+                  <button
+                    type="button"
+                    onClick={() => void handleCheckForUpdates()}
+                    disabled={isCheckingUpdate}
+                    style={{
+                      padding: '5px 10px',
+                      fontSize: '11px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      backgroundColor: 'var(--bg-hover)',
+                      color: 'var(--text-primary)'
+                    }}
+                  >
+                    <RotateCw size={12} className={isCheckingUpdate ? 'spin' : ''} />
+                    <span>Check for Updates</span>
+                  </button>
+                </div>
               </div>
-              <section className="settings-section" aria-labelledby="updates-heading">
-                <h3 id="updates-heading" className="settings-field-label">Application updates</h3>
-                <label className="settings-field-label" htmlFor="update-channel">Release channel</label>
-                <select id="update-channel" value={updateChannel} onChange={(event) => void handleUpdateChannelChange(event.target.value as UpdateChannelPreference)} style={{ width: '100%' }}>
-                  <option value="stable">Stable</option>
-                  <option value="beta">Beta</option>
-                  <option value="nightly">Nightly</option>
-                </select>
-                <p className="settings-hint">Beta and nightly builds are available only when matching prerelease releases and update manifests are published.</p>
-                <button type="button" className="settings-save" onClick={() => void handleCheckForUpdates()} disabled={isCheckingUpdate}>
-                  {isCheckingUpdate ? 'Checking for updates…' : 'Check for Updates'}
-                </button>
-              </section>
             </div>
-          )}
-
-          {activeTab === 'extensions' && (
-            <section className="extension-runtime-settings" aria-labelledby="extension-runtime-heading">
-              <h3 id="extension-runtime-heading" className="settings-field-label">Extension runtime</h3>
-              <div className="settings-secure-note">
-                <ShieldCheck size={14} />
-                <span>Built-in packages run in an isolated Worker with mediated Ty-Code Extension API capabilities.</span>
-              </div>
-              <label className="extension-runtime-toggle" htmlFor="third-party-extension-runtime">
-                <input id="third-party-extension-runtime" type="checkbox" checked={thirdPartyRuntimeEnabled} onChange={(event) => setThirdPartyRuntimeEnabled(event.target.checked)} aria-describedby="extension-runtime-help" />
-                <span>Enable third-party extension runtime</span>
-              </label>
-              <p id="extension-runtime-help" className="settings-hint">
-This preference is off by default. Enabling it records your intent only; community packages remain metadata-only until package verification and the runtime complete security review.
-              </p>
-            </section>
           )}
 
           {/* Keybindings Tab */}
           {activeTab === 'shortcuts' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', backgroundColor: 'var(--bg-tertiary)', padding: '6px 10px', borderRadius: '4px', border: '1px solid var(--border-subtle)' }}>
-                <Search size={13} color="var(--text-muted)" />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div style={{ position: 'relative' }}>
+                <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
                 <input
                   type="text"
+                  placeholder="Filter keybindings by command name, key, or description…"
                   value={keybindingSearch}
                   onChange={(e) => setKeybindingSearch(e.target.value)}
-                  placeholder="Search keyboard shortcuts..."
-                  style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', fontSize: '12px', color: 'var(--text-primary)' }}
+                  style={{ width: '100%', paddingLeft: '30px', fontSize: '12px' }}
                 />
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <div style={{ maxHeight: '320px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 {filteredKeybindings.map((kb) => (
                   <div
                     key={kb.command}
@@ -619,14 +939,16 @@ This preference is off by default. Enabling it records your intent only; communi
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'space-between',
-                      padding: '8px 10px',
+                      padding: '8px 12px',
                       backgroundColor: 'var(--bg-tertiary)',
-                      borderRadius: '4px',
-                      fontSize: '12px'
+                      borderRadius: '6px',
+                      border: '1px solid var(--border-subtle)'
                     }}
                   >
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                      <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{kb.description || kb.command}</span>
+                      <span style={{ fontSize: '12px', fontWeight: 500, color: 'var(--text-primary)' }}>
+                        {kb.description || kb.command}
+                      </span>
                       <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'monospace' }}>{kb.command}</span>
                     </div>
 
@@ -651,12 +973,35 @@ This preference is off by default. Enabling it records your intent only; communi
             </div>
           )}
 
+          {/* Extensions Tab */}
+          {activeTab === 'extensions' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div className="settings-section-heading">
+                <strong>Third-party Extensions</strong>
+                <span>Allow sandboxed Worker execution for community extensions.</span>
+              </div>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-primary)', fontSize: 12 }}>
+                <input
+                  type="checkbox"
+                  checked={thirdPartyRuntimeEnabled}
+                  onChange={(e) => setThirdPartyRuntimeEnabled(e.target.checked)}
+                />
+                Enable Worker runtime for third-party extensions
+              </label>
+              <p className="settings-hint">
+                Only enable if you trust downloaded extensions. Sandboxed workers have restricted filesystem and process capabilities.
+              </p>
+            </div>
+          )}
+
           {error && <div className="settings-error" role="alert">{error}</div>}
         </div>
 
         <footer className="settings-footer">
           <button className="settings-cancel" onClick={toggleSettings}>Cancel</button>
-          <button className="settings-save" onClick={() => void handleSave()}>Save Settings</button>
+          <button className="settings-save" disabled={securitySaving} onClick={() => activeTab === 'security' ? void handleSaveSecurity() : void handleSave()}>
+            {securitySaving ? 'Saving…' : activeTab === 'security' ? 'Save Security Settings' : 'Save Settings'}
+          </button>
         </footer>
       </section>
     </div>

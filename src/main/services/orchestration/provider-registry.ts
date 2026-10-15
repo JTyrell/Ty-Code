@@ -7,6 +7,8 @@
  * - Local / Offline providers
  */
 
+import { OPENKILO_CURATED_FREE_MODELS } from './openkilo-provider';
+
 export type ProviderCategory = 'api_key' | 'oauth' | 'web_cookie' | 'local';
 export type AuthMethod = 'api_key' | 'oauth' | 'web_cookie' | 'none';
 export type TaskType = 'coding' | 'reasoning' | 'fast-edit' | 'general' | 'multimodal';
@@ -52,7 +54,7 @@ export interface ProviderMetadata {
   rateLimitPattern: RateLimitConfig;
   supportedModels: ModelMetadata[];
   healthCheckEndpoint?: string;
-  headersFactory?: (credentials: { apiKey?: string; token?: string; cookie?: string }) => Record<string, string>;
+  headersFactory?: (credentials: { apiKey?: string; token?: string; cookie?: string } | any) => Record<string, string>;
 }
 
 export class ProviderRegistry {
@@ -186,6 +188,45 @@ export class ProviderRegistry {
           primaryTask: 'coding'
         }
       ]
+    });
+
+    this.registerProvider({
+      id: 'openkilo',
+      name: 'OpenKilo Gateway',
+      category: 'api_key',
+      authMethod: 'api_key',
+      defaultEndpoint: 'https://api.openkilo.com/v1',
+      isFreeTierAvailable: true,
+      freeTierTokenLimit: 500_000_000,
+      monthlyFreeTokens: 500_000_000,
+      rateLimitPattern: { requestsPerMinute: 60, tokensPerMinute: 200_000, cooldownBaseMs: 3000, maxCooldownMs: 60_000 },
+      healthCheckEndpoint: 'https://api.openkilo.com/v1/models',
+      headersFactory: (credentials) => {
+        const key = typeof credentials === 'string'
+          ? credentials
+          : (credentials?.apiKey || credentials?.token || 'anonymous');
+        return {
+          Authorization: `Bearer ${key || 'anonymous'}`,
+          'X-Client': 'Ty-Code Desktop',
+          'X-Title': 'Ty-Code'
+        };
+      },
+      supportedModels: OPENKILO_CURATED_FREE_MODELS.map((m) => ({
+        id: m.id,
+        name: m.name,
+        contextWindow: m.contextWindow,
+        maxOutputTokens: m.maxOutputTokens,
+        capabilities: {
+          reasoning: m.primaryTask === 'reasoning',
+          tools: true,
+          vision: m.primaryTask === 'multimodal',
+          codingScore: m.codingScore,
+          isFree: m.isFree
+        },
+        costTier: m.isFree ? 'free' : 'low',
+        primaryTask: m.primaryTask,
+        description: m.description
+      }))
     });
 
     this.registerProvider({
@@ -1060,6 +1101,45 @@ export class ProviderRegistry {
           description: 'Specialized open coding model routed via FCC HuggingChat/Ollama.'
         }
       ]
+    });
+
+    // 14. OpenKilo Kilo Gateway (Layer 5 Backup Free-Tier Provider)
+    const openkiloModels: ModelMetadata[] = OPENKILO_CURATED_FREE_MODELS.map((m) => ({
+      id: m.id,
+      name: m.name,
+      contextWindow: m.contextWindow,
+      maxOutputTokens: m.maxOutputTokens,
+      capabilities: {
+        reasoning: m.primaryTask === 'reasoning',
+        tools: true,
+        vision: m.primaryTask === 'multimodal',
+        codingScore: m.codingScore,
+        isFree: m.isFree
+      },
+      costTier: m.isFree ? 'free' : 'low',
+      primaryTask: m.primaryTask,
+      description: m.description
+    }));
+
+    this.registerProvider({
+      id: 'openkilo',
+      name: 'OpenKilo Gateway',
+      category: 'api_key',
+      authMethod: 'api_key',
+      defaultEndpoint: 'https://api.openkilo.com/v1',
+      isFreeTierAvailable: true,
+      freeTierTokenLimit: 500_000_000,
+      monthlyFreeTokens: 500_000_000,
+      rateLimitPattern: { requestsPerMinute: 200, tokensPerMinute: 2_000_000, cooldownBaseMs: 2000, maxCooldownMs: 30_000 },
+      supportedModels: openkiloModels,
+      healthCheckEndpoint: 'https://api.openkilo.com/v1/models',
+      headersFactory: (credentials) => {
+        const key = credentials.apiKey?.trim() || 'anonymous';
+        return {
+          Authorization: `Bearer ${key}`,
+          'X-Client': 'Ty-Code'
+        };
+      }
     });
   }
 }

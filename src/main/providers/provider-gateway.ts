@@ -1,4 +1,4 @@
-import type { ModelConfig, ProviderSettings, ProviderType } from '../../preload/types';
+import type { ModelConfig, ProviderSettings, ProviderType, DiscoveredModel, TestConnectionResult } from '../../preload/types';
 import { parseSSELines, type StreamPayload } from './sse-parser';
 import {
   OmniRouteRouter,
@@ -7,10 +7,27 @@ import {
 import { connectionPool } from '../services/orchestration/connection-pool';
 import { providerRegistry } from '../services/orchestration/provider-registry';
 import { fccManager } from '../services/orchestration/fcc-manager';
+import { getPreconfiguredProvider } from '../config/provider-registry';
 import type { ProviderCandidate } from '../services/orchestration/strategies/types';
 
 import { DEFAULT_PRESET_MODELS } from '../../preload/preset-models';
 export { DEFAULT_PRESET_MODELS };
+
+export function isFreeModel(modelId: string, providerId: string): boolean {
+  if (providerId === 'ollama' || providerId === 'fcc-proxy') return true;
+  if (/:free($|:|\/)/i.test(modelId) || modelId.toLowerCase().includes(':free')) return true;
+  if (providerId === 'groq') {
+    const groqFree = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'gemma2-9b-it', 'mixtral-8x7b-32768'];
+    if (groqFree.includes(modelId)) return true;
+  }
+  return false;
+}
+
+export function categorizeModel(modelId: string, isFree: boolean, providerId: string): 'Free' | 'Fast' | 'Premium/Reasoning' {
+  if (isFree) return 'Free';
+  if (providerId === 'groq' || /(instant|flash|turbo|mini|fast|8b|3b)/i.test(modelId)) return 'Fast';
+  return 'Premium/Reasoning';
+}
 
 export interface ChatCompletionMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
@@ -38,17 +55,243 @@ function appendDelta(existing: string, incoming: string | undefined): string {
 export class ProviderGateway {
   public static router: OmniRouteRouter = omniRouteRouter;
 
-  static getEndpoint(provider: ProviderType, customEndpoints: Partial<Record<ProviderType, string>>): string {
-    if (customEndpoints[provider]) return customEndpoints[provider]!;
+  static getEndpoint(provider: ProviderType, customEndpoints: Partial<Record<ProviderType, string>> = {}): string {
+    if (customEndpoints && customEndpoints[provider]) return customEndpoints[provider]!;
+    const preconfigured = getPreconfiguredProvider(provider);
+    if (preconfigured?.baseUrl) return preconfigured.baseUrl;
     const registered = providerRegistry.getProvider(provider);
     if (registered?.defaultEndpoint) return registered.defaultEndpoint;
     switch (provider) {
       case 'openrouter': return 'https://openrouter.ai/api/v1';
+      case 'openkilo': return 'https://api.openkilo.com/v1';
+      case 'opencode': return 'https://api.opencode.ai/v1';
       case 'groq': return 'https://api.groq.com/openai/v1';
       case 'deepseek': return 'https://api.deepseek.com';
       case 'ollama': return 'http://localhost:11434/v1';
       case 'fcc-proxy': return 'http://localhost:8082/v1';
       default: return 'https://openrouter.ai/api/v1';
+    }
+  }
+
+  /**
+   * Dynamic model discovery hitting the provider's /models endpoint.
+   * Auto-tags free models and categorizes them into Free, Fast, and Premium/Reasoning.
+   */
+  static async getAvailableModels(
+    providerId: string,
+    apiKey?: string,
+    customEndpoint?: string
+  ): Promise<DiscoveredModel[]> {
+    const preconfigured = getPreconfiguredProvider(providerId);
+    const baseUrl = (customEndpoint || preconfigured?.baseUrl || this.getEndpoint(providerId as ProviderType, {})).replace(/\/+$/, '');
+
+    const headers: Record<string, string> = {
+      'Accept': 'application/json',
+      'Content-Type': 'application/json'
+    };
+    if (apiKey?.trim()) {
+      headers.Authorization = `Bearer ${apiKey.trim()}`;
+    }
+    if (providerId === 'openrouter') {
+      headers['HTTP-Referer'] = 'https://ty-code.dev';
+      headers['X-Title'] = 'Ty-Code Desktop';
+    }
+
+    let rawModels: Array<{ id: string; name?: string; description?: string; context_length?: number }> = [];
+
+    try {
+      const response = await fetch(`${baseUrl}/models`, {
+        method: 'GET',
+        headers,
+        signal: AbortSignal.timeout(10_000)
+      });
+
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          throw new Error('Invalid API Key');
+        }
+        if (providerId === 'ollama' || baseUrl.includes('11434')) {
+          return await this.fetchOllamaNativeTags(baseUrl);
+        }
+        const errorText = await response.text();
+        throw new Error(`Failed to fetch models (${response.status}): ${errorText.slice(0, 150)}`);
+      }
+
+      const data = await response.json() as { data?: Array<any>; models?: Array<any> };
+      const list = Array.isArray(data.data) ? data.data : Array.isArray(data.models) ? data.models : [];
+      rawModels = list.map((m: any) => ({
+        id: String(m.id || m.name || ''),
+        name: typeof m.name === 'string' && m.name ? m.name : String(m.id || ''),
+        description: typeof m.description === 'string' ? m.description : undefined,
+        context_length: typeof m.context_length === 'number' ? m.context_length : typeof m.context_window === 'number' ? m.context_window : undefined
+      })).filter((m) => Boolean(m.id));
+    } catch (err: unknown) {
+      if (err instanceof Error && err.message === 'Invalid API Key') {
+        throw err;
+      }
+      if (providerId === 'ollama' || baseUrl.includes('11434')) {
+        try {
+          return await this.fetchOllamaNativeTags(baseUrl);
+        } catch {
+          // Ignore and rethrow original or return empty
+        }
+      }
+      throw err;
+    }
+
+    return rawModels.map((m) => {
+      const free = isFreeModel(m.id, providerId);
+      const category = categorizeModel(m.id, free, providerId);
+      return {
+        id: m.id,
+        name: m.name || m.id,
+        provider: providerId,
+        isFree: free,
+        category,
+        contextLength: m.context_length,
+        description: m.description
+      };
+    });
+  }
+
+  private static async fetchOllamaNativeTags(baseUrl: string): Promise<DiscoveredModel[]> {
+    const rootUrl = baseUrl.replace(/\/v1\/?$/, '');
+    const tagRes = await fetch(`${rootUrl}/api/tags`, {
+      method: 'GET',
+      signal: AbortSignal.timeout(8000)
+    });
+    if (!tagRes.ok) {
+      throw new Error(`Ollama tags request failed with status ${tagRes.status}`);
+    }
+    const json = await tagRes.json() as { models?: Array<{ name: string; details?: { parameter_size?: string } }> };
+    const list = Array.isArray(json.models) ? json.models : [];
+    return list.map((m) => ({
+      id: m.name,
+      name: `${m.name} (${m.details?.parameter_size || 'local'})`,
+      provider: 'ollama',
+      isFree: true,
+      category: 'Free' as const,
+      description: 'Local offline Ollama model'
+    }));
+  }
+
+  /**
+   * Test connection to a provider endpoint.
+   * Sends a minimal 1-token completion request to verify credentials, or pings local server for zero-config.
+   */
+  static async testConnection(
+    providerId: string,
+    apiKey?: string,
+    modelId?: string,
+    customEndpoint?: string
+  ): Promise<TestConnectionResult> {
+    const startTime = performance.now();
+    const preconfigured = getPreconfiguredProvider(providerId);
+    const baseUrl = (customEndpoint || preconfigured?.baseUrl || this.getEndpoint(providerId as ProviderType, {})).replace(/\/+$/, '');
+
+    // Zero-config (e.g. Ollama) or Custom provider without required key: ping server / models endpoint
+    if (preconfigured?.setupType === 'zero_config' || providerId === 'ollama' || (providerId === 'custom' && !apiKey?.trim())) {
+      try {
+        let modelsCount = 0;
+        try {
+          const models = await this.getAvailableModels(providerId, apiKey, customEndpoint);
+          modelsCount = models.length;
+        } catch {
+          const pingRes = await fetch(baseUrl, { method: 'GET', signal: AbortSignal.timeout(5000) }).catch(() => null);
+          if (!pingRes || (!pingRes.ok && pingRes.status !== 404)) {
+            const rootUrl = baseUrl.replace(/\/v1\/?$/, '');
+            const pingRoot = await fetch(rootUrl, { method: 'GET', signal: AbortSignal.timeout(5000) }).catch(() => null);
+            if (!pingRoot || !pingRoot.ok) {
+              return {
+                success: false,
+                latencyMs: Math.round(performance.now() - startTime),
+                error: `Cannot connect to ${providerId === 'ollama' ? 'Ollama' : 'endpoint'}. Make sure the server is running.`
+              };
+            }
+          }
+        }
+        return {
+          success: true,
+          latencyMs: Math.max(1, Math.round(performance.now() - startTime)),
+          modelsFound: modelsCount
+        };
+      } catch (err: unknown) {
+        return {
+          success: false,
+          latencyMs: Math.round(performance.now() - startTime),
+          error: err instanceof Error ? err.message : String(err)
+        };
+      }
+    }
+
+    if (!apiKey?.trim()) {
+      return {
+        success: false,
+        latencyMs: 0,
+        error: 'API key is required.'
+      };
+    }
+
+    const testModel = modelId || preconfigured?.defaultModel || (providerId === 'groq' ? 'llama-3.3-70b-versatile' : 'meta-llama/llama-3.3-70b-instruct:free');
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey.trim()}`
+    };
+    if (providerId === 'openrouter') {
+      headers['HTTP-Referer'] = 'https://ty-code.dev';
+      headers['X-Title'] = 'Ty-Code Desktop';
+    }
+
+    try {
+      const response = await fetch(`${baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          model: testModel,
+          messages: [{ role: 'user', content: 'test' }],
+          max_tokens: 1
+        }),
+        signal: AbortSignal.timeout(12_000)
+      });
+
+      const latencyMs = Math.max(1, Math.round(performance.now() - startTime));
+
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          return {
+            success: false,
+            latencyMs,
+            error: 'Invalid API Key'
+          };
+        }
+        let parsedError = `HTTP ${response.status}`;
+        try {
+          const errJson = await response.json() as { error?: { message?: string }; message?: string };
+          parsedError = errJson.error?.message || errJson.message || parsedError;
+        } catch {
+          const errText = await response.text();
+          if (errText) parsedError = errText.slice(0, 150);
+        }
+        return {
+          success: false,
+          latencyMs,
+          error: parsedError
+        };
+      }
+
+      return {
+        success: true,
+        latencyMs
+      };
+    } catch (err: unknown) {
+      const latencyMs = Math.round(performance.now() - startTime);
+      const message = err instanceof Error ? err.message : String(err);
+      return {
+        success: false,
+        latencyMs,
+        error: message.includes('fetch failed') ? `Connection failed: Unable to reach ${baseUrl}` : message
+      };
     }
   }
 

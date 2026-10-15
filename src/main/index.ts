@@ -1,5 +1,7 @@
-import { app, BrowserWindow, ipcMain, session, type IpcMainInvokeEvent } from 'electron';
+import { app, BrowserWindow, ipcMain, session, shell, type IpcMainInvokeEvent } from 'electron';
 import path from 'path';
+import { ProviderGateway } from './providers/provider-gateway';
+import { PRECONFIGURED_PROVIDERS } from './config/provider-registry';
 import {
   selectWorkspaceFolder, getWorkspaceTree, readFile, writeFile, createFile,
   createDirectory, deletePath, renamePath, searchWorkspaceFiles,
@@ -14,7 +16,8 @@ import {
   handleLspRename, handleLspDocumentSymbols, handleLspWorkspaceSymbols,
   handleLspCodeActions, handleLspSignatureHelp, getLspManager
 } from './ipc/lsp-handlers';
-import { getSettings, saveSettings } from './ipc/settings-handlers';
+import { getSettings, getSettingsLayer, getSecurityPolicy, saveSecurityPolicy, saveSettings, saveSettingsLayer } from './ipc/settings-handlers';
+import { settingsManager } from './services/settings-manager';
 import { startAgentTask, stopAgentTask, respondAgentApproval, applyDiff } from './ipc/agent-handlers';
 import {
   runCommand, getAvailableShells, spawnPtySession, attachPty, writePty,
@@ -49,6 +52,9 @@ import { fileURLToPath } from 'url';
 import { initAiFeatureServices, updateAiServicesWorkspace, registerAiFeatureHandlers } from './ipc/ai-features-handlers';
 import { fccManager } from './services/orchestration/fcc-manager';
 import { providerAutoSetup } from './services/orchestration/provider-auto-setup';
+import { openKiloProvider } from './services/orchestration/openkilo-provider';
+
+import { recordLspDiagnostics } from './services/orchestration/tools/diagnostics';
 
 let mainWindow: BrowserWindow | null = null;
 let currentWorkspacePath = process.cwd();
@@ -66,7 +72,9 @@ function ensureLspDiagnosticsBridge(): void {
   diagnosticsUnsubscribe = manager.onDiagnostics((event) => {
     if (!mainWindow) return;
     try {
-      mainWindow.webContents.send('lsp:diagnostics', { ...event, filePath: fromFileUri(event.uri) });
+      const filePath = fromFileUri(event.uri);
+      recordLspDiagnostics(event.uri, filePath, event.diagnostics as any[]);
+      mainWindow.webContents.send('lsp:diagnostics', { ...event, filePath });
     } catch {
       // Invalid server URIs are ignored and never forwarded to the renderer.
     }
@@ -113,6 +121,7 @@ function registerIpcHandlers(): void {
     const response = await selectWorkspaceFolder(mainWindow);
     if (response.success && response.data) {
       currentWorkspacePath = response.data;
+      await settingsManager.setWorkspacePath(currentWorkspacePath);
       updateAiServicesWorkspace(currentWorkspacePath);
       getRecentWorkspacesManager().addRecent(response.data);
     }
@@ -121,6 +130,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle('fs:set-workspace', async (_event, folderPath: string) => {
     if (!folderPath) return { success: false, error: 'Invalid folder path' };
     currentWorkspacePath = folderPath;
+    await settingsManager.setWorkspacePath(currentWorkspacePath);
     updateAiServicesWorkspace(currentWorkspacePath);
     getRecentWorkspacesManager().addRecent(folderPath);
     return getWorkspaceTree(folderPath);
@@ -196,6 +206,31 @@ function registerIpcHandlers(): void {
   });
   ipcMain.handle('workspace-edit:recent-undo', () => ({ success: true, data: getWorkspaceEditPreviewService().getRecentUndo() }));
   ipcMain.handle('settings:get', () => getSettings());
+  settingsManager.onDidChange(() => {
+    if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
+      mainWindow.webContents.send('settings:changed');
+    }
+  });
+  ipcMain.handle('settings:layer:get', async (event, scope: unknown) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    if (scope !== 'global' && scope !== 'workspace') return { success: false, error: 'Settings scope must be global or workspace.' };
+    return getSettingsLayer(scope);
+  });
+  ipcMain.handle('settings:layer:save', async (event, payload: { scope?: unknown; settings?: unknown }) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    if (!payload || (payload.scope !== 'global' && payload.scope !== 'workspace')) return { success: false, error: 'Settings scope must be global or workspace.' };
+    const result = await saveSettingsLayer(payload.scope, payload.settings);
+    if (result.success && payload.scope === 'global' && (payload.settings as Record<string, unknown>)?.['lsp.autoStart'] !== undefined) {
+      getLspManager(currentWorkspacePath).setAutoStart(Boolean((payload.settings as Record<string, unknown>)['lsp.autoStart']));
+    }
+    return result;
+  });
+  ipcMain.handle('settings:security:get', async (event) => isTrustedExtensionFrame(event)
+    ? getSecurityPolicy()
+    : { success: false, error: 'Untrusted renderer frame.' });
+  ipcMain.handle('settings:security:save', async (event, policy) => isTrustedExtensionFrame(event)
+    ? saveSecurityPolicy(policy)
+    : { success: false, error: 'Untrusted renderer frame.' });
   ipcMain.handle('settings:save', async (_event, updates) => {
     const result = await saveSettings(updates);
     if (result.success && updates?.['lsp.autoStart'] !== undefined) getLspManager(currentWorkspacePath).setAutoStart(updates['lsp.autoStart']);
@@ -209,6 +244,59 @@ function registerIpcHandlers(): void {
   ipcMain.handle('agent:stop-task', (_event, taskId: string) => stopAgentTask(taskId));
   ipcMain.handle('agent:respond-approval', (_event, payload: { approvalId: string; approved: boolean }) => respondAgentApproval(payload.approvalId, payload.approved));
   ipcMain.handle('agent:apply-diff', (_event, diff: ProposedDiff) => applyDiff(currentWorkspacePath, diff));
+
+  // OpenKilo Gateway (Layer 5) IPC Handlers
+  ipcMain.handle('openkilo:get-status', () => ({
+    success: true,
+    data: openKiloProvider.getStatus()
+  }));
+
+  ipcMain.handle('openkilo:refresh-models', async (_event, apiKey?: string) => {
+    try {
+      const models = await openKiloProvider.refreshModelCatalog(apiKey);
+      return { success: true, data: models };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('openkilo:start-oauth', async () => {
+    try {
+      const res = await openKiloProvider.startOAuthFlow();
+      return { success: true, data: res };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('openkilo:complete-oauth', async (_event, code: string) => {
+    try {
+      const res = await openKiloProvider.completeOAuthFlow(code);
+      if (res.success && res.apiKey) {
+        await saveSettings({
+          activeProvider: 'openkilo',
+          apiKeys: { openkilo: res.apiKey }
+        });
+      }
+      return res;
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('openkilo:enable-anonymous', async () => {
+    try {
+      openKiloProvider.enableAnonymousMode();
+      await saveSettings({
+        activeProvider: 'openkilo',
+        activeModel: 'deepseek/deepseek-r1-0528:free',
+        apiKeys: { openkilo: 'anonymous' }
+      });
+      return { success: true, data: openKiloProvider.getStatus() };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
 
   ipcMain.handle('pty:run-command', (_event, options: CommandExecutionOptions) => runCommand({
     ...options,
@@ -449,6 +537,46 @@ function registerIpcHandlers(): void {
 
   // Phase 5.2: FCC Server Integration (Layer 3)
   registerFccHandlers();
+
+  // Phase 2.1: Provider Onboarding & Dynamic Discovery
+  registerProviderHandlers();
+}
+
+function registerProviderHandlers(): void {
+  ipcMain.handle('provider:get-registry', () => ({
+    success: true,
+    data: PRECONFIGURED_PROVIDERS
+  }));
+
+  ipcMain.handle('provider:get-models', async (_event, payload: { providerId: string; apiKey?: string; customEndpoint?: string }) => {
+    try {
+      const models = await ProviderGateway.getAvailableModels(payload.providerId, payload.apiKey, payload.customEndpoint);
+      return { success: true, data: models };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('provider:test-connection', async (_event, payload: { providerId: string; apiKey?: string; modelId?: string; customEndpoint?: string }) => {
+    try {
+      const result = await ProviderGateway.testConnection(payload.providerId, payload.apiKey, payload.modelId, payload.customEndpoint);
+      return { success: true, data: result };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('app:open-external', async (_event, url: string) => {
+    try {
+      if (!url || typeof url !== 'string' || !url.startsWith('http')) {
+        throw new Error('Invalid URL');
+      }
+      await shell.openExternal(url);
+      return { success: true };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
 }
 
 function registerFccHandlers(): void {
@@ -528,8 +656,9 @@ function createWindow(): void {
   window.on('closed', () => { if (mainWindow === window) mainWindow = null; });
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
+  await settingsManager.setWorkspacePath(currentWorkspacePath);
   registerIpcHandlers();
   createWindow();
   void fccManager.start();

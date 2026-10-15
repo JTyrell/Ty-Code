@@ -171,8 +171,8 @@ export class OmniRouteRouter {
           continue;
         }
       } else {
-        // API key providers require an API key unless they offer an open free tier (like OpenRouter free models) or activeProvider
-        if (!isConfigured && provider.id !== 'openrouter' && provider.id !== settings.activeProvider) {
+        // API key providers require an API key unless they offer an open free tier (like OpenRouter or OpenKilo free models) or activeProvider
+        if (!isConfigured && provider.id !== 'openrouter' && provider.id !== 'openkilo' && !provider.isFreeTierAvailable && provider.id !== settings.activeProvider) {
           continue;
         }
       }
@@ -186,7 +186,7 @@ export class OmniRouteRouter {
         candidates.push({
           provider,
           model,
-          apiKey: apiKey || undefined,
+          apiKey: apiKey || (provider.id === 'openkilo' ? 'anonymous' : undefined),
           customEndpoint: customEndpoint || undefined
         });
       }
@@ -263,9 +263,26 @@ export class OmniRouteRouter {
    * OmniRoute automatically selects the next best alternative provider and retries.
    */
   public async executeWithFailover<T>(
-    options: ExecuteWithFailoverOptions<T>
+    optionsOrMessages: ExecuteWithFailoverOptions<T> | ChatCompletionMessage[],
+    maybeSettings?: ProviderSettings,
+    maybeExecute?: (candidate: ProviderCandidate, reconciledMessages: ChatCompletionMessage[]) => Promise<T>,
+    maybeOnFailover?: (event: FailoverEvent) => void,
+    maybeContext?: RoutingContext
   ): Promise<RoutingExecutionResult<T>> {
-    const { context, settings, messages, execute, onFailover } = options;
+    let options: ExecuteWithFailoverOptions<T>;
+    if (Array.isArray(optionsOrMessages)) {
+      options = {
+        messages: optionsOrMessages,
+        settings: maybeSettings || ({} as ProviderSettings),
+        execute: maybeExecute!,
+        onFailover: maybeOnFailover,
+        context: maybeContext || {}
+      };
+    } else {
+      options = optionsOrMessages;
+    }
+
+    const { context = {}, settings = {} as ProviderSettings, messages, execute, onFailover } = options;
 
     const failoverEnabled = settings.enableFailover !== false;
     const maxRetries = failoverEnabled ? (settings.maxFailoverRetries ?? 3) : 1;

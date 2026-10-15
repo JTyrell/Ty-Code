@@ -3,6 +3,8 @@ import { ProviderGateway, type ChatCompletionMessage } from '../providers/provid
 import { buildSystemPrompt, AGENT_TOOLS_DEFINITIONS } from './system-prompt';
 import { ToolExecutor } from './tool-executor';
 import { getHarness } from '../services/orchestration/harnesses';
+import { SecurityPolicyEngine } from '../services/security-policy';
+import { settingsManager, type SettingsManager } from '../services/settings-manager';
 
 export interface RunAgentParams {
   prompt: string;
@@ -19,9 +21,11 @@ export interface RunAgentParams {
 
 export class AgentEngine {
   private toolExecutor: ToolExecutor;
+  private securityPolicy: SecurityPolicyEngine;
 
-  constructor(private workspacePath: string) {
-    this.toolExecutor = new ToolExecutor(workspacePath);
+  constructor(private workspacePath: string, settingsSource: Pick<SettingsManager, 'getEffectiveSettings'> = settingsManager) {
+    this.securityPolicy = new SecurityPolicyEngine(workspacePath, settingsSource);
+    this.toolExecutor = new ToolExecutor(workspacePath, this.securityPolicy);
   }
 
   async run(params: RunAgentParams): Promise<void> {
@@ -92,7 +96,8 @@ export class AgentEngine {
           const mutatingGitCommand = toolCall.name === 'run_command' && containsGitCommand && !singleReadOnlyGitCommand;
           const destructiveShellCommand = toolCall.name === 'run_command'
             && /\brm\s+-(?:rf|fr)\b|\bremove-item\b[^\n]*-recurse|\bdel\s+\/s\s+\/q\b|\bformat\s+[a-z]:/i.test(command);
-          const approvalReason = toolCall.name === 'git_commit'
+          let policyBlockReason: string | null = null;
+          let approvalReason = toolCall.name === 'git_commit'
             ? 'Create a Git commit; review whether this request stages specified paths or all visible changes.'
             : toolCall.name === 'git_merge'
               ? 'Merge another branch into the active branch.'
@@ -103,6 +108,34 @@ export class AgentEngine {
                   : destructiveShellCommand
                     ? 'Run a destructive filesystem or disk command.'
                     : null;
+          let fileReview: Awaited<ReturnType<SecurityPolicyEngine['previewFileMutation']>> | undefined;
+          let approvedExecutionArgs = toolCall.arguments;
+          if (toolCall.name === 'run_command') {
+            const decision = await this.securityPolicy.evaluateTerminalCommand(command);
+            policyBlockReason = decision.decision === 'block' ? decision.reason : null;
+            approvalReason = decision.decision === 'ask' ? decision.reason : null;
+          } else if (toolCall.name === 'write_file' || toolCall.name === 'replace_file_content') {
+            try {
+              fileReview = await this.securityPolicy.previewFileMutation(toolCall.name, toolCall.arguments);
+              const decision = await this.securityPolicy.evaluateFileMutation(fileReview);
+              policyBlockReason = decision.decision === 'block' ? decision.reason : null;
+              approvedExecutionArgs = {
+                ...toolCall.arguments,
+                __approvedOriginalHash: fileReview.originalHash,
+                __approvedOriginalExists: fileReview.originalExists
+              };
+              if (decision.decision === 'ask') approvalReason = decision.reason;
+              else approvalReason = null;
+            } catch {
+              // Let the executor return the standard recoverable validation/path error.
+            }
+          }
+          if (policyBlockReason) {
+            const output = `Blocked by security policy: ${policyBlockReason}`;
+            onChunk({ type: 'tool_result', toolResult: { toolCallId: toolCall.id, name: toolCall.name, output, isError: true } });
+            messages.push({ role: 'tool', name: toolCall.name, tool_call_id: toolCall.id, content: output });
+            continue;
+          }
           if (approvalReason) {
             onChunk({ type: 'status', content: 'Waiting for your approval…' });
             let affectedPaths: string[] | undefined;
@@ -121,7 +154,19 @@ export class AgentEngine {
               id: `approval_${toolCall.id}`,
               toolCall: tool,
               reason: approvalReason,
-              affectedPaths
+              affectedPaths: affectedPaths || (fileReview ? [fileReview.filePath] : undefined),
+              ...(fileReview ? {
+                reviewDiff: {
+                  id: `review_${toolCall.id}`,
+                  filePath: fileReview.filePath,
+                  originalContent: fileReview.originalContent,
+                  proposedContent: fileReview.proposedContent,
+                  description: `Review changes proposed by ${toolCall.name}`,
+                  status: 'pending' as const
+                },
+                addedLines: fileReview.addedLines,
+                removedLines: fileReview.removedLines
+              } : {})
             };
             onChunk({ type: 'approval_request', approvalRequest: approval });
             const approved = await requestApproval?.(approval);
@@ -138,7 +183,7 @@ export class AgentEngine {
           }
 
           onChunk({ type: 'status', content: `Running ${toolCall.name}…` });
-          const result = await this.toolExecutor.execute(toolCall.name, toolCall.arguments, abortSignal);
+          const result = await this.toolExecutor.execute(toolCall.name, approvedExecutionArgs, abortSignal);
           onChunk({
             type: 'tool_result',
             toolResult: {

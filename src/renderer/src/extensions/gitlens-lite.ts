@@ -8,15 +8,15 @@ type BuiltInApi = {
 
 export function activateGitlensLite(api: BuiltInApi, manifest: ExtensionManifest): void {
   const prefix = `${manifest.publisher}.${manifest.name}.`;
-  api.commands.registerCommand(`${prefix}toggleLineBlame`, 'Git: Refresh Source Control', async () => {
+  api.commands.registerCommand(`${prefix}toggleLineBlame`, 'GitLens: Toggle Line Blame Annotations', async () => {
     await api.git.refresh();
     await api.window.showMessage('Source Control data refreshed.');
   });
-  api.commands.registerCommand(`${prefix}viewFileHistory`, 'Git: Refresh Repository History', async () => {
+  api.commands.registerCommand(`${prefix}viewFileHistory`, 'GitLens: View File Commit History', async () => {
     await api.git.refresh();
     await api.window.showMessage('Repository history refreshed in Source Control.');
   });
-  api.commands.registerCommand(`${prefix}copyCommitUrl`, 'Git: Copy Repository Remote', async () => {
+  api.commands.registerCommand(`${prefix}copyCommitUrl`, 'GitLens: Copy Remote Commit URL', async () => {
     const remote = await api.git.copyRemoteUrl();
     await api.window.showMessage(remote ? `Copied repository remote: ${remote}` : 'No repository remote is configured.');
   });

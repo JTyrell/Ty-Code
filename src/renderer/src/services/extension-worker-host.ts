@@ -208,12 +208,12 @@ export class ExtensionWorkerHost {
     }
   }
 
-  private registerCommand(session: WorkerSession, commandId: string, title: string): void {
-    const declared = session.extension.manifest.contributes?.commands?.find((command) => command.command === commandId && command.title === title);
+  private registerCommand(session: WorkerSession, commandId: string, title?: string): void {
+    const declared = session.extension.manifest.contributes?.commands?.find((command) => command.command === commandId);
     const prefix = `${session.extension.id}.`;
     if (!session.extension.enabled || !declared || !commandId.startsWith(prefix)) throw new Error('Worker attempted to register an undeclared or unowned command.');
     const owner = this.commandOwners.get(commandId);
-    if (owner) throw new Error(`Command "${commandId}" is already registered by "${owner}".`);
+    if (owner && owner !== session.extension.id) throw new Error(`Command "${commandId}" is already registered by "${owner}".`);
     this.commandOwners.set(commandId, session.extension.id);
   }
 
@@ -228,6 +228,7 @@ export class ExtensionWorkerHost {
   }
 
   private restartOrStop(session: WorkerSession, _reason: Error): void {
+    console.warn(`[ExtensionWorkerHost] Session restarted/stopped for "${session.extension.id}":`, _reason);
     if (this.sessions.get(session.extension.id) !== session) return;
     this.sessions.delete(session.extension.id);
     window.clearInterval(session.heartbeat);
@@ -247,6 +248,6 @@ export class ExtensionWorkerHost {
       extensionId: replacement.extension.id,
       manifest: replacement.extension.manifest,
       capabilities: replacement.extension.manifest.capabilities || []
-    }).then(() => { replacement.active = true; }).catch(() => this.restartOrStop(replacement, new Error('Extension Worker restart failed.')));
+    }).then(() => { replacement.active = true; }).catch((err) => this.restartOrStop(replacement, new Error(`Extension Worker restart failed: ${err instanceof Error ? err.message : String(err)}`)));
   }
 }

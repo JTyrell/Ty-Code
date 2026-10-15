@@ -14,7 +14,7 @@ import powershell from 'highlight.js/lib/languages/powershell';
 import python from 'highlight.js/lib/languages/python';
 import typescript from 'highlight.js/lib/languages/typescript';
 import yaml from 'highlight.js/lib/languages/yaml';
-import { Send, Square, Sparkles, Trash2, ChevronRight, ChevronDown, Terminal, FileCode, Check, Eye, AlertCircle, Copy, RotateCcw, Loader2, ShieldCheck, X, Users, Lightbulb } from 'lucide-react';
+import { Send, Square, Sparkles, Trash2, ChevronRight, ChevronDown, Terminal, FileCode, Check, Eye, AlertCircle, Copy, RotateCcw, Loader2, ShieldCheck, X, Users, Lightbulb, Hammer, Compass, Info } from 'lucide-react';
 import { useChatStore } from '../state/chat-store';
 import { useWorkspaceStore } from '../state/workspace-store';
 import { usePairProgrammingStore } from '../state/pair-programming-store';
@@ -125,7 +125,7 @@ export const ChatSidecar: React.FC = () => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const feedRef = useRef<HTMLDivElement>(null);
   const userAtBottomRef = useRef(true);
-  const { messages, isRunning, currentStatus, currentThought, streamingText, pendingApproval, sendMessage, stopTask, respondToApproval, clearChat } = useChatStore();
+  const { messages, isRunning, currentStatus, currentThought, streamingText, pendingApproval, sendMessage, stopTask, respondToApproval, clearChat, agentMode, setAgentMode } = useChatStore();
   const { isPairActive, suggestions, togglePairMode, dismissSuggestion, clearSuggestions } = usePairProgrammingStore();
   const [approvalSending, setApprovalSending] = useState(false);
   const { workspacePath, activeTabPath, openTabs, openDiffReview, applyDiff } = useWorkspaceStore();
@@ -206,6 +206,62 @@ export const ChatSidecar: React.FC = () => {
           <span>Pair Mode</span>
           {isPairActive && <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#22c55e' }} />}
         </button>
+        {sidecarTab === 'chat' && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              background: 'var(--bg-secondary)',
+              borderRadius: '4px',
+              padding: '2px',
+              border: '1px solid var(--border-subtle)',
+              marginLeft: '4px'
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setAgentMode('build')}
+              title="Build Agent: Full access to read, write, edit files and execute commands (Default)"
+              style={{
+                background: agentMode === 'build' ? 'var(--accent-primary)' : 'transparent',
+                color: agentMode === 'build' ? '#fff' : 'var(--text-muted)',
+                border: 'none',
+                borderRadius: '3px',
+                padding: '2px 6px',
+                fontSize: '10px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '3px'
+              }}
+            >
+              <Hammer size={10} />
+              <span>Build</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setAgentMode('plan')}
+              title="Plan Agent: Read-only exploration and planning. Refuses file edits, bash commands require permission."
+              style={{
+                background: agentMode === 'plan' ? '#f59e0b' : 'transparent',
+                color: agentMode === 'plan' ? '#fff' : 'var(--text-muted)',
+                border: 'none',
+                borderRadius: '3px',
+                padding: '2px 6px',
+                fontSize: '10px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '3px'
+              }}
+            >
+              <Compass size={10} />
+              <span>Plan</span>
+            </button>
+          </div>
+        )}
       </div>
       <div className="chat-header-actions">
         {currentStatus && <span className="chat-status"><Loader2 size={10} className="animate-spin" /><span>{currentStatus}</span></span>}
@@ -216,6 +272,25 @@ export const ChatSidecar: React.FC = () => {
         )}
       </div>
     </header>
+
+    {sidecarTab === 'chat' && agentMode === 'plan' && (
+      <div
+        style={{
+          padding: '6px 10px',
+          background: 'rgba(245, 158, 11, 0.1)',
+          borderBottom: '1px solid rgba(245, 158, 11, 0.25)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '6px',
+          fontSize: '11px',
+          color: '#f59e0b',
+          lineHeight: '1.3'
+        }}
+      >
+        <Compass size={13} style={{ flexShrink: 0 }} />
+        <span><strong>Plan Agent Active (Read-Only):</strong> File edits are refused; bash commands require permission. Switch to Build mode to apply changes.</span>
+      </div>
+    )}
 
     {sidecarTab === 'pair' ? (
       <div className="chat-feed" style={{ padding: '12px' }}>
@@ -291,12 +366,17 @@ export const ChatSidecar: React.FC = () => {
         {pendingApproval && <article className="agent-approval" role="alert" aria-labelledby="agent-approval-title">
           <div className="agent-approval-heading"><ShieldCheck size={15} /><div><strong id="agent-approval-title">Approval required</strong><span>{pendingApproval.reason}</span></div></div>
           <div className="agent-approval-tool"><strong>{pendingApproval.toolCall.name}</strong><pre>{JSON.stringify(pendingApproval.toolCall.arguments, null, 2)}</pre></div>
+          {pendingApproval.reviewDiff && <details className="agent-approval-diff" open>
+            <summary>Review proposed file change ({pendingApproval.addedLines || 0} added, {pendingApproval.removedLines || 0} removed)</summary>
+            <div><strong>Before</strong><pre>{pendingApproval.reviewDiff.originalContent || '(new file)'}</pre></div>
+            <div><strong>After</strong><pre>{pendingApproval.reviewDiff.proposedContent}</pre></div>
+          </details>}
           {pendingApproval.affectedPaths && pendingApproval.affectedPaths.length > 0 && <div className="agent-approval-paths"><strong>Potentially affected paths</strong><ul>{pendingApproval.affectedPaths.map((path) => <li key={path}>{path}</li>)}</ul></div>}
           <div className="agent-approval-actions">
             <button className="agent-approval-decline" disabled={approvalSending} onClick={async () => { setApprovalSending(true); try { await respondToApproval(false); } finally { setApprovalSending(false); } }}><X size={12} />Deny</button>
-            <button className="agent-approval-accept" disabled={approvalSending} onClick={async () => { setApprovalSending(true); try { await respondToApproval(true); } finally { setApprovalSending(false); } }}><Check size={12} />Approve operation</button>
+            <button className="agent-approval-accept" disabled={approvalSending} onClick={async () => { setApprovalSending(true); try { await respondToApproval(true); } finally { setApprovalSending(false); } }}><Check size={12} />{pendingApproval.reviewDiff ? 'Apply change' : 'Approve operation'}</button>
           </div>
-          <span className="agent-approval-note">The protected Git or destructive shell command will not run until approved. The request expires after two minutes.</span>
+          <span className="agent-approval-note">Nothing runs or changes until approved. Requests expire after two minutes.</span>
         </article>}
         {currentThought && <div className="chat-reasoning is-live"><strong>Reasoning</strong><span>{currentThought}</span></div>}
         {firstTokenPending && <div className="chat-typing-indicator" role="status"><Loader2 size={12} className="animate-spin" color="var(--accent-primary)" /><span>Ty-Code is thinking…</span></div>}

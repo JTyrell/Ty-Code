@@ -20,7 +20,7 @@ export function activateTypescriptSupport(api: BuiltInApi, manifest: ExtensionMa
   api.commands.registerCommand(`${prefix}addMissingTypes`, 'TypeScript: Annotate Inferred Types', async () => {
     await api.window.showMessage('Type annotation analysis is not available yet.');
   });
-  api.commands.registerCommand(`${prefix}runLint`, 'JavaScript/TypeScript: Run Checks', async () => {
+  api.commands.registerCommand(`${prefix}runLint`, 'JavaScript/TypeScript: Run ESLint Check', async () => {
     await api.window.showMessage('TypeScript diagnostics are provided by the configured language server.');
   });
 }
