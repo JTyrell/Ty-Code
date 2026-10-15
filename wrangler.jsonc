@@ -2,9 +2,6 @@
   "$schema": "https://developers.cloudflare.com/schemas/wrangler.json",
   "name": "ty-code",
   "pages_build_output_dir": "./website-dist",
-  "build": {
-    "command": "npm run build:website"
-  },
   "compatibility_date": "2026-10-15",
   "analytics_engine_datasets": [
     {
