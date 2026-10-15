@@ -59,15 +59,24 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isOfficialReleaseUrl(value: unknown, tag?: string, filename?: string): value is string {
   if (typeof value !== 'string') return false;
+  if (filename && value === `/api/download/${encodeURIComponent(filename)}`) {
+    return true;
+  }
   try {
     const url = new URL(value);
-    if (url.origin !== 'https://github.com' || url.search || url.hash || url.username || url.password) return false;
-    const expectedPath = tag && filename
-      ? `/ty-code/ty-code/releases/download/${encodeURIComponent(tag)}/${encodeURIComponent(filename)}`
-      : tag
-        ? `/ty-code/ty-code/releases/tag/${encodeURIComponent(tag)}`
-        : '/ty-code/ty-code/releases';
-    return url.pathname === expectedPath && !url.username && !url.password;
+    if (url.search || url.hash || url.username || url.password) return false;
+    if (url.origin === 'https://github.com') {
+      const expectedPath = tag && filename
+        ? `/ty-code/ty-code/releases/download/${encodeURIComponent(tag)}/${encodeURIComponent(filename)}`
+        : tag
+          ? `/ty-code/ty-code/releases/tag/${encodeURIComponent(tag)}`
+          : '/ty-code/ty-code/releases';
+      return url.pathname === expectedPath;
+    }
+    if (filename && url.pathname === `/api/download/${encodeURIComponent(filename)}`) {
+      return true;
+    }
+    return false;
   } catch {
     return false;
   }

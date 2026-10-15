@@ -43,7 +43,7 @@ fileAssociations:
     role: Editor
 
 win:
-  icon: icon.png
+  icon: icon.ico
   target:
     - target: nsis
       arch:
@@ -94,12 +94,10 @@ dmg:
     height: 380
 
 linux:
+  maintainer: Ty-Code Team <team@ty-code.com>
   icon: icons/
-  artifactName: Ty-Code-${version}-${arch}.${ext}
+  artifactName: Ty-Code-${version}-x64.${ext}
   target:
-    - target: AppImage
-      arch:
-        - x64
     - target: deb
       arch:
         - x64
@@ -107,9 +105,12 @@ linux:
       arch:
         - x64
   category: Development
-  desktop:
-    StartupWMClass: ty-code
-    MimeType: text/plain;text/x-typescript;text/x-javascript;text/x-python;application/json;
+
+deb:
+  artifactName: Ty-Code-${version}-x64.${ext}
+
+rpm:
+  artifactName: Ty-Code-${version}-x64.${ext}
 
 generateUpdatesFilesForAllChannels: true
 publish:

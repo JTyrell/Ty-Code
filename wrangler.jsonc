@@ -12,5 +12,11 @@
       "binding": "ty-code-analytics-eng",
       "dataset": "ty-code"
     }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "DOWNLOADS_BUCKET",
+      "bucket_name": "ty-code-downloads"
+    }
   ]
 }

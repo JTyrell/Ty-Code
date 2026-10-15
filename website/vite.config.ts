@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { defineConfig, type Plugin } from 'vite';
@@ -11,6 +12,35 @@ function localPagesFunctions(): Plugin {
     name: 'ty-code-pages-functions-dev',
     apply: 'serve',
     configureServer(server) {
+      const distReleaseDir = path.join(repositoryRoot, 'dist-release');
+      const localBucket = {
+        async get(key: string) {
+          const filePath = path.join(distReleaseDir, key);
+          try {
+            const stat = await fs.promises.stat(filePath);
+            const content = await fs.promises.readFile(filePath);
+            return {
+              body: content,
+              size: stat.size,
+              httpEtag: `"${stat.mtimeMs}"`,
+              text: async () => content.toString('utf-8'),
+              json: async () => JSON.parse(content.toString('utf-8'))
+            };
+          } catch {
+            return null;
+          }
+        },
+        async head(key: string) {
+          const filePath = path.join(distReleaseDir, key);
+          try {
+            const stat = await fs.promises.stat(filePath);
+            return { size: stat.size, httpEtag: `"${stat.mtimeMs}"` };
+          } catch {
+            return null;
+          }
+        }
+      };
+
       server.middlewares.use('/api/release', async (request, response, next) => {
         if (request.method !== 'GET') {
           next();
@@ -27,7 +57,7 @@ function localPagesFunctions(): Plugin {
           });
           const result = await functionModule.onRequestGet({
             request: webRequest,
-            env: {},
+            env: { DOWNLOADS_BUCKET: localBucket },
             params: {},
             waitUntil: () => undefined
           });
@@ -36,6 +66,39 @@ function localPagesFunctions(): Plugin {
           response.end(await result.text());
         } catch (error) {
           next(error instanceof Error ? error : new Error('Could not run the local release function.'));
+        }
+      });
+
+      server.middlewares.use('/api/download', async (request, response, next) => {
+        if (request.method !== 'GET' && request.method !== 'HEAD') {
+          next();
+          return;
+        }
+        try {
+          const functionModule = await server.ssrLoadModule(
+            path.join(repositoryRoot, 'functions/api/download/[file].ts')
+          );
+          const host = request.headers.host || 'localhost';
+          const webRequest = new Request(`http://${host}${request.url || '/'}`, {
+            method: request.method,
+            headers: { accept: '*/*' }
+          });
+          const fileParam = (request.url || '').replace(/^\//, '').split('?')[0];
+          const handler = request.method === 'HEAD' ? functionModule.onRequestHead : functionModule.onRequestGet;
+          const result = await handler({
+            request: webRequest,
+            env: { DOWNLOADS_BUCKET: localBucket },
+            params: { file: fileParam }
+          });
+          response.statusCode = result.status;
+          result.headers.forEach((value: string, key: string) => response.setHeader(key, value));
+          if (request.method === 'HEAD' || !result.body) {
+            response.end();
+          } else {
+            response.end(Buffer.from(await result.arrayBuffer()));
+          }
+        } catch (error) {
+          next(error instanceof Error ? error : new Error('Could not run the local download function.'));
         }
       });
 

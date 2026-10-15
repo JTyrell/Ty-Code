@@ -51,6 +51,7 @@ Thumbs.db
 .kombai/
 .ty-code/
 .wrangler/
+.cache/
 
 # Local test & validation scripts
 scripts/validate-*.mjs

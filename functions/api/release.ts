@@ -36,10 +36,29 @@ interface DownloadAsset {
   sha256: string;
 }
 
+interface R2ObjectBody {
+  body: ReadableStream;
+  size: number;
+  httpEtag?: string;
+  text(): Promise<string>;
+  json<T = unknown>(): Promise<T>;
+}
+
+interface R2Object {
+  size: number;
+  httpEtag?: string;
+}
+
+interface R2BucketBinding {
+  get(key: string): Promise<R2ObjectBody | null>;
+  head(key: string): Promise<R2Object | null>;
+}
+
 interface PagesContext {
   request: Request;
   env?: {
     GITHUB_TOKEN?: string;
+    DOWNLOADS_BUCKET?: R2BucketBinding;
   };
 }
 
@@ -239,9 +258,77 @@ async function getVerifiedRelease(context?: PagesContext): Promise<{
   return { status: 'verified', ...release, assets };
 }
 
+interface R2ReleaseManifest {
+  tag?: string;
+  tag_name?: string;
+  name?: string;
+  publishedAt?: string;
+  published_at?: string;
+  releaseUrl?: string;
+  html_url?: string;
+  assets?: Array<{ name?: string; size?: number }>;
+}
+
+async function getVerifiedR2Release(bucket: R2BucketBinding): Promise<{
+  status: 'verified';
+  tag: string;
+  name: string;
+  publishedAt: string;
+  releaseUrl: string;
+  assets: DownloadAsset[];
+} | null> {
+  const [checksumObj, manifestObj] = await Promise.all([
+    bucket.get('SHA256SUMS.txt'),
+    bucket.get('release.json')
+  ]);
+  if (!checksumObj || !manifestObj) return null;
+
+  const checksumText = await checksumObj.text();
+  const hashes = parseSha256Manifest(checksumText);
+  const manifestJson = (await manifestObj.json()) as R2ReleaseManifest;
+
+  const tag = (manifestJson.tag || manifestJson.tag_name || 'v0.1.0') as string;
+  if (!/^v?\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$/.test(tag)) {
+    throw new Error('R2 release manifest tag is invalid.');
+  }
+  const name = (manifestJson.name || `Ty-Code ${tag.replace(/^v/, '')}`) as string;
+  const publishedAt = (manifestJson.publishedAt || manifestJson.published_at || new Date().toISOString()) as string;
+  const releaseUrl = (manifestJson.releaseUrl || manifestJson.html_url || `${RELEASES_PAGE}/tag/${tag}`) as string;
+
+  const rawAssets = Array.isArray(manifestJson.assets) ? manifestJson.assets : [];
+  const assets: DownloadAsset[] = [];
+
+  for (const asset of rawAssets) {
+    if (!asset || typeof asset.name !== 'string') continue;
+    const details = classifyInstaller(asset.name);
+    const sha256 = hashes.get(asset.name);
+    if (!details || !sha256) continue;
+    assets.push({
+      name: asset.name,
+      ...details,
+      size: typeof asset.size === 'number' ? asset.size : 0,
+      downloadUrl: `/api/download/${encodeURIComponent(asset.name)}`,
+      sha256
+    });
+  }
+
+  if (assets.length === 0) return null;
+  return { status: 'verified', tag, name, publishedAt, releaseUrl, assets };
+}
+
 export async function onRequestGet(context: PagesContext): Promise<Response> {
   if (context.request.method !== 'GET') {
     return jsonResponse({ status: 'error', message: 'Only GET is supported.' }, 405);
+  }
+  if (context.env?.DOWNLOADS_BUCKET) {
+    try {
+      const r2Release = await getVerifiedR2Release(context.env.DOWNLOADS_BUCKET);
+      if (r2Release) {
+        return jsonResponse(r2Release, 200, RELEASE_CACHE);
+      }
+    } catch {
+      // Fall through to GitHub verification
+    }
   }
   try {
     return jsonResponse(await getVerifiedRelease(context), 200, RELEASE_CACHE);
