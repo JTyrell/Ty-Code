@@ -88,12 +88,14 @@ export const WelcomePage: React.FC<WelcomePageProps> = ({ onStartTour }) => {
   };
 
   const handleCloneRepo = async () => {
-    const url = prompt('Enter Git repository URL (e.g. https://github.com/user/repo.git):');
-    if (!url) return;
-    toast.info('Cloning repository…', url);
+    const { useExtensionPromptStore } = await import('../state/extension-prompt-store');
+    const url = await useExtensionPromptStore.getState().requestInput('Enter Git repository URL (e.g. https://github.com/user/repo.git):');
+    if (!url || !url.trim()) return;
+    const cleanUrl = url.trim();
+    toast.info('Cloning repository…', cleanUrl);
     try {
       const result = await window.electronAPI.runCommand({
-        command: `git clone ${url}`,
+        command: `git clone ${cleanUrl}`,
         timeoutMs: 60000
       });
       if (result.success && result.data?.exitCode === 0) {

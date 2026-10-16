@@ -132,6 +132,7 @@ const WindowControlButton: React.FC<WindowControlButtonProps> = ({ onClick, titl
       onMouseDown={() => setActive(true)}
       onMouseUp={() => setActive(false)}
       title={title}
+      aria-label={title}
       style={{
         width: '46px',
         height: '100%',
@@ -586,6 +587,7 @@ export const TitleBar: React.FC = () => {
               justifyContent: 'center'
             }}
             title="Customize Layout"
+            aria-label="Customize Layout"
             onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)'; e.currentTarget.style.color = '#ffffff'; }}
             onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--text-secondary, #94a3b8)'; }}
           >
@@ -607,6 +609,7 @@ export const TitleBar: React.FC = () => {
               justifyContent: 'center'
             }}
             title="Toggle Primary Sidebar (Ctrl+B)"
+            aria-label="Toggle Primary Sidebar (Ctrl+B)"
             onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)'; e.currentTarget.style.color = '#ffffff'; }}
             onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--text-secondary, #94a3b8)'; }}
           >
@@ -628,6 +631,7 @@ export const TitleBar: React.FC = () => {
               justifyContent: 'center'
             }}
             title="Toggle Panel (Ctrl+`)"
+            aria-label="Toggle Panel (Ctrl+`)"
             onMouseEnter={(e) => { if (!isTerminalOpen) { e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)'; e.currentTarget.style.color = '#ffffff'; } }}
             onMouseLeave={(e) => { if (!isTerminalOpen) { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--text-secondary, #94a3b8)'; } }}
           >
@@ -649,6 +653,7 @@ export const TitleBar: React.FC = () => {
               justifyContent: 'center'
             }}
             title="Toggle Secondary Sidebar (AI Assistant)"
+            aria-label="Toggle Secondary Sidebar (AI Assistant)"
             onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)'; e.currentTarget.style.color = '#ffffff'; }}
             onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--text-secondary, #94a3b8)'; }}
           >
@@ -671,6 +676,7 @@ export const TitleBar: React.FC = () => {
             justifyContent: 'center'
           }}
           title="Search Files (Ctrl+P)"
+          aria-label="Search Files (Ctrl+P)"
           onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)'; e.currentTarget.style.color = '#ffffff'; }}
           onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--text-secondary, #94a3b8)'; }}
         >
@@ -703,6 +709,7 @@ export const TitleBar: React.FC = () => {
               ? 'Update downloaded! Restart to apply'
               : 'Check for Updates'
           }
+          aria-label="Check for Updates"
           onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)'; }}
           onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
         >
@@ -735,6 +742,7 @@ export const TitleBar: React.FC = () => {
             justifyContent: 'center'
           }}
           title="Settings & API Keys (Ctrl+,)"
+          aria-label="Settings & API Keys (Ctrl+,)"
           onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)'; e.currentTarget.style.color = '#ffffff'; }}
           onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--text-secondary, #94a3b8)'; }}
         >
@@ -756,6 +764,7 @@ export const TitleBar: React.FC = () => {
               gap: '4px'
             }}
             title="Profile & Preferences"
+            aria-label="Profile & Preferences"
             onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)'; }}
             onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
           >

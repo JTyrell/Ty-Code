@@ -364,6 +364,18 @@ export const SettingsModal: React.FC = () => {
   }, [settings, registryProviders, isSettingsOpen]);
 
   useEffect(() => {
+    if (!isSettingsOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        toggleSettings();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isSettingsOpen, toggleSettings]);
+
+  useEffect(() => {
     if (!isSettingsOpen) {
       setTelemetryInspectorOpen(false);
       return;

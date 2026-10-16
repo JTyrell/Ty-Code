@@ -4,6 +4,7 @@ import type * as Monaco from 'monaco-editor';
 import { Check, ChevronDown, ChevronUp, Columns, Minus, Plus, RotateCcw, Split, X } from 'lucide-react';
 import { ensureMonaco, useMonacoRuntime } from '../services/monaco-runtime';
 import { useGitStore } from '../state/git-store';
+import { toast } from '../state/toast-store';
 
 export const DiffViewer: React.FC = () => {
   // Zustand selector audit: narrow slices to eliminate render storms
@@ -78,9 +79,12 @@ export const DiffViewer: React.FC = () => {
 
   const handleDiscard = () => {
     const description = activeDiff.isUntracked ? 'Delete untracked file' : 'Discard all unstaged working-tree changes';
-    if (window.confirm(`${description} “${activeDiff.filePath}”? This cannot be undone.`)) {
-      void discardChanges(activeDiff.filePath, activeDiff.isUntracked);
-    }
+    toast.warning(`${description}?`, `Target: "${activeDiff.filePath}". This cannot be undone.`, {
+      label: 'Discard',
+      onClick: () => {
+        void discardChanges(activeDiff.filePath, activeDiff.isUntracked);
+      }
+    });
   };
 
   return <div style={{ position: 'absolute', inset: 0, zIndex: 40, display: 'flex', flexDirection: 'column', background: 'var(--bg-primary)' }}>

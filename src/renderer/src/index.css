@@ -561,3 +561,35 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent-primary);
   .settings-tabs button { gap: 3px; font-size: 10px; }
   .terminal-profile-fields { grid-template-columns: minmax(70px, 1fr) minmax(85px, 1fr) 28px; }
 }
+
+/* Accessibility: WCAG 2.1 AA Reduced Motion Support */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Accessibility: Consistent High-Contrast Focus Visible Rings */
+:focus-visible {
+  outline: 2px solid var(--accent-primary, #00d2ff) !important;
+  outline-offset: 2px !important;
+}
+
+/* Accessibility: Visually Hidden Helper for Screen Readers */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+

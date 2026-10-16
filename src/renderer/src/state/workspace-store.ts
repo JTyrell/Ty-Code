@@ -83,11 +83,42 @@ function detectLanguage(filePath: string): string {
   }
 }
 
+const TABS_STORAGE_KEY = 'ty_code_open_tabs_v1';
+
+export function loadPersistedTabs(): { openTabs: EditorTab[]; activeTabPath: string | null } {
+  try {
+    if (typeof localStorage === 'undefined') return { openTabs: [], activeTabPath: null };
+    const raw = localStorage.getItem(TABS_STORAGE_KEY);
+    if (!raw) return { openTabs: [], activeTabPath: null };
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed?.openTabs)) {
+      return {
+        openTabs: parsed.openTabs,
+        activeTabPath: typeof parsed.activeTabPath === 'string' ? parsed.activeTabPath : (parsed.openTabs[0]?.path || null)
+      };
+    }
+  } catch {
+    // Graceful fallback if storage corrupted
+  }
+  return { openTabs: [], activeTabPath: null };
+}
+
+export function savePersistedTabs(openTabs: EditorTab[], activeTabPath: string | null): void {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    localStorage.setItem(TABS_STORAGE_KEY, JSON.stringify({ openTabs, activeTabPath }));
+  } catch {
+    // Graceful fallback
+  }
+}
+
+const initialPersisted = loadPersistedTabs();
+
 export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   workspacePath: '',
   fileTree: null,
-  openTabs: [],
-  activeTabPath: null,
+  openTabs: initialPersisted.openTabs,
+  activeTabPath: initialPersisted.activeTabPath,
   diffReview: null,
 
   setWorkspacePath: (path: string) => set({ workspacePath: path }),
@@ -99,6 +130,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
     if (existing) {
       set({ activeTabPath: filePath });
+      savePersistedTabs(openTabs, filePath);
       return;
     }
 
@@ -113,10 +145,12 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
           language: detectLanguage(filePath)
         };
 
+        const nextTabs = [...openTabs, newTab];
         set({
-          openTabs: [...openTabs, newTab],
+          openTabs: nextTabs,
           activeTabPath: filePath
         });
+        savePersistedTabs(nextTabs, filePath);
       }
     } catch (err) {
       console.error('Failed to open file:', err);
@@ -133,23 +167,27 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     }
 
     set({ openTabs: nextTabs, activeTabPath: nextActive });
+    savePersistedTabs(nextTabs, nextActive);
   },
 
   setActiveTab: (filePath: string) => {
     const filename = filePath.split(/[/\\]/).pop() || filePath;
     const transId = transitionProfiler.startTransition(`tab_switch:${filename}`);
     set({ activeTabPath: filePath });
+    savePersistedTabs(get().openTabs, filePath);
     void transitionProfiler.endTransition(transId, `tab_switch:${filename}`);
   },
 
   updateTabContent: (filePath: string, newContent: string) => {
-    set((state) => ({
-      openTabs: state.openTabs.map((t) =>
+    set((state) => {
+      const nextTabs = state.openTabs.map((t) =>
         t.path === filePath
           ? { ...t, content: newContent, isDirty: true }
           : t
-      )
-    }));
+      );
+      savePersistedTabs(nextTabs, state.activeTabPath);
+      return { openTabs: nextTabs };
+    });
   },
 
   saveActiveFile: async () => {
@@ -164,11 +202,13 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     try {
       const response = await window.electronAPI.writeFile(tab.path, contentAtStart);
       if (!response.success) throw new Error(response.error || 'File write failed.');
-      set((state) => ({
-        openTabs: state.openTabs.map((item) => item.path === tab.path
+      set((state) => {
+        const nextTabs = state.openTabs.map((item) => item.path === tab.path
           ? { ...item, isDirty: item.content !== contentAtStart }
-          : item)
-      }));
+          : item);
+        savePersistedTabs(nextTabs, state.activeTabPath);
+        return { openTabs: nextTabs };
+      });
       void window.electronAPI.lspDidSave({ filePath: tab.path, text: contentAtStart });
       return true;
     } catch (error) {

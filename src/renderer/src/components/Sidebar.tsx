@@ -8,6 +8,8 @@ import { useWorkspaceStore } from '../state/workspace-store';
 import { VirtualFileTree } from './VirtualFileTree';
 import { toast } from '../state/toast-store';
 
+import { useExtensionPromptStore } from '../state/extension-prompt-store';
+
 export const Sidebar: React.FC = () => {
   const fileTree = useWorkspaceStore((s) => s.fileTree);
   const refreshFileTree = useWorkspaceStore((s) => s.refreshFileTree);
@@ -18,13 +20,13 @@ export const Sidebar: React.FC = () => {
       toast.warning('No workspace open', 'Please open a folder first.');
       return;
     }
-    const fileName = prompt('Enter new file name (relative to workspace):');
-    if (fileName) {
-      const fullPath = `${workspacePath}/${fileName}`.replace(/\/+/g, '/');
+    const fileName = await useExtensionPromptStore.getState().requestInput('Enter new file name (relative to workspace):');
+    if (fileName && fileName.trim()) {
+      const fullPath = `${workspacePath}/${fileName.trim()}`.replace(/\/+/g, '/');
       try {
         const res = await window.electronAPI.createFile(fullPath);
         if (res.success) {
-          toast.success('File created', fileName);
+          toast.success('File created', fileName.trim());
           await refreshFileTree();
         } else {
           toast.error('Could not create file', res.error);
@@ -40,13 +42,13 @@ export const Sidebar: React.FC = () => {
       toast.warning('No workspace open', 'Please open a folder first.');
       return;
     }
-    const folderName = prompt('Enter new folder name (relative to workspace):');
-    if (folderName) {
-      const fullPath = `${workspacePath}/${folderName}`.replace(/\/+/g, '/');
+    const folderName = await useExtensionPromptStore.getState().requestInput('Enter new folder name (relative to workspace):');
+    if (folderName && folderName.trim()) {
+      const fullPath = `${workspacePath}/${folderName.trim()}`.replace(/\/+/g, '/');
       try {
         const res = await window.electronAPI.createDirectory(fullPath);
         if (res.success) {
-          toast.success('Folder created', folderName);
+          toast.success('Folder created', folderName.trim());
           await refreshFileTree();
         } else {
           toast.error('Could not create folder', res.error);
@@ -87,13 +89,13 @@ export const Sidebar: React.FC = () => {
       >
         <span>Explorer</span>
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-          <button onClick={handleCreateFile} title="New File" style={{ padding: '3px' }}>
+          <button onClick={handleCreateFile} title="New File" aria-label="New File" style={{ padding: '3px' }}>
             <Plus size={13} />
           </button>
-          <button onClick={handleCreateFolder} title="New Folder" style={{ padding: '3px' }}>
+          <button onClick={handleCreateFolder} title="New Folder" aria-label="New Folder" style={{ padding: '3px' }}>
             <FolderPlus size={13} />
           </button>
-          <button onClick={refreshFileTree} title="Refresh Explorer" style={{ padding: '3px' }}>
+          <button onClick={refreshFileTree} title="Refresh Explorer" aria-label="Refresh Explorer" style={{ padding: '3px' }}>
             <RefreshCw size={13} />
           </button>
         </div>

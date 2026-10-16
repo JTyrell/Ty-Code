@@ -79,9 +79,9 @@ export const OverflowMenu: React.FC<OverflowMenuProps> = ({ className, isTelemet
   const activeProvider = settings?.activeProvider || 'openkilo';
   const modelShortName = activeModel.split('/').pop() || activeModel;
 
-  const tokens = contextTokens || 12_340;
-  const limit = contextLimit || 50_000;
-  const usageRatio = Math.min(1, tokens / (limit || 50_000));
+  const tokens = contextTokens ?? 0;
+  const limit = contextLimit ?? 128_000;
+  const usageRatio = limit > 0 ? Math.min(1, tokens / limit) : 0;
   const usagePercent = Math.round(usageRatio * 100);
 
   const autoApplied = recentEdits.filter((e) => e.autoApplied);

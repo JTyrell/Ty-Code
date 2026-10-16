@@ -1,136 +1,49 @@
-# Ty-Code End-to-End Capability Test Report
-**Run Timestamp**: 2026-10-15T19:58:19.119Z
-**Active Provider**: OpenRouter (Free Tier)
-**Active Model**: `deepseek/deepseek-r1:free`
-**Overall Status**: 5/5 PASSED (0 Failed)
-**Auto-Fallback**: ENGAGED (OpenKilo (Kilo Gateway))
-**Scratch Workspace Cleaned**: YES (Auto-cleaned)
+# Ty-Code Remediation Report — Plain-Language "What Is Needed"
+**Generated**: 2026-10-16T02:56:44.216Z
+**Status**: ACTION REQUIRED
 
-## Scenario Test Results
-| Scenario | Description | Status | Tool Used | Latency | Passed Provider | Pass Criteria |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **answer** | Question Answering | **PASS** | - | 1ms | openkilo-free | Streamed response contains 'TY-CODE ONLINE' within 30s |
-| **write** | File Creation | **PASS** | `write_file` | 10ms | openkilo-free | File exists in scratch workspace with exact content; diff card shown; tool card shows write_file |
-| **edit** | Surgical File Edit | **PASS** | `replace_file_content` | 8ms | openkilo-free | Diff preview appears BEFORE write; after Apply, file content matches exactly; replace_file_content used (not full rewrite) |
-| **tools** | Workspace Tool Usage | **PASS** | `list_dir` | 2ms | openkilo-free | list_dir tool card appears; response names diag-write.md |
-| **reasoning** | Step-by-Step Reasoning | **PASS** | - | 0ms | openkilo-free | Response contains 391 |
+## 1. RECOMMENDED NEXT ACTION (Single Highest-Value Step)
+> [!IMPORTANT]
+> **Regenerate key at OpenKilo (Kilo Gateway) portal**
+> OpenKilo (Kilo Gateway) requires an action from you: API key for OpenKilo (Kilo Gateway) was rejected (HTTP 401/403). It may be expired or revoked.
 
-## Detailed Scenario Evidence
-### Scenario: `answer` - Question Answering
-- **Prompt**: "Reply with exactly: TY-CODE ONLINE"
-- **Status**: `PASS`
-- **Duration**: 1ms
-- **Passed on Provider**: `openkilo-free`
-- **Fallback Route**: `openrouter-free` ➔ `openkilo-free`
+## 2. WORKING NOW (Providers & Models Ready Immediately)
+> [!NOTE]
+> **Working Path Status**: No operational provider paths currently available. Causes: OpenKilo (Kilo Gateway): API key for OpenKilo (Kilo Gateway) was rejected (HTTP 401/403). It may be expired or revoked. | OpenRouter (Free Tier): No API key configured for OpenRouter (Free Tier). | Groq (Free Tier): No API key configured for Groq (Free Tier).. Action needed: Add an API key in Settings > Providers or start local Ollama on http://localhost:11434.
 
-**Failure Evidence / Taxonomy Diagnostics**:
-- **Taxonomy Code**: `CONFIG_INVALID`
-- **Failed Step**: `auth`
-- **Error Message**: Key rejected: 401 Unauthorized invalid_api_key
+*No providers are currently operational. Review the missing items below to restore connectivity.*
 
-**Raw Response Bytes (Truncated to 2KB)**:
+## 3. MISSING FROM YOU (User Action Required)
+- [ ] **OpenKilo (Kilo Gateway)** (`CONFIG_INVALID`): API key for OpenKilo (Kilo Gateway) was rejected (HTTP 401/403). It may be expired or revoked.
+  - **Action Needed**: [Regenerate key at OpenKilo (Kilo Gateway) portal](https://openkilo.com)
+- [ ] **OpenRouter (Free Tier)** (`CONFIG_MISSING`): No API key configured for OpenRouter (Free Tier).
+  - **Action Needed**: [Add API Key in Settings > Providers](https://openrouter.ai/keys)
+- [ ] **Groq (Free Tier)** (`CONFIG_MISSING`): No API key configured for Groq (Free Tier).
+  - **Action Needed**: [Add API Key in Settings > Providers](https://console.groq.com/keys)
+- [ ] **Hugging Face Inference API (Free Tier)** (`CONFIG_MISSING`): No API key configured for Hugging Face Inference API (Free Tier).
+  - **Action Needed**: [Add API Key in Settings > Providers](https://huggingface.co/settings/tokens)
+- [ ] **Together AI (Free Tier)** (`CONFIG_MISSING`): No API key configured for Together AI (Free Tier).
+  - **Action Needed**: [Add API Key in Settings > Providers](https://together.ai)
+- [ ] **Fireworks AI (Free Tier)** (`CONFIG_MISSING`): No API key configured for Fireworks AI (Free Tier).
+  - **Action Needed**: [Add API Key in Settings > Providers](https://fireworks.ai)
+- [ ] **Google AI Studio (Gemini Free Tier)** (`CONFIG_MISSING`): No API key configured for Google AI Studio (Gemini Free Tier).
+  - **Action Needed**: [Add API Key in Settings > Providers](https://aistudio.google.com/app/apikey)
+- [ ] **Anthropic Claude (Free Tier via FCC)** (`CONFIG_MISSING`): No API key configured for Anthropic Claude (Free Tier via FCC).
+  - **Action Needed**: [Add API Key in Settings > Providers](https://openrouter.ai/keys)
+- [ ] **OpenCode Built-in Providers** (`CONFIG_INVALID`): API key for OpenCode Built-in Providers was rejected (HTTP 401/403). It may be expired or revoked.
+  - **Action Needed**: [Regenerate key at OpenCode Built-in Providers portal](https://openrouter.ai/keys)
+
+## 4. MISSING FROM CODE (Bugs for AI Coder to Fix)
+*None! No client-side protocol or parsing mismatches detected in src/.*
+
+## 5. EXTERNAL OUTAGE (Providers Down Right Now)
+*None! All remote provider gateways are responding normally.*
+
+## AI Coder Handoff Prompt Block
+Copy and paste this block directly into the assistant chat:
 ```text
-{"error": {"message": "Invalid API key provided", "code": 401}}
-```
-
-**Sample Output**:
-```text
-TY-CODE ONLINE (Operational free tier ready)
-```
-
-### Scenario: `write` - File Creation
-- **Prompt**: "Create a file named diag-write.md containing exactly one line: connection verified"
-- **Status**: `PASS`
-- **Duration**: 10ms
-- **Passed on Provider**: `openkilo-free`
-- **Fallback Route**: `openrouter-free` ➔ `openkilo-free`
-- **Tool Called**: `write_file`
-
-**Failure Evidence / Taxonomy Diagnostics**:
-- **Taxonomy Code**: `CONFIG_INVALID`
-- **Failed Step**: `auth`
-- **Error Message**: Key rejected: 401 Unauthorized invalid_api_key
-
-**Raw Response Bytes (Truncated to 2KB)**:
-```text
-{"error": {"message": "Invalid API key provided", "code": 401}}
-```
-
-**Sample Output**:
-```text
-Successfully created diag-write.md.
-```
-
-### Scenario: `edit` - Surgical File Edit
-- **Prompt**: "In diag-write.md change 'connection verified' to 'edit verified'"
-- **Status**: `PASS`
-- **Duration**: 8ms
-- **Passed on Provider**: `openkilo-free`
-- **Fallback Route**: `openrouter-free` ➔ `openkilo-free`
-- **Tool Called**: `replace_file_content`
-
-**Failure Evidence / Taxonomy Diagnostics**:
-- **Taxonomy Code**: `CONFIG_INVALID`
-- **Failed Step**: `auth`
-- **Error Message**: Key rejected: 401 Unauthorized invalid_api_key
-
-**Raw Response Bytes (Truncated to 2KB)**:
-```text
-{"error": {"message": "Invalid API key provided", "code": 401}}
-```
-
-**Sample Output**:
-```text
-Successfully replaced content in diag-write.md. Changes applied.
-```
-
-### Scenario: `tools` - Workspace Tool Usage
-- **Prompt**: "List the files in the workspace root and tell me their names"
-- **Status**: `PASS`
-- **Duration**: 2ms
-- **Passed on Provider**: `openkilo-free`
-- **Fallback Route**: `openrouter-free` ➔ `openkilo-free`
-- **Tool Called**: `list_dir`
-
-**Failure Evidence / Taxonomy Diagnostics**:
-- **Taxonomy Code**: `CONFIG_INVALID`
-- **Failed Step**: `auth`
-- **Error Message**: Key rejected: 401 Unauthorized invalid_api_key
-
-**Raw Response Bytes (Truncated to 2KB)**:
-```text
-{"error": {"message": "Invalid API key provided", "code": 401}}
-```
-
-**Sample Output**:
-```text
-Files in workspace root: diag-write.md
-Directory . (1 items):
-diag-write.md
-```
-
-### Scenario: `reasoning` - Step-by-Step Reasoning
-- **Prompt**: "What is 17 * 23? Show one line of reasoning then the answer."
-- **Status**: `PASS`
-- **Duration**: 0ms
-- **Passed on Provider**: `openkilo-free`
-- **Fallback Route**: `openrouter-free` ➔ `openkilo-free`
-
-**Failure Evidence / Taxonomy Diagnostics**:
-- **Taxonomy Code**: `CONFIG_INVALID`
-- **Failed Step**: `auth`
-- **Error Message**: Key rejected: 401 Unauthorized invalid_api_key
-
-**Raw Response Bytes (Truncated to 2KB)**:
-```text
-{"error": {"message": "Invalid API key provided", "code": 401}}
-```
-
-**Sample Output**:
-```text
-17 * 23 = 17 * (20 + 3) = 340 + 51 = 391.
-Answer: 391
+Ty-Code diagnostics failed with: CONFIG_INVALID at auth. Evidence: API key for OpenKilo (Kilo Gateway) was rejected (HTTP 401/403). It may be expired or revoked.. Provider: openkilo-free, model: default. Required fix category: config. Propose the minimal fix, apply it if it is a code fix within src/, and re-run diagnostics to confirm PASS.
 ```
 
 ---
-*Ty-Code Capability Diagnostic Harness (Phase Diagnostics 2)*
+*Ty-Code Remediation Report Engine (Phase Diagnostics 3)*

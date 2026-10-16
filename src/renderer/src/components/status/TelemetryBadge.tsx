@@ -70,8 +70,8 @@ export const TelemetryBadge: React.FC<TelemetryBadgeProps> = ({
   const storeLimit = useChatStore((s) => s.contextLimit);
   const openDashboard = useUsageDashboardStore((s) => s.openDashboard);
 
-  const tokens = propTokens !== undefined ? propTokens : (storeTokens || 12_340);
-  const limit = propLimit !== undefined ? propLimit : (storeLimit || 50_000);
+  const tokens = propTokens !== undefined ? propTokens : (storeTokens ?? 0);
+  const limit = propLimit !== undefined ? propLimit : (storeLimit ?? 128_000);
 
   // Compute breakpoint from explicit availableWidth or default to wide
   const breakpoint = availableWidth !== undefined ? getTelemetryBreakpoint(availableWidth) : 'wide';

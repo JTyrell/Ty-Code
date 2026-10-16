@@ -52,6 +52,18 @@ export const UsageDashboard: React.FC = () => {
     }
   }, [isOpen, refreshStats]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        closeDashboard();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, closeDashboard]);
+
   if (!isOpen) return null;
 
   const totalLimit = quotaSnapshot?.totalFreeTokensAvailable || 2_050_000_000;

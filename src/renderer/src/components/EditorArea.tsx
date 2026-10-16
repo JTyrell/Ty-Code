@@ -38,6 +38,7 @@ import {
 import { registerMonacoInlineCompletionProvider } from '../services/monaco-inline-completion';
 import { ensureMonaco, useMonacoRuntime } from '../services/monaco-runtime';
 import { usePairProgrammingStore } from '../state/pair-programming-store';
+import { useExtensionPromptStore } from '../state/extension-prompt-store';
 
 interface SplitPaneState {
   isSplit: boolean;
@@ -365,9 +366,9 @@ export const EditorArea: React.FC = () => {
           toast.warning('No selection', 'Select code to extract function.');
           return;
         }
-        const fnName = prompt('Enter function name:', 'extractedFunction');
-        if (!fnName) return;
-        await triggerRefactor('extract-function', selectedText, selection, fnName);
+        const fnName = await useExtensionPromptStore.getState().requestInput('Enter function name:', 'extractedFunction');
+        if (!fnName || !fnName.trim()) return;
+        await triggerRefactor('extract-function', selectedText, selection, fnName.trim());
       }
     });
 
@@ -383,9 +384,9 @@ export const EditorArea: React.FC = () => {
           toast.warning('No selection', 'Select expression to extract variable.');
           return;
         }
-        const varName = prompt('Enter variable name:', 'extractedVal');
-        if (!varName) return;
-        await triggerRefactor('extract-variable', selectedText, selection, varName);
+        const varName = await useExtensionPromptStore.getState().requestInput('Enter variable name:', 'extractedVal');
+        if (!varName || !varName.trim()) return;
+        await triggerRefactor('extract-variable', selectedText, selection, varName.trim());
       }
     });
 

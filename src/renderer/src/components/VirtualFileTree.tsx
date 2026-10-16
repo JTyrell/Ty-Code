@@ -188,19 +188,22 @@ export const VirtualFileTree: React.FC<VirtualFileTreeProps> = ({ rootNode, onRe
     if (!contextMenu) return;
     const target = contextMenu.node;
     setContextMenu(null);
-    if (!confirm(`Are you sure you want to delete "${target.name}"?`)) return;
-
-    try {
-      const res = await window.electronAPI.deletePath(target.path);
-      if (res.success) {
-        toast.success('Deleted', target.name);
-        onRefresh?.();
-      } else {
-        toast.error('Delete failed', res.error);
+    toast.warning(`Delete "${target.name}"?`, 'This will permanently remove the item from your filesystem.', {
+      label: 'Delete',
+      onClick: async () => {
+        try {
+          const res = await window.electronAPI.deletePath(target.path);
+          if (res.success) {
+            toast.success('Deleted', target.name);
+            onRefresh?.();
+          } else {
+            toast.error('Delete failed', res.error);
+          }
+        } catch (err) {
+          toast.error('Delete error', String(err));
+        }
       }
-    } catch (err) {
-      toast.error('Delete error', String(err));
-    }
+    });
   };
 
   // Drag and drop support

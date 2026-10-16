@@ -22,7 +22,6 @@ import { FleetHealthIndicator } from './FleetHealthIndicator';
 import { WarmUpIndicator } from './WarmUpIndicator';
 import { TelemetryBadge } from './status/TelemetryBadge';
 import { OverflowMenu } from './status/OverflowMenu';
-import { AIBadge } from './AIBadge';
 import { useAvailableWidth } from '../hooks/useAvailableWidth';
 import styles from './StatusBar.module.css';
 
@@ -194,10 +193,7 @@ export const StatusBar: React.FC = () => {
           )}
         </button>
 
-        {/* 3.5 Model/provider status and dashboard shortcut */}
-        <AIBadge variant="docked-statusbar" id="status-bar-active-model-btn" windowWidth={availableWidth} />
-
-        {/* 3.6 Overflow '…' menu */}
+        {/* 3.5 Overflow '…' menu */}
         <OverflowMenu isTelemetryCollapsed={availableWidth < 240} />
       </div>
     </footer>

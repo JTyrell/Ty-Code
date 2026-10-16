@@ -57,8 +57,32 @@ function updateToolStatus(messages: ChatMessage[], toolCallId: string, status: T
   });
 }
 
+const CHAT_STORAGE_KEY = 'ty_code_chat_messages_v1';
+
+export function loadPersistedChat(): ChatMessage[] {
+  try {
+    if (typeof localStorage === 'undefined') return [];
+    const raw = localStorage.getItem(CHAT_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return parsed;
+  } catch {
+    // Graceful fallback
+  }
+  return [];
+}
+
+export function savePersistedChat(messages: ChatMessage[]): void {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(messages.slice(-200)));
+  } catch {
+    // Graceful fallback
+  }
+}
+
 export const useChatStore = create<ChatState>((set, get) => ({
-  messages: [], isRunning: false, currentTaskId: null, pendingApproval: null, currentStatus: '', currentThought: '', streamingText: '',
+  messages: loadPersistedChat(), isRunning: false, currentTaskId: null, pendingApproval: null, currentStatus: '', currentThought: '', streamingText: '',
   settings: null, agentMode: 'build', contextTokens: 1200, contextLimit: 128_000, isSettingsOpen: false, isTerminalOpen: false,
   draftPrompt: '',
 
@@ -274,3 +298,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
   openSettings: (tab?: string) => set({ isSettingsOpen: true, activeSettingsTab: tab }),
   toggleTerminal: () => set((state) => ({ isTerminalOpen: !state.isTerminalOpen }))
 }));
+
+let prevPersistedMessages = useChatStore.getState().messages;
+useChatStore.subscribe((state) => {
+  if (state.messages !== prevPersistedMessages) {
+    prevPersistedMessages = state.messages;
+    savePersistedChat(state.messages);
+  }
+});
