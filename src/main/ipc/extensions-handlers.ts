@@ -8,6 +8,7 @@ import {
   ExtensionMetadataSchema
 } from '../../preload/extension-schemas';
 import { extensionManager } from '../services/extension-manager';
+import { extensionHost } from '../services/extensions/extension-host';
 
 const MAX_REGISTRY_RESPONSE_BYTES = 1_000_000;
 
@@ -229,4 +230,76 @@ export async function handleInstallExtensionFromVsix(window?: BrowserWindow): Pr
     return { success: false, error: err instanceof Error ? err.message : String(err) };
   }
 }
+
+export async function handleExtensionActivate(id: unknown): Promise<IpcResponse<boolean>> {
+  try {
+    const safeId = ExtensionIdSchema.parse(id);
+    const success = await extensionHost.activateExtension(safeId);
+    return { success: true, data: success };
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+export async function handleExtensionDeactivate(id: unknown): Promise<IpcResponse<boolean>> {
+  try {
+    const safeId = ExtensionIdSchema.parse(id);
+    const success = await extensionHost.deactivateExtension(safeId);
+    return { success: true, data: success };
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+export async function handleExtensionExecuteCommand(payload: unknown): Promise<IpcResponse<unknown>> {
+  try {
+    if (!payload || typeof payload !== 'object') throw new Error('Command execution payload must be an object.');
+    const raw = payload as { commandId?: unknown; args?: unknown };
+    if (typeof raw.commandId !== 'string' || !raw.commandId.trim()) throw new Error('Missing commandId.');
+    const args = Array.isArray(raw.args) ? raw.args : [];
+    const result = await extensionHost.executeCommand(raw.commandId.trim(), args);
+    return { success: true, data: result };
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+export async function handleExtensionTriggerEvent(payload: unknown): Promise<IpcResponse<string[]>> {
+  try {
+    if (!payload || typeof payload !== 'object') throw new Error('Trigger event payload must be an object.');
+    const raw = payload as { event?: unknown; payload?: unknown };
+    if (typeof raw.event !== 'string' || !raw.event.trim()) throw new Error('Missing event.');
+    const context = raw.payload && typeof raw.payload === 'object' ? raw.payload as any : undefined;
+    const activated = await extensionHost.handleActivationEvent(raw.event.trim(), context);
+    return { success: true, data: activated };
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+export async function handleExtensionListCommands(): Promise<IpcResponse<any[]>> {
+  try {
+    const commands = extensionHost.getRegisteredCommands();
+    return { success: true, data: commands };
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+export async function handleExtensionProvideCompletions(payload: unknown): Promise<IpcResponse<any[]>> {
+  try {
+    if (!payload || typeof payload !== 'object') return { success: true, data: [] };
+    const raw = payload as { language?: string; filePath?: string; line?: number; character?: number };
+    const items = await extensionHost.provideCompletionItems(
+      raw.language || '',
+      raw.filePath || '',
+      raw.line || 0,
+      raw.character || 0
+    );
+    return { success: true, data: items };
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 

@@ -11,6 +11,7 @@ import { quotaTracker } from '../services/orchestration/quota-tracker';
 import { requestCache } from '../services/orchestration/request-cache';
 import { performanceManager } from '../services/orchestration/performance-manager';
 import { usageLedger } from '../services/usage/ledger';
+import { credentialStore } from '../services/auth/credential-store';
 import { getPreconfiguredProvider } from '../config/provider-registry';
 import type { ProviderCandidate } from '../services/orchestration/strategies/types';
 
@@ -428,11 +429,18 @@ export class ProviderGateway {
       if (candidate.apiKey && candidate.apiKey.trim()) {
         apiKey = candidate.apiKey.trim();
       } else {
-        try {
-          const { keys } = await readStoredCredentials();
-          apiKey = keys[providerId] || settings.apiKeys?.[providerId] || '';
-        } catch {
-          apiKey = settings.apiKeys?.[providerId] || '';
+        // 1. Try secure credentialStore (RealConnect 2 Electron safeStorage)
+        const storedKey = credentialStore.getDecryptedKey(providerId);
+        if (storedKey && storedKey.trim()) {
+          apiKey = storedKey.trim();
+        } else {
+          // 2. Fall back to settings-handlers or settings.apiKeys
+          try {
+            const { keys } = await readStoredCredentials();
+            apiKey = keys[providerId] || settings.apiKeys?.[providerId] || '';
+          } catch {
+            apiKey = settings.apiKeys?.[providerId] || '';
+          }
         }
       }
 
@@ -729,6 +737,12 @@ export class ProviderGateway {
       success: true,
       headers: response.headers
     });
+
+    try {
+      credentialStore.touchCredential(providerId);
+    } catch {
+      // non-blocking
+    }
 
     requestCache.set(cacheKey, {
       fullText,

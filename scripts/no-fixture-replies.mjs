@@ -26,9 +26,17 @@ async function collectFiles(dir) {
     for (const entry of entries) {
       const fullPath = path.join(dir, entry.name);
       if (entry.isDirectory()) {
+        // Skip tests/ or mocks/ folders per specification ("outside tests/ or mocks/")
+        if (['tests', 'mocks', '__tests__', '__mocks__'].includes(entry.name.toLowerCase())) {
+          continue;
+        }
         results.push(...(await collectFiles(fullPath)));
       } else if (entry.isFile()) {
         const ext = path.extname(entry.name).toLowerCase();
+        // Skip test files if colocated
+        if (/\.(test|spec)\.[a-z0-9]+$/i.test(entry.name)) {
+          continue;
+        }
         if (['.ts', '.tsx', '.js', '.jsx', '.json', '.mjs', '.cjs'].includes(ext)) {
           results.push(fullPath);
         }

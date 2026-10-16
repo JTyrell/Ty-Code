@@ -27,20 +27,25 @@ const SCAN_DIRS = [
 const SUSPICIOUS_PATTERNS = [
   { name: 'OpenAI API Key', regex: /\bsk-[A-Za-z0-9]{40,}\b/ },
   { name: 'OpenAI Project Key', regex: /\bsk-proj-[A-Za-z0-9_-]{48,}\b/ },
-  { name: 'Anthropic API Key', regex: /\bsk-ant-api\d{2}-[A-Za-z0-9_-]{80,}\b/ },
+  { name: 'Anthropic Specific Key', regex: /\bsk-ant-api\d{2}-[A-Za-z0-9_-]{80,}\b/ },
+  { name: 'Anthropic Generic Key', regex: /\bsk-ant-[A-Za-z0-9_-]{16,}\b/ },
   { name: 'OpenRouter Production Key', regex: /\bsk-or-v1-[a-f0-9]{64}\b/ },
+  { name: 'OpenRouter Generic Key', regex: /\bsk-or-[A-Za-z0-9_-]{16,}\b/ },
   { name: 'Google Gemini Production Key', regex: /\bAIzaSy[A-Za-z0-9_-]{33}\b/ },
   { name: 'GitHub Personal Token', regex: /\bghp_[A-Za-z0-9]{36}\b/ },
   { name: 'GitHub User Token', regex: /\bghu_[A-Za-z0-9]{36}\b/ },
   { name: 'AWS Access Key ID', regex: /\bAKIA[0-9A-Z]{16}\b/ },
   { name: 'Private Key PEM', regex: /-----BEGIN (?:RSA|OPENSSH|EC|PGP)?\s*PRIVATE KEY-----/ },
-  { name: 'Embedded Auth URL', regex: /https?:\/\/[a-zA-Z0-9_\-\.%]+:[a-zA-Z0-9_\-\.%]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/ }
+  { name: 'Embedded Auth URL (User:Pass)', regex: /https?:\/\/[a-zA-Z0-9_\-\.%]+:[a-zA-Z0-9_\-\.%]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/ },
+  { name: 'Embedded Auth URL (Key Query Param)', regex: /https?:\/\/[^\s"'`]+[?&](?:api[_-]?key|key|token|auth)=[A-Za-z0-9_-]{16,}/i }
 ];
 
 // Allowed fixture patterns or comment placeholders
 const ALLOWED_MATCH_SNIPPETS = [
   'sk-ant-api03-',
   'sk-or-v1-000000',
+  'sk-or-sample',
+  'sk-ant-sample',
   'ghu_sample',
   'ghp_sample',
   'AIzaSySample',

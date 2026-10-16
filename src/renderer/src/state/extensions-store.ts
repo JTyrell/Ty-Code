@@ -96,7 +96,9 @@ export const useExtensionStore = create<ExtensionStoreState>((set, get) => ({
   loadInstalled: async () => {
     try {
       set({ isLoading: true, error: null });
-      const res = await window.electronAPI.getInstalledExtensions();
+      const res = window.electronAPI.marketplaceListInstalled
+        ? await window.electronAPI.marketplaceListInstalled()
+        : await window.electronAPI.getInstalledExtensions();
       if (res.success && res.data) {
         try {
           await extensionHost.initializeExtensions(res.data);
@@ -247,7 +249,7 @@ export const useExtensionStore = create<ExtensionStoreState>((set, get) => ({
 
   installExtension: async (item) => {
     const id = item.id;
-    const downloadUrl = (item as MarketplaceExtensionEntry).downloadUrl || (item as ExtensionMetadata).downloadUrl;
+    let cleanupProgress: (() => void) | undefined;
 
     try {
       // 1. Mark Installing state in UI
@@ -264,6 +266,20 @@ export const useExtensionStore = create<ExtensionStoreState>((set, get) => ({
           m.id === id ? { ...m, installedState: 'installing' as ExtensionInstallState, errorMessage: undefined } : m
         )
       }));
+
+      // Listen for progress updates
+      if (window.electronAPI.onMarketplaceInstallProgress) {
+        cleanupProgress = window.electronAPI.onMarketplaceInstallProgress((evt) => {
+          if (evt && typeof evt === 'object' && evt.id && evt.id.toLowerCase() === id.toLowerCase()) {
+            set((state) => ({
+              installingMap: {
+                ...state.installingMap,
+                [id]: { step: evt.step, percent: evt.percent, message: evt.message }
+              }
+            }));
+          }
+        });
+      }
 
       // 2. Trigger installation via IPC
       const res = window.electronAPI.marketplaceInstall
@@ -339,6 +355,8 @@ export const useExtensionStore = create<ExtensionStoreState>((set, get) => ({
         };
       });
       return false;
+    } finally {
+      cleanupProgress?.();
     }
   },
 

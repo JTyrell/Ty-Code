@@ -185,12 +185,17 @@ export function classifyDiagnosticError(
   }
 
   // 5. QUOTA_EXCEEDED (insufficient quota, balance, free credits expired)
+  const isFailoverExhausted = lowerMsg.includes('failover exhausted');
   if (
-    lowerMsg.includes('quota') ||
-    lowerMsg.includes('credit') ||
     lowerMsg.includes('insufficient_quota') ||
-    lowerMsg.includes('balance') ||
-    lowerMsg.includes('exhausted') ||
+    lowerMsg.includes('quota exceeded') ||
+    lowerMsg.includes('quota exhausted') ||
+    (!isFailoverExhausted && (
+      lowerMsg.includes('quota') ||
+      lowerMsg.includes('credit') ||
+      lowerMsg.includes('balance') ||
+      lowerMsg.includes('exhausted')
+    )) ||
     lowerBody.includes('quota') ||
     lowerBody.includes('insufficient_quota')
   ) {

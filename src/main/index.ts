@@ -31,11 +31,15 @@ import {
 import {
   searchOpenVsxExtensions, getOpenVsxExtensionDetails, handleGetInstalledExtensions,
   handleInstallExtension, handleUninstallExtension, handleToggleExtension,
-  handleUpdateExtensionSettings, handleInstallExtensionFromVsix, handleExtensionCapability
+  handleUpdateExtensionSettings, handleInstallExtensionFromVsix, handleExtensionCapability,
+  handleExtensionActivate, handleExtensionDeactivate, handleExtensionExecuteCommand,
+  handleExtensionTriggerEvent, handleExtensionListCommands, handleExtensionProvideCompletions
 } from './ipc/extensions-handlers';
 import {
   handleMarketplaceSearch, handleMarketplaceMetadata,
-  handleMarketplaceInstall, handleMarketplaceUninstall
+  handleMarketplaceInstall, handleMarketplaceUninstall,
+  handleMarketplaceListInstalled,
+  handleTraceExtensionInstall
 } from './ipc/marketplace-handlers';
 import { getAvailableSkills } from './ipc/skills-handlers';
 import {
@@ -1349,6 +1353,12 @@ function registerIpcHandlers(): void {
   ipcMain.handle('marketplace:uninstall', (event, id: unknown) => isTrustedExtensionFrame(event)
     ? handleMarketplaceUninstall(typeof id === 'string' ? id : '')
     : { success: false, error: 'Untrusted renderer frame.' });
+  ipcMain.handle('marketplace:list-installed', (event) => isTrustedExtensionFrame(event)
+    ? handleMarketplaceListInstalled()
+    : { success: false, error: 'Untrusted renderer frame.' });
+  ipcMain.handle('marketplace:trace-extension-install', (event, extensionId: unknown) => isTrustedExtensionFrame(event)
+    ? handleTraceExtensionInstall(typeof extensionId === 'string' ? extensionId : undefined)
+    : { success: false, error: 'Untrusted renderer frame.' });
 
   ipcMain.handle('extensions:search', (event, query: unknown) => isTrustedExtensionFrame(event)
     ? searchOpenVsxExtensions(typeof query === 'string' ? query : '')
@@ -1382,6 +1392,24 @@ function registerIpcHandlers(): void {
     : { success: false, error: 'Untrusted renderer frame.' });
   ipcMain.handle('extensions:capability', (event, payload: unknown) => isTrustedExtensionFrame(event)
     ? handleExtensionCapability(payload, currentWorkspacePath)
+    : { success: false, error: 'Untrusted renderer frame.' });
+  ipcMain.handle('extensions:activate', (event, id: unknown) => isTrustedExtensionFrame(event)
+    ? handleExtensionActivate(id)
+    : { success: false, error: 'Untrusted renderer frame.' });
+  ipcMain.handle('extensions:deactivate', (event, id: unknown) => isTrustedExtensionFrame(event)
+    ? handleExtensionDeactivate(id)
+    : { success: false, error: 'Untrusted renderer frame.' });
+  ipcMain.handle('extensions:execute-command', (event, payload: unknown) => isTrustedExtensionFrame(event)
+    ? handleExtensionExecuteCommand(payload)
+    : { success: false, error: 'Untrusted renderer frame.' });
+  ipcMain.handle('extensions:trigger-event', (event, payload: unknown) => isTrustedExtensionFrame(event)
+    ? handleExtensionTriggerEvent(payload)
+    : { success: false, error: 'Untrusted renderer frame.' });
+  ipcMain.handle('extensions:list-commands', (event) => isTrustedExtensionFrame(event)
+    ? handleExtensionListCommands()
+    : { success: false, error: 'Untrusted renderer frame.' });
+  ipcMain.handle('extensions:provide-completions', (event, payload: unknown) => isTrustedExtensionFrame(event)
+    ? handleExtensionProvideCompletions(payload)
     : { success: false, error: 'Untrusted renderer frame.' });
   ipcMain.handle('skills:get', (_event, workspacePath: string) => getAvailableSkills(workspacePath || currentWorkspacePath));
 

@@ -43,14 +43,35 @@ jobs:
       - name: Check direct dependencies
         run: npx --yes depcheck@1.4.7
 
-      - name: Anti-Phantom Guard: Verify No Mock Paths in Agent/Providers
+      - name: Anti-Phantom Guard 1: Verify Zero Fixture Replies in Production Code
+        run: node scripts/no-fixture-replies.mjs
+
+      - name: Anti-Phantom Guard 2: Verify No Mock Paths in Agent/Providers
         run: node scripts/no-mock-agent-path.mjs
 
-      - name: Anti-Phantom Guard: Verify Trace Artifact Freshness & Integrity
+      - name: Anti-Phantom Guard 3: Verify Zero Baked Secrets in Source & Dist
+        run: node scripts/no-baked-secrets.mjs
+
+      - name: Anti-Phantom Guard 4: Verify Trace Artifact Freshness & Integrity
         run: node scripts/verify-audit-artifacts.mjs
+
+      - name: Anti-Phantom Guard 5: Verify No Metadata-Only Marketplace Logic
+        run: node scripts/no-metadata-only-marketplace.mjs
+
+      - name: Anti-Phantom Guard 6: Verify Zero Hardcoded Fake Extension Data
+        run: node scripts/no-fake-extension-data.mjs
+
+      - name: Anti-Phantom Guard 7: Verify Extension Evidence Artifacts Integrity
+        run: node scripts/verify-extension-artifacts.mjs
 
       - name: Live Validation Gate: Run Real Network & Disk E2E Suite
         run: npm run test:live
+
+      - name: Extension Functionality Gate: Run Live Marketplace & Execution Suite
+        run: npm run test:extensions
+
+      - name: Extension Security Gate: Run Security Hardening & Isolation Suite
+        run: npm run test:security
 
       - name: Run Test Suites (Phases 2-7)
         run: npm test

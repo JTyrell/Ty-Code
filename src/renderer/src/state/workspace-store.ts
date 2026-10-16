@@ -197,9 +197,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         isDirty: false,
         language: detectLanguage(filePath)
       };
+      const lang = detectLanguage(filePath);
       const nextTabs = [...openTabs, newTab];
       set({ openTabs: nextTabs, activeTabPath: filePath });
       savePersistedTabs(nextTabs, filePath);
+      void window.electronAPI.extensionTriggerEvent?.('onLanguage:' + lang, { languageId: lang, filePath })?.catch?.(() => undefined);
       return;
     }
 
@@ -236,6 +238,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
             const nextTabs = [...get().openTabs, newTab];
             set({ openTabs: nextTabs, activeTabPath: filePath });
             savePersistedTabs(nextTabs, filePath);
+            void window.electronAPI.extensionTriggerEvent?.('onLanguage:' + detectLanguage(filePath), { languageId: detectLanguage(filePath), filePath })?.catch?.(() => undefined);
           }
         }
       );
@@ -266,6 +269,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     set({ activeTabPath: filePath });
     savePersistedTabs(get().openTabs, filePath);
     void transitionProfiler.endTransition(transId, `tab_switch:${filename}`);
+    void window.electronAPI.extensionTriggerEvent?.('onLanguage:' + detectLanguage(filePath), { languageId: detectLanguage(filePath), filePath })?.catch?.(() => undefined);
   },
 
   updateTabContent: (filePath: string, newContent: string) => {

@@ -19,6 +19,7 @@ import type {
 import { quotaTracker } from './quota-tracker';
 import { healthMonitor } from '../providers/health-monitor';
 import { PERMANENT_FREE_PROVIDERS } from '../providers/free-provider-registry';
+import { usageLedger } from '../usage/ledger';
 
 export class UsageAnalyticsService {
   private static instance: UsageAnalyticsService | null = null;
@@ -33,164 +34,12 @@ export class UsageAnalyticsService {
   }
 
   constructor() {
-    this.seedInitialAnalyticsData();
+    // Zero-server architecture: relies directly on real usageLedger transactions
   }
 
-  /**
-   * Seeds realistic historical telemetry for instant dashboard rendering (<2 seconds)
-   */
+
   private seedInitialAnalyticsData(): void {
-    const now = Date.now();
-    const oneDay = 24 * 60 * 60 * 1000;
-
-    // Seed recent 10 requests matching realistic developer workflows
-    const seedRequests: Array<Omit<RecentActivityRecord, 'id'>> = [
-      {
-        timestamp: now - 120_000,
-        providerId: 'groq-free',
-        providerName: 'Groq',
-        modelId: 'llama-3.3-70b-versatile',
-        modelName: 'Llama 3.3 70B Versatile',
-        taskType: 'code_generation',
-        promptTokens: 420,
-        completionTokens: 285,
-        totalTokens: 705,
-        latencyMs: 142,
-        status: 'success',
-        costSavedUsd: 0.0021
-      },
-      {
-        timestamp: now - 650_000,
-        providerId: 'openrouter-free',
-        providerName: 'OpenRouter',
-        modelId: 'deepseek/deepseek-r1:free',
-        modelName: 'DeepSeek R1',
-        taskType: 'complex_reasoning',
-        promptTokens: 850,
-        completionTokens: 920,
-        totalTokens: 1770,
-        latencyMs: 910,
-        status: 'success',
-        costSavedUsd: 0.0053
-      },
-      {
-        timestamp: now - 1_200_000,
-        providerId: 'openkilo',
-        providerName: 'OpenKilo Gateway',
-        modelId: 'claude-3-5-sonnet',
-        modelName: 'Claude 3.5 Sonnet (Free Gateway)',
-        taskType: 'code_editing',
-        promptTokens: 620,
-        completionTokens: 310,
-        totalTokens: 930,
-        latencyMs: 380,
-        status: 'success',
-        costSavedUsd: 0.0028
-      },
-      {
-        timestamp: now - 2_100_000,
-        providerId: 'google-ai-studio-free',
-        providerName: 'Google AI Studio',
-        modelId: 'gemini-2.0-flash-exp',
-        modelName: 'Gemini 2.0 Flash Exp',
-        taskType: 'quick_response',
-        promptTokens: 150,
-        completionTokens: 60,
-        totalTokens: 210,
-        latencyMs: 98,
-        status: 'success',
-        costSavedUsd: 0.0006
-      },
-      {
-        timestamp: now - 3_600_000,
-        providerId: 'openrouter-free',
-        providerName: 'OpenRouter',
-        modelId: 'qwen/qwen-2.5-coder-32b-instruct:free',
-        modelName: 'Qwen 2.5 Coder 32B',
-        taskType: 'code_generation',
-        promptTokens: 780,
-        completionTokens: 520,
-        totalTokens: 1300,
-        latencyMs: 310,
-        status: 'success',
-        costSavedUsd: 0.0039
-      },
-      {
-        timestamp: now - 5_400_000,
-        providerId: 'groq-free',
-        providerName: 'Groq',
-        modelId: 'llama-3.1-8b-instant',
-        modelName: 'Llama 3.1 8B Instant',
-        taskType: 'quick_response',
-        promptTokens: 95,
-        completionTokens: 40,
-        totalTokens: 135,
-        latencyMs: 65,
-        status: 'success',
-        costSavedUsd: 0.0004
-      },
-      {
-        timestamp: now - 7_200_000,
-        providerId: 'fcc-proxy',
-        providerName: 'Free-Claude-Code Proxy',
-        modelId: 'claude-3-5-sonnet-fcc',
-        modelName: 'Claude 3.5 Sonnet (FCC)',
-        taskType: 'code_editing',
-        promptTokens: 1100,
-        completionTokens: 640,
-        totalTokens: 1740,
-        latencyMs: 440,
-        status: 'success',
-        costSavedUsd: 0.0052
-      },
-      {
-        timestamp: now - 12_000_000,
-        providerId: 'github-models-free',
-        providerName: 'GitHub Models',
-        modelId: 'gpt-4o-mini',
-        modelName: 'GPT-4o Mini',
-        taskType: 'general_chat',
-        promptTokens: 290,
-        completionTokens: 140,
-        totalTokens: 430,
-        latencyMs: 220,
-        status: 'success',
-        costSavedUsd: 0.0013
-      },
-      {
-        timestamp: now - 18_000_000,
-        providerId: 'groq-free',
-        providerName: 'Groq',
-        modelId: 'llama-3.3-70b-versatile',
-        modelName: 'Llama 3.3 70B Versatile',
-        taskType: 'code_generation',
-        promptTokens: 540,
-        completionTokens: 410,
-        totalTokens: 950,
-        latencyMs: 155,
-        status: 'success',
-        costSavedUsd: 0.0029
-      },
-      {
-        timestamp: now - 24_000_000,
-        providerId: 'openrouter-free',
-        providerName: 'OpenRouter',
-        modelId: 'deepseek/deepseek-chat:free',
-        modelName: 'DeepSeek V3',
-        taskType: 'general_chat',
-        promptTokens: 380,
-        completionTokens: 220,
-        totalTokens: 600,
-        latencyMs: 290,
-        status: 'success',
-        costSavedUsd: 0.0018
-      }
-    ];
-
-    this.recentActivity = seedRequests.map((r, i) => ({
-      ...r,
-      id: `act_${now - i * 1000}_${Math.random().toString(36).slice(2, 6)}`
-    }));
+    // RealConnect 2: relies directly on real usageLedger transactions
   }
 
   /**
@@ -224,11 +73,27 @@ export class UsageAnalyticsService {
    * Gets recent activity records (default 10)
    */
   public getRecentActivity(limit = 10): RecentActivityRecord[] {
-    return this.recentActivity.slice(0, limit);
+    const ledgerTx = usageLedger.getSnapshot().recentTransactions || [];
+    const fromLedger: RecentActivityRecord[] = ledgerTx.slice(-limit).reverse().map((tx) => ({
+      id: tx.id,
+      timestamp: tx.timestamp,
+      providerId: tx.providerId,
+      providerName: tx.providerId,
+      modelId: tx.modelId,
+      modelName: tx.modelId,
+      taskType: 'code_generation',
+      promptTokens: tx.promptTokens,
+      completionTokens: tx.completionTokens,
+      totalTokens: tx.totalTokens,
+      latencyMs: tx.latencyMs,
+      status: tx.success ? 'success' : 'error',
+      costSavedUsd: tx.costSavedUsd
+    }));
+    return [...this.recentActivity, ...fromLedger].slice(0, limit);
   }
 
   /**
-   * Generates time-bucketed historical usage charts (Daily, Weekly, Monthly)
+   * Generates time-bucketed historical usage charts (Daily, Weekly, Monthly) from real ledger
    */
   public getHistoricalUsage(): {
     daily: HistoricalUsageBucket[];
@@ -237,72 +102,88 @@ export class UsageAnalyticsService {
   } {
     const now = Date.now();
     const oneDay = 24 * 60 * 60 * 1000;
+    const ledger = usageLedger.getSnapshot();
+    const transactions = ledger.recentTransactions || [];
 
     // Daily buckets (last 14 days)
     const daily: HistoricalUsageBucket[] = [];
-    const dailyBaseTokens = [18400, 24600, 19200, 31000, 42500, 38100, 29000, 33500, 45200, 52100, 48000, 61200, 58400, 44200];
     for (let i = 13; i >= 0; i--) {
-      const dayTime = now - i * oneDay;
-      const d = new Date(dayTime);
+      const dayStart = now - (i + 1) * oneDay;
+      const dayEnd = now - i * oneDay;
+      const d = new Date(dayEnd);
       const label = `${d.getMonth() + 1}/${d.getDate()}`;
-      const tokens = dailyBaseTokens[13 - i] || 35000;
+
+      const dayTxs = transactions.filter((t) => t.timestamp >= dayStart && t.timestamp < dayEnd);
+      const tokens = dayTxs.reduce((sum, t) => sum + (t.totalTokens || 0), 0);
+      const requests = dayTxs.length;
+      const costSavedUsd = Math.round(dayTxs.reduce((sum, t) => sum + (t.costSavedUsd || 0), 0) * 100) / 100;
+      const byProvider: Record<string, number> = {};
+      for (const t of dayTxs) {
+        byProvider[t.providerId] = (byProvider[t.providerId] || 0) + (t.totalTokens || 0);
+      }
+
       daily.push({
-        timestamp: dayTime,
+        timestamp: dayEnd,
         dateLabel: label,
         tokens,
-        requests: Math.round(tokens / 850),
-        costSavedUsd: Math.round((tokens / 1_000_000) * 3.0 * 100) / 100,
-        byProvider: {
-          'openrouter-free': Math.round(tokens * 0.38),
-          'groq-free': Math.round(tokens * 0.32),
-          openkilo: Math.round(tokens * 0.18),
-          'google-ai-studio-free': Math.round(tokens * 0.12)
-        }
+        requests,
+        costSavedUsd,
+        byProvider
       });
     }
 
     // Weekly buckets (last 8 weeks)
     const weekly: HistoricalUsageBucket[] = [];
-    const weeklyBase = [180_000, 245_000, 310_000, 290_000, 380_000, 420_000, 460_000, 510_000];
     for (let w = 7; w >= 0; w--) {
-      const weekTime = now - w * 7 * oneDay;
-      const d = new Date(weekTime);
+      const weekStart = now - (w + 1) * 7 * oneDay;
+      const weekEnd = now - w * 7 * oneDay;
+      const d = new Date(weekEnd);
       const label = `W${Math.ceil(d.getDate() / 7)} ${d.toLocaleString('default', { month: 'short' })}`;
-      const tokens = weeklyBase[7 - w] || 350_000;
+
+      const weekTxs = transactions.filter((t) => t.timestamp >= weekStart && t.timestamp < weekEnd);
+      const tokens = weekTxs.reduce((sum, t) => sum + (t.totalTokens || 0), 0);
+      const requests = weekTxs.length;
+      const costSavedUsd = Math.round(weekTxs.reduce((sum, t) => sum + (t.costSavedUsd || 0), 0) * 100) / 100;
+      const byProvider: Record<string, number> = {};
+      for (const t of weekTxs) {
+        byProvider[t.providerId] = (byProvider[t.providerId] || 0) + (t.totalTokens || 0);
+      }
+
       weekly.push({
-        timestamp: weekTime,
+        timestamp: weekEnd,
         dateLabel: label,
         tokens,
-        requests: Math.round(tokens / 920),
-        costSavedUsd: Math.round((tokens / 1_000_000) * 3.0 * 100) / 100,
-        byProvider: {
-          'openrouter-free': Math.round(tokens * 0.35),
-          'groq-free': Math.round(tokens * 0.35),
-          openkilo: Math.round(tokens * 0.20),
-          'fcc-proxy': Math.round(tokens * 0.10)
-        }
+        requests,
+        costSavedUsd,
+        byProvider
       });
     }
 
     // Monthly buckets (last 6 months)
     const monthly: HistoricalUsageBucket[] = [];
-    const monthNames = ['May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct'];
-    const monthlyBase = [950_000, 1_420_000, 1_850_000, 2_100_000, 2_450_000, 2_890_000];
-    for (let m = 0; m < 6; m++) {
-      const monthTime = now - (5 - m) * 30 * oneDay;
-      const tokens = monthlyBase[m];
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    for (let m = 5; m >= 0; m--) {
+      const monthStart = now - (m + 1) * 30 * oneDay;
+      const monthEnd = now - m * 30 * oneDay;
+      const d = new Date(monthEnd);
+      const label = monthNames[d.getMonth()] || `M${d.getMonth() + 1}`;
+
+      const monthTxs = transactions.filter((t) => t.timestamp >= monthStart && t.timestamp < monthEnd);
+      const tokens = monthTxs.reduce((sum, t) => sum + (t.totalTokens || 0), 0);
+      const requests = monthTxs.length;
+      const costSavedUsd = Math.round(monthTxs.reduce((sum, t) => sum + (t.costSavedUsd || 0), 0) * 100) / 100;
+      const byProvider: Record<string, number> = {};
+      for (const t of monthTxs) {
+        byProvider[t.providerId] = (byProvider[t.providerId] || 0) + (t.totalTokens || 0);
+      }
+
       monthly.push({
-        timestamp: monthTime,
-        dateLabel: monthNames[m] || `M${m + 1}`,
+        timestamp: monthEnd,
+        dateLabel: label,
         tokens,
-        requests: Math.round(tokens / 980),
-        costSavedUsd: Math.round((tokens / 1_000_000) * 3.0 * 100) / 100,
-        byProvider: {
-          'openrouter-free': Math.round(tokens * 0.36),
-          'groq-free': Math.round(tokens * 0.34),
-          openkilo: Math.round(tokens * 0.20),
-          'fcc-proxy': Math.round(tokens * 0.10)
-        }
+        requests,
+        costSavedUsd,
+        byProvider
       });
     }
 
@@ -310,59 +191,23 @@ export class UsageAnalyticsService {
   }
 
   /**
-   * Aggregates consumption metrics per model
+   * Aggregates consumption metrics per model from real ledger counters
    */
   public getModelUsageBreakdown(): ModelUsageStat[] {
-    const rawCounts: Record<string, { modelName: string; providerId: string; providerName: string; tokens: number; requests: number; totalLatency: number }> = {
-      'llama-3.3-70b-versatile': {
-        modelName: 'Llama 3.3 70B Versatile',
-        providerId: 'groq-free',
-        providerName: 'Groq',
-        tokens: 385_000,
-        requests: 480,
-        totalLatency: 480 * 145
-      },
-      'deepseek/deepseek-r1:free': {
-        modelName: 'DeepSeek R1',
-        providerId: 'openrouter-free',
-        providerName: 'OpenRouter',
-        tokens: 310_000,
-        requests: 260,
-        totalLatency: 260 * 890
-      },
-      'qwen/qwen-2.5-coder-32b-instruct:free': {
-        modelName: 'Qwen 2.5 Coder 32B',
-        providerId: 'openrouter-free',
-        providerName: 'OpenRouter',
-        tokens: 240_000,
-        requests: 310,
-        totalLatency: 310 * 320
-      },
-      'claude-3-5-sonnet': {
-        modelName: 'Claude 3.5 Sonnet (OpenKilo)',
-        providerId: 'openkilo',
-        providerName: 'OpenKilo',
-        tokens: 195_000,
-        requests: 180,
-        totalLatency: 180 * 390
-      },
-      'gemini-2.0-flash-exp': {
-        modelName: 'Gemini 2.0 Flash Exp',
-        providerId: 'google-ai-studio-free',
-        providerName: 'Google AI Studio',
-        tokens: 125_000,
-        requests: 410,
-        totalLatency: 410 * 105
-      },
-      'llama-3.1-8b-instant': {
-        modelName: 'Llama 3.1 8B Instant',
-        providerId: 'groq-free',
-        providerName: 'Groq',
-        tokens: 85_000,
-        requests: 520,
-        totalLatency: 520 * 68
-      }
-    };
+    const ledger = usageLedger.getSnapshot();
+    const counters = ledger.providerCounters || {};
+    const rawCounts: Record<string, { modelName: string; providerId: string; providerName: string; tokens: number; requests: number; totalLatency: number }> = {};
+
+    for (const counter of Object.values(counters)) {
+      rawCounts[counter.modelId] = {
+        modelName: counter.modelId,
+        providerId: counter.providerId,
+        providerName: counter.providerId,
+        tokens: counter.totalTokens,
+        requests: counter.requests,
+        totalLatency: counter.totalLatencyMs
+      };
+    }
 
     // Incorporate recent live activity records
     for (const act of this.recentActivity) {

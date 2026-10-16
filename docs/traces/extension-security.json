@@ -1,0 +1,78 @@
+{
+  "timestamp": "2026-10-16T22:45:14.973Z",
+  "gitCommit": "35837e4b8995e19c1315c0c6f43762f2b2a5928c",
+  "command": "npm run test:security",
+  "durationMs": 103,
+  "environment": {
+    "node": "v24.13.1",
+    "platform": "win32",
+    "arch": "x64",
+    "gitCommit": "35837e4b8995e19c1315c0c6f43762f2b2a5928c"
+  },
+  "summary": {
+    "totalTests": 5,
+    "passedTests": 5,
+    "failedTests": 0,
+    "status": "PASS"
+  },
+  "tests": [
+    {
+      "id": "test-1-capability-permissions",
+      "name": "Capability-Based Permissions: Undeclared API calls rejected",
+      "status": "PASS",
+      "durationMs": 1,
+      "assertions": [
+        "[PASS] Extension successfully registered with scoped capabilities",
+        "[PASS] Blocked write capability with error: PERMISSION_DENIED: Extension \"test.read-only\" attempted to access capability \"workspace.fs.writeFile\" (requires \"workspace.fs.write\"), but manifest only declared [workspace.fs.read].",
+        "[PASS] Undeclared capability \"workspace.fs.write\" was strictly blocked",
+        "[PASS] Blocked command register with error: PERMISSION_DENIED: Extension \"test.read-only\" attempted to access capability \"commands.registerCommand\" (requires \"commands.register\"), but manifest only declared [workspace.fs.read].",
+        "[PASS] Undeclared capability \"commands.register\" was strictly blocked",
+        "[PASS] Declared capability \"workspace.fs.read\" validates successfully"
+      ]
+    },
+    {
+      "id": "test-2-out-of-workspace-protection",
+      "name": "Out-of-Workspace Write Protection: User prompt for dangerous path",
+      "status": "PASS",
+      "durationMs": 12,
+      "assertions": [
+        "[PASS] Inside-workspace write succeeds without containment violation",
+        "[PASS] Relative escaping path correctly identified as outside workspace",
+        "[PASS] User denial rejected write outside workspace: PERMISSION_DENIED: User denied write access outside workspace containment for \"../outside-target.txt\".",
+        "[PASS] User decline strictly blocked write outside workspace containment",
+        "[PASS] Approval prompt was dispatched to handler",
+        "[PASS] Prompt correctly identifies dangerous action",
+        "[PASS] User approval allows out-of-workspace write to complete",
+        "[PASS] Approval prompt was dispatched and approved"
+      ]
+    },
+    {
+      "id": "test-3-webview-sandbox-nonce",
+      "name": "Webview Sandbox & Nonce Handshake: allow-scripts only + handshake",
+      "status": "PASS",
+      "durationMs": 2,
+      "assertions": [
+        "[PASS] Webview panel instantiated with unique ID",
+        "[PASS] Webview sandbox strictly configured to \"allow-scripts\"",
+        "[PASS] CRITICAL: Webview sandbox does NOT include \"allow-same-origin\"",
+        "[PASS] Webview panel assigned cryptographically strong 32-character hex nonce",
+        "[PASS] Handshake verified with matching cryptographic nonce",
+        "[PASS] Handshake rejected with fraudulent/mismatched nonce"
+      ]
+    },
+    {
+      "id": "test-4-security-code-scanner",
+      "name": "Static Security Scanner: Dangerous pattern detection",
+      "status": "PASS",
+      "durationMs": 1,
+      "assertions": [
+        "[PASS] Scanner detected 4 security warnings (expected >= 4)",
+        "[PASS] Flagged dynamic eval() call",
+        "[PASS] Flagged Function constructor invocation",
+        "[PASS] Flagged remote HTTPS dynamic import",
+        "[PASS] Flagged process.binding escape attempt",
+        "[PASS] Clean extension produces zero false-positive warnings"
+      ]
+    }
+  ]
+}

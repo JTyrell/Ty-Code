@@ -14,10 +14,12 @@ import { AIBadge } from './components/AIBadge';
 import { QuickOpen } from './components/QuickOpen';
 import { CommandPalette } from './components/CommandPalette';
 import { OnboardingWizard } from './components/OnboardingWizard';
+import { FirstRunOnboardingModal } from './components/FirstRunOnboardingModal';
 import { WorkspaceEditReview } from './components/WorkspaceEditReview';
 import { ToastContainer } from './components/ToastContainer';
 import { ExtensionInputDialog } from './components/ExtensionInputDialog';
 import { AgentApprovalModal } from './components/AgentApprovalModal';
+import { ExtensionTracePanel } from './components/extensions/ExtensionTracePanel';
 import { transitionProfiler } from './services/perf/transition-profiler';
 import { useChatStore } from './state/chat-store';
 import { useWorkspaceStore } from './state/workspace-store';
@@ -39,6 +41,7 @@ export const App: React.FC = () => {
   const [quickOpenInitialQuery, setQuickOpenInitialQuery] = useState('');
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isBootTimelineOpen, setIsBootTimelineOpen] = useState(false);
+  const [isExtensionTraceOpen, setIsExtensionTraceOpen] = useState(false);
 
   // Resizable Sidebars State
   const [leftWidth, setLeftWidth] = useState(260);
@@ -420,6 +423,7 @@ export const App: React.FC = () => {
         onOpenWorkspaceSymbols={() => { setQuickOpenInitialQuery('#'); setIsQuickOpenOpen(true); }}
         onOpenQuickOpen={(initialQuery) => { setQuickOpenInitialQuery(initialQuery); setIsQuickOpenOpen(true); }}
         onOpenBootTimeline={() => setIsBootTimelineOpen(true)}
+        onOpenExtensionTrace={() => setIsExtensionTraceOpen(true)}
       />
 
       {/* Settings & Usage Modals */}
@@ -432,8 +436,13 @@ export const App: React.FC = () => {
         />
       </React.Suspense>
       <OnboardingWizard />
+      <FirstRunOnboardingModal />
       <ExtensionInputDialog />
       <AgentApprovalModal />
+      <ExtensionTracePanel
+        isOpen={isExtensionTraceOpen}
+        onClose={() => setIsExtensionTraceOpen(false)}
+      />
 
       {/* Global Toast Notifications */}
       <ToastContainer />

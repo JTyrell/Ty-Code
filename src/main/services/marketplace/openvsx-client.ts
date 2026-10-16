@@ -16,7 +16,7 @@ import type {
 } from '../../../shared/types/marketplace';
 
 const DEFAULT_BASE_URL = 'https://open-vsx.org';
-const REQUEST_TIMEOUT_MS = 10_000;
+const REQUEST_TIMEOUT_MS = 30_000;
 const MAX_RETRIES = 2;
 const INITIAL_BACKOFF_MS = 300;
 

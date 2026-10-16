@@ -19,7 +19,8 @@ import {
   Layers,
   Sparkles,
   AlertCircle,
-  Sliders
+  Sliders,
+  Activity
 } from 'lucide-react';
 import type { ExtensionMetadata, InstalledExtension } from '../../../preload/types';
 import type { MarketplaceExtensionEntry } from '../../../shared/types/marketplace';
@@ -28,6 +29,7 @@ import { ExtensionDetail } from './ExtensionDetail';
 import { ExtensionSettings } from './ExtensionSettings';
 import { ExtensionList } from './extensions/ExtensionList';
 import { ExtensionWidthSimulator } from './extensions/ExtensionWidthSimulator';
+import { ExtensionTracePanel } from './extensions/ExtensionTracePanel';
 
 /**
  * Formats SemVer version comparison to detect available updates.
@@ -81,6 +83,7 @@ export const ExtensionsPanel: React.FC = () => {
   const retrySearch = useExtensionStore((s) => s.retrySearch);
 
   const [showSimulator, setShowSimulator] = useState(false);
+  const [showTracer, setShowTracer] = useState(false);
 
   useEffect(() => {
     void loadInstalled();
@@ -88,8 +91,14 @@ export const ExtensionsPanel: React.FC = () => {
   }, [loadInstalled, searchMarketplace]);
 
   useEffect(() => {
-    if (activeTab !== 'marketplace' || query.trim().length < 3) return;
-    const timer = window.setTimeout(() => { void searchMarketplace(query); }, 250);
+    if (activeTab !== 'marketplace') return;
+    const timer = window.setTimeout(() => {
+      if (query.trim().length >= 1) {
+        void searchMarketplace(query);
+      } else {
+        void searchMarketplace('popular');
+      }
+    }, 300);
     return () => {
       window.clearTimeout(timer);
       useExtensionStore.getState().cancelMarketplaceSearch();
@@ -196,6 +205,21 @@ export const ExtensionsPanel: React.FC = () => {
             aria-label="Toggle Container Width Simulator"
           >
             <Sliders size={13} />
+          </button>
+          <button
+            onClick={() => setShowTracer(true)}
+            style={{
+              padding: '3px 6px',
+              borderRadius: '4px',
+              color: showTracer ? 'var(--accent-primary)' : 'var(--text-secondary)',
+              backgroundColor: showTracer ? 'rgba(139, 92, 246, 0.15)' : 'transparent',
+              border: 'none',
+              cursor: 'pointer'
+            }}
+            title="Trace Extension Install Pipeline (E1..E9 Live Probe)"
+            aria-label="Trace Extension Install Pipeline"
+          >
+            <Activity size={13} />
           </button>
         </div>
       </div>
@@ -480,6 +504,12 @@ export const ExtensionsPanel: React.FC = () => {
           onClose={() => setActiveSettings(null)}
         />
       )}
+
+      {/* Extension Installation Pipeline Trace Modal */}
+      <ExtensionTracePanel
+        isOpen={showTracer}
+        onClose={() => setShowTracer(false)}
+      />
     </div>
   );
 };

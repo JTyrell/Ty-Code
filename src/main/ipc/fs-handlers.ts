@@ -212,8 +212,8 @@ export async function getWorkspaceTreeChunked(
             extension: isDir ? undefined : path.extname(entry.name).toLowerCase()
           });
 
-          // Yield every 500 entries: ensures main process never blocks >16ms
-          if (processedCount % 500 === 0) {
+          // Yield every 100 entries: ensures main process never blocks >20ms
+          if (processedCount % 100 === 0) {
             await new Promise((resolve) => setImmediate(resolve));
           }
 
@@ -235,6 +235,9 @@ export async function getWorkspaceTreeChunked(
     }
 
     await walk(rootPath, '', 0);
+
+    // Yield before cache serialization to keep event loop responsive
+    await new Promise((resolve) => setImmediate(resolve));
 
     // Write disk index cache
     await writeTreeDiskCache(cacheKey, flatTree);

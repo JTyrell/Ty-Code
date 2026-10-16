@@ -1,0 +1,168 @@
+{
+  "version": 1,
+  "phase": "ExtensionsFix 2",
+  "title": "Real Open VSX Integration — Registry API + VSIX Download",
+  "timestamp": "2026-10-16T21:14:28.656Z",
+  "gitCommit": "35837e4b8995e19c1315c0c6f43762f2b2a5928c",
+  "command": "node scripts/run-openvsx-integration.mjs",
+  "registryUrl": "https://open-vsx.org",
+  "metrics": {
+    "searchLatencyMs": 584,
+    "searchResultCount": 10,
+    "installDurationMs": 14516,
+    "installedFileCount": 2382
+  },
+  "validationCriteria": {
+    "searchWithin2s": true,
+    "vsixSizeOver1MB": true,
+    "manifestValid": true,
+    "mainEntryPointExists": true,
+    "registeredInHost": true,
+    "uninstallRemovesDirectory": true,
+    "uninstallUnregistersHost": true
+  },
+  "steps": [
+    {
+      "step": "SEARCH_OPEN_VSX",
+      "query": "python",
+      "durationMs": 584,
+      "resultCount": 10,
+      "topResult": {
+        "id": "ms-python.python",
+        "displayName": "Python",
+        "version": "2026.4.0",
+        "downloadUrl": "https://open-vsx.org/api/ms-python/python/2026.4.0/file/ms-python.python-2026.4.0.vsix",
+        "sha256": "https://open-vsx.org/api/ms-python/python/2026.4.0/file/ms-python.python-2026.4.0.sha256"
+      },
+      "status": "PASS"
+    },
+    {
+      "step": "INSTALL_VSIX",
+      "extensionId": "ms-python.python",
+      "durationMs": 14516,
+      "targetDir": "C:\\Users\\JT\\.ty-code\\extensions\\ms-python.python-2026.4.0",
+      "fileCount": 2382,
+      "mainEntryPoint": "./out/client/extension",
+      "mainEntryPointVerified": true,
+      "registeredInHost": true,
+      "progressEventCount": 437,
+      "progressEvents": [
+        {
+          "id": "ms-python.python",
+          "step": "download",
+          "percent": 5,
+          "message": "Querying Open VSX registry metadata…",
+          "timeOffsetMs": 1
+        },
+        {
+          "id": "ms-python.python",
+          "step": "download",
+          "percent": 10,
+          "message": "Connecting to download server…",
+          "timeOffsetMs": 3
+        },
+        {
+          "id": "ms-python.python",
+          "step": "download",
+          "percent": 0,
+          "message": "Downloading VSIX package (0.0MB / 6.5MB)…",
+          "timeOffsetMs": 259
+        },
+        {
+          "id": "ms-python.python",
+          "step": "download",
+          "percent": 0,
+          "message": "Downloading VSIX package (0.0MB / 6.5MB)…",
+          "timeOffsetMs": 259
+        },
+        {
+          "id": "ms-python.python",
+          "step": "download",
+          "percent": 0,
+          "message": "Downloading VSIX package (0.0MB / 6.5MB)…",
+          "timeOffsetMs": 260
+        },
+        {
+          "id": "ms-python.python",
+          "step": "download",
+          "percent": 0,
+          "message": "Downloading VSIX package (0.0MB / 6.5MB)…",
+          "timeOffsetMs": 260
+        },
+        {
+          "id": "ms-python.python",
+          "step": "download",
+          "percent": 0,
+          "message": "Downloading VSIX package (0.0MB / 6.5MB)…",
+          "timeOffsetMs": 260
+        },
+        {
+          "id": "ms-python.python",
+          "step": "download",
+          "percent": 0,
+          "message": "Downloading VSIX package (0.0MB / 6.5MB)…",
+          "timeOffsetMs": 260
+        },
+        {
+          "id": "ms-python.python",
+          "step": "download",
+          "percent": 0,
+          "message": "Downloading VSIX package (0.0MB / 6.5MB)…",
+          "timeOffsetMs": 260
+        },
+        {
+          "id": "ms-python.python",
+          "step": "download",
+          "percent": 0,
+          "message": "Downloading VSIX package (0.0MB / 6.5MB)…",
+          "timeOffsetMs": 261
+        },
+        {
+          "id": "ms-python.python",
+          "step": "download",
+          "percent": 0,
+          "message": "Downloading VSIX package (0.0MB / 6.5MB)…",
+          "timeOffsetMs": 261
+        },
+        {
+          "id": "ms-python.python",
+          "step": "download",
+          "percent": 0,
+          "message": "Downloading VSIX package (0.0MB / 6.5MB)…",
+          "timeOffsetMs": 263
+        },
+        {
+          "id": "ms-python.python",
+          "step": "download",
+          "percent": 0,
+          "message": "Downloading VSIX package (0.0MB / 6.5MB)…",
+          "timeOffsetMs": 263
+        },
+        {
+          "id": "ms-python.python",
+          "step": "download",
+          "percent": 0,
+          "message": "Downloading VSIX package (0.0MB / 6.5MB)…",
+          "timeOffsetMs": 263
+        },
+        {
+          "id": "ms-python.python",
+          "step": "download",
+          "percent": 0,
+          "message": "Downloading VSIX package (0.0MB / 6.5MB)…",
+          "timeOffsetMs": 274
+        }
+      ],
+      "status": "PASS"
+    },
+    {
+      "step": "UNINSTALL_EXTENSION",
+      "extensionId": "ms-python.python",
+      "durationMs": 493,
+      "directoryRemoved": true,
+      "unregisteredFromHost": true,
+      "status": "PASS"
+    }
+  ],
+  "status": "ALL_CRITERIA_VERIFIED"
+}

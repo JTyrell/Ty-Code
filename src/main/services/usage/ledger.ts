@@ -15,6 +15,7 @@
 
 import { app } from 'electron';
 import fs from 'node:fs/promises';
+import fsSync from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 
@@ -104,7 +105,21 @@ const getUserDataPath = (): string => {
 };
 
 const LEDGER_FILE = path.join(getUserDataPath(), 'usage-ledger.json');
+const SQLITE_FILE = path.join(getUserDataPath(), 'usage-ledger.db');
 const COMMERCIAL_PRICE_PER_M_TOKENS = 3.0; // $3.00 per 1M tokens benchmark
+
+export interface SqliteLedgerRow {
+  id?: number;
+  provider_id: string;
+  model_id: string;
+  timestamp: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  latency_ms: number;
+  error_count: number;
+  success_count: number;
+}
 
 export class UsageLedgerService {
   private static instance: UsageLedgerService;
@@ -115,6 +130,7 @@ export class UsageLedgerService {
   private isLoaded = false;
   private isWriting = false;
   private writePending = false;
+  private sqliteDb: any = null;
 
   private overall = {
     totalRequests: 0,
@@ -132,7 +148,50 @@ export class UsageLedgerService {
   private static readonly MAX_RECENT_TRANSACTIONS = 500;
 
   private constructor() {
+    this.initSqlite();
     void this.loadLedger();
+  }
+
+  private initSqlite(): void {
+    try {
+      // Support native node:sqlite or better-sqlite3 dynamically
+      let DatabaseClass: any = null;
+      try {
+        DatabaseClass = require('node:sqlite').DatabaseSync;
+      } catch {
+        try {
+          const fallbackMod = 'better-sqlite3';
+          DatabaseClass = require(fallbackMod);
+        } catch {}
+      }
+
+      if (DatabaseClass) {
+        fsSync.mkdirSync(path.dirname(SQLITE_FILE), { recursive: true });
+        this.sqliteDb = new DatabaseClass(SQLITE_FILE);
+        this.sqliteDb.exec(`
+          CREATE TABLE IF NOT EXISTS usage_ledger (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            provider_id TEXT NOT NULL,
+            model_id TEXT NOT NULL,
+            timestamp INTEGER NOT NULL,
+            prompt_tokens INTEGER NOT NULL,
+            completion_tokens INTEGER NOT NULL,
+            total_tokens INTEGER NOT NULL,
+            latency_ms INTEGER NOT NULL,
+            error_count INTEGER NOT NULL,
+            success_count INTEGER NOT NULL
+          );
+          CREATE INDEX IF NOT EXISTS idx_usage_provider ON usage_ledger(provider_id);
+          CREATE INDEX IF NOT EXISTS idx_usage_timestamp ON usage_ledger(timestamp);
+        `);
+      }
+    } catch (err) {
+      // SQLite init warning; fall back gracefully to JSON persistence
+    }
+  }
+
+  public getSqliteDb(): any {
+    return this.sqliteDb;
   }
 
   public static getInstance(): UsageLedgerService {
@@ -405,6 +464,30 @@ export class UsageLedgerService {
       this.recentTransactions.shift();
     }
 
+    // Insert into SQLite database if available
+    if (this.sqliteDb) {
+      try {
+        const stmt = this.sqliteDb.prepare(`
+          INSERT INTO usage_ledger (
+            provider_id, model_id, timestamp, prompt_tokens, completion_tokens, total_tokens, latency_ms, error_count, success_count
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        stmt.run(
+          providerId,
+          modelId,
+          transaction.timestamp,
+          promptTokens,
+          completionTokens,
+          totalTokens,
+          latencyMs,
+          success ? 0 : 1,
+          success ? 1 : 0
+        );
+      } catch {
+        // non-blocking
+      }
+    }
+
     void this.persist();
   }
 
@@ -512,7 +595,79 @@ export class UsageLedgerService {
     this.providerCounters.clear();
     this.rateLimits.clear();
     this.recentTransactions = [];
+    if (this.sqliteDb) {
+      try {
+        this.sqliteDb.exec('DELETE FROM usage_ledger');
+      } catch {}
+    }
     await this.persist();
+  }
+
+  /**
+   * Retrieves raw transaction rows from SQLite database
+   */
+  public getSqliteRows(limit = 100): SqliteLedgerRow[] {
+    if (!this.sqliteDb) return [];
+    try {
+      const stmt = this.sqliteDb.prepare(`
+        SELECT provider_id, model_id, timestamp, prompt_tokens, completion_tokens, total_tokens, latency_ms, error_count, success_count
+        FROM usage_ledger
+        ORDER BY timestamp DESC
+        LIMIT ?
+      `);
+      return stmt.all(limit) as SqliteLedgerRow[];
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Aggregates usage grouped by provider and model directly from SQLite
+   */
+  public getAggregatedStats(): Array<{
+    provider_id: string;
+    model_id: string;
+    total_requests: number;
+    total_prompt_tokens: number;
+    total_completion_tokens: number;
+    total_tokens: number;
+    avg_latency_ms: number;
+    error_count: number;
+    success_count: number;
+  }> {
+    if (!this.sqliteDb) {
+      return Array.from(this.providerCounters.values()).map((c) => ({
+        provider_id: c.providerId,
+        model_id: c.modelId,
+        total_requests: c.requests,
+        total_prompt_tokens: c.promptTokens,
+        total_completion_tokens: c.completionTokens,
+        total_tokens: c.totalTokens,
+        avg_latency_ms: c.requests > 0 ? Math.round(c.totalLatencyMs / c.requests) : 0,
+        error_count: c.errors,
+        success_count: Math.max(0, c.requests - c.errors)
+      }));
+    }
+    try {
+      const stmt = this.sqliteDb.prepare(`
+        SELECT
+          provider_id,
+          model_id,
+          COUNT(*) as total_requests,
+          SUM(prompt_tokens) as total_prompt_tokens,
+          SUM(completion_tokens) as total_completion_tokens,
+          SUM(total_tokens) as total_tokens,
+          ROUND(AVG(latency_ms)) as avg_latency_ms,
+          SUM(error_count) as error_count,
+          SUM(success_count) as success_count
+        FROM usage_ledger
+        GROUP BY provider_id, model_id
+        ORDER BY total_tokens DESC
+      `);
+      return stmt.all() as any[];
+    } catch {
+      return [];
+    }
   }
 
   // =========================================================================

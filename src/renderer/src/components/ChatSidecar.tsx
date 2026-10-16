@@ -19,6 +19,7 @@ import { useChatStore } from '../state/chat-store';
 import { useWorkspaceStore } from '../state/workspace-store';
 import { usePairProgrammingStore } from '../state/pair-programming-store';
 import { ModelSelector } from './ChatInterface/ModelSelector';
+import { ProviderSetupCard } from './ProviderSetupCard';
 import type { ChatMessage, ToolCall, ToolExecutionStatus, ChatErrorCard, ProviderType } from '../../../preload/types';
 
 const languages: Record<string, LanguageFn> = {
@@ -711,7 +712,7 @@ export const StandardErrorCard: React.FC<{ errorCard: ChatErrorCard; onRetry?: (
 
 export const ErrorCard: React.FC<{ errorCard: ChatErrorCard; onRetry?: () => void }> = ({ errorCard, onRetry }) => {
   if (errorCard.taxonomyCode === 'CONFIG_MISSING') {
-    return <ConnectProviderCard errorCard={errorCard} onRetry={onRetry} />;
+    return <ProviderSetupCard errorCard={errorCard} onRetry={onRetry} />;
   }
   if (errorCard.taxonomyCode === 'NETWORK_BLOCKED') {
     return <NetworkErrorCard errorCard={errorCard} onRetry={onRetry} />;

@@ -24,6 +24,7 @@ export interface ExtensionCardProps {
   installedRecord?: InstalledExtension;
   isInstalling?: boolean;
   installMessage?: string;
+  installPercent?: number;
   errorMessage?: string;
   canRetry?: boolean;
   onSelect?: (item: MarketplaceExtensionEntry | InstalledExtension | ExtensionMetadata) => void;
@@ -54,6 +55,7 @@ export const ExtensionCard: React.FC<ExtensionCardProps> = ({
   installedRecord,
   isInstalling = false,
   installMessage,
+  installPercent,
   errorMessage,
   canRetry = false,
   onSelect,
@@ -182,21 +184,48 @@ export const ExtensionCard: React.FC<ExtensionCardProps> = ({
       {/* Column 3: Fixed Min-Width (76px, collapses to icon-only at <260px) */}
       <div className="extension-card-action" onClick={(e) => e.stopPropagation()}>
         {isInstalling ? (
-          /* Installing spinner with current progress message */
+          /* Installing spinner with download progress bar */
           <div
             style={{
               display: 'flex',
-              alignItems: 'center',
-              gap: '5px',
-              fontSize: '12px',
+              flexDirection: 'column',
+              alignItems: 'flex-end',
+              gap: '3px',
+              fontSize: '11px',
               color: 'var(--accent-primary)',
               whiteSpace: 'nowrap'
             }}
             title={installMessage || 'Installing…'}
             aria-label={`Installing ${displayName}`}
           >
-            <RefreshCw size={13} className="animate-spin" />
-            <span className="extension-installing-text">Installing</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <RefreshCw size={12} className="animate-spin" />
+              <span className="extension-installing-text">
+                {installPercent !== undefined ? `${installPercent}%` : 'Installing'}
+              </span>
+            </div>
+            {/* Progress Bar Track and Fill */}
+            <div
+              className="extension-progress-bar-track"
+              style={{
+                width: '64px',
+                height: '4px',
+                backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                borderRadius: '2px',
+                overflow: 'hidden'
+              }}
+            >
+              <div
+                className="extension-progress-bar-fill"
+                style={{
+                  width: `${Math.max(5, Math.min(100, installPercent ?? 20))}%`,
+                  height: '100%',
+                  backgroundColor: 'var(--accent-primary)',
+                  borderRadius: '2px',
+                  transition: 'width 0.2s ease'
+                }}
+              />
+            </div>
           </div>
         ) : errorMessage ? (
           /* Error state with Retry button */

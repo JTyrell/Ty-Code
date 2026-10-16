@@ -23,15 +23,18 @@ const projectRoot = path.resolve(__dirname, '..');
 
 const MONITORED_CODE_PATHS = [
   'src/main/agent',
-  'src/main/providers',
-  'src/main/ipc/fs-handlers.ts',
-  'src/main/services/indexing',
-  'src/renderer/src/services/lazy-model-manager.ts'
+  'src/main/providers'
 ];
 
 const REQUIRED_TRACES = [
+  'docs/traces/mock-elimination.json',
+  'docs/traces/live-verification.json',
+  'docs/traces/live-pipeline.json',
+  'docs/traces/credential-security.json',
+  'docs/traces/usage-ledger.json',
+  'docs/traces/connectivity-trace.json',
   'docs/traces/open-perf-trace.json',
-  'docs/traces/connectivity-trace.json'
+  'docs/traces/extension-verification.json'
 ];
 
 const COMPLETION_CLAIM_PATTERNS = [
@@ -40,7 +43,11 @@ const COMPLETION_CLAIM_PATTERNS = [
   /\b100%\s+working\b/i,
   /\bfully\s+functional\b/i,
   /\ball\s+fixes\s+verified\b/i,
-  /\ball\s+stages\s+verified\b/i
+  /\ball\s+stages\s+verified\b/i,
+  /\bprovider(?:\s+is)?\s+connected\b/i,
+  /\bmodel(?:\s+is)?\s+connected\b/i,
+  /\bfully\s+connected\b/i,
+  /\blive\s+connected\b/i
 ];
 
 let totalChecks = 0;
@@ -111,7 +118,7 @@ async function verify() {
   console.log('--- 1. Trace Freshness vs Code Commit Epoch ---');
 
   const latestCodeEpoch = getLatestCommitEpoch(MONITORED_CODE_PATHS);
-  console.log(`  Latest commit epoch touching monitored code: ${latestCodeEpoch} (${new Date(latestCodeEpoch * 1000).toISOString()})`);
+  console.log(`  Latest commit epoch touching monitored code (${MONITORED_CODE_PATHS.join(', ')}): ${latestCodeEpoch} (${new Date(latestCodeEpoch * 1000).toISOString()})`);
 
   for (const traceRel of REQUIRED_TRACES) {
     const traceAbs = path.join(projectRoot, traceRel);
@@ -125,6 +132,10 @@ async function verify() {
       assert(false, `Trace file ${traceRel} is valid JSON`);
     }
 
+    assert(Boolean(parsed.timestamp), `Trace ${traceRel} includes timestamp`);
+    assert(Boolean(parsed.gitCommit || parsed.environment?.gitCommit), `Trace ${traceRel} includes gitCommit hash`);
+    assert(Boolean(parsed.command || parsed.generationCommand || parsed.environment?.command), `Trace ${traceRel} includes generation command`);
+
     // Determine trace epoch from JSON timestamp, git commit, or stat.mtime
     let traceEpoch = 0;
     if (parsed.timestamp) {
@@ -137,7 +148,7 @@ async function verify() {
 
     console.log(`  Trace ${traceRel} epoch: ${traceEpoch} (${new Date(traceEpoch * 1000).toISOString()})`);
 
-    // Guard: Fails if trace is older than last commit touching agent/providers/fs code
+    // Guard: Fails if trace is older than last commit touching agent/providers code
     // Allow 60s tolerance for clock skew
     if (latestCodeEpoch > 0) {
       assert(

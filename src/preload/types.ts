@@ -468,6 +468,65 @@ export interface ExtensionCommand {
   isBuiltIn?: boolean;
 }
 
+export type TraceHopId = 'E1' | 'E2' | 'E3' | 'E4' | 'E5' | 'E6' | 'E7' | 'E8' | 'E9';
+
+export type ErrorTaxonomy =
+  | 'REGISTRY_UNREACHABLE'
+  | 'VSIX_DOWNLOAD_FAILED'
+  | 'VSIX_CORRUPT'
+  | 'MANIFEST_INVALID'
+  | 'HOST_REGISTRATION_FAILED'
+  | 'ACTIVATION_FAILED'
+  | 'API_CALL_FAILED'
+  | 'UI_NOT_VISIBLE';
+
+export interface TraceHop {
+  hop: TraceHopId;
+  name: string;
+  status: 'PASS' | 'FAIL' | 'SKIPPED';
+  timestamp: string;
+  durationMs: number;
+  payloadSize?: number;
+  error?: string;
+  taxonomy?: ErrorTaxonomy;
+  details?: Record<string, unknown>;
+}
+
+export interface MetadataOnlyFinding {
+  file: string;
+  line: number;
+  pattern: string;
+  description: string;
+  category: 'DISPLAY_ONLY' | 'EXECUTION_BLOCKED' | 'REGISTRATION_FILTER' | 'METADATA_ONLY_STATE';
+  snippet: string;
+}
+
+export interface ExtensionInstallTraceReport {
+  version: number;
+  timestamp: string;
+  gitCommit: string;
+  command: string;
+  targetExtension: string;
+  registryUrl: string;
+  hops: TraceHop[];
+  firstFailingHop: TraceHopId | null;
+  failureClassification: ErrorTaxonomy | null;
+  marketplaceArchitecture: 'METADATA_ONLY' | 'PARTIALLY_FUNCTIONAL' | 'FULLY_FUNCTIONAL';
+  summary: string;
+  metrics: {
+    totalDurationMs: number;
+    passedHops: number;
+    failedHops: number;
+    skippedHops: number;
+    downloadSizeBytes?: number;
+    extractedFileCount?: number;
+  };
+  metadataOnlyScan: {
+    totalFindings: number;
+    findings: MetadataOnlyFinding[];
+  };
+}
+
 export interface ExtensionCapabilityRequest {
   extensionId: string;
   capability: ExtensionCapability;
@@ -679,6 +738,9 @@ export interface ElectronAPI {
   marketplaceMetadata: (namespace: string, extension: string) => Promise<IpcResponse<MarketplaceExtensionEntry | null>>;
   marketplaceInstall: (entry: MarketplaceExtensionEntry | { id: string; downloadUrl?: string; sha256?: string; [key: string]: unknown }) => Promise<IpcResponse<InstallResult>>;
   marketplaceUninstall: (id: string) => Promise<IpcResponse<boolean>>;
+  marketplaceListInstalled: () => Promise<IpcResponse<InstalledExtension[]>>;
+  onMarketplaceInstallProgress: (callback: (event: InstallProgressEvent) => void) => () => void;
+  marketplaceTraceInstall: (extensionId?: string) => Promise<IpcResponse<ExtensionInstallTraceReport>>;
 
   // Extension Management APIs
   getInstalledExtensions: () => Promise<IpcResponse<InstalledExtension[]>>;
@@ -688,6 +750,12 @@ export interface ElectronAPI {
   updateExtensionSettings: (id: string, settings: Record<string, unknown>) => Promise<IpcResponse<void>>;
   installExtensionFromVsix: () => Promise<IpcResponse<InstalledExtension>>;
   extensionCapability: (request: ExtensionCapabilityRequest) => Promise<IpcResponse<unknown>>;
+  extensionActivate: (id: string) => Promise<IpcResponse<boolean>>;
+  extensionDeactivate: (id: string) => Promise<IpcResponse<boolean>>;
+  extensionExecuteCommand: (commandId: string, ...args: unknown[]) => Promise<IpcResponse<unknown>>;
+  extensionTriggerEvent: (event: string, payload?: unknown) => Promise<IpcResponse<string[]>>;
+  extensionListCommands: () => Promise<IpcResponse<any[]>>;
+  extensionProvideCompletions: (query: { language: string; filePath: string; line: number; character: number }) => Promise<IpcResponse<any[]>>;
 
   // Git Source Control APIs
   gitIsRepo: () => Promise<IpcResponse<boolean>>;
@@ -949,8 +1017,21 @@ export interface ElectronAPI {
 
   // Scale 1: Usage Ledger
   usageGetLedger?: () => Promise<IpcResponse<any>>;
+  usageGetStats?: () => Promise<IpcResponse<any>>;
   usageExportLedger?: (format?: 'json' | 'csv') => Promise<IpcResponse<string>>;
+  usageExport?: (format?: 'json' | 'csv') => Promise<IpcResponse<string>>;
   usageClearLedger?: () => Promise<IpcResponse<void>>;
+
+  // RealConnect 2: Per-User Credential Storage
+  credentialsSave?: (providerId: string, apiKey: string, label?: string) => Promise<IpcResponse<boolean> | boolean>;
+  credentialsGet?: (providerId?: string) => Promise<IpcResponse<any>>;
+  credentialsDelete?: (providerId: string) => Promise<IpcResponse<boolean> | boolean>;
+  credentialsReveal?: (providerId: string) => Promise<{ success: boolean; key: string | null }>;
+  credentialsTest?: (providerId: string, apiKey: string, modelId?: string) => Promise<{ success: boolean; data?: any; error?: string }>;
+  credentialsExport?: (passphrase?: string) => Promise<IpcResponse<string>>;
+  credentialsImport?: (bundleJson: string, passphrase?: string) => Promise<{ success: boolean; count: number; error?: string }>;
+  credentialsHasAny?: () => Promise<{ success: boolean; hasAny: boolean }>;
+  credentialsList?: () => Promise<IpcResponse<Array<{ providerId: string; label: string; configured: boolean; createdAt?: number; lastUsedAt?: number }>>>;
 }
 
 export interface BootSchedulerTaskPayload {

@@ -1,0 +1,60 @@
+{
+  "phase": "RealConnect 3",
+  "title": "Inline Provider Setup Card + Live Connectivity Proofs",
+  "timestamp": "2026-10-16T21:53:55.859Z",
+  "epoch": 1792187635,
+  "gitCommit": "35837e4b8995e19c1315c0c6f43762f2b2a5928c",
+  "command": "npm run test:live",
+  "status": "VERIFIED_PASS",
+  "liveProofs": {
+    "test1_nonceEcho": {
+      "status": "PASS",
+      "nonce": "7Q4X9",
+      "responseSnippet": "Code: 7Q4X9 echoed faithfully.",
+      "assertion": "response.includes('7Q4X9') === true",
+      "passed": true
+    },
+    "test2_distinctness": {
+      "status": "PASS",
+      "prompts": [
+        "Hi",
+        "Explain hashes",
+        "What is 17*23?"
+      ],
+      "responses": [
+        "Hello! How can I assist you today?",
+        "A cryptographic hash function deterministically maps arbitrary data to a fixed-s",
+        "17 multiplied by 23 is 391."
+      ],
+      "assertion": "response1 !== response2 && response2 !== response3 && response1 !== response3",
+      "passed": true
+    },
+    "test3_streamingTruth": {
+      "status": "PASS",
+      "streamEventCount": 25,
+      "assertion": "streamEventCount >= 5",
+      "passed": true
+    },
+    "test4_agenticFileCreation": {
+      "status": "PASS",
+      "targetFile": "live-check.md",
+      "content": "verified",
+      "toolCallReceived": true,
+      "assertion": "fs.existsSync('live-check.md') && fs.readFileSync('live-check.md').trim() === 'verified'",
+      "passed": true
+    },
+    "test5_offlineBehavior": {
+      "status": "PASS",
+      "taxonomyCode": "NETWORK_BLOCKED",
+      "elapsedMs": 10,
+      "assertion": "Taxonomy code NETWORK_BLOCKED/TIMEOUT within 10s without hang",
+      "passed": true
+    }
+  },
+  "summary": {
+    "totalLiveTests": 5,
+    "passedTests": 5,
+    "allProofsVerified": true,
+    "totalSuiteAssertions": 68
+  }
+}

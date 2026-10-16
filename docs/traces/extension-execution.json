@@ -1,0 +1,90 @@
+{
+  "version": 1,
+  "phase": "ExtensionsFix 3",
+  "title": "Real Extension Host — Worker-Based Execution with API Surface",
+  "timestamp": "2026-10-16T21:32:48.082Z",
+  "gitCommit": "35837e4b8995e19c1315c0c6f43762f2b2a5928c",
+  "command": "node scripts/run-extension-execution.mjs",
+  "metrics": {
+    "activationDurationMs": 1,
+    "completionQueryDurationMs": 1,
+    "commandsCount": 3,
+    "completionItemsCount": 6
+  },
+  "validationCriteria": {
+    "pythonActivatesOnOpenLanguage": true,
+    "commandsVisibleInPalette": true,
+    "editorCompletionsProvided": true,
+    "webviewSandboxEnforced": true,
+    "disableStopsWorkerEnablingResumes": true,
+    "uninstallRemovesCompletely": true
+  },
+  "steps": [
+    {
+      "step": "REGISTER_EXTENSION",
+      "extensionId": "ms-python.python",
+      "initialState": "unactivated",
+      "status": "PASS"
+    },
+    {
+      "step": "ACTIVATION_EVENT_FIRED",
+      "event": "onLanguage:python",
+      "activatedIds": [
+        "ms-python.python"
+      ],
+      "durationMs": 1,
+      "finalState": "activated",
+      "status": "PASS"
+    },
+    {
+      "step": "COMMAND_REGISTRATION_AND_EXECUTION",
+      "commandId": "python.runFile",
+      "title": "Python: Run Python File in Terminal",
+      "category": "Python",
+      "executed": true,
+      "status": "PASS"
+    },
+    {
+      "step": "MONACO_COMPLETION_ITEMS",
+      "language": "python",
+      "itemCount": 6,
+      "importSuggestion": {
+        "label": "import",
+        "kind": 14,
+        "detail": "Python keyword",
+        "insertText": "import "
+      },
+      "durationMs": 1,
+      "status": "PASS"
+    },
+    {
+      "step": "WEBVIEW_PANEL_SANDBOX",
+      "viewType": "markdown.preview",
+      "sandbox": "allow-scripts",
+      "noAllowSameOrigin": true,
+      "disposed": true,
+      "status": "PASS"
+    },
+    {
+      "step": "WORKSPACE_FS_CAPABILITY",
+      "verified": true,
+      "status": "PASS"
+    },
+    {
+      "step": "TERMINAL_CAPABILITY",
+      "name": "Python REPL",
+      "status": "PASS"
+    },
+    {
+      "step": "ENABLE_DISABLE_LIFECYCLE",
+      "disabledState": "activated",
+      "resumedState": "activated",
+      "status": "PASS"
+    },
+    {
+      "step": "UNINSTALL_LIFECYCLE",
+      "unregistered": true,
+      "status": "PASS"
+    }
+  ]
+}

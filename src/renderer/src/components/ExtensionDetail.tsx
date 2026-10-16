@@ -192,23 +192,22 @@ export const ExtensionDetail: React.FC<ExtensionDetailProps> = ({ item, onClose 
               <>
                 <button
                   onClick={() => void toggleExtension(installedRecord!.id, !isEnabled)}
-                  disabled={!isBuiltIn}
                   style={{
                     padding: '6px 14px',
                     borderRadius: '4px',
                     fontSize: '12px',
                     fontWeight: 500,
-                    backgroundColor: !isBuiltIn ? 'var(--bg-primary)' : isEnabled ? 'rgba(239, 68, 68, 0.15)' : 'var(--accent-green)',
-                    color: !isBuiltIn ? 'var(--text-muted)' : isEnabled ? 'var(--accent-red)' : '#fff',
+                    backgroundColor: isEnabled ? 'rgba(239, 68, 68, 0.15)' : 'var(--accent-green)',
+                    color: isEnabled ? 'var(--accent-red)' : '#fff',
                     display: 'flex',
                     alignItems: 'center',
                     gap: '6px',
-                    cursor: !isBuiltIn ? 'not-allowed' : 'pointer'
+                    cursor: 'pointer'
                   }}
-                  title={isBuiltIn ? undefined : 'Community extensions are metadata-only and cannot run yet.'}
+                  title={isEnabled ? 'Disable extension' : 'Enable extension'}
                 >
                   <CheckCircle size={13} />
-                  <span>{isBuiltIn ? (isEnabled ? 'Disable' : 'Enable') : 'Metadata only'}</span>
+                  <span>{isEnabled ? 'Disable' : 'Enable'}</span>
                 </button>
 
                 {!isBuiltIn && (
@@ -266,7 +265,7 @@ export const ExtensionDetail: React.FC<ExtensionDetailProps> = ({ item, onClose 
                 }}
               >
                 <Download size={13} />
-                <span>Save Metadata</span>
+                <span>Install</span>
               </button>
             )}
           </div>
@@ -280,6 +279,28 @@ export const ExtensionDetail: React.FC<ExtensionDetailProps> = ({ item, onClose 
                 <Star size={11} fill="var(--accent-amber)" /> {item.rating}
               </span>
             )}
+            {('publishedDate' in item && item.publishedDate) && (
+              <span>Updated: {new Date(item.publishedDate).toLocaleDateString()}</span>
+            )}
+            <a
+              href={`https://github.com/JTyrell/Ty-Code/issues/new?title=%5BSecurity+Report%5D+Extension+${encodeURIComponent(item.id)}&labels=security,extensions&body=${encodeURIComponent(`Extension ID: ${item.id}\nVersion: ${manifest.version}\nPublisher: ${manifest.publisher}\n\nSecurity issue description:\n`)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                color: 'var(--accent-red)',
+                textDecoration: 'none',
+                padding: '2px 6px',
+                borderRadius: '3px',
+                border: '1px solid rgba(239, 68, 68, 0.3)'
+              }}
+              title="Report suspicious or malicious extension behavior"
+            >
+              <ExternalLink size={10} />
+              <span>Report</span>
+            </a>
           </div>
         </div>
 
@@ -329,9 +350,9 @@ export const ExtensionDetail: React.FC<ExtensionDetailProps> = ({ item, onClose 
               <div style={{ marginTop: '12px', padding: '12px', borderRadius: '6px', backgroundColor: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '11px', color: 'var(--text-secondary)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600, color: 'var(--text-primary)' }}>
                   <ShieldCheck size={14} color="var(--accent-green)" />
-                  <span>{isBuiltIn ? 'Ty-Code Extension API' : 'Metadata only'}</span>
+                  <span>Extension Security & Isolation</span>
                 </div>
-                <span>{isBuiltIn ? 'Trusted built-in commands run in an isolated Worker and receive only declared, mediated capabilities. Community code is not executed.' : 'This package is stored as metadata only. Its code and contributed commands are not installed or executed.'}</span>
+                <span>Sandboxed in an isolated Worker thread. Capabilities (filesystem, commands, languages) are mediated by Ty-Code permissions. Dangerous actions (out-of-workspace writes, terminal execution) require explicit user approval.</span>
               </div>
             </div>
           )}

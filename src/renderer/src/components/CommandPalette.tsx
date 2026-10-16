@@ -45,6 +45,7 @@ interface CommandPaletteProps {
   onOpenWorkspaceSymbols?: () => void;
   onOpenQuickOpen?: (initialQuery: string) => void;
   onOpenBootTimeline?: () => void;
+  onOpenExtensionTrace?: () => void;
 }
 
 export const CommandPalette: React.FC<CommandPaletteProps> = ({
@@ -57,10 +58,12 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   onSplitEditor,
   onOpenWorkspaceSymbols,
   onOpenQuickOpen,
-  onOpenBootTimeline
+  onOpenBootTimeline,
+  onOpenExtensionTrace
 }) => {
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [hostCommands, setHostCommands] = useState<Array<{ id: string; title: string; category?: string }>>([]);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const { saveActiveFile, activeTabPath, openTabs } = useWorkspaceStore();
@@ -71,12 +74,28 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       setQuery('');
       setSelectedIndex(0);
       setTimeout(() => inputRef.current?.focus(), 50);
+
+      window.electronAPI.extensionListCommands?.().then((res) => {
+        if (res && res.success && Array.isArray(res.data)) {
+          setHostCommands(res.data);
+        }
+      }).catch(() => undefined);
     }
   }, [isOpen]);
 
   // Generate complete command list
   const getCommands = (): CommandItem[] => {
     const commands: CommandItem[] = [
+      {
+        id: 'tycode.extension.traceInstall',
+        title: 'Ty-Code: Trace Extension Install',
+        category: 'Extension',
+        icon: <Activity size={14} color="var(--accent-primary)" />,
+        action: () => {
+          onClose();
+          onOpenExtensionTrace?.();
+        }
+      },
       {
         id: 'editor.save',
         title: 'Save Active File',
@@ -448,6 +467,23 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
           onClose();
         }
       });
+    }
+
+    for (const cmd of hostCommands) {
+      if (!commands.some((c) => c.id === cmd.id)) {
+        commands.push({
+          id: cmd.id,
+          title: cmd.title,
+          category: 'Extension',
+          icon: <Bookmark size={14} color="var(--accent-primary)" />,
+          action: () => {
+            void window.electronAPI.extensionExecuteCommand(cmd.id).catch((error: unknown) => {
+              console.error('Extension command failed:', error);
+            });
+            onClose();
+          }
+        });
+      }
     }
 
     return commands;

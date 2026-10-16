@@ -275,6 +275,16 @@ export class ExtensionManager {
     }
 
     this.initialized = true;
+
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { extensionHost } = require('./extensions/extension-host');
+      for (const ext of this.installedExtensions.values()) {
+        void extensionHost.registerExtension(ext);
+      }
+    } catch {
+      // ignore if running in test environment without full extension host
+    }
   }
 
   async persist(): Promise<void> {
@@ -386,6 +396,19 @@ export class ExtensionManager {
 
     ext.enabled = enabled;
     await this.persist();
+
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { extensionHost } = require('./extensions/extension-host');
+      if (enabled) {
+        await extensionHost.enableExtension(ext.id);
+      } else {
+        await extensionHost.disableExtension(ext.id);
+      }
+    } catch {
+      // ignore
+    }
+
     return ext;
   }
 

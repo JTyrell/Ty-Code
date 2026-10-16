@@ -319,10 +319,15 @@ export const ProviderCards: React.FC<ProviderCardsProps> = ({
                   ) : isConfigured ? (
                     <span style={{ color: '#38bdf8', display: 'flex', alignItems: 'center', gap: '4px' }}>
                       <LockKeyhole size={12} />
-                      Key Saved: {stored?.maskedKey || '••••••••'}
+                      Connected ({stored?.maskedKey || 'Key Saved'})
+                    </span>
+                  ) : isZeroConfig ? (
+                    <span style={{ color: '#10b981', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <Zap size={12} />
+                      Anonymous
                     </span>
                   ) : (
-                    <span style={{ color: '#64748b' }}>Not Connected</span>
+                    <span style={{ color: '#64748b' }}>Disconnected</span>
                   )}
                 </div>
               </div>
@@ -338,11 +343,12 @@ export const ProviderCards: React.FC<ProviderCardsProps> = ({
                   borderTop: '1px solid rgba(255, 255, 255, 0.05)'
                 }}
               >
-                <div style={{ display: 'flex', gap: '6px' }}>
+                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                   <button
                     type="button"
                     id={`btn-add-key-${provider.id}`}
                     onClick={() => onAddKey(provider.id)}
+                    title={isConfigured ? 'Update provider key' : 'Connect provider'}
                     style={{
                       padding: '5px 10px',
                       borderRadius: '5px',
@@ -354,7 +360,7 @@ export const ProviderCards: React.FC<ProviderCardsProps> = ({
                       cursor: 'pointer'
                     }}
                   >
-                    {isConfigured ? 'Update Key' : 'Add Key'}
+                    {isConfigured ? 'Update Key' : 'Connect'}
                   </button>
 
                   <button
@@ -362,7 +368,7 @@ export const ProviderCards: React.FC<ProviderCardsProps> = ({
                     id={`btn-test-${provider.id}`}
                     disabled={isTesting}
                     onClick={() => void onTestConnection(provider.id)}
-                    title="Test connection to provider"
+                    title="Test Connection"
                     style={{
                       padding: '5px 8px',
                       borderRadius: '5px',
@@ -377,31 +383,35 @@ export const ProviderCards: React.FC<ProviderCardsProps> = ({
                     }}
                   >
                     <RotateCw size={11} className={isTesting ? 'spinning' : ''} />
-                    {isTesting ? 'Testing' : 'Test'}
+                    {isTesting ? 'Testing...' : 'Test Connection'}
                   </button>
-                </div>
 
-                <div style={{ display: 'flex', gap: '4px' }}>
                   {isConfigured && (
                     <button
                       type="button"
                       id={`btn-remove-${provider.id}`}
                       onClick={() => void onRemoveKey(provider.id)}
-                      title="Remove stored key"
+                      title="Disconnect provider"
                       style={{
-                        padding: '5px 7px',
+                        padding: '5px 8px',
                         borderRadius: '5px',
                         background: 'transparent',
                         border: '1px solid rgba(239, 68, 68, 0.25)',
                         color: '#f87171',
                         fontSize: '11px',
-                        cursor: 'pointer'
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px'
                       }}
                     >
-                      <Trash2 size={12} />
+                      <Trash2 size={11} />
+                      <span>Disconnect</span>
                     </button>
                   )}
+                </div>
 
+                <div style={{ display: 'flex', gap: '4px' }}>
                   <button
                     type="button"
                     id={`btn-settings-${provider.id}`}

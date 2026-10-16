@@ -23,9 +23,12 @@ import {
   Gauge,
   Eye,
   LockKeyhole,
-  Activity
+  Activity,
+  ToggleLeft,
+  ToggleRight
 } from 'lucide-react';
 import { useChatStore } from '../state/chat-store';
+import { useExtensionStore } from '../state/extension-store';
 import { useUsageDashboardStore } from '../state/usage-dashboard-store';
 import type {
   EditReviewPolicy,
@@ -58,11 +61,12 @@ import { AdvancedProviderConfig } from './settings/AdvancedProviderConfig';
 import { APIKeyManager } from './settings/APIKeyManager';
 import { OpenCodeIntegration } from './settings/OpenCodeIntegration';
 import { DiagnosticsPanel } from './settings/DiagnosticsPanel';
+import { UsageLedgerView } from './dashboard/UsageLedgerView';
 import type { FreeProvider } from '../../../shared/types/free-providers';
 import type { StoredKeySummary, CustomProviderConfig } from '../../../shared/types/byok';
 
 type UpdateChannelPreference = 'stable' | 'beta' | 'nightly';
-type SettingsTab = 'providers' | 'byok' | 'openkilo' | 'opencode' | 'integrations' | 'orchestration' | 'fcc' | 'endpoints' | 'params' | 'terminal' | 'lsp' | 'editor' | 'shortcuts' | 'extensions' | 'security' | 'privacy' | 'diagnostics';
+type SettingsTab = 'providers' | 'byok' | 'usage' | 'openkilo' | 'opencode' | 'integrations' | 'orchestration' | 'fcc' | 'endpoints' | 'params' | 'terminal' | 'lsp' | 'editor' | 'shortcuts' | 'extensions' | 'security' | 'privacy' | 'diagnostics';
 
 const DEFAULT_SECURITY_SETTINGS: SecurityPolicySettings = {
   terminalPolicy: 'restricted',
@@ -126,6 +130,17 @@ const FALLBACK_PROVIDERS: PreConfiguredProvider[] = [
 export const SettingsModal: React.FC = () => {
   const { isSettingsOpen, toggleSettings, settings, saveSettings, activeSettingsTab } = useChatStore();
   const [activeTab, setActiveTab] = useState<SettingsTab>('providers');
+
+  const installedExtensions = useExtensionStore((s) => s.installed);
+  const loadInstalledExtensions = useExtensionStore((s) => s.loadInstalled);
+  const toggleExtension = useExtensionStore((s) => s.toggleExtension);
+  const uninstallExtension = useExtensionStore((s) => s.uninstallExtension);
+
+  useEffect(() => {
+    if (activeTab === 'extensions') {
+      void loadInstalledExtensions();
+    }
+  }, [activeTab, loadInstalledExtensions]);
 
   useEffect(() => {
     if (activeSettingsTab) {
@@ -830,6 +845,14 @@ export const SettingsModal: React.FC = () => {
             id="tab-btn-byok"
           >
             <Key size={13} color="#f43f5e" />BYOK &amp; Keys
+          </button>
+          <button
+            className={activeTab === 'usage' ? 'is-active' : ''}
+            onClick={() => setActiveTab('usage')}
+            style={{ color: activeTab === 'usage' ? '#10b981' : undefined }}
+            id="tab-btn-usage"
+          >
+            <Gauge size={13} color="#10b981" />Usage Ledger
           </button>
           <button
             className={activeTab === 'opencode' ? 'is-active' : ''}
@@ -1684,6 +1707,117 @@ export const SettingsModal: React.FC = () => {
                 Only enable if you trust downloaded extensions. Sandboxed workers have restricted filesystem and process capabilities.
               </p>
 
+              {/* Installed Extensions List with Version, Enable/Disable, and Uninstall */}
+              <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div className="settings-section-heading">
+                  <strong>Installed Extensions ({installedExtensions.length})</strong>
+                  <span>Manage installed tools, language packages, and community extensions.</span>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '280px', overflowY: 'auto' }}>
+                  {installedExtensions.length === 0 ? (
+                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', padding: '12px', textAlign: 'center' }}>
+                      No extensions installed.
+                    </div>
+                  ) : (
+                    installedExtensions.map((ext) => (
+                      <div
+                        key={ext.id}
+                        data-testid={`settings-extension-item-${ext.id}`}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '8px 12px',
+                          backgroundColor: 'var(--bg-tertiary)',
+                          borderRadius: '6px',
+                          border: '1px solid var(--border-subtle)'
+                        }}
+                      >
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0, flex: 1, marginRight: '10px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {ext.manifest.displayName || ext.manifest.name}
+                            </span>
+                            <span
+                              style={{
+                                fontSize: '10px',
+                                padding: '1px 5px',
+                                borderRadius: '4px',
+                                backgroundColor: 'rgba(139, 92, 246, 0.15)',
+                                color: 'var(--accent-primary)',
+                                fontFamily: 'monospace'
+                              }}
+                            >
+                              v{ext.manifest.version}
+                            </span>
+                            {ext.isBuiltIn && (
+                              <span
+                                style={{
+                                  fontSize: '9px',
+                                  padding: '1px 4px',
+                                  borderRadius: '3px',
+                                  backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                                  color: 'var(--text-muted)'
+                                }}
+                              >
+                                BUILT-IN
+                              </span>
+                            )}
+                          </div>
+                          <span style={{ fontSize: '11px', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {ext.manifest.publisher} · {ext.manifest.description || 'No description'}
+                          </span>
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          {/* Enable / Disable Toggle */}
+                          <button
+                            type="button"
+                            onClick={() => void toggleExtension(ext.id, !ext.enabled)}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              cursor: 'pointer',
+                              color: ext.enabled ? 'var(--accent-green)' : 'var(--text-muted)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              padding: '2px'
+                            }}
+                            title={ext.enabled ? 'Click to Disable' : 'Click to Enable'}
+                            aria-label={ext.enabled ? `Disable ${ext.id}` : `Enable ${ext.id}`}
+                          >
+                            {ext.enabled ? <ToggleRight size={22} /> : <ToggleLeft size={22} />}
+                          </button>
+
+                          {/* Uninstall Button */}
+                          {!ext.isBuiltIn && (
+                            <button
+                              type="button"
+                              onClick={() => void uninstallExtension(ext.id)}
+                              style={{
+                                background: 'none',
+                                border: 'none',
+                                cursor: 'pointer',
+                                color: 'var(--accent-red)',
+                                padding: '4px',
+                                borderRadius: '4px',
+                                display: 'flex',
+                                alignItems: 'center'
+                              }}
+                              title="Uninstall Extension"
+                              aria-label={`Uninstall ${ext.id}`}
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
               {/* Sub-tab: Integrations & Modular Skills */}
               <div
                 style={{
@@ -1762,6 +1896,11 @@ export const SettingsModal: React.FC = () => {
                 </button>
               </div>
             </div>
+          )}
+
+          {/* Tab: RealConnect Usage Ledger */}
+          {activeTab === 'usage' && (
+            <UsageLedgerView />
           )}
 
           {/* Tab: Provider Connection Diagnostic Harness (Phase Diagnostics 1) */}

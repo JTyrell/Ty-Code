@@ -17,6 +17,8 @@ export interface ExtensionCapabilityProvider {
   workspace: {
     readFile: (relativePath: string) => Promise<string>;
     writeFile: (relativePath: string, content: string) => Promise<void>;
+    findFiles?: (pattern: string) => Promise<string[]>;
+    createFileSystemWatcher?: (pattern: string) => Disposable;
   };
   commands: {
     register: (commandId: string, title: string) => Disposable;
@@ -27,15 +29,19 @@ export interface ExtensionCapabilityProvider {
     applyActiveEdit: (content: string) => Promise<boolean>;
   };
   languages: {
-    registerCompletionProvider: () => never;
-    registerHoverProvider: () => never;
+    registerCompletionProvider?: () => never;
+    registerHoverProvider?: () => never;
+    registerCompletionItemProvider?: (selector: any, provider: any) => Disposable;
   };
   window: {
     showMessage: (message: string) => Promise<void>;
     showInput: (prompt: string, value?: string) => Promise<string | undefined>;
+    showInformationMessage?: (message: string, ...items: string[]) => Promise<string | undefined>;
+    createWebviewPanel?: (viewType: string, title: string, showOptions?: any, options?: any) => any;
   };
   terminal: {
     open: () => Promise<void>;
+    createTerminal?: (nameOrOptions?: any) => any;
     sendText: (text: string) => Promise<void>;
   };
   agent: {
@@ -46,7 +52,7 @@ export interface ExtensionCapabilityProvider {
     copyRemoteUrl: () => Promise<string>;
   };
   webviews: {
-    create: () => never;
+    create: () => any;
   };
 }
 

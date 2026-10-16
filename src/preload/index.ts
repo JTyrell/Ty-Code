@@ -153,6 +153,13 @@ const api: ElectronAPI = {
   marketplaceMetadata: (namespace, extension) => ipcRenderer.invoke('marketplace:metadata', { namespace, extension }),
   marketplaceInstall: (entry) => ipcRenderer.invoke('marketplace:install', entry),
   marketplaceUninstall: (id) => ipcRenderer.invoke('marketplace:uninstall', id),
+  marketplaceListInstalled: () => ipcRenderer.invoke('marketplace:list-installed'),
+  onMarketplaceInstallProgress: (callback) => {
+    const listener = (_event: any, data: any) => callback(data);
+    ipcRenderer.on('marketplace:install-progress', listener);
+    return () => ipcRenderer.removeListener('marketplace:install-progress', listener);
+  },
+  marketplaceTraceInstall: (extensionId?: string) => ipcRenderer.invoke('marketplace:trace-extension-install', extensionId),
   getInstalledExtensions: () => ipcRenderer.invoke('extensions:get-installed'),
   installExtension: (ext: ExtensionMetadata) => ipcRenderer.invoke('extensions:install', ext),
   uninstallExtension: (id: string) => ipcRenderer.invoke('extensions:uninstall', id),
@@ -160,6 +167,12 @@ const api: ElectronAPI = {
   updateExtensionSettings: (id: string, settings: Record<string, unknown>) => ipcRenderer.invoke('extensions:update-settings', { id, settings }),
   installExtensionFromVsix: () => ipcRenderer.invoke('extensions:install-vsix'),
   extensionCapability: (request) => ipcRenderer.invoke('extensions:capability', request),
+  extensionActivate: (id: string) => ipcRenderer.invoke('extensions:activate', id),
+  extensionDeactivate: (id: string) => ipcRenderer.invoke('extensions:deactivate', id),
+  extensionExecuteCommand: (commandId: string, ...args: unknown[]) => ipcRenderer.invoke('extensions:execute-command', { commandId, args }),
+  extensionTriggerEvent: (event: string, payload?: unknown) => ipcRenderer.invoke('extensions:trigger-event', { event, payload }),
+  extensionListCommands: () => ipcRenderer.invoke('extensions:list-commands'),
+  extensionProvideCompletions: (query: { language: string; filePath: string; line: number; character: number }) => ipcRenderer.invoke('extensions:provide-completions', query),
 
   // Git APIs always use the active workspace selected in the main process.
   gitIsRepo: () => ipcRenderer.invoke('git:is-repo'),
@@ -473,10 +486,23 @@ const api: ElectronAPI = {
     return () => ipcRenderer.removeListener('oauth:status-changed', listener);
   },
 
-  // Scale 1: Usage Ledger
+  // Scale 1 & RealConnect 2: Usage Ledger
   usageGetLedger: () => ipcRenderer.invoke('usage:get-ledger'),
+  usageGetStats: () => ipcRenderer.invoke('usage:get-stats'),
   usageExportLedger: (format?: 'json' | 'csv') => ipcRenderer.invoke('usage:export-ledger', format),
-  usageClearLedger: () => ipcRenderer.invoke('usage:clear-ledger')
+  usageExport: (format?: 'json' | 'csv') => ipcRenderer.invoke('usage:export', format),
+  usageClearLedger: () => ipcRenderer.invoke('usage:clear-ledger'),
+
+  // RealConnect 2: Per-User Credential Storage
+  credentialsSave: (providerId: string, apiKey: string, label?: string) => ipcRenderer.invoke('credentials:save', providerId, apiKey, label),
+  credentialsGet: (providerId?: string) => ipcRenderer.invoke('credentials:get', providerId),
+  credentialsDelete: (providerId: string) => ipcRenderer.invoke('credentials:delete', providerId),
+  credentialsReveal: (providerId: string) => ipcRenderer.invoke('credentials:reveal', providerId),
+  credentialsTest: (providerId: string, apiKey: string, modelId?: string) => ipcRenderer.invoke('credentials:test', providerId, apiKey, modelId),
+  credentialsExport: (passphrase?: string) => ipcRenderer.invoke('credentials:export', passphrase),
+  credentialsImport: (bundleJson: string, passphrase?: string) => ipcRenderer.invoke('credentials:import', bundleJson, passphrase),
+  credentialsHasAny: () => ipcRenderer.invoke('credentials:has-any'),
+  credentialsList: () => ipcRenderer.invoke('credentials:list')
 };
 
 contextBridge.exposeInMainWorld('electronAPI', api);

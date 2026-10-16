@@ -224,17 +224,33 @@ export function registerMonacoLspProviders(monaco: Monaco): void {
       provideCompletionItems: async (model, position) => {
         try {
           const filePath = getModelPath(model);
-          const res = await window.electronAPI.lspCompletion({
-            filePath,
-            line: position.lineNumber - 1,
-            character: position.column - 1
-          });
+          const [res, extRes] = await Promise.all([
+            window.electronAPI.lspCompletion({
+              filePath,
+              line: position.lineNumber - 1,
+              character: position.column - 1
+            }).catch(() => ({ success: false, data: [] as any })),
+            window.electronAPI.extensionProvideCompletions({
+              language: lang,
+              filePath,
+              line: position.lineNumber - 1,
+              character: position.column - 1
+            }).catch(() => ({ success: false, data: [] as any }))
+          ]);
 
-          if (!res.success || !res.data) {
+          const rawItems: any[] = [];
+          if (res && res.success && res.data) {
+            const lspItems = Array.isArray(res.data) ? res.data : (res.data as any).items || [];
+            rawItems.push(...lspItems);
+          }
+          if (extRes && extRes.success && Array.isArray(extRes.data)) {
+            rawItems.push(...extRes.data);
+          }
+
+          if (rawItems.length === 0) {
             return { suggestions: [] };
           }
 
-          const rawItems = Array.isArray(res.data) ? res.data : res.data.items || [];
           const word = model.getWordUntilPosition(position);
           const defaultRange: monacoType.IRange = {
             startLineNumber: position.lineNumber,

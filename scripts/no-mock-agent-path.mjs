@@ -55,6 +55,10 @@ const FORBIDDEN_PATTERNS = [
   {
     name: 'Hardcoded simulated token string',
     regex: /['"`]This is a (?:simulated|mock|fake|dummy) (?:response|token|agent)/i
+  },
+  {
+    name: 'Hardcoded FCC proxy mock response string',
+    regex: /FCC\s+proxy\s+response/i
   }
 ];
 

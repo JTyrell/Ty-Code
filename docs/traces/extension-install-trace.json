@@ -1,0 +1,244 @@
+{
+  "version": 1,
+  "timestamp": "2026-10-16T20:54:04.171Z",
+  "gitCommit": "35837e4b8995e19c1315c0c6f43762f2b2a5928c",
+  "command": "Ty-Code: Trace Extension Install",
+  "targetExtension": "ms-python.python",
+  "registryUrl": "https://open-vsx.org",
+  "hops": [
+    {
+      "hop": "E1",
+      "name": "User clicks 'Install' on extension card",
+      "status": "PASS",
+      "timestamp": "2026-10-16T20:53:47.225Z",
+      "durationMs": 1,
+      "payloadSize": 65,
+      "details": {
+        "action": "INSTALL_REQUEST_INITIATED",
+        "extensionId": "ms-python.python",
+        "trigger": "Command Palette / UI Card"
+      }
+    },
+    {
+      "hop": "E2",
+      "name": "Marketplace service fetches VSIX download URL from registry metadata",
+      "status": "PASS",
+      "timestamp": "2026-10-16T20:53:47.226Z",
+      "durationMs": 926,
+      "payloadSize": 8850,
+      "details": {
+        "registryEndpoint": "https://open-vsx.org/api/ms-python/python",
+        "version": "2026.4.0",
+        "downloadUrl": "https://open-vsx.org/api/ms-python/python/2026.4.0/file/ms-python.python-2026.4.0.vsix",
+        "expectedSha256": "232aeafb01f069824fdd92d3e628c1c442bbcfa1d3cc945ff97076340bb2b4a6"
+      }
+    },
+    {
+      "hop": "E3",
+      "name": "VSIX file downloaded to disk (bytes received, checksum verified)",
+      "status": "PASS",
+      "timestamp": "2026-10-16T20:53:48.152Z",
+      "durationMs": 15922,
+      "payloadSize": 6826731,
+      "details": {
+        "downloadUrl": "https://open-vsx.org/api/ms-python/python/2026.4.0/file/ms-python.python-2026.4.0.vsix",
+        "byteLength": 6826731,
+        "actualSha256": "232aeafb01f069824fdd92d3e628c1c442bbcfa1d3cc945ff97076340bb2b4a6",
+        "expectedSha256": "232aeafb01f069824fdd92d3e628c1c442bbcfa1d3cc945ff97076340bb2b4a6",
+        "checksumVerified": true
+      }
+    },
+    {
+      "hop": "E4",
+      "name": "VSIX extracted to ~/.ty-code/extensions/ms-python.python-2026.4.0/",
+      "status": "PASS",
+      "timestamp": "2026-10-16T20:54:04.074Z",
+      "durationMs": 84,
+      "payloadSize": 24229367,
+      "details": {
+        "targetExtractDir": "C:\\Users\\JT\\.ty-code\\extensions\\ms-python.python-2026.4.0",
+        "fileCount": 2382,
+        "totalExtractedBytes": 24229367,
+        "diskWriteVerified": true
+      }
+    },
+    {
+      "hop": "E5",
+      "name": "manifest.json parsed and validated (id, name, version, main entry point)",
+      "status": "FAIL",
+      "timestamp": "2026-10-16T20:54:04.158Z",
+      "durationMs": 8,
+      "error": "[\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"shortTitle\"\n    ],\n    \"path\": [\n      \"contributes\",\n      \"commands\",\n      0\n    ],\n    \"message\": \"Unrecognized key: \\\"shortTitle\\\"\"\n  },\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"shortTitle\"\n    ],\n    \"path\": [\n      \"contributes\",\n      \"commands\",\n      13\n    ],\n    \"message\": \"Unrecognized key: \\\"shortTitle\\\"\"\n  },\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"enablement\"\n    ],\n    \"path\": [\n      \"contributes\",\n      \"commands\",\n      20\n    ],\n    \"message\": \"Unrecognized key: \\\"enablement\\\"\"\n  },\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"contributes\",\n      \"commands\",\n      21,\n      \"icon\"\n    ],\n    \"message\": \"Invalid input: expected string, received object\"\n  },\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"filenamePatterns\",\n      \"filenames\"\n    ],\n    \"path\": [\n      \"contributes\",\n      \"languages\",\n      1\n    ],\n    \"message\": \"Unrecognized keys: \\\"filenamePatterns\\\", \\\"filenames\\\"\"\n  },\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"filenames\"\n    ],\n    \"path\": [\n      \"contributes\",\n      \"languages\",\n      2\n    ],\n    \"message\": \"Unrecognized key: \\\"filenames\\\"\"\n  },\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"filenames\"\n    ],\n    \"path\": [\n      \"contributes\",\n      \"languages\",\n      3\n    ],\n    \"message\": \"Unrecognized key: \\\"filenames\\\"\"\n  },\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"filenames\"\n    ],\n    \"path\": [\n      \"contributes\",\n      \"languages\",\n      4\n    ],\n    \"message\": \"Unrecognized key: \\\"filenames\\\"\"\n  },\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"filenames\"\n    ],\n    \"path\": [\n      \"contributes\",\n      \"languages\",\n      5\n    ],\n    \"message\": \"Unrecognized key: \\\"filenames\\\"\"\n  },\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"scope\"\n    ],\n    \"path\": [\n      \"contributes\",\n      \"configuration\",\n      \"properties\",\n      \"python.activeStateToolPath\"\n    ],\n    \"message\": \"Unrecognized key: \\\"scope\\\"\"\n  },\n  {\n    \"code\": \"invalid_value\",\n    \"values\": [\n      \"boolean\",\n      \"string\",\n      \"number\"\n    ],\n    \"path\": [\n      \"contributes\",\n      \"configuration\",\n      \"properties\",\n      \"python.autoComplete.extraPaths\",\n      \"type\"\n    ],\n    \"message\": \"Invalid option: expected one of \\\"boolean\\\"|\\\"string\\\"|\\\"number\\\"\"\n  },\n  {\n    \"code\": \"invalid_union\",\n    \"errors\": [\n      [\n        {\n          \"expected\": \"boolean\",\n          \"code\": \"invalid_type\",\n          \"path\": [],\n          \"message\": \"Invalid input: expected boolean, received array\"\n        }\n      ],\n      [\n        {\n          \"expected\": \"string\",\n          \"code\": \"invalid_type\",\n          \"path\": [],\n          \"message\": \"Invalid input: expected string, received array\"\n        }\n      ],\n      [\n        {\n          \"expected\": \"number\",\n          \"code\": \"invalid_type\",\n          \"path\": [],\n          \"message\": \"Invalid input: expected number, received array\"\n        }\n      ]\n    ],\n    \"path\": [\n      \"contributes\",\n      \"configuration\",\n      \"properties\",\n      \"python.autoComplete.extraPaths\",\n      \"default\"\n    ],\n    \"message\": \"Invalid input\"\n  },\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"scope\",\n      \"uniqueItems\"\n    ],\n    \"path\": [\n      \"contributes\",\n      \"configuration\",\n      \"properties\",\n      \"python.autoComplete.extraPaths\"\n    ],\n    \"message\": \"Unrecognized keys: \\\"scope\\\", \\\"uniqueItems\\\"\"\n  },\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"markdownDescription\",\n      \"scope\"\n    ],\n    \"path\": [\n      \"contributes\",\n      \"configuration\",\n      \"properties\",\n      \"python.createEnvironment.contentButton\"\n    ],\n    \"message\": \"Unrecognized keys: \\\"markdownDescription\\\", \\\"scope\\\"\"\n  },\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"markdownDescription\",\n      \"scope\"\n    ],\n    \"path\": [\n      \"contributes\",\n      \"configuration\",\n      \"properties\",\n      \"python.createEnvironment.trigger\"\n    ],\n    \"message\": \"Unrecognized keys: \\\"markdownDescription\\\", \\\"scope\\\"\"\n  },\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"scope\"\n    ],\n    \"path\": [\n      \"contributes\",\n      \"configuration\",\n      \"properties\",\n      \"python.condaPath\"\n    ],\n    \"message\": \"Unrecognized key: \\\"scope\\\"\"\n  },\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"markdownDescription\",\n      \"scope\"\n    ],\n    \"path\": [\n      \"contributes\",\n      \"configuration\",\n      \"properties\",\n      \"python.defaultInterpreterPath\"\n    ],\n    \"message\": \"Unrecognized keys: \\\"markdownDescription\\\", \\\"scope\\\"\"\n  },\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"scope\"\n    ],\n    \"path\": [\n      \"contributes\",\n      \"configuration\",\n      \"properties\",\n      \"python.envFile\"\n    ],\n    \"message\": \"Unrecognized key: \\\"scope\\\"\"\n  },\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"scope\",\n      \"tags\"\n    ],\n    \"path\": [\n      \"contributes\",\n      \"configuration\",\n      \"properties\",\n      \"python.useEnvironmentsExtension\"\n    ],\n    \"message\": \"Unrecognized keys: \\\"scope\\\", \\\"tags\\\"\"\n  },\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"scope\"\n    ],\n    \"path\": [\n      \"contributes\",\n      \"configuration\",\n      \"properties\",\n      \"python.experiments.enabled\"\n    ],\n    \"message\": \"Unrecognized key: \\\"scope\\\"\"\n  },\n  {\n    \"code\": \"invalid_value\",\n    \"values\": [\n      \"boolean\",\n      \"string\",\n      \"number\"\n    ],\n    \"path\": [\n      \"contributes\",\n      \"configuration\",\n      \"properties\",\n      \"python.experiments.optInto\",\n      \"type\"\n    ],\n    \"message\": \"Invalid option: expected one of \\\"boolean\\\"|\\\"string\\\"|\\\"number\\\"\"\n  },\n  {\n    \"code\": \"invalid_union\",\n    \"errors\": [\n      [\n        {\n          \"expected\": \"boolean\",\n          \"code\": \"invalid_type\",\n          \"path\": [],\n          \"message\": \"Invalid input: expected boolean, received array\"\n        }\n      ],\n      [\n        {\n          \"expected\": \"string\",\n          \"code\": \"invalid_type\",\n          \"path\": [],\n          \"message\": \"Invalid input: expected string, received array\"\n        }\n      ],\n      [\n        {\n          \"expected\": \"number\",\n          \"code\": \"invalid_type\",\n          \"path\": [],\n          \"message\": \"Invalid input: expected number, received array\"\n        }\n      ]\n    ],\n    \"path\": [\n      \"contributes\",\n      \"configuration\",\n      \"properties\",\n      \"python.experiments.optInto\",\n      \"default\"\n    ],\n    \"message\": \"Invalid input\"\n  },\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"markdownDescription\",\n      \"items\",\n      \"scope\",\n      \"uniqueItems\"\n    ],\n    \"path\": [\n      \"contributes\",\n      \"configuration\",\n      \"properties\",\n      \"python.experiments.optInto\"\n    ],\n    \"message\": \"Unrecognized keys: \\\"markdownDescription\\\", \\\"items\\\", \\\"scope\\\", \\\"uniqueItems\\\"\"\n  },\n  {\n    \"code\": \"invalid_value\",\n    \"values\": [\n      \"boolean\",\n      \"string\",\n      \"number\"\n    ],\n    \"path\": [\n      \"contributes\",\n      \"configuration\",\n      \"properties\",\n      \"python.experiments.optOutFrom\",\n      \"type\"\n    ],\n    \"message\": \"Invalid option: expected one of \\\"boolean\\\"|\\\"string\\\"|\\\"number\\\"\"\n  },\n  {\n    \"code\": \"invalid_union\",\n    \"errors\": [\n      [\n        {\n          \"expected\": \"boolean\",\n          \"code\": \"invalid_type\",\n          \"path\": [],\n          \"message\": \"Invalid input: expected boolean, received array\"\n        }\n      ],\n      [\n        {\n          \"expected\": \"string\",\n          \"code\": \"invalid_type\",\n          \"path\": [],\n          \"message\": \"Invalid input: expected string, received array\"\n        }\n      ],\n      [\n        {\n          \"expected\": \"number\",\n          \"code\": \"invalid_type\",\n          \"path\": [],\n          \"message\": \"Invalid input: expected number, received array\"\n        }\n      ]\n    ],\n    \"path\": [\n      \"contributes\",\n      \"configuration\",\n      \"properties\",\n      \"python.experiments.optOutFrom\",\n      \"default\"\n    ],\n    \"message\": \"Invalid input\"\n  },\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"markdownDescription\",\n      \"items\",\n      \"scope\",\n      \"uniqueItems\"\n    ],\n    \"path\": [\n      \"contributes\",\n      \"configuration\",\n      \"properties\",\n      \"python.experiments.optOutFrom\"\n    ],\n    \"message\": \"Unrecognized keys: \\\"markdownDescription\\\", \\\"items\\\", \\\"scope\\\", \\\"uniqueItems\\\"\"\n  },\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"scope\"\n    ],\n    \"path\": [\n      \"contributes\",\n      \"configuration\",\n      \"properties\",\n      \"python.globalModuleInstallation\"\n    ],\n    \"message\": \"Unrecognized key: \\\"scope\\\"\"\n  },\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"enumDescriptions\",\n      \"scope\"\n    ],\n    \"path\": [\n      \"contributes\",\n      \"configuration\",\n      \"properties\",\n      \"python.languageServer\"\n    ],\n    \"message\": \"Unrecognized keys: \\\"enumDescriptions\\\", \\\"scope\\\"\"\n  },\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"enumDescriptions\",\n      \"scope\"\n    ],\n    \"path\": [\n      \"contributes\",\n      \"configuration\",\n      \"properties\",\n      \"python.interpreter.infoVisibility\"\n    ],\n    \"message\": \"Unrecognized keys: \\\"enumDescriptions\\\", \\\"scope\\\"\"\n  },\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"deprecationMessage\",\n      \"scope\"\n    ],\n    \"path\": [\n      \"contributes\",\n      \"configuration\",\n      \"properties\",\n      \"python.logging.level\"\n    ],\n    \"message\": \"Unrecognized keys: \\\"deprecationMessage\\\", \\\"scope\\\"\"\n  },\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"scope\"\n    ],\n    \"path\": [\n      \"contributes\",\n      \"configuration\",\n      \"properties\",\n      \"python.missingPackage.severity\"\n    ],\n    \"message\": \"Unrecognized key: \\\"scope\\\"\"\n  },\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"tags\",\n      \"scope\"\n    ],\n    \"path\": [\n      \"contributes\",\n      \"configuration\",\n      \"properties\",\n      \"python.locator\"\n    ],\n    \"message\": \"Unrecognized keys: \\\"tags\\\", \\\"scope\\\"\"\n  },\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"scope\"\n    ],\n    \"path\": [\n      \"contributes\",\n      \"configuration\",\n      \"properties\",\n      \"python.pipenvPath\"\n    ],\n    \"message\": \"Unrecognized key: \\\"scope\\\"\"\n  },\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"scope\"\n    ],\n    \"path\": [\n      \"contributes\",\n      \"configuration\",\n      \"properties\",\n      \"python.poetryPath\"\n    ],\n    \"message\": \"Unrecognized key: \\\"scope\\\"\"\n  },\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"scope\"\n    ],\n    \"path\": [\n      \"contributes\",\n      \"configuration\",\n      \"properties\",\n      \"python.pixiToolPath\"\n    ],\n    \"message\": \"Unrecognized key: \\\"scope\\\"\"\n  },\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"scope\"\n    ],\n    \"path\": [\n      \"contributes\",\n      \"configuration\",\n      \"properties\",\n      \"python.terminal.activateEnvInCurrentTerminal\"\n    ],\n    \"message\": \"Unrecognized key: \\\"scope\\\"\"\n  },\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"scope\"\n    ],\n    \"path\": [\n      \"contributes\",\n      \"configuration\",\n      \"properties\",\n      \"python.terminal.activateEnvironment\"\n    ],\n    \"message\": \"Unrecognized key: \\\"scope\\\"\"\n  },\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"scope\"\n    ],\n    \"path\": [\n      \"contributes\",\n      \"configuration\",\n      \"properties\",\n      \"python.terminal.executeInFileDir\"\n    ],\n    \"message\": \"Unrecognized key: \\\"scope\\\"\"\n  },\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"scope\"\n    ],\n    \"path\": [\n      \"contributes\",\n      \"configuration\",\n      \"properties\",\n      \"python.terminal.focusAfterLaunch\"\n    ],\n    \"message\": \"Unrecognized key: \\\"scope\\\"\"\n  },\n  {\n    \"code\": \"invalid_value\",\n    \"values\": [\n      \"boolean\",\n      \"string\",\n      \"number\"\n    ],\n    \"path\": [\n      \"contributes\",\n      \"configuration\",\n      \"properties\",\n      \"python.terminal.launchArgs\",\n      \"type\"\n    ],\n    \"message\": \"Invalid option: expected one of \\\"boolean\\\"|\\\"string\\\"|\\\"number\\\"\"\n  },\n  {\n    \"code\": \"invalid_union\",\n    \"errors\": [\n      [\n        {\n          \"expected\": \"boolean\",\n          \"code\": \"invalid_type\",\n          \"path\": [],\n          \"message\": \"Invalid input: expected boolean, received array\"\n        }\n      ],\n      [\n        {\n          \"expected\": \"string\",\n          \"code\": \"invalid_type\",\n          \"path\": [],\n          \"message\": \"Invalid input: expected string, received array\"\n        }\n      ],\n      [\n        {\n          \"expected\": \"number\",\n          \"code\": \"invalid_type\",\n          \"path\": [],\n          \"message\": \"Invalid input: expected number, received array\"\n        }\n      ]\n    ],\n    \"path\": [\n      \"contributes\",\n      \"configuration\",\n      \"properties\",\n      \"python.terminal.launchArgs\",\n      \"default\"\n    ],\n    \"message\": \"Invalid input\"\n  },\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"scope\"\n    ],\n    \"path\": [\n      \"contributes\",\n      \"configuration\",\n      \"properties\",\n      \"python.terminal.launchArgs\"\n    ],\n    \"message\": \"Unrecognized key: \\\"scope\\\"\"\n  },\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"markdownDescription\",\n      \"scope\",\n      \"tags\"\n    ],\n    \"path\": [\n      \"contributes\",\n      \"configuration\",\n      \"properties\",\n      \"python.terminal.shellIntegration.enabled\"\n    ],\n    \"message\": \"Unrecognized keys: \\\"markdownDescription\\\", \\\"scope\\\", \\\"tags\\\"\"\n  },\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"scope\"\n    ],\n    \"path\": [\n      \"contributes\",\n      \"configuration\",\n      \"properties\",\n      \"python.REPL.enableREPLSmartSend\"\n    ],\n    \"message\": \"Unrecognized key: \\\"scope\\\"\"\n  },\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"scope\"\n    ],\n    \"path\": [\n      \"contributes\",\n      \"configuration\",\n      \"properties\",\n      \"python.REPL.sendToNativeREPL\"\n    ],\n    \"message\": \"Unrecognized key: \\\"scope\\\"\"\n  },\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"scope\"\n    ],\n    \"path\": [\n      \"contributes\",\n      \"configuration\",\n      \"properties\",\n      \"python.REPL.provideVariables\"\n    ],\n    \"message\": \"Unrecognized key: \\\"scope\\\"\"\n  },\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"scope\"\n    ],\n    \"path\": [\n      \"contributes\",\n      \"configuration\",\n      \"properties\",\n      \"python.testing.autoTestDiscoverOnSaveEnabled\"\n    ],\n    \"message\": \"Unrecognized key: \\\"scope\\\"\"\n  },\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"scope\"\n    ],\n    \"path\": [\n      \"contributes\",\n      \"configuration\",\n      \"properties\",\n      \"python.testing.autoTestDiscoverOnSavePattern\"\n    ],\n    \"message\": \"Unrecognized key: \\\"scope\\\"\"\n  },\n  {\n    \"code\": \"invalid_union\",\n    \"errors\": [\n      [\n        {\n          \"expected\": \"boolean\",\n          \"code\": \"invalid_type\",\n          \"path\": [],\n          \"message\": \"Invalid input: expected boolean, received null\"\n        }\n      ],\n      [\n        {\n          \"expected\": \"string\",\n          \"code\": \"invalid_type\",\n          \"path\": [],\n          \"message\": \"Invalid input: expected string, received null\"\n        }\n      ],\n      [\n        {\n          \"expected\": \"number\",\n          \"code\": \"invalid_type\",\n          \"path\": [],\n          \"message\": \"Invalid input: expected number, received null\"\n        }\n      ]\n    ],\n    \"path\": [\n      \"contributes\",\n      \"configuration\",\n      \"properties\",\n      \"python.testing.cwd\",\n      \"default\"\n    ],\n    \"message\": \"Invalid input\"\n  },\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"scope\"\n    ],\n    \"path\": [\n      \"contributes\",\n      \"configuration\",\n      \"properties\",\n      \"python.testing.cwd\"\n    ],\n    \"message\": \"Unrecognized key: \\\"scope\\\"\"\n  },\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"scope\"\n    ],\n    \"path\": [\n      \"contributes\",\n      \"configuration\",\n      \"properties\",\n      \"python.testing.debugPort\"\n    ],\n    \"message\": \"Unrecognized key: \\\"scope\\\"\"\n  },\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"scope\"\n    ],\n    \"path\": [\n      \"contributes\",\n      \"configuration\",\n      \"properties\",\n      \"python.testing.promptToConfigure\"\n    ],\n    \"message\": \"Unrecognized key: \\\"scope\\\"\"\n  },\n  {\n    \"code\": \"invalid_value\",\n    \"values\": [\n      \"boolean\",\n      \"string\",\n      \"number\"\n    ],\n    \"path\": [\n      \"contributes\",\n      \"configuration\",\n      \"properties\",\n      \"python.testing.pytestArgs\",\n      \"type\"\n    ],\n    \"message\": \"Invalid option: expected one of \\\"boolean\\\"|\\\"string\\\"|\\\"number\\\"\"\n  },\n  {\n    \"code\": \"invalid_union\",\n    \"errors\": [\n      [\n        {\n          \"expected\": \"boolean\",\n          \"code\": \"invalid_type\",\n          \"path\": [],\n          \"message\": \"Invalid input: expected boolean, received array\"\n        }\n      ],\n      [\n        {\n          \"expected\": \"string\",\n          \"code\": \"invalid_type\",\n          \"path\": [],\n          \"message\": \"Invalid input: expected string, received array\"\n        }\n      ],\n      [\n        {\n          \"expected\": \"number\",\n          \"code\": \"invalid_type\",\n          \"path\": [],\n          \"message\": \"Invalid input: expected number, received array\"\n        }\n      ]\n    ],\n    \"path\": [\n      \"contributes\",\n      \"configuration\",\n      \"properties\",\n      \"python.testing.pytestArgs\",\n      \"default\"\n    ],\n    \"message\": \"Invalid input\"\n  },\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"items\",\n      \"scope\"\n    ],\n    \"path\": [\n      \"contributes\",\n      \"configuration\",\n      \"properties\",\n      \"python.testing.pytestArgs\"\n    ],\n    \"message\": \"Unrecognized keys: \\\"items\\\", \\\"scope\\\"\"\n  },\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"scope\"\n    ],\n    \"path\": [\n      \"contributes\",\n      \"configuration\",\n      \"properties\",\n      \"python.testing.pytestEnabled\"\n    ],\n    \"message\": \"Unrecognized key: \\\"scope\\\"\"\n  },\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"scope\"\n    ],\n    \"path\": [\n      \"contributes\",\n      \"configuration\",\n      \"properties\",\n      \"python.testing.pytestPath\"\n    ],\n    \"message\": \"Unrecognized key: \\\"scope\\\"\"\n  },\n  {\n    \"code\": \"invalid_value\",\n    \"values\": [\n      \"boolean\",\n      \"string\",\n      \"number\"\n    ],\n    \"path\": [\n      \"contributes\",\n      \"configuration\",\n      \"properties\",\n      \"python.testing.unittestArgs\",\n      \"type\"\n    ],\n    \"message\": \"Invalid option: expected one of \\\"boolean\\\"|\\\"string\\\"|\\\"number\\\"\"\n  },\n  {\n    \"code\": \"invalid_union\",\n    \"errors\": [\n      [\n        {\n          \"expected\": \"boolean\",\n          \"code\": \"invalid_type\",\n          \"path\": [],\n          \"message\": \"Invalid input: expected boolean, received array\"\n        }\n      ],\n      [\n        {\n          \"expected\": \"string\",\n          \"code\": \"invalid_type\",\n          \"path\": [],\n          \"message\": \"Invalid input: expected string, received array\"\n        }\n      ],\n      [\n        {\n          \"expected\": \"number\",\n          \"code\": \"invalid_type\",\n          \"path\": [],\n          \"message\": \"Invalid input: expected number, received array\"\n        }\n      ]\n    ],\n    \"path\": [\n      \"contributes\",\n      \"configuration\",\n      \"properties\",\n      \"python.testing.unittestArgs\",\n      \"default\"\n    ],\n    \"message\": \"Invalid input\"\n  },\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"items\",\n      \"scope\"\n    ],\n    \"path\": [\n      \"contributes\",\n      \"configuration\",\n      \"properties\",\n      \"python.testing.unittestArgs\"\n    ],\n    \"message\": \"Unrecognized keys: \\\"items\\\", \\\"scope\\\"\"\n  },\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"scope\"\n    ],\n    \"path\": [\n      \"contributes\",\n      \"configuration\",\n      \"properties\",\n      \"python.testing.unittestEnabled\"\n    ],\n    \"message\": \"Unrecognized key: \\\"scope\\\"\"\n  },\n  {\n    \"code\": \"invalid_value\",\n    \"values\": [\n      \"boolean\",\n      \"string\",\n      \"number\"\n    ],\n    \"path\": [\n      \"contributes\",\n      \"configuration\",\n      \"properties\",\n      \"python.venvFolders\",\n      \"type\"\n    ],\n    \"message\": \"Invalid option: expected one of \\\"boolean\\\"|\\\"string\\\"|\\\"number\\\"\"\n  },\n  {\n    \"code\": \"invalid_union\",\n    \"errors\": [\n      [\n        {\n          \"expected\": \"boolean\",\n          \"code\": \"invalid_type\",\n          \"path\": [],\n          \"message\": \"Invalid input: expected boolean, received array\"\n        }\n      ],\n      [\n        {\n          \"expected\": \"string\",\n          \"code\": \"invalid_type\",\n          \"path\": [],\n          \"message\": \"Invalid input: expected string, received array\"\n        }\n      ],\n      [\n        {\n          \"expected\": \"number\",\n          \"code\": \"invalid_type\",\n          \"path\": [],\n          \"message\": \"Invalid input: expected number, received array\"\n        }\n      ]\n    ],\n    \"path\": [\n      \"contributes\",\n      \"configuration\",\n      \"properties\",\n      \"python.venvFolders\",\n      \"default\"\n    ],\n    \"message\": \"Invalid input\"\n  },\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"items\",\n      \"scope\",\n      \"uniqueItems\"\n    ],\n    \"path\": [\n      \"contributes\",\n      \"configuration\",\n      \"properties\",\n      \"python.venvFolders\"\n    ],\n    \"message\": \"Unrecognized keys: \\\"items\\\", \\\"scope\\\", \\\"uniqueItems\\\"\"\n  },\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"scope\"\n    ],\n    \"path\": [\n      \"contributes\",\n      \"configuration\",\n      \"properties\",\n      \"python.venvPath\"\n    ],\n    \"message\": \"Unrecognized key: \\\"scope\\\"\"\n  },\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"type\"\n    ],\n    \"path\": [\n      \"contributes\",\n      \"configuration\"\n    ],\n    \"message\": \"Unrecognized key: \\\"type\\\"\"\n  },\n  {\n    \"code\": \"unrecognized_keys\",\n    \"keys\": [\n      \"problemMatchers\",\n      \"walkthroughs\",\n      \"breakpoints\",\n      \"debuggers\",\n      \"grammars\",\n      \"jsonValidation\",\n      \"menus\",\n      \"submenus\",\n      \"viewsWelcome\",\n      \"yamlValidation\",\n      \"languageModelTools\"\n    ],\n    \"path\": [\n      \"contributes\"\n    ],\n    \"message\": \"Unrecognized keys: \\\"problemMatchers\\\", \\\"walkthroughs\\\", \\\"breakpoints\\\", \\\"debuggers\\\", \\\"grammars\\\", \\\"jsonValidation\\\", \\\"menus\\\", \\\"submenus\\\", \\\"viewsWelcome\\\", \\\"yamlValidation\\\", \\\"languageModelTools\\\"\"\n  }\n]",
+      "taxonomy": "MANIFEST_INVALID"
+    },
+    {
+      "hop": "E6",
+      "name": "Extension registered with extension host (Worker)",
+      "status": "SKIPPED",
+      "timestamp": "2026-10-16T20:54:04.166Z",
+      "durationMs": 0,
+      "error": "Preceding hop failed."
+    },
+    {
+      "hop": "E7",
+      "name": "Extension activated (onLanguage/onCommand/onStartup activation events)",
+      "status": "SKIPPED",
+      "timestamp": "2026-10-16T20:54:04.166Z",
+      "durationMs": 0,
+      "error": "ACTIVATION_FAILED: Prerequisite Hop E6 failed. Extension host has no active worker session for this extension.",
+      "taxonomy": "ACTIVATION_FAILED",
+      "details": {
+        "activationEventsSuppressed": [
+          "onDebugInitialConfigurations",
+          "onLanguage:python",
+          "onDebugResolve:python",
+          "onCommand:python.copilotSetupTests",
+          "workspaceContains:mspythonconfig.json",
+          "workspaceContains:pyproject.toml",
+          "workspaceContains:Pipfile",
+          "workspaceContains:setup.py",
+          "workspaceContains:requirements.txt",
+          "workspaceContains:pylock.toml",
+          "workspaceContains:**/pylock.*.toml",
+          "workspaceContains:manage.py",
+          "workspaceContains:app.py",
+          "workspaceContains:.venv",
+          "workspaceContains:.conda",
+          "onLanguageModelTool:get_python_environment_details",
+          "onLanguageModelTool:get_python_executable_details",
+          "onLanguageModelTool:install_python_packages",
+          "onLanguageModelTool:configure_python_environment",
+          "onLanguageModelTool:create_virtual_environment",
+          "onTerminalShellIntegration:python"
+        ]
+      }
+    },
+    {
+      "hop": "E8",
+      "name": "Extension API calls executed (commands, language providers, webviews)",
+      "status": "SKIPPED",
+      "timestamp": "2026-10-16T20:54:04.166Z",
+      "durationMs": 0,
+      "error": "API_CALL_FAILED: Worker capability provider cannot be reached because worker session is unallocated.",
+      "taxonomy": "API_CALL_FAILED"
+    },
+    {
+      "hop": "E9",
+      "name": "Extension UI visible in app (status bar items, commands in palette, webview panels)",
+      "status": "SKIPPED",
+      "timestamp": "2026-10-16T20:54:04.166Z",
+      "durationMs": 0,
+      "error": "UI_NOT_VISIBLE: Extension commands (e.g. Python: Select Interpreter) missing from CommandPalette. No status bar items rendered.",
+      "taxonomy": "UI_NOT_VISIBLE",
+      "details": {
+        "expectedCommandsCount": 23,
+        "actualRegisteredCommandsCount": 0
+      }
+    }
+  ],
+  "firstFailingHop": "E5",
+  "failureClassification": "MANIFEST_INVALID",
+  "marketplaceArchitecture": "METADATA_ONLY",
+  "summary": "Live probe against Open VSX registry completed in 17014ms. Hops E1..E5 succeed (VSIX downloaded 6.8MB, unpacked 2382 files, manifest validated). Hop E6 FAILS with HOST_REGISTRATION_FAILED because the extension runtime host strictly rejects non-built-in extensions (!extension.isBuiltIn || executionState !== 'built-in') and worker isolates only execute the 5 hardcoded built-in modules. The marketplace implementation is currently METADATA-ONLY.",
+  "metrics": {
+    "totalDurationMs": 17014,
+    "passedHops": 4,
+    "failedHops": 1,
+    "skippedHops": 4,
+    "downloadSizeBytes": 6826731,
+    "extractedFileCount": 2382
+  },
+  "metadataOnlyScan": {
+    "totalFindings": 11,
+    "findings": [
+      {
+        "file": "src/main/services/extension-manager.ts",
+        "line": 351,
+        "pattern": "executionState:\\s*'metadata-only'",
+        "description": "ExtensionManager sets executionState to 'metadata-only' for marketplace installs, preventing code execution.",
+        "category": "METADATA_ONLY_STATE",
+        "snippet": "executionState: 'metadata-only'"
+      },
+      {
+        "file": "src/main/services/extension-manager.ts",
+        "line": 340,
+        "pattern": "Marketplace records are discovery metadata only; no files or executable package code are installed",
+        "description": "Explicit architectural comment declaring marketplace records as discovery metadata only.",
+        "category": "DISPLAY_ONLY",
+        "snippet": "// Marketplace records are discovery metadata only; no files or executable package code are installed."
+      },
+      {
+        "file": "src/main/services/extension-manager.ts",
+        "line": 383,
+        "pattern": "Community extension execution is disabled until the third-party runtime completes security review",
+        "description": "toggleExtension throws error blocking non-built-in community extension execution.",
+        "category": "EXECUTION_BLOCKED",
+        "snippet": "throw new Error('Community extension execution is disabled until the third-party runtime completes security review.');"
+      },
+      {
+        "file": "src/renderer/src/components/ExtensionDetail.tsx",
+        "line": 208,
+        "pattern": "Community extensions are metadata-only and cannot run yet",
+        "description": "ExtensionDetail UI marks community extensions as metadata-only and disables enable/run button.",
+        "category": "DISPLAY_ONLY",
+        "snippet": "title={isBuiltIn ? undefined : 'Community extensions are metadata-only and cannot run yet.'}"
+      },
+      {
+        "file": "src/renderer/src/components/ExtensionDetail.tsx",
+        "line": 195,
+        "pattern": "disabled=\\{!isBuiltIn\\}",
+        "description": "Enable/Disable button disabled for any extension that is not built-in.",
+        "category": "EXECUTION_BLOCKED",
+        "snippet": "disabled={!isBuiltIn}"
+      },
+      {
+        "file": "src/renderer/src/components/ExtensionDetail.tsx",
+        "line": 211,
+        "pattern": "<span>\\{isBuiltIn \\? .* : 'Metadata only'\\}<\\/span>",
+        "description": "Button text statically displays 'Metadata only' for community extensions.",
+        "category": "DISPLAY_ONLY",
+        "snippet": "<span>{isBuiltIn ? (isEnabled ? 'Disable' : 'Enable') : 'Metadata only'}</span>"
+      },
+      {
+        "file": "src/renderer/src/components/ExtensionDetail.tsx",
+        "line": 332,
+        "pattern": "<span>\\{isBuiltIn \\? .* : 'Metadata only'\\}<\\/span>",
+        "description": "Button text statically displays 'Metadata only' for community extensions.",
+        "category": "DISPLAY_ONLY",
+        "snippet": "<span>{isBuiltIn ? 'Ty-Code Extension API' : 'Metadata only'}</span>"
+      },
+      {
+        "file": "src/renderer/src/services/extension-host.ts",
+        "line": 42,
+        "pattern": "if\\s*\\(extension\\.enabled\\s*&&\\s*extension\\.isBuiltIn\\s*&&\\s*extension\\.executionState\\s*===\\s*'built-in'\\)",
+        "description": "ExtensionHost.activateBuiltInExtension strictly requires isBuiltIn=true and executionState='built-in'.",
+        "category": "REGISTRATION_FILTER",
+        "snippet": "if (extension.enabled && extension.isBuiltIn && extension.executionState === 'built-in') {"
+      },
+      {
+        "file": "src/renderer/src/services/extension-worker-host.ts",
+        "line": 59,
+        "pattern": "if\\s*\\(!extension\\.enabled\\s*\\|\\|\\s*!extension\\.isBuiltIn\\s*\\|\\|\\s*extension\\.executionState\\s*!==\\s*'built-in'\\)\\s*return;",
+        "description": "ExtensionWorkerHost.activate silences and rejects any extension without isBuiltIn=true.",
+        "category": "REGISTRATION_FILTER",
+        "snippet": "if (!extension.enabled || !extension.isBuiltIn || extension.executionState !== 'built-in') return;"
+      },
+      {
+        "file": "src/renderer/src/workers/extension-worker.ts",
+        "line": 110,
+        "pattern": "Only statically bundled built-in modules may execute",
+        "description": "Extension Worker runtime strictly enforces that only statically bundled built-in modules may execute.",
+        "category": "EXECUTION_BLOCKED",
+        "snippet": "if (!builtin) throw new Error('Only statically bundled built-in modules may execute.');"
+      },
+      {
+        "file": "src/renderer/src/components/ExtensionsPanel.tsx",
+        "line": 173,
+        "pattern": "VSIX installation is unavailable until package validation is implemented",
+        "description": "ExtensionsPanel disables manual VSIX package installation button.",
+        "category": "DISPLAY_ONLY",
+        "snippet": "title=\"VSIX installation is unavailable until package validation is implemented\""
+      }
+    ]
+  }
+}

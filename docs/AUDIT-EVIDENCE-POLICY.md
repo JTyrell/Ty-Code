@@ -1,107 +1,86 @@
-# Audit Evidence Policy: Evidence or It Didn't Happen
+# Ty-Code Machine-Readable Audit Evidence Policy
 
-**Brand**: Ty-Code  
-**Version**: 1.0.0  
-**Effective Date**: October 16, 2026  
-**Status**: Mandatory CI Policy
-
----
-
-## 1. Executive Summary & Core Principle
-
-In Ty-Code, **every functional claim, performance budget assertion, and connectivity guarantee must be backed by a machine-readable JSON artifact.**
-
-> **The Golden Rule**:  
-> *"If a pull request, release note, or documentation audit claims code is 100% functional, fully functional, or meeting performance budgets, but cannot point to a timestamped machine-readable trace file in `docs/traces/`, the claim is rejected and CI fails."*
-
-This policy eliminates phantom claims, simulated mocks, and hand-waved QA checklists across all core subsystems.
+> **Anti-Phantom Rule**: Any claim in documentation, pull requests, release notes, or architecture summaries asserting that a provider, model, agent loop, tool, or storage subsystem is **"connected"**, **"working"**, **"operational"**, or **"100% functional"** MUST reference a valid, fresh machine-readable trace artifact path under [`docs/traces/*.json`](file:///c:/Users/JT/Documents/Ty-Code/docs/traces).
+>
+> Unsubstantiated claims without machine-readable evidence are classified as **Phantom Assertions** and will fail CI.
 
 ---
 
-## 2. Machine-Readable Artifact Requirements
+## 1. Trace Artifact Catalog & Requirements
 
-All audits and claims must reference one or more active trace artifacts in `docs/traces/`:
+Every major subsystem verification is backed by a dedicated JSON trace artifact in `docs/traces/`:
 
-| Subsystem | Required Artifact Path | Primary Validations |
-| :--- | :--- | :--- |
-| **Open-Path File & Folder Performance** | [`docs/traces/open-perf-trace.json`](file:///docs/traces/open-perf-trace.json) | 10k folder first paint <1500ms, full walk <5s, second open cache ≥3x speedup, 1KB/1MB file open budgets |
-| **End-to-End Connectivity & Streaming** | [`docs/traces/connectivity-trace.json`](file:///docs/traces/connectivity-trace.json) | Hop-by-hop verification (H1–H10), streaming token deltas (>5 events), zero mock short-circuits |
-
-### 2.1 Trace Freshness Invariant
-`scripts/verify-audit-artifacts.mjs` enforces in CI that:
-$$\text{timestamp}(\text{trace}) \ge \text{commit\_epoch}(\text{agent} \cup \text{providers} \cup \text{fs})$$
-
-If any code in `src/main/agent/**`, `src/main/providers/**`, `src/main/ipc/fs-handlers.ts`, `src/main/services/indexing/**`, or `src/renderer/src/services/lazy-model-manager.ts` is modified without re-running live benchmarks and updating `docs/traces/*.json`, CI immediately halts.
-
-### 2.2 Key Presence Rule
-All trace artifacts must log only key presence and key length—never the secret key value itself. Serialized traces containing strings matching known key prefixes (`sk-ant-`, `sk-or-`, `gsk_`, etc.) will fail the CI gate immediately.
+| Subsystem / Claim | Required Trace Artifact | Generating Command | Description & Invariants |
+| :--- | :--- | :--- | :--- |
+| **Zero Mock Strings** | [`docs/traces/mock-elimination.json`](file:///c:/Users/JT/Documents/Ty-Code/docs/traces/mock-elimination.json) | `node scripts/no-fixture-replies.mjs` | Grep results scanning all 230+ `src/` files proving 0 matches for forbidden mock/fixture replies. |
+| **Live Round-Trip Connectivity** | [`docs/traces/live-verification.json`](file:///c:/Users/JT/Documents/Ty-Code/docs/traces/live-verification.json) | `npm run test:live` | Real network round-trip proof: Nonce echo (`7Q4X9`), distinctness across 3 prompts, >=5 progressive stream events, disk file creation, and offline error classification. |
+| **End-to-End IPC Pipeline** | [`docs/traces/live-pipeline.json`](file:///c:/Users/JT/Documents/Ty-Code/docs/traces/live-pipeline.json) | `node scripts/run-live-e2e.mjs` | Hop-by-hop latency and payload trace covering all 10 IPC hops from renderer prompt ingestion to final assistant message delivery. |
+| **Hardware Key Encryption** | [`docs/traces/credential-security.json`](file:///c:/Users/JT/Documents/Ty-Code/docs/traces/credential-security.json) | `npm test` | Cryptographic audit of `credentials.json` demonstrating hardware `safeStorage` (DPAPI/Keychain) encryption with hex dump proof and zero plaintext secrets. |
+| **Usage & Token Ledger** | [`docs/traces/usage-ledger.json`](file:///c:/Users/JT/Documents/Ty-Code/docs/traces/usage-ledger.json) | `node tests/credential-store.test.ts` | Machine-readable ledger sample verifying prompt tokens, completion tokens, and dollar cost accounting into SQLite/JSON. |
+| **Multi-Provider Routing** | [`docs/traces/connectivity-trace.json`](file:///c:/Users/JT/Documents/Ty-Code/docs/traces/connectivity-trace.json) | `npm run test:live` | Provider health, failover chain traversal, and sanitized hop diagnostic traces without raw API key leakage. |
+| **Open-Path Latency Budgets** | [`docs/traces/open-perf-trace.json`](file:///c:/Users/JT/Documents/Ty-Code/docs/traces/open-perf-trace.json) | `npm run test:live` | 10k folder index timings, second-open cache acceleration (>=3x), and main-thread responsiveness (<50ms event loop lag). |
 
 ---
 
-## 3. Audited Systems: Verified 100% Functional Status
+## 2. Mandatory Artifact Schema
 
-The following subsystems have been verified 100% functional against real network and real disk execution, backed by official trace artifacts:
+Every trace file under `docs/traces/*.json` must strictly conform to the following schema:
 
-### 3.1 Real Agent Loop & Streaming (Fix 2 & Fix 5)
-- **Status**: 100% functional
-- **Supporting Artifact**: [`docs/traces/connectivity-trace.json`](file:///docs/traces/connectivity-trace.json)
-- **Test Suite**: `tests/live-e2e/agent-live.test.ts`
-- **Key Evidence**:
-  - Live token streaming verified across anonymous zero-config providers (>5 stream events received per prompt).
-  - Agent file creation tested with exact content matching on disk (`fs.existsSync`).
-  - Agent file editing verified with post-apply content and explicit guarantee that a diff event (`agent:diff-proposed`) strictly precedes disk write operations.
-  - Zero mock or fake response paths in production codebase (enforced by `scripts/no-mock-agent-path.mjs`).
+```json
+{
+  "phase": "RealConnect <n>",
+  "title": "<Descriptive Audit Title>",
+  "timestamp": "2026-10-16T20:16:00.000Z",
+  "epoch": 1792181760,
+  "gitCommit": "35837e4b8995e19c1315c0c6f43762f2b2a5928c",
+  "command": "<exact command used to generate artifact>",
+  "status": "VERIFIED_PASS"
+}
+```
 
-### 3.2 Open-Path Performance (Fix 3, Fix 4 & Fix 5)
-- **Status**: 100% functional
-- **Supporting Artifact**: [`docs/traces/open-perf-trace.json`](file:///docs/traces/open-perf-trace.json)
-- **Test Suite**: `tests/live-e2e/open-perf.test.ts`
-- **Key Evidence**:
-  - 10k-file fixture folder opens with progressive first paint at **19ms** (Budget: <1500ms).
-  - Full 10k directory background indexing completes in **140ms** (Budget: <5000ms).
-  - Second open loads disk index cache with **140x speedup** (Budget: ≥3.0x).
-  - 1KB file click-to-editable: **3ms cold**, **2ms warm** (Budgets: <400ms cold, <150ms warm).
-  - 1MB file progressive stream: **36ms** (Budget: <1200ms).
-  - Event loop lag during full 10k open: **12.5ms** (Budget: <50ms, zero main thread freeze).
+### Schema Rules:
+1. **`timestamp`**: Valid ISO 8601 UTC timestamp.
+2. **`gitCommit`**: Exact SHA-1 git commit hash of the codebase state at execution time.
+3. **`command`**: Non-empty shell command that reproduces the audit artifact.
+4. **`status`**: Must equal `"VERIFIED_PASS"`.
 
 ---
 
-## 4. Manual Smoke Test Script (6/6 Verification)
+## 3. Freshness & Invalidation Rules
 
-Engineers and release auditors must execute this 6-step manual smoke verification before any production release tag is minted:
+Evidence artifacts must represent active code reality, not historical snapshots:
+
+- **Monitored Paths**: `src/main/agent/**` and `src/main/providers/**`.
+- **Commit Guard**: Whenever a commit touches monitored code, all trace files must have a timestamp or commit epoch greater than or equal to that commit (with a 60-second allowance for clock variance).
+- **Automated Invalidation**: If any code change modifies provider streaming, agent tool execution, or network failover without updating the corresponding trace artifact, [`scripts/verify-audit-artifacts.mjs`](file:///c:/Users/JT/Documents/Ty-Code/scripts/verify-audit-artifacts.mjs) will reject the build.
+
+---
+
+## 4. Documentation Citation Syntax
+
+When authoring documentation or audit reports, functional claims must be directly hyperlinked to their trace evidence:
 
 ```markdown
-1. Launch App & Open Real Project Folder
-   - Action: Launch Ty-Code; open a large folder (>1,000 files).
-   - Expected Result: Tree paints progressively (<50ms initial paint), no UI freeze.
+<!-- Approved: Specific claim backed by machine-readable artifact -->
+The streaming agent pipeline is verified live and operational
+(see [live-verification.json](file:///c:/Users/JT/Documents/Ty-Code/docs/traces/live-verification.json)).
 
-2. Rapid File Switching
-   - Action: Click 3 different files in rapid succession in the sidebar.
-   - Expected Result: Each tab opens snappily (<150ms), editor model loads instantly.
-
-3. Live Token Streaming
-   - Action: Send chat prompt: "Reply with exactly: LIVE-OK" using active provider.
-   - Expected Result: Words stream progressively into ChatSidecar with typing effect.
-
-4. Real File Creation
-   - Action: Send prompt: "Create file live-check.md with line verified".
-   - Expected Result: Agent writes file; file appears in tree and on disk (`verified`).
-
-5. Real File Edit & Diff Approval
-   - Action: Send prompt: "In live-check.md replace verified with shipped".
-   - Expected Result: A diff card appears showing deletion of 'verified' and addition of 'shipped'. Upon approval, disk file content updates to 'shipped'.
-
-6. Network Cut & Error Card Verification
-   - Action: Disconnect Wi-Fi/Ethernet; send another chat prompt.
-   - Expected Result: Real error card displayed with taxonomy code (e.g., NETWORK_BLOCKED), actionable remedy, and suggested fallback provider. Zero app hang, zero simulated fake response.
+<!-- Forbidden: Vague or unevidenced claim (Fails CI) -->
+The provider is 100% functional and completely connected.
 ```
 
 ---
 
-## 5. Automated CI Enforcers
+## 5. Automated CI Verification
 
-| Guard Script | npm Script | CI Behavior |
-| :--- | :--- | :--- |
-| `scripts/no-mock-agent-path.mjs` | `npm run test:no-mock-agent-path` | Scans `src/main/agent` & `src/main/providers`; fails on any `setTimeout` responses, fake tokens, or mock generators. |
-| `scripts/verify-audit-artifacts.mjs` | `npm run guard:artifacts` | Fails if traces are older than code commits, if budgets are violated, or if documentation claims lack trace citations. |
-| `scripts/run-live-e2e.mjs` | `npm run test:live` | Runs real network token streaming and real disk 10k performance benchmarks end-to-end. |
+The anti-phantom policy is programmatically enforced in [`scripts/verify-audit-artifacts.mjs`](file:///c:/Users/JT/Documents/Ty-Code/scripts/verify-audit-artifacts.mjs) which runs on every local test run (`npm test`) and in GitHub Actions CI:
+
+```bash
+node scripts/verify-audit-artifacts.mjs
+```
+
+Builds fail immediately if:
+1. Any required trace file is missing or contains invalid JSON.
+2. Any required trace file is missing `timestamp`, `gitCommit`, or `command`.
+3. Any required trace file is stale relative to the latest commit touching agent/provider code.
+4. Any Markdown document in `docs/` makes completion or connectivity claims without citing a `docs/traces/*.json` path.

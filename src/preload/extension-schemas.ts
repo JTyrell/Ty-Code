@@ -28,60 +28,70 @@ export const ExtensionCapabilitySchema = z.enum([
 export type ExtensionCapability = z.infer<typeof ExtensionCapabilitySchema>;
 
 const ExtensionCommandSchema = z.object({
-  command: z.string().min(3).max(160).regex(/^[a-z0-9][a-zA-Z0-9.-]*$/),
-  title: z.string().min(1).max(160),
-  category: z.string().max(80).optional(),
-  icon: z.string().max(200).optional()
-}).strict();
+  command: z.string().min(1).max(200),
+  title: z.string().min(1).max(200),
+  category: z.string().max(120).optional(),
+  icon: z.union([z.string().max(200), z.record(z.string(), z.unknown())]).optional(),
+  shortTitle: z.string().max(200).optional(),
+  enablement: z.string().max(500).optional()
+}).passthrough();
 
 const ConfigurationPropertySchema = z.object({
-  type: z.enum(['boolean', 'string', 'number']),
-  default: z.union([z.boolean(), z.string().max(500), z.number().finite()]).optional(),
-  description: z.string().max(500).optional(),
-  enum: z.array(z.union([z.boolean(), z.string().max(120), z.number().finite()])).max(50).optional()
-}).strict();
+  type: z.string().optional().default('string'),
+  default: z.unknown().optional(),
+  description: z.string().optional(),
+  markdownDescription: z.string().optional(),
+  enum: z.array(z.unknown()).optional(),
+  scope: z.string().optional()
+}).passthrough();
 
 export const ExtensionManifestSchema = z.object({
-  name: slug,
-  publisher: slug,
-  version: z.string().regex(/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/, 'Version must be semantic versioning.'),
-  displayName: z.string().max(160).optional(),
-  description: z.string().max(2_000).optional(),
-  main: z.string().max(240).refine((value) => !value.includes('..') && !value.startsWith('/') && !value.startsWith('\\'), 'main must be a safe relative path.').optional(),
+  name: z.string().min(1).max(120),
+  publisher: z.string().min(1).max(120),
+  version: z.string().min(1).max(60),
+  displayName: z.string().max(200).optional(),
+  description: z.string().max(10_000).optional(),
+  main: z.string().max(300).refine((value) => !value.includes('..') && !value.startsWith('/') && !value.startsWith('\\'), 'main must be a safe relative path.').optional(),
   icon: z.string().max(500).optional(),
-  categories: z.array(z.string().min(1).max(60)).max(20).optional(),
-  capabilities: z.array(ExtensionCapabilitySchema).max(20).optional(),
-  engines: z.object({ vscode: z.string().max(100).optional(), 'ty-code': z.string().max(100).optional(), 'ty-claude': z.string().max(100).optional() }).strict().optional(),
-  activationEvents: z.array(z.string().max(120)).max(50).optional(),
+  categories: z.array(z.string().min(1).max(80)).optional(),
+  capabilities: z.array(ExtensionCapabilitySchema).max(50).optional(),
+  engines: z.record(z.string(), z.unknown()).optional(),
+  activationEvents: z.array(z.string().max(200)).optional(),
   contributes: z.object({
-    commands: z.array(ExtensionCommandSchema).max(100).optional(),
+    commands: z.array(ExtensionCommandSchema).optional(),
     languages: z.array(z.object({
-      id: slug,
-      aliases: z.array(z.string().max(80)).max(20).optional(),
-      extensions: z.array(z.string().regex(/^\.[a-z0-9]+$/i)).max(30).optional(),
+      id: z.string().min(1).max(80),
+      aliases: z.array(z.string().max(80)).optional(),
+      extensions: z.array(z.string()).optional(),
       configuration: z.string().max(240).optional()
-    }).strict()).max(50).optional(),
+    }).passthrough()).optional(),
     configuration: z.object({
-      title: z.string().max(160).optional(),
-      properties: z.record(z.string().max(160), ConfigurationPropertySchema).optional()
-    }).strict().optional(),
+      title: z.string().max(200).optional(),
+      properties: z.record(z.string(), ConfigurationPropertySchema).optional()
+    }).passthrough().optional(),
     keybindings: z.array(z.object({
-      command: z.string().max(160), key: z.string().max(100), mac: z.string().max(100).optional(), when: z.string().max(200).optional()
-    }).strict()).max(100).optional()
-  }).strict().optional()
-}).strict().superRefine((manifest, context) => {
-  const commandPrefix = `${manifest.publisher}.${manifest.name}.`;
-  for (const command of manifest.contributes?.commands || []) {
-    if (!command.command.startsWith(commandPrefix)) {
-      context.addIssue({ code: 'custom', path: ['contributes', 'commands'], message: `Command "${command.command}" must start with "${commandPrefix}".` });
-    }
-  }
-  for (const [key, property] of Object.entries(manifest.contributes?.configuration?.properties || {})) {
-    if (property.default !== undefined && typeof property.default !== property.type) {
-      context.addIssue({ code: 'custom', path: ['contributes', 'configuration', 'properties', key, 'default'], message: 'Default value must match the declared setting type.' });
-    }
-    if (property.enum && property.default !== undefined && !property.enum.includes(property.default)) {
-      context.addIssue({ code: 'custom', path: ['contributes', 'configuration', 'properties', key, 'default'], message: 'Default value must be one of the enum values.' });
+      command: z.string().max(300),
+      key: z.string().max(200).optional(),
+      win: z.string().max(200).optional(),
+      linux: z.string().max(200).optional(),
+      mac: z.string().max(200).optional(),
+      when: z.string().max(5000).optional(),
+      args: z.unknown().optional()
+    }).passthrough()).optional()
+  }).passthrough().optional()
+}).passthrough().superRefine((manifest, context) => {
+  if (manifest.publisher.startsWith('ty-')) {
+    const commandPrefix = `${manifest.publisher}.${manifest.name}.`;
+    const commands = (manifest.contributes as Record<string, unknown> | undefined)?.commands;
+    if (Array.isArray(commands)) {
+      for (const command of commands) {
+        if (command && typeof command === 'object' && typeof (command as { command?: string }).command === 'string') {
+          const cmdName = (command as { command: string }).command;
+          if (!cmdName.startsWith(commandPrefix)) {
+            context.addIssue({ code: 'custom', path: ['contributes', 'commands'], message: `Command "${cmdName}" must start with "${commandPrefix}".` });
+          }
+        }
+      }
     }
   }
 });
