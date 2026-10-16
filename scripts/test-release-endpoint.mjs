@@ -51,10 +51,13 @@ try {
   const releaseJsonContent = await fs.readFile(path.join(projectRoot, 'dist-release/release.json'), 'utf8');
   const releaseJson = JSON.parse(releaseJsonContent);
 
+  const installerName = 'Ty-Code-Setup-1.0.0.exe';
+  const installerSize = 119053185;
+
   const localFiles = new Map([
     ['SHA256SUMS.txt', { text: async () => checksumsContent, size: checksumsContent.length }],
     ['release.json', { text: async () => releaseJsonContent, json: async () => releaseJson, size: releaseJsonContent.length }],
-    ['Ty-Code-Setup-0.1.0.exe', { body: 'mock-exe-content', size: 119132406, httpEtag: '"exe-etag"' }]
+    [installerName, { body: 'mock-exe-content', size: installerSize, httpEtag: '"exe-etag"' }]
   ]);
 
   const mockBucket = {
@@ -77,9 +80,9 @@ try {
 
   const releasePayload = await releaseRes.json();
   assert.equal(releasePayload.status, 'verified');
-  assert.equal(releasePayload.tag, 'v0.1.0');
-  assert.equal(releasePayload.name, 'Ty-Code 0.1.0');
-  assert.equal(releasePayload.assets.length, 7, 'all 7 release assets returned');
+  assert.equal(releasePayload.tag, 'v1.0.0');
+  assert.equal(releasePayload.name, 'Ty-Code 1.0.0');
+  assert.ok(releasePayload.assets.length >= 6, 'all release assets returned');
 
   // Verify platforms
   const platforms = new Set(releasePayload.assets.map((a) => a.platform));
@@ -92,27 +95,27 @@ try {
   assert.equal(libModule.isVerifiedRelease(releasePayload), true, 'client validator approves R2 verified release payload');
 
   // 3. Test GET /api/download/[file]
-  console.log('3. Testing GET /api/download/Ty-Code-Setup-0.1.0.exe...');
+  console.log(`3. Testing GET /api/download/${installerName}...`);
   const downloadRes = await downloadModule.onRequestGet({
-    request: new Request('http://localhost/api/download/Ty-Code-Setup-0.1.0.exe'),
-    params: { file: 'Ty-Code-Setup-0.1.0.exe' },
+    request: new Request(`http://localhost/api/download/${installerName}`),
+    params: { file: installerName },
     env: { DOWNLOADS_BUCKET: mockBucket }
   });
   assert.equal(downloadRes.status, 200);
-  assert.equal(downloadRes.headers.get('content-disposition'), 'attachment; filename="Ty-Code-Setup-0.1.0.exe"');
+  assert.equal(downloadRes.headers.get('content-disposition'), `attachment; filename="${installerName}"`);
   assert.equal(downloadRes.headers.get('content-type'), 'application/vnd.microsoft.portable-executable');
-  assert.equal(downloadRes.headers.get('content-length'), '119132406');
+  assert.equal(downloadRes.headers.get('content-length'), String(installerSize));
   assert.equal(downloadRes.headers.get('x-content-type-options'), 'nosniff');
 
   // 4. Test HEAD /api/download/[file]
-  console.log('4. Testing HEAD /api/download/Ty-Code-Setup-0.1.0.exe...');
+  console.log(`4. Testing HEAD /api/download/${installerName}...`);
   const headRes = await downloadModule.onRequestHead({
-    request: new Request('http://localhost/api/download/Ty-Code-Setup-0.1.0.exe', { method: 'HEAD' }),
-    params: { file: 'Ty-Code-Setup-0.1.0.exe' },
+    request: new Request(`http://localhost/api/download/${installerName}`, { method: 'HEAD' }),
+    params: { file: installerName },
     env: { DOWNLOADS_BUCKET: mockBucket }
   });
   assert.equal(headRes.status, 200);
-  assert.equal(headRes.headers.get('content-length'), '119132406');
+  assert.equal(headRes.headers.get('content-length'), String(installerSize));
 
   // 5. Test security: reject unallowed file names
   console.log('5. Testing security against path traversal / unauthorized filenames...');

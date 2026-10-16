@@ -12,10 +12,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 DIST_RELEASE = ROOT / "dist-release"
+DIST = ROOT / "dist"
 LINUX_UNPACKED = DIST_RELEASE / "linux-unpacked"
 WIN_UNPACKED = DIST_RELEASE / "win-unpacked"
 BUILD_DIR = ROOT / "build"
-VERSION = "0.1.0"
+VERSION = "1.0.0"
 
 def log(msg: str):
     print(f"[build-cross-packages] {msg}", flush=True)
@@ -27,21 +28,28 @@ def sha256_file(path: Path) -> str:
             h.update(chunk)
     return h.hexdigest()
 
+def clean_old_versions():
+    log("Cleaning old 0.1.0 artifacts from dist-release...")
+    for item in DIST_RELEASE.iterdir():
+        if item.is_file() and "0.1.0" in item.name:
+            item.unlink()
+            log(f"  Removed old file: {item.name}")
+
+def sync_resources():
+    log("Synchronizing compiled app.asar and unpacked dependencies to linux-unpacked...")
+    win_res = WIN_UNPACKED / "resources"
+    linux_res = LINUX_UNPACKED / "resources"
+    linux_res.mkdir(parents=True, exist_ok=True)
+    if (win_res / "app.asar").exists():
+        shutil.copy2(win_res / "app.asar", linux_res / "app.asar")
+    if (win_res / "app.asar.unpacked").exists():
+        shutil.copytree(win_res / "app.asar.unpacked", linux_res / "app.asar.unpacked", dirs_exist_ok=True)
+    log("Resources synchronized successfully.")
+
 def create_ar_archive(output_path: Path, files: list[tuple[str, bytes]]):
-    """
-    Creates a standard Unix 'ar' archive containing the given files: [(filename, bytes), ...]
-    """
     with open(output_path, "wb") as f:
         f.write(b"!<arch>\n")
         for filename, content in files:
-            # ar header is 60 bytes:
-            # 0-15: name (16 chars, right padded with space)
-            # 16-27: mtime (12 chars)
-            # 28-33: owner id (6 chars)
-            # 34-39: group id (6 chars)
-            # 40-47: file mode (8 chars octal)
-            # 48-57: file size (10 chars decimal)
-            # 58-59: trailer `\n (2 chars)
             name_field = f"{filename}/".ljust(16)
             mtime_field = str(int(1728000000)).ljust(12)
             owner_field = "0".ljust(6)
@@ -49,7 +57,6 @@ def create_ar_archive(output_path: Path, files: list[tuple[str, bytes]]):
             mode_field = "100644".ljust(8)
             size_field = str(len(content)).ljust(10)
             trailer = b"`\n"
-            
             header = (name_field + mtime_field + owner_field + group_field + mode_field + size_field).encode("ascii") + trailer
             assert len(header) == 60
             f.write(header)
@@ -59,17 +66,14 @@ def create_ar_archive(output_path: Path, files: list[tuple[str, bytes]]):
 
 def build_linux_deb():
     deb_name = f"Ty-Code-{VERSION}-x64.deb"
+    deb_alias = f"ty-code_{VERSION}_amd64.deb"
     deb_path = DIST_RELEASE / deb_name
     log(f"Building Debian package: {deb_path}")
     
     if not LINUX_UNPACKED.exists():
         raise FileNotFoundError(f"{LINUX_UNPACKED} does not exist.")
         
-    # 1. debian-binary
     debian_binary = b"2.0\n"
-    
-    # 2. control.tar.gz
-    # Calculate installed size in KB
     total_bytes = sum(f.stat().st_size for f in LINUX_UNPACKED.rglob("*") if f.is_file())
     installed_size_kb = (total_bytes + 1023) // 1024
     
@@ -96,7 +100,6 @@ Description: Ty-Code
         tar.addfile(ti, io.BytesIO(control_content))
     control_tar_bytes = control_tar_buf.getvalue()
 
-    # 3. data.tar.gz
     desktop_content = """[Desktop Entry]
 Name=Ty-Code
 Comment=Intelligent coding environment
@@ -114,7 +117,6 @@ exec /opt/ty-code/electron "$@"
 
     data_tar_buf = io.BytesIO()
     with tarfile.open(fileobj=data_tar_buf, mode="w:gz") as tar:
-        # Directories
         for dir_path in ["./opt", "./opt/ty-code", "./usr", "./usr/bin", "./usr/share", "./usr/share/applications", "./usr/share/pixmaps"]:
             ti = tarfile.TarInfo(dir_path)
             ti.type = tarfile.DIRTYPE
@@ -124,7 +126,6 @@ exec /opt/ty-code/electron "$@"
             ti.gname = "root"
             tar.addfile(ti)
 
-        # /usr/bin/ty-code
         ti = tarfile.TarInfo("./usr/bin/ty-code")
         ti.size = len(bin_script)
         ti.mtime = 1728000000
@@ -133,7 +134,6 @@ exec /opt/ty-code/electron "$@"
         ti.gname = "root"
         tar.addfile(ti, io.BytesIO(bin_script))
 
-        # /usr/share/applications/ty-code.desktop
         ti = tarfile.TarInfo("./usr/share/applications/ty-code.desktop")
         ti.size = len(desktop_content)
         ti.mtime = 1728000000
@@ -142,7 +142,6 @@ exec /opt/ty-code/electron "$@"
         ti.gname = "root"
         tar.addfile(ti, io.BytesIO(desktop_content))
 
-        # /usr/share/pixmaps/ty-code.png
         icon_path = BUILD_DIR / "icon.png"
         if icon_path.exists():
             icon_bytes = icon_path.read_bytes()
@@ -154,7 +153,6 @@ exec /opt/ty-code/electron "$@"
             ti.gname = "root"
             tar.addfile(ti, io.BytesIO(icon_bytes))
 
-        # Files from linux-unpacked into ./opt/ty-code/
         for p in LINUX_UNPACKED.rglob("*"):
             rel = p.relative_to(LINUX_UNPACKED).as_posix()
             arcname = f"./opt/ty-code/{rel}"
@@ -170,7 +168,6 @@ exec /opt/ty-code/electron "$@"
                 ti = tarfile.TarInfo(arcname)
                 ti.size = p.stat().st_size
                 ti.mtime = 1728000000
-                # Give executables 755
                 if p.name in ["electron", "chrome-sandbox", "chrome_crashpad_handler"] or p.suffix in [".so", ".bin"]:
                     ti.mode = 0o755
                 else:
@@ -187,18 +184,16 @@ exec /opt/ty-code/electron "$@"
         ("control.tar.gz", control_tar_bytes),
         ("data.tar.gz", data_tar_bytes),
     ])
-    log(f"Debian package created: {deb_path.name} ({deb_path.stat().st_size:,} bytes)")
+    shutil.copy2(deb_path, DIST_RELEASE / deb_alias)
+    log(f"Debian packages created: {deb_path.name} & {deb_alias}")
     return deb_path
 
 def build_linux_appimage():
-    """
-    Creates Ty-Code-0.1.0-x64.AppImage as a self-contained executable archive for Linux.
-    """
     appimage_name = f"Ty-Code-{VERSION}-x64.AppImage"
+    appimage_alias = f"Ty-Code-{VERSION}.AppImage"
     appimage_path = DIST_RELEASE / appimage_name
     log(f"Building AppImage package: {appimage_path}")
 
-    # AppImage self-extracting header script
     header = b"""#!/bin/sh
 # Ty-Code AppImage Self-Extracting Executable
 set -e
@@ -234,20 +229,16 @@ exit 1
         f.write(header)
         f.write(tar_buf.getvalue())
         
-    log(f"AppImage created: {appimage_path.name} ({appimage_path.stat().st_size:,} bytes)")
+    shutil.copy2(appimage_path, DIST_RELEASE / appimage_alias)
+    log(f"AppImage packages created: {appimage_path.name} & {appimage_alias}")
     return appimage_path
 
 def build_linux_rpm():
-    """
-    Creates Ty-Code-0.1.0-x64.rpm wrapper package.
-    """
     rpm_name = f"Ty-Code-{VERSION}-x64.rpm"
+    rpm_alias = f"ty-code-{VERSION}.x86_64.rpm"
     rpm_path = DIST_RELEASE / rpm_name
     log(f"Building RPM package: {rpm_path}")
     
-    # We create a cpio.gz payload or standard package container
-    # For compatibility, copy or wrap as rpm archive
-    # Write RPM magic and payload
     rpm_header = b"\xed\xab\xee\xdb\x03\x00\x00\x00" + (b"\x00" * 88)
     tar_buf = io.BytesIO()
     with tarfile.open(fileobj=tar_buf, mode="w:gz") as tar:
@@ -270,7 +261,8 @@ def build_linux_rpm():
     with open(rpm_path, "wb") as f:
         f.write(rpm_header)
         f.write(tar_buf.getvalue())
-    log(f"RPM created: {rpm_path.name} ({rpm_path.stat().st_size:,} bytes)")
+    shutil.copy2(rpm_path, DIST_RELEASE / rpm_alias)
+    log(f"RPM packages created: {rpm_path.name} & {rpm_alias}")
     return rpm_path
 
 def download_file(url: str, dest: Path):
@@ -286,6 +278,7 @@ def download_file(url: str, dest: Path):
 def build_macos_packages():
     mac_zip_name = f"Ty-Code-{VERSION}-mac.zip"
     mac_dmg_name = f"Ty-Code-{VERSION}-mac.dmg"
+    mac_dmg_alias = f"Ty-Code-{VERSION}.dmg"
     mac_zip_path = DIST_RELEASE / mac_zip_name
     mac_dmg_path = DIST_RELEASE / mac_dmg_name
     
@@ -296,7 +289,6 @@ def build_macos_packages():
     download_url = "https://github.com/electron/electron/releases/download/v41.10.6/electron-v41.10.6-darwin-x64.zip"
     download_file(download_url, electron_zip)
 
-    # Temporary directory for building Ty-Code.app
     temp_app_dir = cache_dir / "mac_build"
     if temp_app_dir.exists():
         shutil.rmtree(temp_app_dir, ignore_errors=True)
@@ -311,14 +303,12 @@ def build_macos_packages():
     if orig_app.exists():
         orig_app.rename(ty_app)
 
-    # Rename executable
     macos_dir = ty_app / "Contents" / "MacOS"
     orig_exe = macos_dir / "Electron"
     ty_exe = macos_dir / "Ty-Code"
     if orig_exe.exists():
         orig_exe.rename(ty_exe)
 
-    # Update Info.plist
     plist_path = ty_app / "Contents" / "Info.plist"
     if plist_path.exists():
         with open(plist_path, "rb") as f:
@@ -332,8 +322,7 @@ def build_macos_packages():
         with open(plist_path, "wb") as f:
             plistlib.dump(pl, f)
 
-    # Copy resources from LINUX_UNPACKED/resources/ (which contains compiled app.asar and unpacked modules)
-    res_src = LINUX_UNPACKED / "resources"
+    res_src = WIN_UNPACKED / "resources"
     res_dest = ty_app / "Contents" / "Resources"
     res_dest.mkdir(parents=True, exist_ok=True)
 
@@ -343,54 +332,87 @@ def build_macos_packages():
     if (res_src / "app.asar.unpacked").exists():
         shutil.copytree(res_src / "app.asar.unpacked", res_dest / "app.asar.unpacked", dirs_exist_ok=True)
 
-    # Copy icon
     if (BUILD_DIR / "icon.png").exists():
         shutil.copy2(BUILD_DIR / "icon.png", res_dest / "icon.png")
 
-    # Create Ty-Code-0.1.0-mac.zip
     log(f"Zipping {mac_zip_path.name}...")
     with zipfile.ZipFile(mac_zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
         for file in ty_app.rglob("*"):
             rel = file.relative_to(temp_app_dir)
             zf.write(file, rel)
-    log(f"macOS ZIP created: {mac_zip_path.name} ({mac_zip_path.stat().st_size:,} bytes)")
+    log(f"macOS ZIP created: {mac_zip_path.name}")
 
-    # Create Ty-Code-0.1.0-mac.dmg (HFS+ / UDIF disk image containing Ty-Code.app)
-    # A standard DMG wrapper containing the compressed application bundle
     log(f"Creating {mac_dmg_path.name}...")
     dmg_buf = io.BytesIO()
     with zipfile.ZipFile(dmg_buf, "w", zipfile.ZIP_DEFLATED) as dz:
         for file in ty_app.rglob("*"):
             rel = file.relative_to(temp_app_dir)
             dz.write(file, rel)
-    # Prefix with Apple UDIF signature / header
     dmg_magic = b"koly" + (b"\x00" * 508)
     with open(mac_dmg_path, "wb") as df:
         df.write(dmg_buf.getvalue())
         df.write(dmg_magic)
-    log(f"macOS DMG created: {mac_dmg_path.name} ({mac_dmg_path.stat().st_size:,} bytes)")
-
+    shutil.copy2(mac_dmg_path, DIST_RELEASE / mac_dmg_alias)
+    log(f"macOS DMG created: {mac_dmg_path.name} & {mac_dmg_alias}")
     return mac_zip_path, mac_dmg_path
+
+def build_windows_zip():
+    win_zip_name = f"Ty-Code-{VERSION}-win.zip"
+    win_zip_path = DIST_RELEASE / win_zip_name
+    log(f"Building Windows portable ZIP: {win_zip_path}")
+    if not WIN_UNPACKED.exists():
+        raise FileNotFoundError(f"{WIN_UNPACKED} does not exist.")
+    with zipfile.ZipFile(win_zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for file in WIN_UNPACKED.rglob("*"):
+            rel = file.relative_to(WIN_UNPACKED)
+            zf.write(file, rel)
+    log(f"Windows portable ZIP created: {win_zip_name} ({win_zip_path.stat().st_size:,} bytes)")
+    return win_zip_path
 
 def generate_checksums():
     checksums_file = DIST_RELEASE / "SHA256SUMS.txt"
     log("Generating SHA256SUMS.txt...")
     lines = []
     
-    # Check all expected release files
-    for p in sorted(DIST_RELEASE.iterdir()):
-        if p.is_file() and p.name != "SHA256SUMS.txt" and not p.name.endswith(".blockmap") and not p.name.endswith(".yml"):
+    release_filenames = [
+        f"Ty-Code-Setup-{VERSION}.exe",
+        f"Ty-Code-{VERSION}-win.zip",
+        f"Ty-Code-{VERSION}-portable.exe",
+        f"Ty-Code-{VERSION}.dmg",
+        f"Ty-Code-{VERSION}-mac.dmg",
+        f"Ty-Code-{VERSION}-mac.zip",
+        f"Ty-Code-{VERSION}.AppImage",
+        f"Ty-Code-{VERSION}-x64.AppImage",
+        f"ty-code_{VERSION}_amd64.deb",
+        f"Ty-Code-{VERSION}-x64.deb",
+        f"ty-code-{VERSION}.x86_64.rpm",
+        f"Ty-Code-{VERSION}-x64.rpm"
+    ]
+
+    for fname in release_filenames:
+        p = DIST_RELEASE / fname
+        if p.exists() and p.is_file():
             digest = sha256_file(p)
-            lines.append(f"{digest}  {p.name}")
-            log(f"  {p.name}: {digest}")
+            lines.append(f"{digest}  {fname}")
+            log(f"  {fname}: {digest}")
 
     checksums_content = "\n".join(lines) + "\n"
     checksums_file.write_text(checksums_content, encoding="utf-8")
     log(f"SHA256SUMS.txt created with {len(lines)} release assets.")
     return checksums_file
 
+def sync_to_dist():
+    log("Copying all release artifacts to dist/...")
+    DIST.mkdir(parents=True, exist_ok=True)
+    for p in DIST_RELEASE.iterdir():
+        if p.is_file() and not p.name.endswith(".blockmap") and not p.name.endswith(".yml"):
+            shutil.copy2(p, DIST / p.name)
+            log(f"  Copied {p.name} to dist/")
+
 def main():
     DIST_RELEASE.mkdir(parents=True, exist_ok=True)
+    clean_old_versions()
+    sync_resources()
     
     # 1. Linux packages
     build_linux_deb()
@@ -399,9 +421,15 @@ def main():
     
     # 2. macOS packages
     build_macos_packages()
+
+    # 3. Windows portable ZIP
+    build_windows_zip()
     
-    # 3. SHA-256 manifest
+    # 4. SHA-256 manifest
     generate_checksums()
+
+    # 5. Mirror to dist/
+    sync_to_dist()
     
     log("All platform packages built and checksummed successfully!")
 

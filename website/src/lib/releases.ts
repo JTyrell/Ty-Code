@@ -44,13 +44,16 @@ export class ReleaseRequestError extends Error {
   }
 }
 
-const RELEASE_PAGE = 'https://github.com/ty-code/ty-code/releases';
+const ALLOWED_REPOS = ['JTyrell/Ty-Code', 'ty-code/ty-code'];
+const RELEASE_PAGE = 'https://github.com/JTyrell/Ty-Code/releases';
 const RELEASE_TAG_PATTERN = /^v?\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$/;
 const INSTALLER_PATTERNS = [
-  /^Ty-Code-Setup-\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?\.exe$/,
-  /^Ty-Code-\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?-portable\.exe$/,
-  /^Ty-Code-\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?-mac\.(?:dmg|zip)$/,
-  /^Ty-Code-\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?-x64\.(?:AppImage|deb|rpm)$/
+  /^Ty-Code-Setup-\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?\.exe$/i,
+  /^Ty-Code-\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?-portable\.exe$/i,
+  /^Ty-Code-\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?-win\.zip$/i,
+  /^Ty-Code-\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?(?:-mac)?\.(?:dmg|zip)$/i,
+  /^Ty-Code-\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?(?:-x64)?\.(?:AppImage|deb|rpm)$/i,
+  /^ty-code[_-]\d+\.\d+\.\d+[_-].*\.(?:deb|rpm)$/i
 ];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -66,12 +69,15 @@ function isOfficialReleaseUrl(value: unknown, tag?: string, filename?: string): 
     const url = new URL(value);
     if (url.search || url.hash || url.username || url.password) return false;
     if (url.origin === 'https://github.com') {
-      const expectedPath = tag && filename
-        ? `/ty-code/ty-code/releases/download/${encodeURIComponent(tag)}/${encodeURIComponent(filename)}`
-        : tag
-          ? `/ty-code/ty-code/releases/tag/${encodeURIComponent(tag)}`
-          : '/ty-code/ty-code/releases';
-      return url.pathname === expectedPath;
+      for (const repo of ALLOWED_REPOS) {
+        const expectedPath = tag && filename
+          ? `/${repo}/releases/download/${encodeURIComponent(tag)}/${encodeURIComponent(filename)}`
+          : tag
+            ? `/${repo}/releases/tag/${encodeURIComponent(tag)}`
+            : `/${repo}/releases`;
+        if (url.pathname.toLowerCase() === expectedPath.toLowerCase()) return true;
+      }
+      return false;
     }
     if (filename && url.pathname === `/api/download/${encodeURIComponent(filename)}`) {
       return true;

@@ -3,6 +3,9 @@
   "name": "ty-code",
   "pages_build_output_dir": "./website-dist",
   "compatibility_date": "2026-10-15",
+  "vars": {
+    "GITHUB_REPO": "JTyrell/Ty-Code"
+  },
   "analytics_engine_datasets": [
     {
       "binding": "SITE_ANALYTICS",

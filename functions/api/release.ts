@@ -58,23 +58,26 @@ interface PagesContext {
   request: Request;
   env?: {
     GITHUB_TOKEN?: string;
+    GITHUB_REPO?: string;
     DOWNLOADS_BUCKET?: R2BucketBinding;
   };
 }
 
+const ALLOWED_REPOS = ['ty-code/ty-code', 'JTyrell/Ty-Code'];
+
 function classifyInstaller(name: string): Omit<DownloadAsset, 'name' | 'size' | 'downloadUrl' | 'sha256'> | null {
-  if (/^Ty-Code-Setup-\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?\.exe$/.test(name)) {
+  if (/^Ty-Code-Setup-\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?\.exe$/i.test(name)) {
     return { platform: 'Windows', format: 'Installer', architecture: 'x64' };
   }
-  if (/^Ty-Code-\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?-portable\.exe$/.test(name)) {
+  if (/^Ty-Code-\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?-portable\.exe$/i.test(name) || /^Ty-Code-\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?-win\.zip$/i.test(name)) {
     return { platform: 'Windows', format: 'Portable', architecture: 'x64' };
   }
-  if (/^Ty-Code-\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?-mac\.(?:dmg|zip)$/.test(name)) {
+  if (/^Ty-Code-\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?(?:-mac)?\.(?:dmg|zip)$/i.test(name)) {
     return { platform: 'macOS', format: name.endsWith('.dmg') ? 'DMG' : 'ZIP', architecture: 'Universal' };
   }
-  if (/^Ty-Code-\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?-x64\.(?:AppImage|deb|rpm)$/.test(name)) {
+  if (/^(?:Ty-Code-\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?(?:-x64)?\.(?:AppImage|deb|rpm)|ty-code[_-]\d+\.\d+\.\d+[_-].*\.(?:deb|rpm))$/i.test(name)) {
     const extension = name.slice(name.lastIndexOf('.') + 1);
-    const format = extension === 'AppImage' ? 'AppImage' : extension.toUpperCase();
+    const format = extension.toLowerCase() === 'appimage' ? 'AppImage' : extension.toUpperCase();
     return { platform: 'Linux', format, architecture: 'x64' };
   }
   return null;
@@ -106,10 +109,13 @@ function parseRelease(value: unknown): {
   if (typeof release.tag_name !== 'string' || !/^v?\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$/.test(release.tag_name)) {
     throw new Error('GitHub release tag is invalid.');
   }
-  const expectedReleasePath = `/ty-code/ty-code/releases/tag/${encodeURIComponent(release.tag_name)}`;
   if (typeof release.html_url !== 'string') throw new Error('GitHub release URL is invalid.');
   const releaseUrl = new URL(release.html_url);
-  if (releaseUrl.origin !== 'https://github.com' || releaseUrl.pathname !== expectedReleasePath
+  const isAllowedRepoPath = ALLOWED_REPOS.some((repo) => {
+    const expected = `/${repo}/releases/tag/${encodeURIComponent(release.tag_name as string)}`;
+    return releaseUrl.pathname.toLowerCase() === expected.toLowerCase();
+  });
+  if (releaseUrl.origin !== 'https://github.com' || !isAllowedRepoPath
     || releaseUrl.search || releaseUrl.hash || releaseUrl.username || releaseUrl.password) {
     throw new Error('GitHub release URL is outside the official repository.');
   }
@@ -130,9 +136,13 @@ function isReleaseAssetUrl(value: unknown, tag: string, name: string): value is 
   if (typeof value !== 'string') return false;
   try {
     const url = new URL(value);
-    return url.origin === 'https://github.com'
-      && url.pathname === `/ty-code/ty-code/releases/download/${encodeURIComponent(tag)}/${encodeURIComponent(name)}`
-      && !url.search && !url.hash && !url.username && !url.password;
+    if (url.origin !== 'https://github.com' || url.search || url.hash || url.username || url.password) {
+      return false;
+    }
+    return ALLOWED_REPOS.some((repo) => {
+      const expected = `/${repo}/releases/download/${encodeURIComponent(tag)}/${encodeURIComponent(name)}`;
+      return url.pathname.toLowerCase() === expected.toLowerCase();
+    });
   } catch {
     return false;
   }
@@ -206,7 +216,10 @@ async function getVerifiedRelease(context?: PagesContext): Promise<{
   if (context?.env?.GITHUB_TOKEN) {
     headers['Authorization'] = `Bearer ${context.env.GITHUB_TOKEN}`;
   }
-  const releaseResponse = await fetch(RELEASES_API, {
+  const releaseApi = context?.env?.GITHUB_REPO
+    ? `https://api.github.com/repos/${context.env.GITHUB_REPO}/releases/latest`
+    : RELEASES_API;
+  const releaseResponse = await fetch(releaseApi, {
     headers,
     redirect: 'manual',
     signal: AbortSignal.timeout(8_000)

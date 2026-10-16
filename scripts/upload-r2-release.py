@@ -16,13 +16,18 @@ BUCKET = "ty-code-downloads"
 FILES_TO_UPLOAD = [
     "SHA256SUMS.txt",
     "release.json",
-    "Ty-Code-Setup-0.1.0.exe",
-    "Ty-Code-0.1.0-portable.exe",
-    "Ty-Code-0.1.0-mac.dmg",
-    "Ty-Code-0.1.0-mac.zip",
-    "Ty-Code-0.1.0-x64.AppImage",
-    "Ty-Code-0.1.0-x64.deb",
-    "Ty-Code-0.1.0-x64.rpm"
+    "Ty-Code-Setup-1.0.0.exe",
+    "Ty-Code-1.0.0-win.zip",
+    "Ty-Code-1.0.0-portable.exe",
+    "Ty-Code-1.0.0.dmg",
+    "Ty-Code-1.0.0-mac.dmg",
+    "Ty-Code-1.0.0-mac.zip",
+    "Ty-Code-1.0.0.AppImage",
+    "Ty-Code-1.0.0-x64.AppImage",
+    "ty-code_1.0.0_amd64.deb",
+    "Ty-Code-1.0.0-x64.deb",
+    "ty-code-1.0.0.x86_64.rpm",
+    "Ty-Code-1.0.0-x64.rpm"
 ]
 
 def log(msg: str):
