@@ -5,6 +5,7 @@ import type { AgentMode, AgentStreamChunk, AgentToolApproval, ChatMessage, IpcRe
 import { getProviderSettings } from './settings-handlers';
 import { AgentEngine } from '../agent/agent-engine';
 import { OpenCodeAgentManager } from '../services/orchestration/agent-manager';
+import { classifyDiagnosticError } from '../services/diagnostics/error-taxonomy';
 
 interface ActiveTask {
   controller: AbortController;
@@ -78,10 +79,13 @@ function cancelTaskApprovals(taskId: string): void {
   }
 }
 
+import { connectivityTracer } from '../services/diagnostics/connectivity-tracer';
+
 export async function startAgentTask(
   mainWindow: BrowserWindow,
   params: {
     taskId?: string;
+    traceId?: string;
     prompt: string;
     workspacePath: string;
     history: ChatMessage[];
@@ -89,6 +93,8 @@ export async function startAgentTask(
     sessionId?: string;
     activeFilePath?: string;
     activeFileContent?: string;
+    providerOverride?: string;
+    modelOverride?: string;
   }
 ): Promise<IpcResponse<string>> {
   const taskId = params.taskId || `task_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -103,10 +109,106 @@ export async function startAgentTask(
     return { success: false, error: settingsResponse.error || 'Provider settings are unavailable.' };
   }
 
-  const useOpenCode = Boolean(params.agentMode || settings.activeHarness === 'opencode');
+  const effectiveSettings: ProviderSettings = {
+    ...settings,
+    ...(params.providerOverride ? { activeProvider: params.providerOverride as any } : {}),
+    ...(params.modelOverride ? { activeModel: params.modelOverride } : {})
+  };
+
+  const useOpenCode = Boolean(params.agentMode || effectiveSettings.activeHarness === 'opencode');
+  let tokenCount = 0;
   const emit = (chunk: AgentStreamChunk) => {
     if (task.finished || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) return;
     mainWindow.webContents.send('agent:stream', { ...chunk, taskId } satisfies AgentStreamChunk);
+
+    // Fine-grained validated stream events
+    switch (chunk.type) {
+      case 'token':
+        mainWindow.webContents.send('agent:stream-token', {
+          taskId,
+          token: chunk.content || ''
+        });
+        break;
+      case 'thought':
+        mainWindow.webContents.send('agent:reasoning-token', {
+          taskId,
+          token: chunk.content || ''
+        });
+        break;
+      case 'tool_call':
+        if (chunk.toolCall) {
+          mainWindow.webContents.send('agent:tool-start', {
+            taskId,
+            toolCall: chunk.toolCall
+          });
+        }
+        break;
+      case 'tool_result':
+        if (chunk.toolResult) {
+          mainWindow.webContents.send('agent:tool-result', {
+            taskId,
+            toolResult: chunk.toolResult
+          });
+        }
+        break;
+      case 'diff':
+        if (chunk.diff) {
+          mainWindow.webContents.send('agent:diff-proposed', {
+            taskId,
+            diff: chunk.diff
+          });
+        }
+        break;
+      case 'approval_request':
+        if (chunk.approvalRequest?.reviewDiff) {
+          mainWindow.webContents.send('agent:diff-proposed', {
+            taskId,
+            diff: chunk.approvalRequest.reviewDiff
+          });
+        }
+        break;
+      case 'done':
+        mainWindow.webContents.send('agent:done', {
+          taskId,
+          cancelled: false
+        });
+        break;
+      case 'cancelled':
+        mainWindow.webContents.send('agent:done', {
+          taskId,
+          cancelled: true
+        });
+        break;
+      case 'error': {
+        const classified = classifyDiagnosticError(effectiveSettings.activeProvider, chunk.error || 'Agent error');
+        mainWindow.webContents.send('agent:error', {
+          taskId,
+          error: chunk.error || 'Agent execution failed',
+          errorCard: {
+            taxonomyCode: classified.code,
+            message: classified.humanMessage,
+            remedy: classified.remedy,
+            actionUrl: classified.actionUrl,
+            actionLabel: classified.actionLabel,
+            suggestedFallback: classified.suggestedFallback,
+            retryAfterSec: classified.retryAfterSec
+          }
+        });
+        break;
+      }
+    }
+
+    if (params.traceId && chunk.type === 'token') {
+      tokenCount++;
+      connectivityTracer.recordHop(params.traceId, 'H8', {
+        status: 'PASS',
+        payloadSize: chunk.content?.length || 0,
+        metadata: {
+          tokensForwardedCount: tokenCount,
+          lastChunkSnippet: chunk.content?.slice(0, 30)
+        }
+      });
+    }
     if (chunk.type === 'done' || chunk.type === 'cancelled' || chunk.type === 'error') task.finished = true;
   };
 
@@ -118,11 +220,12 @@ export async function startAgentTask(
           prompt: params.prompt,
           workspacePath: params.workspacePath,
           history: params.history,
-          settings,
+          settings: effectiveSettings,
           agentMode: params.agentMode || 'build',
           sessionId: params.sessionId,
           activeFilePath: params.activeFilePath,
           activeFileContent: params.activeFileContent,
+          traceId: params.traceId,
           abortSignal: abortController.signal,
           requestApproval: (approval) => requestTaskApproval(taskId, approval, abortController.signal),
           onChunk: emit
@@ -133,9 +236,10 @@ export async function startAgentTask(
           prompt: params.prompt,
           workspacePath: params.workspacePath,
           history: params.history,
-          settings,
+          settings: effectiveSettings,
           activeFilePath: params.activeFilePath,
           activeFileContent: params.activeFileContent,
+          traceId: params.traceId,
           abortSignal: abortController.signal,
           requestApproval: (approval) => requestTaskApproval(taskId, approval, abortController.signal),
           onChunk: emit
@@ -159,6 +263,7 @@ export function stopAgentTask(taskId: string): IpcResponse<void> {
   task.controller.abort();
   if (!task.finished && !task.window.isDestroyed() && !task.window.webContents.isDestroyed()) {
     task.window.webContents.send('agent:stream', { type: 'cancelled', taskId } satisfies AgentStreamChunk);
+    task.window.webContents.send('agent:done', { taskId, cancelled: true });
   }
   task.finished = true;
   activeTasks.delete(taskId);
@@ -173,7 +278,14 @@ export async function applyDiff(workspacePath: string, diff: ProposedDiff): Prom
       return { success: false, error: 'Security Exception: Access outside workspace is not allowed.' };
     }
     await fs.mkdir(path.dirname(absPath), { recursive: true });
-    await fs.writeFile(absPath, diff.proposedContent, 'utf-8');
+    const tempPath = `${absPath}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
+    try {
+      await fs.writeFile(tempPath, diff.proposedContent, 'utf-8');
+      await fs.rename(tempPath, absPath);
+    } catch (err) {
+      await fs.unlink(tempPath).catch(() => undefined);
+      throw err;
+    }
     return { success: true };
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);

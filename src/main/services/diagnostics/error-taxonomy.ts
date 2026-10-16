@@ -28,6 +28,7 @@ export interface ClassifiedError {
   remedy: string;
   actionUrl?: string;
   actionLabel?: string;
+  suggestedAction?: 'open-settings' | 'open-diagnostics' | 'check-network' | 'reconnect-oauth' | 'select-model';
   suggestedFallback?: string;
   validFreeModels?: string[];
   retryAfterSec?: number;
@@ -43,7 +44,9 @@ export const ERROR_CODE_DESCRIPTIONS: Record<DiagnosticErrorCode, string> = {
   QUOTA_EXCEEDED: 'quota error',
   FORMAT_MISMATCH: 'SSE/tool-call parse failure',
   TIMEOUT: 'no first token within 30s',
-  PROVIDER_DOWN: '5xx'
+  PROVIDER_DOWN: '5xx',
+  IPC_UNREGISTERED: 'Electron IPC handler unregistered or channel mismatch',
+  MOCK_PATH_DETECTED: 'Mock or simulated response path detected short-circuiting real network'
 };
 
 /**
@@ -74,6 +77,38 @@ export function classifyDiagnosticError(
   const lowerBody = rawBody.toLowerCase();
   const signupUrl = context.signupUrl || 'https://openrouter.ai/keys';
   const fallback = DEFAULT_FALLBACK_PROVIDERS[providerId] || 'OpenKilo (Kilo Gateway Free Tier)';
+
+  // 0a. IPC_UNREGISTERED
+  if (
+    lowerMsg.includes('ipc_unregistered') ||
+    lowerMsg.includes('no handler registered') ||
+    lowerMsg.includes('ipc error') ||
+    lowerMsg.includes('ipcrenderer.invoke') ||
+    lowerMsg.includes('unregistered frame') ||
+    lowerMsg.includes('no main window')
+  ) {
+    return {
+      code: 'IPC_UNREGISTERED',
+      humanMessage: 'Electron IPC handler unregistered or channel mismatch',
+      remedy: 'Verify ipcMain.handle is registered in main/index.ts before renderer calls it',
+      rawEvidence: errMsg
+    };
+  }
+
+  // 0b. MOCK_PATH_DETECTED
+  if (
+    lowerMsg.includes('mock_path_detected') ||
+    lowerMsg.includes('mock response') ||
+    lowerMsg.includes('fake provider') ||
+    lowerMsg.includes('simulated response')
+  ) {
+    return {
+      code: 'MOCK_PATH_DETECTED',
+      humanMessage: 'Mock or simulated response path detected short-circuiting real network',
+      remedy: 'Remove mock/fake short-circuit in provider pipeline to allow genuine network fetch',
+      rawEvidence: errMsg
+    };
+  }
 
   // 1. CONFIG_MISSING
   if (
@@ -193,20 +228,27 @@ export function classifyDiagnosticError(
   // 7. MODEL_UNAVAILABLE (404 or model not found)
   if (
     status === 404 ||
-    lowerMsg.includes('model not found') ||
+    lowerMsg.includes('model_unavailable') ||
     lowerMsg.includes('model unavailable') ||
+    lowerMsg.includes('model not found') ||
+    lowerMsg.includes('model is not valid') ||
     lowerMsg.includes('does not exist') ||
     lowerMsg.includes('not free') ||
-    lowerBody.includes('model_not_found')
+    lowerBody.includes('model_not_found') ||
+    lowerBody.includes('model_unavailable')
   ) {
     const freeList = context.validFreeModels && context.validFreeModels.length > 0
       ? context.validFreeModels.join(', ')
       : 'deepseek/deepseek-r1:free, meta-llama/llama-3.3-70b-instruct:free, qwen/qwen3-coder:free';
+    const provName = context.providerName || (providerId === 'openrouter' ? 'OpenRouter' : providerId ? providerId.charAt(0).toUpperCase() + providerId.slice(1) : 'Provider');
     return {
       code: 'MODEL_UNAVAILABLE',
       humanMessage: 'Model ID not found or not free (404)',
-      remedy: `Model unavailable; here are the currently valid free models: ${freeList}`,
+      remedy: `Model unavailable on ${provName}; here are the currently valid free models: ${freeList}`,
       validFreeModels: context.validFreeModels,
+      actionUrl: 'settings:providers',
+      actionLabel: 'Select Model',
+      suggestedAction: 'select-model',
       rawEvidence: rawBody || errMsg
     };
   }
@@ -247,6 +289,8 @@ export function classifyDiagnosticError(
       code: 'NETWORK_BLOCKED',
       humanMessage: 'DNS/conn/CSP/proxy failure',
       remedy: `Network path blocked: ${errMsg || 'Connection refused or DNS failure'}; check proxy/firewall`,
+      suggestedAction: 'check-network',
+      actionLabel: 'Check Network',
       rawEvidence: errMsg || 'Network unreachable'
     };
   }
@@ -256,6 +300,8 @@ export function classifyDiagnosticError(
     code: 'NETWORK_BLOCKED',
     humanMessage: 'DNS/conn/CSP/proxy failure',
     remedy: `Network path blocked: ${errMsg}; check proxy/firewall`,
+    suggestedAction: 'check-network',
+    actionLabel: 'Check Network',
     rawEvidence: rawBody || errMsg
   };
 }

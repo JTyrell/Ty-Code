@@ -12,6 +12,7 @@ import { useExtensionPromptStore } from '../state/extension-prompt-store';
 
 export const Sidebar: React.FC = () => {
   const fileTree = useWorkspaceStore((s) => s.fileTree);
+  const flatTree = useWorkspaceStore((s) => s.flatTree);
   const refreshFileTree = useWorkspaceStore((s) => s.refreshFileTree);
   const workspacePath = useWorkspaceStore((s) => s.workspacePath);
 
@@ -102,8 +103,8 @@ export const Sidebar: React.FC = () => {
       </div>
 
       {/* Directory Tree with Virtual Scrolling */}
-      {fileTree ? (
-        <VirtualFileTree rootNode={fileTree} onRefresh={refreshFileTree} />
+      {fileTree || flatTree ? (
+        <VirtualFileTree rootNode={fileTree} flatEntries={flatTree} onRefresh={refreshFileTree} />
       ) : (
         <div style={{ padding: '24px 16px', color: 'var(--text-muted)', textAlign: 'center', fontSize: '12px' }}>
           No workspace folder opened.

@@ -10,6 +10,7 @@
 
 import type { DiscoveredModel, ProviderSettings } from '../../../preload/types';
 import type { ModelMetadata, ProviderMetadata } from './provider-registry';
+import { settingsManager } from '../settings-manager';
 
 export interface OpenKiloAuthStatus {
   authMode: 'anonymous' | 'oauth' | 'api_key';
@@ -712,27 +713,37 @@ export class OpenKiloProviderService {
       });
 
       if (!response.ok) {
-        // Mock successful validation for local testing / demo token
-        const mockKey = `kilo_oauth_${Date.now()}_${Math.random().toString(36).slice(2, 12)}`;
-        this.activeAuthMode = 'oauth';
-        this.storedApiKey = mockKey;
-        this.userEmail = 'developer@ty-code.dev';
-        return { success: true, apiKey: mockKey };
+        const effective = await settingsManager.getEffectiveSettings().catch(() => null);
+        if (effective?.offlineDemoMode === true) {
+          const demoKey = `kilo_demo_${Date.now()}_${Math.random().toString(36).slice(2, 12)}`;
+          this.activeAuthMode = 'oauth';
+          this.storedApiKey = demoKey;
+          this.userEmail = 'developer@demo.local';
+          return { success: true, apiKey: demoKey };
+        }
+        return { success: false, error: `OpenKilo OAuth code exchange failed with HTTP ${response.status}` };
       }
 
       const json = await response.json() as { access_token?: string; email?: string };
-      const apiKey = json.access_token || `kilo_tok_${Date.now()}`;
+      const apiKey = json.access_token;
+      if (!apiKey) {
+        return { success: false, error: 'OpenKilo OAuth response did not contain an access_token.' };
+      }
       this.activeAuthMode = 'oauth';
       this.storedApiKey = apiKey;
       this.userEmail = json.email || null;
 
       return { success: true, apiKey };
-    } catch {
-      // In offline / fallback test environment, yield authenticated token
-      const fallbackKey = `kilo_oauth_verified_${Date.now()}`;
-      this.activeAuthMode = 'oauth';
-      this.storedApiKey = fallbackKey;
-      return { success: true, apiKey: fallbackKey };
+    } catch (err: unknown) {
+      const effective = await settingsManager.getEffectiveSettings().catch(() => null);
+      if (effective?.offlineDemoMode === true) {
+        const demoKey = `kilo_demo_verified_${Date.now()}`;
+        this.activeAuthMode = 'oauth';
+        this.storedApiKey = demoKey;
+        return { success: true, apiKey: demoKey };
+      }
+      const message = err instanceof Error ? err.message : String(err);
+      return { success: false, error: `Failed to connect to OpenKilo OAuth endpoint: ${message}` };
     }
   }
 

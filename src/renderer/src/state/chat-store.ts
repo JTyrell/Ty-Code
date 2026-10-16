@@ -1,5 +1,15 @@
 import { create } from 'zustand';
 import type { AgentMode, AgentStreamChunk, AgentToolApproval, ChatMessage, ProviderSettings, ProviderType, ToolExecutionStatus } from '../../../preload/types';
+import {
+  AgentStreamTokenPayloadSchema,
+  AgentReasoningTokenPayloadSchema,
+  AgentToolStartPayloadSchema,
+  AgentToolResultPayloadSchema,
+  AgentDiffProposedPayloadSchema,
+  AgentDonePayloadSchema,
+  AgentErrorPayloadSchema,
+  type ChatErrorCard
+} from '../../../shared/types/agent-events';
 import { useGitStore } from './git-store';
 
 interface ChatState {
@@ -22,7 +32,14 @@ interface ChatState {
   setContextTokens: (tokens: number) => void;
   initSettings: () => Promise<void>;
   saveSettings: (updates: Partial<ProviderSettings>) => Promise<boolean>;
-  sendMessage: (prompt: string, workspacePath: string, activeFilePath?: string, activeFileContent?: string, appendUserMessage?: boolean) => Promise<void>;
+  sendMessage: (
+    prompt: string,
+    workspacePath: string,
+    activeFilePath?: string,
+    activeFileContent?: string,
+    appendUserMessage?: boolean,
+    traceOptions?: { traceId?: string; providerOverride?: string; modelOverride?: string }
+  ) => Promise<void>;
   stopTask: () => Promise<void>;
   respondToApproval: (approved: boolean) => Promise<void>;
   clearChat: () => void;
@@ -33,12 +50,166 @@ interface ChatState {
 }
 
 let activeStreamUnsubscribe: (() => void) | null = null;
+let activeStreamDisposables: Array<() => void> = [];
 let settingsChangedUnsubscribe: (() => void) | null = null;
 let sketcherPromptUnsubscribe: (() => void) | null = null;
 function createId(prefix: string): string { return `${prefix}_${globalThis.crypto.randomUUID()}`; }
+
+export const FORBIDDEN_FIXTURE_PATTERNS = [
+  /fcc\s+proxy\s+response/i,
+  /anonymous\s+provider/i,
+  /real\s+streaming\s+tokens\s+verified/i
+];
+
+export interface AssistantStreamMetadata {
+  source: 'provider-stream';
+  providerId: string;
+  modelId: string;
+  streamEventCount: number;
+}
+
+export interface ValidationResult {
+  valid: boolean;
+  violation?: string;
+}
+
+let currentTaskStreamEvents = 0;
+let currentTaskProviderId = 'default';
+let currentTaskModelId = 'default';
+
+export function validateAssistantMessage(
+  message: ChatMessage,
+  additionalForbiddenStrings: string[] = []
+): ValidationResult {
+  if (message.role !== 'assistant') {
+    return { valid: true };
+  }
+
+  // Error cards are diagnostic error records, not model completions
+  if (message.errorCard) {
+    return { valid: true };
+  }
+
+  // Check 1: Forbidden fixture patterns in text
+  const content = message.content || '';
+  for (const pattern of FORBIDDEN_FIXTURE_PATTERNS) {
+    if (pattern.test(content)) {
+      return {
+        valid: false,
+        violation: `RENDER_SOURCE_VIOLATION: Message matches prohibited fixture pattern ${pattern}`
+      };
+    }
+  }
+
+  for (const forbidden of additionalForbiddenStrings) {
+    if (content.toLowerCase().includes(forbidden.toLowerCase())) {
+      return {
+        valid: false,
+        violation: `RENDER_SOURCE_VIOLATION: Message contains forbidden fixture string "${forbidden}"`
+      };
+    }
+  }
+
+  // Check 2: Mandatory metadata presence
+  const meta = message.metadata;
+  if (!meta) {
+    return {
+      valid: false,
+      violation: 'RENDER_SOURCE_VIOLATION: Assistant message missing required metadata {source, providerId, modelId, streamEventCount}'
+    };
+  }
+
+  if (meta.source !== 'provider-stream') {
+    return {
+      valid: false,
+      violation: `RENDER_SOURCE_VIOLATION: Invalid metadata source "${meta.source}". Expected "provider-stream"`
+    };
+  }
+
+  if (typeof meta.providerId !== 'string' || !meta.providerId.trim()) {
+    return {
+      valid: false,
+      violation: 'RENDER_SOURCE_VIOLATION: Missing metadata providerId'
+    };
+  }
+
+  if (typeof meta.modelId !== 'string' || !meta.modelId.trim()) {
+    return {
+      valid: false,
+      violation: 'RENDER_SOURCE_VIOLATION: Missing metadata modelId'
+    };
+  }
+
+  if (typeof meta.streamEventCount !== 'number' || meta.streamEventCount < 0) {
+    return {
+      valid: false,
+      violation: 'RENDER_SOURCE_VIOLATION: Missing or invalid metadata streamEventCount (must be >= 0)'
+    };
+  }
+
+  // Dev-mode progressive streaming assertion: warn if reply has < 5 stream events
+  if (
+    typeof process !== 'undefined' &&
+    process.env?.NODE_ENV !== 'production' &&
+    meta.streamEventCount < 5 &&
+    content.length > 20
+  ) {
+    console.warn(
+      `[TruthGuard] Dev Streaming Warning: Assistant reply had ${meta.streamEventCount} stream events (< 5). Progressive token delivery required.`
+    );
+  }
+
+  return { valid: true };
+}
+
 function finalizePartialMessage(messages: ChatMessage[], text: string, reasoning: string): ChatMessage[] {
   if (!text && !reasoning) return messages;
-  return [...messages, { id: createId('assistant'), role: 'assistant', content: text, reasoning: reasoning || undefined, timestamp: Date.now() }];
+
+  const candidateMessage: ChatMessage = {
+    id: createId('assistant'),
+    role: 'assistant',
+    content: text,
+    reasoning: reasoning || undefined,
+    metadata: {
+      source: 'provider-stream',
+      providerId: currentTaskProviderId || 'default',
+      modelId: currentTaskModelId || 'default',
+      streamEventCount: currentTaskStreamEvents
+    },
+    timestamp: Date.now()
+  };
+
+  const validation = validateAssistantMessage(candidateMessage);
+  if (!validation.valid) {
+    const errorViolation = validation.violation || 'RENDER_SOURCE_VIOLATION';
+    console.error(`[TruthGuard] Blocked assistant message: ${errorViolation}`);
+    if (typeof window !== 'undefined' && (window as any).electronAPI?.recordTraceHop) {
+      try {
+        (window as any).electronAPI.recordTraceHop('diagnostics', 'H10', {
+          status: 'FAIL',
+          error: errorViolation
+        });
+      } catch {}
+    }
+    const violationErrorCard: ChatErrorCard = {
+      taxonomyCode: 'RENDER_SOURCE_VIOLATION',
+      message: 'Render Source Violation: Fake or non-streamed response detected and blocked.',
+      remedy: 'All responses must be progressively streamed from a live, authenticated provider.',
+      suggestedFallback: 'Configure a valid provider API key in Settings'
+    };
+    return [
+      ...messages,
+      {
+        id: createId('error'),
+        role: 'assistant',
+        content: `**[RENDER_SOURCE_VIOLATION]** ${errorViolation}`,
+        errorCard: violationErrorCard,
+        timestamp: Date.now()
+      }
+    ];
+  }
+
+  return [...messages, candidateMessage];
 }
 function cancelRunningTools(messages: ChatMessage[]): ChatMessage[] {
   return messages.map((message) => message.role === 'tool' && message.toolStatus === 'running'
@@ -65,7 +236,14 @@ export function loadPersistedChat(): ChatMessage[] {
     const raw = localStorage.getItem(CHAT_STORAGE_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed)) return parsed;
+    if (Array.isArray(parsed)) {
+      return parsed.filter((m) => {
+        if (m.role === 'assistant' && !m.errorCard) {
+          return validateAssistantMessage(m).valid;
+        }
+        return true;
+      });
+    }
   } catch {
     // Graceful fallback
   }
@@ -109,7 +287,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     await refreshSettings();
   },
 
-  saveSettings: async (updates) => {
+  saveSettings: async (updates: Partial<ProviderSettings>) => {
     try {
       const response = await window.electronAPI.saveSettings(updates);
       if (!response.success) { console.error('Failed to save settings:', response.error); return false; }
@@ -125,7 +303,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     } catch (err) { console.error('Failed to save settings:', err); return false; }
   },
 
-  sendMessage: async (prompt, workspacePath, activeFilePath, activeFileContent, appendUserMessage = true) => {
+  sendMessage: async (prompt, workspacePath, activeFilePath, activeFileContent, appendUserMessage = true, traceOptions) => {
     if (get().isRunning || !prompt.trim()) return;
     activeStreamUnsubscribe?.();
     activeStreamUnsubscribe = null;
@@ -142,6 +320,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
       ? currentMessages.slice(0, lastUserIndex + 1)
       : currentMessages;
     const taskId = createId('task');
+    currentTaskStreamEvents = 0;
+    currentTaskProviderId = traceOptions?.providerOverride || get().settings?.activeProvider || 'default';
+    currentTaskModelId = traceOptions?.modelOverride || get().settings?.activeModel || 'default';
+
     set({
       messages: appendUserMessage ? [...currentMessages, userMessage] : regeneratedMessages,
       isRunning: true,
@@ -152,92 +334,194 @@ export const useChatStore = create<ChatState>((set, get) => ({
       streamingText: ''
     });
 
+    // H1: Renderer chat send handler invoked
+    if (traceOptions?.traceId && window.electronAPI?.recordTraceHop) {
+      window.electronAPI.recordTraceHop(traceOptions.traceId, 'H1', {
+        status: 'PASS',
+        payloadSize: prompt.length,
+        metadata: {
+          promptSize: prompt.length,
+          modelSelected: traceOptions.modelOverride || get().settings?.activeModel || 'default',
+          providerSelected: traceOptions.providerOverride || get().settings?.activeProvider || 'default'
+        }
+      });
+    }
+
     const finishTask = (status = '') => {
-      activeStreamUnsubscribe?.();
-      activeStreamUnsubscribe = null;
+      activeStreamDisposables.forEach((dispose) => {
+        try { dispose(); } catch {}
+      });
+      activeStreamDisposables = [];
       set({ isRunning: false, currentTaskId: null, pendingApproval: null, currentStatus: status, streamingText: '', currentThought: '' });
     };
-    const handleChunk = (chunk: AgentStreamChunk) => {
-      if (chunk.taskId !== taskId || get().currentTaskId !== taskId) return;
-      switch (chunk.type) {
-        case 'token':
-          set((state) => ({
-            streamingText: state.streamingText + (chunk.content || ''),
-            contextTokens: state.contextTokens + Math.ceil((chunk.content?.length || 0) / 4)
-          }));
-          break;
-        case 'thought': set((state) => ({ currentThought: state.currentThought + (chunk.content || '') })); break;
-        case 'status':
-          set((state) => ({
-            currentStatus: chunk.content || '',
-            contextTokens: chunk.content?.includes('compacting')
-              ? Math.floor(state.contextLimit * 0.35)
-              : state.contextTokens
-          }));
-          break;
-        case 'approval_request': {
-          if (chunk.approvalRequest) set({ pendingApproval: chunk.approvalRequest, currentStatus: 'Waiting for your approval…' });
-          break;
-        }
-        case 'tool_call': {
-          if (!chunk.toolCall) break;
-          const state = get();
-          const messages = finalizePartialMessage(state.messages, state.streamingText, state.currentThought);
-          const toolMessage: ChatMessage = { id: createId('tool'), role: 'tool', content: '', toolCall: chunk.toolCall, toolStatus: 'running', timestamp: Date.now() };
-          set({ messages: [...messages, toolMessage], streamingText: '', currentThought: '' });
-          break;
-        }
-        case 'tool_result': {
-          const result = chunk.toolResult;
-          if (result) {
-            set((state) => ({
-              messages: updateToolStatus(state.messages, result.toolCallId, result.isError ? 'error' : 'success', result.output, result.isError),
-              pendingApproval: state.pendingApproval?.toolCall.id === result.toolCallId ? null : state.pendingApproval,
-              contextTokens: state.contextTokens + Math.ceil((result.output?.length || 0) / 4)
-            }));
-            if (result.name.startsWith('git_')) void useGitStore.getState().refreshStatus();
+
+    activeStreamDisposables.forEach((dispose) => {
+      try { dispose(); } catch {}
+    });
+    activeStreamDisposables = [];
+
+    // 1. Zod-validated token stream
+    if (window.electronAPI.onAgentStreamToken) {
+      activeStreamDisposables.push(window.electronAPI.onAgentStreamToken((raw) => {
+        const parsed = AgentStreamTokenPayloadSchema.safeParse(raw);
+        if (!parsed.success || parsed.data.taskId !== taskId || get().currentTaskId !== taskId) return;
+        currentTaskStreamEvents++;
+        set((state) => ({
+          streamingText: state.streamingText + parsed.data.token,
+          contextTokens: state.contextTokens + Math.ceil(parsed.data.token.length / 4)
+        }));
+      }));
+    }
+
+    // 2. Zod-validated reasoning stream
+    if (window.electronAPI.onAgentReasoningToken) {
+      activeStreamDisposables.push(window.electronAPI.onAgentReasoningToken((raw) => {
+        const parsed = AgentReasoningTokenPayloadSchema.safeParse(raw);
+        if (!parsed.success || parsed.data.taskId !== taskId || get().currentTaskId !== taskId) return;
+        currentTaskStreamEvents++;
+        set((state) => ({ currentThought: state.currentThought + parsed.data.token }));
+      }));
+    }
+
+    // 3. Zod-validated tool start
+    if (window.electronAPI.onAgentToolStart) {
+      activeStreamDisposables.push(window.electronAPI.onAgentToolStart((raw) => {
+        const parsed = AgentToolStartPayloadSchema.safeParse(raw);
+        if (!parsed.success || parsed.data.taskId !== taskId || get().currentTaskId !== taskId) return;
+        currentTaskStreamEvents++;
+        const state = get();
+        const messages = finalizePartialMessage(state.messages, state.streamingText, state.currentThought);
+        const toolMessage: ChatMessage = {
+          id: createId('tool'),
+          role: 'tool',
+          content: '',
+          toolCall: parsed.data.toolCall,
+          toolStatus: 'running',
+          timestamp: Date.now()
+        };
+        set({ messages: [...messages, toolMessage], streamingText: '', currentThought: '' });
+      }));
+    }
+
+    // 4. Zod-validated tool result
+    if (window.electronAPI.onAgentToolResult) {
+      activeStreamDisposables.push(window.electronAPI.onAgentToolResult((raw) => {
+        const parsed = AgentToolResultPayloadSchema.safeParse(raw);
+        if (!parsed.success || parsed.data.taskId !== taskId || get().currentTaskId !== taskId) return;
+        const result = parsed.data.toolResult;
+        set((state) => ({
+          messages: updateToolStatus(state.messages, result.toolCallId, result.isError ? 'error' : 'success', result.output, result.isError),
+          pendingApproval: state.pendingApproval?.toolCall.id === result.toolCallId ? null : state.pendingApproval,
+          contextTokens: state.contextTokens + Math.ceil(result.output.length / 4)
+        }));
+        if (result.name.startsWith('git_')) void useGitStore.getState().refreshStatus();
+      }));
+    }
+
+    // 5. Zod-validated diff proposed
+    if (window.electronAPI.onAgentDiffProposed) {
+      activeStreamDisposables.push(window.electronAPI.onAgentDiffProposed((raw) => {
+        const parsed = AgentDiffProposedPayloadSchema.safeParse(raw);
+        if (!parsed.success || parsed.data.taskId !== taskId || get().currentTaskId !== taskId) return;
+        set((state) => {
+          const index = state.messages.length - 1;
+          if (index < 0) {
+            return {
+              messages: [
+                ...state.messages,
+                { id: createId('diff'), role: 'assistant', content: '', proposedDiffs: [parsed.data.diff as any], timestamp: Date.now() }
+              ]
+            };
           }
-          break;
-        }
-        case 'diff': {
-          if (!chunk.diff) break;
-          set((state) => {
-            const index = state.messages.length - 1;
-            if (index < 0) return { messages: [...state.messages, { id: createId('diff'), role: 'assistant', content: '', proposedDiffs: [chunk.diff as NonNullable<ChatMessage['proposedDiffs']>[number]], timestamp: Date.now() }] };
-            const messages = [...state.messages];
-            const target = messages[index];
-            messages[index] = { ...target, proposedDiffs: [...(target.proposedDiffs || []), chunk.diff as NonNullable<ChatMessage['proposedDiffs']>[number]] };
-            return { messages };
-          });
-          break;
-        }
-        case 'done': {
-          const state = get();
-          set({ messages: finalizePartialMessage(state.messages, state.streamingText, state.currentThought) });
-          finishTask();
-          break;
-        }
-        case 'cancelled': {
-          const state = get();
+          const messages = [...state.messages];
+          const target = messages[index];
+          messages[index] = { ...target, proposedDiffs: [...(target.proposedDiffs || []), parsed.data.diff as any] };
+          return { messages };
+        });
+      }));
+    }
+
+    // 6. Zod-validated done event
+    if (window.electronAPI.onAgentDone) {
+      activeStreamDisposables.push(window.electronAPI.onAgentDone((raw) => {
+        const parsed = AgentDonePayloadSchema.safeParse(raw);
+        if (!parsed.success || parsed.data.taskId !== taskId || get().currentTaskId !== taskId) return;
+        const state = get();
+        if (parsed.data.cancelled) {
           const messages = cancelRunningTools(state.messages);
           set({ messages: finalizePartialMessage(messages, state.streamingText, state.currentThought) });
           finishTask('Task stopped.');
-          break;
+        } else {
+          set({ messages: finalizePartialMessage(state.messages, state.streamingText, state.currentThought) });
+          if (traceOptions?.traceId && window.electronAPI?.recordTraceHop) {
+            window.electronAPI.recordTraceHop(traceOptions.traceId, 'H10', {
+              status: 'PASS',
+              payloadSize: state.streamingText.length,
+              metadata: {
+                tokensRendered: state.streamingText.length,
+                toolCardsRendered: state.messages.filter((m) => m.role === 'tool').length,
+                diffCardRendered: state.messages.some((m) => m.proposedDiffs && m.proposedDiffs.length > 0)
+              }
+            });
+          }
+          finishTask();
         }
-        case 'error': {
-          const state = get();
-          const partial = finalizePartialMessage(state.messages, state.streamingText, state.currentThought);
-          set({ messages: [...partial, { id: createId('error'), role: 'assistant', content: `**Agent error:** ${chunk.error || 'The task could not be completed.'}`, timestamp: Date.now() }] });
-          finishTask('Task failed.');
-          break;
-        }
-      }
-    };
+      }));
+    }
 
-    activeStreamUnsubscribe = window.electronAPI.onAgentStream(handleChunk);
+    // 7. Zod-validated error event
+    if (window.electronAPI.onAgentError) {
+      activeStreamDisposables.push(window.electronAPI.onAgentError((raw) => {
+        const parsed = AgentErrorPayloadSchema.safeParse(raw);
+        if (!parsed.success || parsed.data.taskId !== taskId || get().currentTaskId !== taskId) return;
+        const state = get();
+        const partial = finalizePartialMessage(state.messages, state.streamingText, state.currentThought);
+        const card = parsed.data.errorCard;
+        const content = card
+          ? `**[${card.taxonomyCode}]** ${card.message}\n\n*Remediation:* ${card.remedy}`
+          : `**Agent error:** ${parsed.data.error || 'The task could not be completed.'}`;
+        set({
+          messages: [
+            ...partial,
+            {
+              id: createId('error'),
+              role: 'assistant',
+              content,
+              errorCard: card,
+              timestamp: Date.now()
+            }
+          ]
+        });
+        if (traceOptions?.traceId && window.electronAPI?.recordTraceHop) {
+          window.electronAPI.recordTraceHop(traceOptions.traceId, 'H10', {
+            status: 'FAIL',
+            error: parsed.data.error || 'The task could not be completed.'
+          });
+        }
+        finishTask('Task failed.');
+      }));
+    }
+
+    // Backup listener for approvals and status
+    activeStreamDisposables.push(window.electronAPI.onAgentStream((chunk: AgentStreamChunk) => {
+      if (chunk.taskId !== taskId || get().currentTaskId !== taskId) return;
+      if (chunk.type === 'status') {
+        set((state) => ({
+          currentStatus: chunk.content || '',
+          contextTokens: chunk.content?.includes('compacting')
+            ? Math.floor(state.contextLimit * 0.35)
+            : state.contextTokens
+        }));
+      } else if (chunk.type === 'approval_request' && chunk.approvalRequest) {
+        set({ pendingApproval: chunk.approvalRequest, currentStatus: 'Waiting for your approval…' });
+      }
+    }));
     try {
       const response = await window.electronAPI.startAgentTask({
         taskId,
+        traceId: traceOptions?.traceId,
+        providerOverride: traceOptions?.providerOverride,
+        modelOverride: traceOptions?.modelOverride,
         prompt,
         workspacePath,
         history: requestHistory,
@@ -250,6 +534,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
         const state = get();
         const partial = finalizePartialMessage(state.messages, state.streamingText, state.currentThought);
         set({ messages: [...partial, { id: createId('error'), role: 'assistant', content: `**Could not start agent:** ${response.error || 'Unknown error'}`, timestamp: Date.now() }] });
+        if (traceOptions?.traceId && window.electronAPI?.recordTraceHop) {
+          window.electronAPI.recordTraceHop(traceOptions.traceId, 'H2', {
+            status: 'FAIL',
+            error: response.error || 'Failed to start agent task via IPC'
+          });
+        }
         finishTask('Could not start agent.');
       }
     } catch (err: unknown) {
@@ -258,6 +548,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const partial = finalizePartialMessage(state.messages, state.streamingText, state.currentThought);
       const message = err instanceof Error ? err.message : String(err);
       set({ messages: [...partial, { id: createId('error'), role: 'assistant', content: `**Could not start agent:** ${message}`, timestamp: Date.now() }] });
+      if (traceOptions?.traceId && window.electronAPI?.recordTraceHop) {
+        window.electronAPI.recordTraceHop(traceOptions.traceId, 'H2', {
+          status: 'FAIL',
+          error: message
+        });
+      }
       finishTask('Could not start agent.');
     }
   },

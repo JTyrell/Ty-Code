@@ -1,10 +1,98 @@
 import type { BrowserWindow } from 'electron';
 import fs from 'fs/promises';
+import fsSync from 'node:fs';
 import path from 'path';
-import type { FileNode, IpcResponse } from '../../preload/types';
+import os from 'node:os';
+import crypto from 'node:crypto';
+import type { FileNode, FlatFileNodeEntry, IpcResponse } from '../../preload/types';
+import { WorkerIndexerService } from '../services/indexing/worker-indexer-service';
 
 // Ignored folders for fast directory indexing
 const IGNORED_DIRS = new Set(['.git', '.kombai', 'node_modules', 'dist', 'dist-electron', 'out', 'release', '.DS_Store', 'Thumbs.db']);
+
+const TREE_CACHE_DIR = path.join(os.tmpdir(), 'tycode-tree-cache');
+
+const inMemoryTreeCache = new Map<string, FlatFileNodeEntry[]>();
+
+async function readTreeDiskCache(cacheKey: string): Promise<FlatFileNodeEntry[] | null> {
+  const mem = inMemoryTreeCache.get(cacheKey);
+  if (mem && mem.length > 0) return mem;
+
+  try {
+    const cacheFile = path.join(TREE_CACHE_DIR, `${cacheKey}.json`);
+    const raw = await fs.readFile(cacheFile, 'utf-8');
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      inMemoryTreeCache.set(cacheKey, parsed);
+      return parsed;
+    }
+  } catch {
+    // Cache miss or parse error
+  }
+  return null;
+}
+
+async function writeTreeDiskCache(cacheKey: string, entries: FlatFileNodeEntry[]): Promise<void> {
+  inMemoryTreeCache.set(cacheKey, entries);
+  try {
+    await fs.mkdir(TREE_CACHE_DIR, { recursive: true });
+    const cacheFile = path.join(TREE_CACHE_DIR, `${cacheKey}.json`);
+    await fs.writeFile(cacheFile, JSON.stringify(entries), 'utf-8');
+  } catch (err) {
+    console.warn('[FS Cache] Failed to write tree cache:', err);
+  }
+}
+
+let activeWorkspaceWatcher: fsSync.FSWatcher | null = null;
+let watcherDebounceTimer: NodeJS.Timeout | null = null;
+
+export function setupWorkspaceWatcher(
+  workspaceRoot: string,
+  onUpdate: (event: 'change' | 'add' | 'unlink', relPath: string) => void
+): () => void {
+  if (activeWorkspaceWatcher) {
+    try {
+      activeWorkspaceWatcher.close();
+    } catch {}
+    activeWorkspaceWatcher = null;
+  }
+
+  try {
+    activeWorkspaceWatcher = fsSync.watch(workspaceRoot, { recursive: true }, (eventType, filename) => {
+      if (!filename) return;
+      const cleanRel = filename.replace(/\\/g, '/');
+      if (IGNORED_DIRS.has(cleanRel.split('/')[0])) return;
+
+      if (watcherDebounceTimer) clearTimeout(watcherDebounceTimer);
+      watcherDebounceTimer = setTimeout(async () => {
+        try {
+          const fullPath = path.join(workspaceRoot, filename);
+          let changeType: 'change' | 'add' | 'unlink' = 'change';
+          try {
+            await fs.stat(fullPath);
+            changeType = eventType === 'rename' ? 'add' : 'change';
+          } catch {
+            changeType = 'unlink';
+          }
+          onUpdate(changeType, cleanRel);
+        } catch {
+          // Ignore watch callback error
+        }
+      }, 150);
+    });
+  } catch (err) {
+    console.warn('[FS Watcher] Failed to attach workspace watcher:', err);
+  }
+
+  return () => {
+    if (activeWorkspaceWatcher) {
+      try {
+        activeWorkspaceWatcher.close();
+      } catch {}
+      activeWorkspaceWatcher = null;
+    }
+  };
+}
 
 function isInsideWorkspace(targetPath: string, workspaceRoot: string): boolean {
   const relative = path.relative(workspaceRoot, targetPath);
@@ -55,75 +143,197 @@ export async function selectWorkspaceFolder(mainWindow?: BrowserWindow): Promise
   }
 }
 
-export async function getWorkspaceTree(rootPath: string): Promise<IpcResponse<FileNode>> {
+/**
+ * Async chunked directory walk yielding every 500 entries (setImmediate)
+ * Streams partial tree (first 200 entries paint immediately)
+ * Uses disk index cache keyed by root + mtime hash; second open loads cache first, refreshes in background.
+ */
+export async function getWorkspaceTreeChunked(
+  rootPath: string,
+  onChunk?: (chunk: FlatFileNodeEntry[], isComplete: boolean, totalSoFar: number) => void
+): Promise<IpcResponse<{ flatTree: FlatFileNodeEntry[]; fromCache: boolean; cacheKey?: string }>> {
   try {
     const stats = await fs.stat(rootPath);
     if (!stats.isDirectory()) {
       return { success: false, error: 'Provided path is not a directory' };
     }
 
-    async function buildTree(currentPath: string, relative: string, depth = 0): Promise<FileNode> {
-      const name = path.basename(currentPath) || currentPath;
-      const currentStats = await fs.stat(currentPath);
+    const cacheKey = crypto.createHash('sha256').update(`${rootPath}:${stats.mtimeMs}`).digest('hex');
 
-      if (!currentStats.isDirectory()) {
-        return {
-          name,
-          path: currentPath,
-          relativePath: relative,
-          isDirectory: false,
-          size: currentStats.size,
-          extension: path.extname(name).toLowerCase()
-        };
-      }
-
-      const node: FileNode = {
-        name,
-        path: currentPath,
-        relativePath: relative,
-        isDirectory: true,
-        children: []
+    // Second open loads cache first, refreshes in background
+    const cached = await readTreeDiskCache(cacheKey);
+    if (cached && cached.length > 0) {
+      if (onChunk) onChunk(cached, true, cached.length);
+      return {
+        success: true,
+        data: { flatTree: cached, fromCache: true, cacheKey }
       };
+    }
 
-      // Limit depth for initial scan performance
-      if (depth > 6) return node;
+    const flatTree: FlatFileNodeEntry[] = [];
+    let processedCount = 0;
+    let firstChunkEmitted = false;
 
+    // Root entry
+    const rootName = path.basename(rootPath) || rootPath;
+    flatTree.push({
+      name: rootName,
+      path: rootPath,
+      relativePath: '',
+      isDirectory: true,
+      depth: 0,
+      type: 'directory'
+    });
+
+    async function walk(currentPath: string, relative: string, depth: number): Promise<void> {
+      if (depth > 8) return;
       try {
         const entries = await fs.readdir(currentPath, { withFileTypes: true });
-        const filteredEntries = entries.filter((e) => !IGNORED_DIRS.has(e.name));
+        const filtered = entries.filter((e) => !IGNORED_DIRS.has(e.name));
 
-        // Sort: directories first, then alphabetical
-        filteredEntries.sort((a, b) => {
-          if (a.isDirectory() === b.isDirectory()) {
-            return a.name.localeCompare(b.name);
-          }
+        filtered.sort((a, b) => {
+          if (a.isDirectory() === b.isDirectory()) return a.name.localeCompare(b.name);
           return a.isDirectory() ? -1 : 1;
         });
 
-        for (const entry of filteredEntries) {
+        for (const entry of filtered) {
+          processedCount++;
           const entryPath = path.join(currentPath, entry.name);
           const entryRel = relative ? `${relative}/${entry.name}` : entry.name;
-          const childNode = await buildTree(entryPath, entryRel, depth + 1);
-          node.children?.push(childNode);
+          const isDir = entry.isDirectory();
+
+          flatTree.push({
+            name: entry.name,
+            path: entryPath,
+            relativePath: entryRel,
+            isDirectory: isDir,
+            depth: depth + 1,
+            type: isDir ? 'directory' : 'file',
+            extension: isDir ? undefined : path.extname(entry.name).toLowerCase()
+          });
+
+          // Yield every 500 entries: ensures main process never blocks >16ms
+          if (processedCount % 500 === 0) {
+            await new Promise((resolve) => setImmediate(resolve));
+          }
+
+          // Progressive streaming: stream partial tree (first 200 entries paint immediately)
+          if (!firstChunkEmitted && flatTree.length >= 200) {
+            firstChunkEmitted = true;
+            if (onChunk) {
+              onChunk(flatTree.slice(0, 200), false, 200);
+            }
+          }
+
+          if (isDir) {
+            await walk(entryPath, entryRel, depth + 1);
+          }
         }
       } catch (err) {
         console.warn(`[FS] Could not read directory: ${currentPath}`, err);
       }
-
-      return node;
     }
 
-    const tree = await buildTree(rootPath, '');
-    return { success: true, data: tree };
+    await walk(rootPath, '', 0);
+
+    // Write disk index cache
+    await writeTreeDiskCache(cacheKey, flatTree);
+
+    if (onChunk) {
+      onChunk(flatTree, true, flatTree.length);
+    }
+
+    return {
+      success: true,
+      data: { flatTree, fromCache: false, cacheKey }
+    };
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     return { success: false, error: errorMsg };
   }
 }
 
-export async function readFile(filePath: string, workspaceRoot = process.cwd()): Promise<IpcResponse<string>> {
+export function buildNestedTreeFromFlat(flat: FlatFileNodeEntry[]): FileNode {
+  if (flat.length === 0) {
+    return { name: '', path: '', relativePath: '', isDirectory: true, children: [] };
+  }
+  const root = flat[0];
+  const rootNode: FileNode = {
+    name: root.name,
+    path: root.path,
+    relativePath: root.relativePath || '',
+    isDirectory: true,
+    children: []
+  };
+
+  const nodeMap = new Map<string, FileNode>();
+  nodeMap.set(root.path, rootNode);
+
+  for (let i = 1; i < flat.length; i++) {
+    const item = flat[i];
+    const node: FileNode = {
+      name: item.name,
+      path: item.path,
+      relativePath: item.relativePath || '',
+      isDirectory: item.isDirectory,
+      size: item.size,
+      extension: item.extension,
+      children: item.isDirectory ? [] : undefined
+    };
+    nodeMap.set(item.path, node);
+
+    const parentPath = path.dirname(item.path);
+    const parentNode = nodeMap.get(parentPath);
+    if (parentNode && parentNode.children) {
+      parentNode.children.push(node);
+    } else {
+      rootNode.children?.push(node);
+    }
+  }
+
+  return rootNode;
+}
+
+export async function getWorkspaceTree(rootPath: string): Promise<IpcResponse<FileNode>> {
+  const chunkedRes = await getWorkspaceTreeChunked(rootPath);
+  if (!chunkedRes.success || !chunkedRes.data) {
+    return { success: false, error: chunkedRes.error || 'Failed to read tree' };
+  }
+  const nested = buildNestedTreeFromFlat(chunkedRes.data.flatTree);
+  return { success: true, data: nested };
+}
+
+export async function readFile(
+  filePath: string,
+  workspaceRoot = process.cwd(),
+  onProgress?: (chunk: string, isComplete: boolean) => void
+): Promise<IpcResponse<string>> {
   try {
     const safePath = await resolveWorkspaceTarget(filePath, workspaceRoot);
+    const stat = await fs.stat(safePath);
+
+    // Stream-read files >1MB with progressive delivery; small files read once
+    if (stat.size > 1024 * 1024) {
+      const handle = await fs.open(safePath, 'r');
+      try {
+        const firstChunkBuffer = Buffer.alloc(128 * 1024); // 128KB initial chunk
+        const { bytesRead } = await handle.read(firstChunkBuffer, 0, 128 * 1024, 0);
+        const firstChunk = firstChunkBuffer.toString('utf-8', 0, bytesRead);
+
+        if (onProgress) {
+          onProgress(firstChunk, false);
+        }
+
+        const fullContent = await fs.readFile(safePath, 'utf-8');
+        if (onProgress) {
+          onProgress(fullContent, true);
+        }
+        return { success: true, data: fullContent };
+      } finally {
+        await handle.close();
+      }
+    }
+
     const content = await fs.readFile(safePath, 'utf-8');
     return { success: true, data: content };
   } catch (err: unknown) {
@@ -341,6 +551,11 @@ export async function searchInWorkspaceFiles(
 
         const fullPath = path.join(dir, entry.name);
         const relPath = path.relative(workspaceRoot, fullPath).replace(/\\/g, '/');
+
+        // Yield to event loop to keep main thread responsive (<16ms)
+        if (results.length % 50 === 0) {
+          await new Promise((resolve) => setImmediate(resolve));
+        }
 
         if (entry.isDirectory()) {
           await walk(fullPath);

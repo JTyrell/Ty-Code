@@ -47,7 +47,8 @@ export const TelemetrySettingsSchema = z.object({
 export const ProviderSettingsSchema = z.object({
   activeProvider: z.string().min(1).max(128),
   apiKeys: z.record(z.string().min(1).max(128), z.string().max(16_384).optional()),
-  customEndpoints: z.record(z.string().min(1).max(128), z.string().max(4096).optional())
+  customEndpoints: z.record(z.string().min(1).max(128), z.string().max(4096).optional()),
+  offlineDemoMode: z.boolean().optional()
 }).strip();
 
 export const ModelSettingsSchema = z.object({

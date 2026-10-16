@@ -14,12 +14,12 @@ import powershell from 'highlight.js/lib/languages/powershell';
 import python from 'highlight.js/lib/languages/python';
 import typescript from 'highlight.js/lib/languages/typescript';
 import yaml from 'highlight.js/lib/languages/yaml';
-import { Send, Square, Sparkles, Trash2, ChevronRight, ChevronDown, Terminal, FileCode, Check, Eye, AlertCircle, Copy, RotateCcw, Loader2, ShieldCheck, X, Users, Lightbulb, Hammer, Compass, Info, Presentation, Play, ExternalLink } from 'lucide-react';
+import { Send, Square, Sparkles, Trash2, ChevronRight, ChevronDown, Terminal, FileCode, Check, Eye, AlertCircle, Copy, RotateCcw, Loader2, ShieldCheck, X, Users, Lightbulb, Hammer, Compass, Info, Presentation, Play, ExternalLink, Settings, Activity, Key, WifiOff, Clock, RefreshCw } from 'lucide-react';
 import { useChatStore } from '../state/chat-store';
 import { useWorkspaceStore } from '../state/workspace-store';
 import { usePairProgrammingStore } from '../state/pair-programming-store';
 import { ModelSelector } from './ChatInterface/ModelSelector';
-import type { ChatMessage, ToolCall, ToolExecutionStatus } from '../../../preload/types';
+import type { ChatMessage, ToolCall, ToolExecutionStatus, ChatErrorCard, ProviderType } from '../../../preload/types';
 
 const languages: Record<string, LanguageFn> = {
   bash, shell: bash, sh: bash,
@@ -276,6 +276,455 @@ function DiffCard({ diff: proposedDiff, onInspect, onApply }: {
   </div>;
 }
 
+// 1. Connect Provider Card (CONFIG_MISSING: In-chat key input)
+export const ConnectProviderCard: React.FC<{ errorCard: ChatErrorCard; onRetry?: () => void }> = ({ errorCard, onRetry }) => {
+  const { settings, saveSettings, openSettings } = useChatStore();
+  const [apiKey, setApiKey] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  const activeProvider = errorCard.providerId || settings?.activeProvider || 'openrouter';
+  const providerDisplayNames: Record<string, string> = {
+    openrouter: 'OpenRouter',
+    groq: 'Groq',
+    openai: 'OpenAI',
+    anthropic: 'Anthropic Claude',
+    gemini: 'Google Gemini',
+    deepseek: 'DeepSeek',
+    together: 'Together AI',
+    mistral: 'Mistral AI',
+    'fcc-proxy': 'Free-Claude-Code Proxy'
+  };
+  const providerLinks: Record<string, string> = {
+    openrouter: 'https://openrouter.ai/keys',
+    groq: 'https://console.groq.com/keys',
+    openai: 'https://platform.openai.com/api-keys',
+    anthropic: 'https://console.anthropic.com/settings/keys',
+    gemini: 'https://aistudio.google.com/app/apikey',
+    deepseek: 'https://platform.deepseek.com/api_keys'
+  };
+  const displayName = providerDisplayNames[activeProvider] || activeProvider;
+  const keyLink = errorCard.actionUrl || providerLinks[activeProvider] || 'https://openrouter.ai/keys';
+
+  const handleSave = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (!apiKey.trim()) return;
+    setSaving(true);
+    try {
+      const ok = await saveSettings({
+        apiKeys: { [activeProvider]: apiKey.trim() }
+      });
+      if (ok) {
+        setSaved(true);
+        if (onRetry) {
+          window.setTimeout(() => {
+            onRetry();
+          }, 600);
+        }
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleOpenLink = () => {
+    if (window.electronAPI?.openExternal) {
+      void window.electronAPI.openExternal(keyLink);
+    } else {
+      window.open(keyLink, '_blank');
+    }
+  };
+
+  return (
+    <div className="chat-error-card is-connect-provider" role="alert">
+      <div className="chat-error-card-header">
+        <div className="chat-error-card-badge">
+          <Key size={14} className="chat-error-icon-key" />
+          <span className="chat-error-code">Connect {displayName}</span>
+        </div>
+        <span className="chat-error-badge-tag">API Key Required</span>
+      </div>
+
+      <div className="chat-error-card-body">
+        <p className="chat-error-message">
+          To chat with <strong>{settings?.activeModel || displayName}</strong>, enter your {displayName} API key below. Keys are encrypted via OS safeStorage (Windows DPAPI) and never stored in plain text.
+        </p>
+
+        <form onSubmit={handleSave} className="chat-error-key-form">
+          <div className="chat-error-input-group">
+            <input
+              type="password"
+              className="chat-error-key-input"
+              value={apiKey}
+              onChange={(e) => { setApiKey(e.target.value); setSaved(false); }}
+              placeholder={`Paste your ${displayName} API key…`}
+              autoFocus
+            />
+            <button
+              type="submit"
+              className={`chat-error-btn ${saved ? 'chat-error-btn-success' : 'chat-error-btn-primary'}`}
+              disabled={!apiKey.trim() || saving}
+            >
+              {saving ? <Loader2 size={11} className="animate-spin" /> : saved ? <Check size={11} /> : <Key size={11} />}
+              <span>{saving ? 'Saving…' : saved ? 'Connected! Retrying…' : 'Save & Connect'}</span>
+            </button>
+          </div>
+        </form>
+
+        <div className="chat-error-helper-links">
+          <button type="button" className="chat-error-link-btn" onClick={handleOpenLink}>
+            <span>Get a {displayName} API key</span>
+            <ExternalLink size={10} />
+          </button>
+          <span className="chat-error-separator">•</span>
+          <button type="button" className="chat-error-link-btn" onClick={() => openSettings('providers')}>
+            <span>Open Provider Settings</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// 2. Network Error Card (NETWORK_BLOCKED)
+export const NetworkErrorCard: React.FC<{ errorCard: ChatErrorCard; onRetry?: () => void }> = ({ errorCard, onRetry }) => {
+  const openSettings = useChatStore((s) => s.openSettings);
+  const [retrying, setRetrying] = useState(false);
+
+  const handleRetry = () => {
+    if (!onRetry) return;
+    setRetrying(true);
+    onRetry();
+    window.setTimeout(() => setRetrying(false), 1500);
+  };
+
+  return (
+    <div className="chat-error-card is-network-blocked" role="alert">
+      <div className="chat-error-card-header">
+        <div className="chat-error-card-badge">
+          <WifiOff size={14} className="chat-error-icon" />
+          <span className="chat-error-code">[NETWORK_BLOCKED] Network Error</span>
+        </div>
+      </div>
+
+      <div className="chat-error-card-body">
+        <p className="chat-error-message">{errorCard.message || 'Unable to connect to AI provider endpoint (DNS lookup failed or host unreachable).'}</p>
+        <div className="chat-error-remedy">
+          <Lightbulb size={12} className="chat-remedy-icon" />
+          <span><strong>Remedy:</strong> {errorCard.remedy || 'Check your internet connection or proxy settings, then retry.'}</span>
+        </div>
+      </div>
+
+      <div className="chat-error-card-actions">
+        {onRetry && (
+          <button
+            type="button"
+            className="chat-error-btn chat-error-btn-primary"
+            onClick={handleRetry}
+            disabled={retrying}
+          >
+            <RefreshCw size={11} className={retrying ? 'animate-spin' : ''} />
+            <span>{retrying ? 'Retrying…' : 'Retry Connection'}</span>
+          </button>
+        )}
+        <button
+          type="button"
+          className="chat-error-btn chat-error-btn-secondary"
+          onClick={() => openSettings('diagnostics')}
+        >
+          <Activity size={11} />
+          <span>Run Diagnostics</span>
+        </button>
+        <button
+          type="button"
+          className="chat-error-btn chat-error-btn-secondary"
+          onClick={() => openSettings('providers')}
+        >
+          <Settings size={11} />
+          <span>Switch Provider</span>
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// 3. Quota Exhausted Card (RATE_LIMITED / QUOTA_EXCEEDED)
+export const QuotaExhaustedCard: React.FC<{ errorCard: ChatErrorCard; onRetry?: () => void }> = ({ errorCard, onRetry }) => {
+  const { openSettings, saveSettings } = useChatStore();
+  const [countdown, setCountdown] = useState<number>(errorCard.retryAfterSec || 60);
+
+  useEffect(() => {
+    if (countdown <= 0) return;
+    const timer = setInterval(() => {
+      setCountdown((prev: number) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [countdown]);
+
+  const handleSwitchToProvider = async (provider: ProviderType, model: string) => {
+    await saveSettings({ activeProvider: provider, activeModel: model });
+    if (onRetry) {
+      onRetry();
+    }
+  };
+
+  return (
+    <div className="chat-error-card is-rate-limited" role="alert">
+      <div className="chat-error-card-header">
+        <div className="chat-error-card-badge">
+          <Clock size={14} style={{ color: 'var(--accent-amber)' }} />
+          <span className="chat-error-code" style={{ color: 'var(--accent-amber)' }}>
+            [{errorCard.taxonomyCode}] Quota Exhausted / Rate Limited
+          </span>
+        </div>
+        {countdown > 0 && (
+          <span className="chat-error-timer">Reset in {countdown}s</span>
+        )}
+      </div>
+
+      <div className="chat-error-card-body">
+        <p className="chat-error-message">{errorCard.message || 'Provider rate limit reached (HTTP 429) or free tier quota exhausted.'}</p>
+        <div className="chat-error-remedy">
+          <Lightbulb size={12} className="chat-remedy-icon" />
+          <span><strong>Remedy:</strong> {errorCard.remedy}</span>
+        </div>
+
+        <div className="chat-error-alternatives">
+          <span className="chat-error-alt-title">Alternative providers available:</span>
+          <div className="chat-error-alt-buttons">
+            <button
+              type="button"
+              className="chat-error-alt-btn"
+              onClick={() => void handleSwitchToProvider('openrouter', 'deepseek/deepseek-r1:free')}
+            >
+              Switch to OpenRouter Free
+            </button>
+            <button
+              type="button"
+              className="chat-error-alt-btn"
+              onClick={() => void handleSwitchToProvider('groq', 'llama-3.3-70b-versatile')}
+            >
+              Switch to Groq Free
+            </button>
+            <button
+              type="button"
+              className="chat-error-alt-btn"
+              onClick={() => void handleSwitchToProvider('ollama', 'qwen2.5-coder:7b')}
+            >
+              Switch to Local Ollama
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="chat-error-card-actions">
+        {onRetry && (
+          <button
+            type="button"
+            className="chat-error-btn chat-error-btn-primary"
+            onClick={onRetry}
+            disabled={countdown > 50}
+          >
+            <RotateCcw size={11} />
+            <span>Retry Prompt</span>
+          </button>
+        )}
+        <button
+          type="button"
+          className="chat-error-btn chat-error-btn-secondary"
+          onClick={() => openSettings('providers')}
+        >
+          <Settings size={11} />
+          <span>Configure Providers</span>
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// 4. Provider Unavailable Card (PROVIDER_DOWN / TIMEOUT)
+export const ProviderUnavailableCard: React.FC<{ errorCard: ChatErrorCard; onRetry?: () => void }> = ({ errorCard, onRetry }) => {
+  const openSettings = useChatStore((s) => s.openSettings);
+  const [autoRetry, setAutoRetry] = useState(false);
+  const [retryCountdown, setRetryCountdown] = useState(5);
+
+  useEffect(() => {
+    if (!autoRetry || !onRetry) return;
+    const timer = setInterval(() => {
+      setRetryCountdown((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          setAutoRetry(false);
+          onRetry();
+          return 5;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [autoRetry, onRetry]);
+
+  return (
+    <div className="chat-error-card is-provider-down" role="alert">
+      <div className="chat-error-card-header">
+        <div className="chat-error-card-badge">
+          <AlertCircle size={14} className="chat-error-icon" />
+          <span className="chat-error-code">[{errorCard.taxonomyCode}] Provider Unavailable</span>
+        </div>
+      </div>
+
+      <div className="chat-error-card-body">
+        <p className="chat-error-message">{errorCard.message || 'Provider returned a 5xx server error or connection timed out.'}</p>
+        <div className="chat-error-remedy">
+          <Lightbulb size={12} className="chat-remedy-icon" />
+          <span><strong>Remedy:</strong> {errorCard.remedy || 'Provider is experiencing a temporary outage. You can auto-retry or switch providers.'}</span>
+        </div>
+
+        {onRetry && (
+          <label className="chat-error-autoretry-label">
+            <input
+              type="checkbox"
+              checked={autoRetry}
+              onChange={(e) => {
+                setAutoRetry(e.target.checked);
+                setRetryCountdown(5);
+              }}
+            />
+            <span>Auto-retry in {retryCountdown}s</span>
+          </label>
+        )}
+      </div>
+
+      <div className="chat-error-card-actions">
+        {onRetry && (
+          <button
+            type="button"
+            className="chat-error-btn chat-error-btn-primary"
+            onClick={onRetry}
+          >
+            <RotateCcw size={11} />
+            <span>Retry Now</span>
+          </button>
+        )}
+        <button
+          type="button"
+          className="chat-error-btn chat-error-btn-secondary"
+          onClick={() => openSettings('providers')}
+        >
+          <Settings size={11} />
+          <span>Switch Provider</span>
+        </button>
+        <button
+          type="button"
+          className="chat-error-btn chat-error-btn-secondary"
+          onClick={() => openSettings('diagnostics')}
+        >
+          <Activity size={11} />
+          <span>Check Diagnostics</span>
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// 5. Standard Error Card (Fallback & Diagnostic Violations)
+export const StandardErrorCard: React.FC<{ errorCard: ChatErrorCard; onRetry?: () => void }> = ({ errorCard, onRetry }) => {
+  const openSettings = useChatStore((s) => s.openSettings);
+
+  const handleExternalAction = () => {
+    if (errorCard.actionUrl && window.electronAPI?.openExternal) {
+      void window.electronAPI.openExternal(errorCard.actionUrl);
+    } else if (errorCard.actionUrl && typeof window !== 'undefined') {
+      window.open(errorCard.actionUrl, '_blank');
+    }
+  };
+
+  return (
+    <div className="chat-error-card" role="alert">
+      <div className="chat-error-card-header">
+        <div className="chat-error-card-badge">
+          <AlertCircle size={14} className="chat-error-icon" />
+          <span className="chat-error-code">[{errorCard.taxonomyCode}]</span>
+        </div>
+        {errorCard.hopId && (
+          <span className="chat-error-hop">{errorCard.hopId}</span>
+        )}
+      </div>
+
+      <div className="chat-error-card-body">
+        <p className="chat-error-message">{errorCard.message}</p>
+        {errorCard.remedy && (
+          <div className="chat-error-remedy">
+            <Lightbulb size={12} className="chat-remedy-icon" />
+            <span><strong>Remedy:</strong> {errorCard.remedy}</span>
+          </div>
+        )}
+        {errorCard.suggestedFallback && (
+          <div className="chat-error-fallback">
+            <Info size={11} />
+            <span>{errorCard.suggestedFallback}</span>
+          </div>
+        )}
+      </div>
+
+      <div className="chat-error-card-actions">
+        {onRetry && (
+          <button
+            type="button"
+            className="chat-error-btn chat-error-btn-primary"
+            onClick={onRetry}
+          >
+            <RotateCcw size={11} />
+            <span>Retry</span>
+          </button>
+        )}
+        <button
+          type="button"
+          className="chat-error-btn chat-error-btn-secondary"
+          onClick={() => openSettings('providers')}
+        >
+          <Settings size={11} />
+          <span>Configure Providers</span>
+        </button>
+        <button
+          type="button"
+          className="chat-error-btn chat-error-btn-secondary"
+          onClick={() => openSettings('diagnostics')}
+        >
+          <Activity size={11} />
+          <span>Run Diagnostics</span>
+        </button>
+        {errorCard.actionUrl && (
+          <button
+            type="button"
+            className="chat-error-btn chat-error-btn-external"
+            onClick={handleExternalAction}
+          >
+            <span>{errorCard.actionLabel || 'Learn More'}</span>
+            <ExternalLink size={10} />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export const ErrorCard: React.FC<{ errorCard: ChatErrorCard; onRetry?: () => void }> = ({ errorCard, onRetry }) => {
+  if (errorCard.taxonomyCode === 'CONFIG_MISSING') {
+    return <ConnectProviderCard errorCard={errorCard} onRetry={onRetry} />;
+  }
+  if (errorCard.taxonomyCode === 'NETWORK_BLOCKED') {
+    return <NetworkErrorCard errorCard={errorCard} onRetry={onRetry} />;
+  }
+  if (errorCard.taxonomyCode === 'RATE_LIMITED' || errorCard.taxonomyCode === 'QUOTA_EXCEEDED') {
+    return <QuotaExhaustedCard errorCard={errorCard} onRetry={onRetry} />;
+  }
+  if (errorCard.taxonomyCode === 'PROVIDER_DOWN' || errorCard.taxonomyCode === 'TIMEOUT') {
+    return <ProviderUnavailableCard errorCard={errorCard} onRetry={onRetry} />;
+  }
+  return <StandardErrorCard errorCard={errorCard} onRetry={onRetry} />;
+};
+
 export const ChatSidecar: React.FC = () => {
   const [input, setInput] = useState('');
   const [sidecarTab, setSidecarTab] = useState<'chat' | 'pair'>('chat');
@@ -489,7 +938,11 @@ export const ChatSidecar: React.FC = () => {
             {message.toolCall && <ToolCard tool={message.toolCall} status={message.toolStatus} output={message.toolResult?.output ?? (message.toolStatus === 'running' ? undefined : message.content || undefined)} />}
             {message.toolCalls?.map((tool: ToolCall) => <ToolCard key={tool.id} tool={tool} />)}
             {message.proposedDiffs?.map((proposedDiff) => <DiffCard key={proposedDiff.id} diff={proposedDiff} onInspect={() => openDiffReview(proposedDiff)} onApply={() => void applyDiff(proposedDiff)} />)}
-            {message.content && <MarkdownContent content={message.content} />}
+            {message.errorCard ? (
+              <ErrorCard errorCard={message.errorCard} onRetry={handleRegenerate} />
+            ) : (
+              message.content && <MarkdownContent content={message.content} />
+            )}
             {message.reasoning && <details className="chat-reasoning"><summary>Reasoning summary</summary><div>{message.reasoning}</div></details>}
             {message.id === lastAssistantId && !isRunning && lastUserMessage && <div className="assistant-message-actions"><button onClick={handleRegenerate} title="Regenerate last response"><RotateCcw size={11} />Regenerate</button></div>}
           </div>}

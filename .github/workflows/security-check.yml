@@ -39,5 +39,8 @@ jobs:
       - name: Build Electron production assets
         run: npm run build
 
+      - name: Scan bundles for baked credentials
+        run: npm run test:no-baked-secrets
+
       - name: Build Cloudflare Pages website
         run: npm run build:website

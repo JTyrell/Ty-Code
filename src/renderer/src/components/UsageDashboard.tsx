@@ -14,11 +14,13 @@ import {
   Clock,
   Layers,
   ChevronRight,
-  Gauge
+  Gauge,
+  Database
 } from 'lucide-react';
 import { useUsageDashboardStore } from '../state/usage-dashboard-store';
 import type { SmartTaskType } from '../../../preload/types';
 import { ProviderDashboard } from './dashboard/ProviderDashboard';
+import { UsageLedgerView } from './dashboard/UsageLedgerView';
 
 const TASK_BADGES: Record<SmartTaskType, { label: string; color: string; bg: string }> = {
   coding: { label: 'Code Gen', color: '#38bdf8', bg: 'rgba(56, 189, 248, 0.15)' },
@@ -40,7 +42,7 @@ export const UsageDashboard: React.FC = () => {
     setFreeMode
   } = useUsageDashboardStore();
 
-  const [activeTab, setActiveTab] = useState<'unified' | 'quotas' | 'rules' | 'logs'>('unified');
+  const [activeTab, setActiveTab] = useState<'unified' | 'quotas' | 'ledger' | 'rules' | 'logs'>('unified');
 
   useEffect(() => {
     if (isOpen) {
@@ -371,6 +373,27 @@ export const UsageDashboard: React.FC = () => {
           </button>
 
           <button
+            onClick={() => setActiveTab('ledger')}
+            id="tab-usage-ledger"
+            style={{
+              background: 'transparent',
+              border: 'none',
+              padding: '8px 14px',
+              fontSize: '13px',
+              fontWeight: 500,
+              color: activeTab === 'ledger' ? '#38bdf8' : '#94a3b8',
+              borderBottom: activeTab === 'ledger' ? '2px solid #38bdf8' : '2px solid transparent',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}
+          >
+            <Database size={14} />
+            Usage Ledger &amp; Resets
+          </button>
+
+          <button
             onClick={() => setActiveTab('rules')}
             style={{
               background: 'transparent',
@@ -429,6 +452,12 @@ export const UsageDashboard: React.FC = () => {
           {activeTab === 'unified' && (
             <div style={{ height: '620px', overflow: 'hidden' }}>
               <ProviderDashboard onClose={closeDashboard} />
+            </div>
+          )}
+
+          {activeTab === 'ledger' && (
+            <div style={{ padding: '8px 0' }}>
+              <UsageLedgerView />
             </div>
           )}
 

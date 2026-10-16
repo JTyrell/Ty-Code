@@ -622,8 +622,32 @@ export class DiagnosticService {
       }
     }
 
+    lines.push('');
+    lines.push('## Per-Instance Usage Ledger & Rate Limits');
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { usageLedger } = require('../usage/ledger');
+      const ledger = usageLedger.getSnapshot();
+      lines.push(`- **Total Requests**: ${ledger.overall.totalRequests}`);
+      lines.push(`- **Total Tokens Consumed**: ${ledger.overall.totalTokens.toLocaleString()} (${ledger.overall.totalPromptTokens.toLocaleString()} prompt / ${ledger.overall.totalCompletionTokens.toLocaleString()} completion)`);
+      lines.push(`- **Total Cost Saved**: $${ledger.overall.totalCostSavedUsd.toFixed(4)} USD`);
+      lines.push(`- **Average Latency**: ${ledger.overall.averageLatencyMs}ms`);
+      lines.push('');
+      lines.push('| Provider / Model | Requests | Tokens (Prompt/Comp) | Exact/Est | Rate Limit Reset |');
+      lines.push('| :--- | :--- | :--- | :--- | :--- |');
+
+      for (const [key, c] of Object.entries(ledger.providerCounters) as Array<[string, any]>) {
+        const rateLimit = ledger.rateLimits?.[c.providerId];
+        const resetStr = rateLimit?.resetHuman || 'active';
+        lines.push(`| **${key}** | ${c.requests} | ${c.totalTokens.toLocaleString()} (${c.promptTokens}/${c.completionTokens}) | ${c.exactUsageCount}/${c.estimatedUsageCount} | ${resetStr} |`);
+      }
+    } catch {
+      lines.push('*(Usage ledger data currently unavailable)*');
+    }
+
+    lines.push('');
     lines.push('---');
-    lines.push('*Ty-Code Diagnostic Service (Phase Diagnostics 1)*');
+    lines.push('*Ty-Code Diagnostic Service (Phase Diagnostics 1 & Scale 1)*');
 
     return lines.join('\n');
   }

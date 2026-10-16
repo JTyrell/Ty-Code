@@ -14,8 +14,21 @@ import {
 import { migrateProviderSettings } from '../services/orchestration/migration';
 import { settingsManager } from '../services/settings-manager';
 
-const SETTINGS_FILE = path.join(app.getPath('userData'), 'ty-code-settings.json');
-const LEGACY_SETTINGS_FILE = path.join(app.getPath('userData'), 'ty-claude-settings.json');
+const getUserDataPath = (): string => {
+  try {
+    if (app && typeof app.getPath === 'function') {
+      return app.getPath('userData');
+    }
+  } catch {
+    // fallback if app is not yet initialized
+  }
+  return process.env.APPDATA
+    ? path.join(process.env.APPDATA, 'Ty-Code')
+    : path.join(process.env.HOME || process.cwd(), '.ty-code');
+};
+
+const SETTINGS_FILE = path.join(getUserDataPath(), 'ty-code-settings.json');
+const LEGACY_SETTINGS_FILE = path.join(getUserDataPath(), 'ty-claude-settings.json');
 const LanguageServerConfigSchema = z.object({
   enabled: z.boolean(),
   args: z.array(z.string().max(500)).max(64).optional(),

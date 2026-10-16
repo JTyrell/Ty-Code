@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { useWorkspaceStore } from '../state/workspace-store';
 import { toast } from '../state/toast-store';
-import type { FileNode } from '../../../preload/types';
+import type { FileNode, FlatFileNodeEntry } from '../../../preload/types';
 
 export interface FlatFileNode {
   node: FileNode;
@@ -28,11 +28,12 @@ const ITEM_HEIGHT = 24;
 const OVERSCAN = 6;
 
 interface VirtualFileTreeProps {
-  rootNode: FileNode | null;
+  rootNode?: FileNode | null;
+  flatEntries?: FlatFileNodeEntry[] | null;
   onRefresh?: () => void;
 }
 
-export const VirtualFileTree: React.FC<VirtualFileTreeProps> = ({ rootNode, onRefresh }) => {
+export const VirtualFileTree: React.FC<VirtualFileTreeProps> = ({ rootNode, flatEntries, onRefresh }) => {
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
   const [scrollTop, setScrollTop] = useState(0);
   const [containerHeight, setContainerHeight] = useState(600);
@@ -43,17 +44,17 @@ export const VirtualFileTree: React.FC<VirtualFileTreeProps> = ({ rootNode, onRe
   const containerRef = useRef<HTMLDivElement>(null);
   const openFile = useWorkspaceStore((s) => s.openFile);
   const activeTabPath = useWorkspaceStore((s) => s.activeTabPath);
+  const storeFlatTree = useWorkspaceStore((s) => s.flatTree);
+  const activeFlat = flatEntries || storeFlatTree;
 
   // Initialize with root expanded
   useEffect(() => {
-    if (rootNode) {
-      setExpandedPaths((prev) => {
-        const next = new Set(prev);
-        next.add(rootNode.path);
-        return next;
-      });
+    if (activeFlat && activeFlat[0]) {
+      setExpandedPaths((prev) => new Set(prev).add(activeFlat[0].path));
+    } else if (rootNode) {
+      setExpandedPaths((prev) => new Set(prev).add(rootNode.path));
     }
-  }, [rootNode]);
+  }, [rootNode, activeFlat]);
 
   // Track container height via ResizeObserver
   useEffect(() => {
@@ -87,6 +88,45 @@ export const VirtualFileTree: React.FC<VirtualFileTreeProps> = ({ rootNode, onRe
 
   // Flatten the tree for virtualization based on expanded state
   const flatList: FlatFileNode[] = useMemo(() => {
+    // 1. High-speed flat array virtualization (O(N) single pass, no recursive nesting overhead)
+    if (activeFlat && activeFlat.length > 0) {
+      const result: FlatFileNode[] = [];
+      const expandedDirPaths = new Set(expandedPaths);
+      if (activeFlat[0]) expandedDirPaths.add(activeFlat[0].path);
+
+      for (let i = 0; i < activeFlat.length; i++) {
+        const item = activeFlat[i];
+        if (item.depth > 1) {
+          const sepMatch = /[/\\]/.exec(item.path);
+          const sep = sepMatch ? sepMatch[0] : '/';
+          const parentPath = item.path.substring(0, item.path.lastIndexOf(sep));
+          if (!expandedDirPaths.has(parentPath)) {
+            continue;
+          }
+        }
+
+        const isDir = item.isDirectory || item.type === 'directory';
+        const isOpen = expandedDirPaths.has(item.path);
+        const node: FileNode = {
+          name: item.name,
+          path: item.path,
+          relativePath: item.relativePath || '',
+          isDirectory: isDir,
+          size: item.size,
+          extension: item.extension
+        };
+
+        result.push({
+          node,
+          depth: item.depth,
+          isOpen,
+          hasChildren: isDir
+        });
+      }
+      return result;
+    }
+
+    // 2. Fallback to tree traversal if flat array not yet populated
     if (!rootNode) return [];
 
     const result: FlatFileNode[] = [];
@@ -95,7 +135,6 @@ export const VirtualFileTree: React.FC<VirtualFileTreeProps> = ({ rootNode, onRe
       const hasChildren = Boolean(node.children && node.children.length > 0);
       const isOpen = expandedPaths.has(node.path);
 
-      // Do not add root if it is just workspace container, or add it with depth 0
       result.push({
         node,
         depth,
@@ -104,7 +143,6 @@ export const VirtualFileTree: React.FC<VirtualFileTreeProps> = ({ rootNode, onRe
       });
 
       if (node.isDirectory && isOpen && node.children) {
-        // Sort directories first, then alphabetical
         const sorted = [...node.children].sort((a, b) => {
           if (a.isDirectory === b.isDirectory) return a.name.localeCompare(b.name);
           return a.isDirectory ? -1 : 1;
@@ -125,7 +163,7 @@ export const VirtualFileTree: React.FC<VirtualFileTreeProps> = ({ rootNode, onRe
     }
 
     return result;
-  }, [rootNode, expandedPaths]);
+  }, [rootNode, activeFlat, expandedPaths]);
 
   const totalHeight = flatList.length * ITEM_HEIGHT;
   const startIndex = Math.max(0, Math.floor(scrollTop / ITEM_HEIGHT) - OVERSCAN);

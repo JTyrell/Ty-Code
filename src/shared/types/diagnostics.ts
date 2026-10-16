@@ -16,7 +16,9 @@ export type DiagnosticErrorCode =
   | 'QUOTA_EXCEEDED'
   | 'FORMAT_MISMATCH'
   | 'TIMEOUT'
-  | 'PROVIDER_DOWN';
+  | 'PROVIDER_DOWN'
+  | 'IPC_UNREGISTERED'
+  | 'MOCK_PATH_DETECTED';
 
 export type DiagnosticStep =
   | 'reachability'
@@ -297,4 +299,80 @@ export interface FailoverNoticeInfo {
   error: string;
   timestamp: number;
 }
+
+// Phase Diagnostics Fix 1: End-to-End Connectivity Trace Types (H1-H10)
+export type HopId =
+  | 'H1'
+  | 'H2'
+  | 'H3'
+  | 'H4'
+  | 'H5'
+  | 'H6'
+  | 'H7'
+  | 'H8'
+  | 'H9'
+  | 'H10';
+
+export interface HopTraceRecord {
+  hop: HopId;
+  name: string;
+  status: 'PASS' | 'FAIL' | 'PENDING' | 'SKIPPED';
+  timestamp: number;
+  durationMs?: number;
+  payloadSize?: number;
+  metadata?: Record<string, unknown>;
+  error?: string;
+  taxonomyCode?: DiagnosticErrorCode;
+}
+
+export interface ProviderConnectivityTrace {
+  providerId: string;
+  providerName: string;
+  modelId: string;
+  authType: string;
+  status: 'PASS' | 'FAIL' | 'RUNNING' | 'PENDING';
+  firstFailingHop?: HopId;
+  taxonomyCode?: DiagnosticErrorCode;
+  errorSummary?: string;
+  remedy?: string;
+  hops: Record<HopId, HopTraceRecord>;
+  startTime: number;
+  endTime?: number;
+  totalDurationMs: number;
+}
+
+export interface MockScanFinding {
+  file: string;
+  line: number;
+  codeSnippet: string;
+  category: 'mock_token' | 'mock_delay' | 'mock_provider' | 'mock_tool' | 'benign_timeout' | 'other';
+  isShortCircuit: boolean;
+  explanation: string;
+}
+
+export interface MockScanReport {
+  scannedAt: string;
+  filesScanned: number;
+  pathsFound: MockScanFinding[];
+  hasShortCircuits: boolean;
+}
+
+export interface FullConnectivityTraceReport {
+  runId: string;
+  timestamp: string;
+  cannedPrompt: string;
+  appVersion: string;
+  platform: string;
+  overallStatus: 'PASS' | 'FAIL';
+  firstFailingProvider?: string;
+  firstFailingHop?: HopId;
+  summary: {
+    totalTested: number;
+    passedCount: number;
+    failedCount: number;
+  };
+  providers: Record<string, ProviderConnectivityTrace>;
+  mockScan: MockScanReport;
+}
+
 

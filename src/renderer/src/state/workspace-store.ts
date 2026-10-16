@@ -1,6 +1,7 @@
 import { create } from 'zustand';
-import type { FileNode, ProposedDiff } from '../../../preload/types';
+import type { FileNode, FlatFileNodeEntry, ProposedDiff } from '../../../preload/types';
 import { transitionProfiler } from '../services/perf/transition-profiler';
+import { LazyModelManager } from '../services/lazy-model-manager';
 
 export interface EditorTab {
   path: string;
@@ -18,6 +19,7 @@ export interface DiffReviewState {
 interface WorkspaceState {
   workspacePath: string;
   fileTree: FileNode | null;
+  flatTree: FlatFileNodeEntry[] | null;
   openTabs: EditorTab[];
   activeTabPath: string | null;
   diffReview: DiffReviewState | null;
@@ -25,6 +27,8 @@ interface WorkspaceState {
   // Actions
   setWorkspacePath: (path: string) => void;
   setFileTree: (tree: FileNode | null) => void;
+  setFlatTree: (flat: FlatFileNodeEntry[] | null) => void;
+  appendTreeChunk: (chunk: FlatFileNodeEntry[]) => void;
   openFile: (filePath: string, name: string) => Promise<void>;
   closeTab: (filePath: string) => void;
   setActiveTab: (filePath: string) => void;
@@ -114,15 +118,64 @@ export function savePersistedTabs(openTabs: EditorTab[], activeTabPath: string |
 
 const initialPersisted = loadPersistedTabs();
 
+// Tier-2 idle prefetching for last-session tabs
+if (typeof window !== 'undefined') {
+  LazyModelManager.getInstance().prefetchLastSessionTabs(initialPersisted.openTabs);
+}
+
+function buildNestedTreeFromFlat(flat: FlatFileNodeEntry[]): FileNode {
+  if (flat.length === 0) {
+    return { name: '', path: '', relativePath: '', isDirectory: true, children: [] };
+  }
+  const root = flat[0];
+  const rootNode: FileNode = {
+    name: root.name,
+    path: root.path,
+    relativePath: root.relativePath || '',
+    isDirectory: true,
+    children: []
+  };
+
+  const nodeMap = new Map<string, FileNode>();
+  nodeMap.set(root.path, rootNode);
+
+  for (let i = 1; i < flat.length; i++) {
+    const item = flat[i];
+    const node: FileNode = {
+      name: item.name,
+      path: item.path,
+      relativePath: item.relativePath || '',
+      isDirectory: item.isDirectory,
+      size: item.size,
+      extension: item.extension,
+      children: item.isDirectory ? [] : undefined
+    };
+    nodeMap.set(item.path, node);
+
+    const parentPath = item.path.substring(0, item.path.lastIndexOf(/[/\\]/.exec(item.path)?.[0] || '/'));
+    const parentNode = nodeMap.get(parentPath);
+    if (parentNode && parentNode.children) {
+      parentNode.children.push(node);
+    } else {
+      rootNode.children?.push(node);
+    }
+  }
+
+  return rootNode;
+}
+
 export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   workspacePath: '',
   fileTree: null,
+  flatTree: null,
   openTabs: initialPersisted.openTabs,
   activeTabPath: initialPersisted.activeTabPath,
   diffReview: null,
 
   setWorkspacePath: (path: string) => set({ workspacePath: path }),
   setFileTree: (tree) => set({ fileTree: tree }),
+  setFlatTree: (flat) => set({ flatTree: flat }),
+  appendTreeChunk: (chunk) => set((state) => ({ flatTree: [...(state.flatTree || []), ...chunk] })),
 
   openFile: async (filePath: string, name: string) => {
     const { openTabs } = get();
@@ -134,24 +187,58 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       return;
     }
 
-    try {
-      const res = await window.electronAPI.readFile(filePath);
-      if (res.success && res.data !== undefined) {
-        const newTab: EditorTab = {
-          path: filePath,
-          name,
-          content: res.data,
-          isDirty: false,
-          language: detectLanguage(filePath)
-        };
+    // Check memory cache for instant warm open (<150ms)
+    const cachedContent = LazyModelManager.getInstance().getCachedContent(filePath);
+    if (cachedContent !== null) {
+      const newTab: EditorTab = {
+        path: filePath,
+        name,
+        content: cachedContent,
+        isDirty: false,
+        language: detectLanguage(filePath)
+      };
+      const nextTabs = [...openTabs, newTab];
+      set({ openTabs: nextTabs, activeTabPath: filePath });
+      savePersistedTabs(nextTabs, filePath);
+      return;
+    }
 
-        const nextTabs = [...openTabs, newTab];
-        set({
-          openTabs: nextTabs,
-          activeTabPath: filePath
-        });
-        savePersistedTabs(nextTabs, filePath);
-      }
+    try {
+      let created = false;
+      await LazyModelManager.getInstance().loadLargeFileProgressively(
+        filePath,
+        (initialChunk) => {
+          created = true;
+          const newTab: EditorTab = {
+            path: filePath,
+            name,
+            content: initialChunk,
+            isDirty: false,
+            language: detectLanguage(filePath)
+          };
+          const nextTabs = [...get().openTabs, newTab];
+          set({ openTabs: nextTabs, activeTabPath: filePath });
+          savePersistedTabs(nextTabs, filePath);
+        },
+        (fullContent) => {
+          if (created) {
+            set((state) => ({
+              openTabs: state.openTabs.map((t) => (t.path === filePath ? { ...t, content: fullContent } : t))
+            }));
+          } else {
+            const newTab: EditorTab = {
+              path: filePath,
+              name,
+              content: fullContent,
+              isDirty: false,
+              language: detectLanguage(filePath)
+            };
+            const nextTabs = [...get().openTabs, newTab];
+            set({ openTabs: nextTabs, activeTabPath: filePath });
+            savePersistedTabs(nextTabs, filePath);
+          }
+        }
+      );
     } catch (err) {
       console.error('Failed to open file:', err);
     }
@@ -159,6 +246,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
   closeTab: (filePath: string) => {
     const { openTabs, activeTabPath } = get();
+    // Recycle model to disposed pool
+    LazyModelManager.getInstance().releaseModel(filePath);
+
     const nextTabs = openTabs.filter((t) => t.path !== filePath);
     let nextActive = activeTabPath;
 
@@ -253,6 +343,16 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     const { workspacePath } = get();
     if (!workspacePath) return;
     try {
+      if (window.electronAPI.getWorkspaceTreeChunked) {
+        const chunkRes = await window.electronAPI.getWorkspaceTreeChunked(workspacePath);
+        if (chunkRes.success && chunkRes.data?.flatTree) {
+          set({ flatTree: chunkRes.data.flatTree });
+          const nested = buildNestedTreeFromFlat(chunkRes.data.flatTree);
+          set({ fileTree: nested });
+          return;
+        }
+      }
+
       const res = await window.electronAPI.getWorkspaceTree(workspacePath);
       if (res.success && res.data) {
         set({ fileTree: res.data });

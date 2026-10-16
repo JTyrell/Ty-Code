@@ -10,12 +10,14 @@ import { fccManager } from '../services/orchestration/fcc-manager';
 import { quotaTracker } from '../services/orchestration/quota-tracker';
 import { requestCache } from '../services/orchestration/request-cache';
 import { performanceManager } from '../services/orchestration/performance-manager';
+import { usageLedger } from '../services/usage/ledger';
 import { getPreconfiguredProvider } from '../config/provider-registry';
 import type { ProviderCandidate } from '../services/orchestration/strategies/types';
 
 import { freeProviderRegistry } from '../services/providers/free-provider-registry';
 import { modelClassifier } from '../services/providers/model-classifier';
 import { providerHealthMonitor } from '../services/providers/health-monitor';
+import { readStoredCredentials } from '../ipc/settings-handlers';
 
 import { DEFAULT_PRESET_MODELS } from '../../preload/preset-models';
 export { DEFAULT_PRESET_MODELS };
@@ -191,6 +193,48 @@ export class ProviderGateway {
     }));
   }
 
+  private static validatedModelsCache = new Set<string>();
+
+  public static async ensureModelAvailable(
+    providerId: string,
+    modelId: string,
+    apiKey?: string,
+    customEndpoint?: string,
+    offlineDemoMode?: boolean
+  ): Promise<void> {
+    const cacheKey = `${providerId}:${modelId}`;
+    if (this.validatedModelsCache.has(cacheKey)) return;
+
+    if (offlineDemoMode || providerId === 'fcc-proxy') {
+      this.validatedModelsCache.add(cacheKey);
+      return;
+    }
+
+    try {
+      const models = await this.getAvailableModels(providerId, apiKey, customEndpoint);
+      if (Array.isArray(models) && models.length > 0) {
+        const found = models.some((m) => m.id === modelId || m.name === modelId || m.id.endsWith(`/${modelId}`));
+        if (!found) {
+          const validFree = models.filter((m) => m.isFree).map((m) => m.id);
+          const error = new Error(
+            `[MODEL_UNAVAILABLE] Model ID "${modelId}" is not available on provider "${providerId}". Valid models include: ${models.slice(0, 5).map((m) => m.id).join(', ')}`
+          );
+          (error as any).validFreeModels = validFree;
+          throw error;
+        }
+      }
+      this.validatedModelsCache.add(cacheKey);
+    } catch (err: unknown) {
+      if (err instanceof Error && err.message.includes('MODEL_UNAVAILABLE')) {
+        throw err;
+      }
+      if (err instanceof Error && (err.message.includes('Invalid API Key') || err.message.includes('401') || err.message.includes('403'))) {
+        throw err;
+      }
+      this.validatedModelsCache.add(cacheKey);
+    }
+  }
+
   /**
    * Test connection to a provider endpoint.
    * Sends a minimal 1-token completion request to verify credentials, or pings local server for zero-config.
@@ -319,7 +363,8 @@ export class ProviderGateway {
     messages: ChatCompletionMessage[],
     tools: unknown[],
     callbacks: StreamEventCallbacks,
-    abortSignal?: AbortSignal
+    abortSignal?: AbortSignal,
+    traceId?: string
   ): Promise<{ fullText: string; fullThought: string; toolCalls: Array<{ id: string; name: string; arguments: Record<string, unknown> }> }> {
     // Determine primary task based on tools or message signals
     const hasTools = tools && tools.length > 0;
@@ -347,7 +392,7 @@ export class ProviderGateway {
         });
       },
       execute: async (candidate: ProviderCandidate, reconciledMessages: ChatCompletionMessage[]) => {
-        return this.streamWithCandidate(candidate, settings, reconciledMessages, tools, callbacks, abortSignal);
+        return this.streamWithCandidate(candidate, settings, reconciledMessages, tools, callbacks, abortSignal, traceId);
       }
     });
 
@@ -360,12 +405,65 @@ export class ProviderGateway {
     messages: ChatCompletionMessage[],
     tools: unknown[],
     callbacks: StreamEventCallbacks,
-    abortSignal?: AbortSignal
+    abortSignal?: AbortSignal,
+    traceId?: string
   ): Promise<{ fullText: string; fullThought: string; toolCalls: Array<{ id: string; name: string; arguments: Record<string, unknown> }> }> {
     const providerId = candidate.provider.id as ProviderType;
     const modelId = candidate.model.id;
     const baseUrl = candidate.customEndpoint || this.getEndpoint(providerId, settings.customEndpoints || {});
-    const apiKey = candidate.apiKey || settings.apiKeys[providerId] || '';
+
+    // Resolve key at call time via safeStorage decryption; anonymous providers use no key
+    let apiKey = '';
+    const isAnonymous = providerId === 'openkilo' && (!settings.apiKeys?.[providerId] || settings.apiKeys[providerId] === 'anonymous');
+    const isLocalZeroConfig = providerId === 'ollama';
+
+    if (providerId === 'fcc-proxy') {
+      const isCustomEndpoint = Boolean(candidate.customEndpoint) || Boolean(settings.customEndpoints?.['fcc-proxy']);
+      if (!isCustomEndpoint && !fccManager.isGenuineBinaryRunning()) {
+        throw new Error('[ProviderGateway] CONFIG_MISSING: Genuine free-claude-code binary is not running. Please install free-claude-code or connect an AI provider.');
+      }
+    }
+
+    if (!isAnonymous && !isLocalZeroConfig && providerId !== 'fcc-proxy') {
+      if (candidate.apiKey && candidate.apiKey.trim()) {
+        apiKey = candidate.apiKey.trim();
+      } else {
+        try {
+          const { keys } = await readStoredCredentials();
+          apiKey = keys[providerId] || settings.apiKeys?.[providerId] || '';
+        } catch {
+          apiKey = settings.apiKeys?.[providerId] || '';
+        }
+      }
+
+      if (!apiKey || !apiKey.trim()) {
+        throw new Error(`[ProviderGateway] CONFIG_MISSING: No API key configured for provider "${providerId}". Please add your API key in Settings or connect your provider.`);
+      }
+    }
+
+    // Validate model IDs against live /models before first call; invalid -> MODEL_UNAVAILABLE error
+    await ProviderGateway.ensureModelAvailable(providerId, modelId, apiKey, baseUrl, settings.offlineDemoMode === true);
+
+    // H5: Provider Gateway Resolution (log key PRESENCE ONLY, never value)
+    if (traceId) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const { connectivityTracer } = require('../services/diagnostics/connectivity-tracer');
+        connectivityTracer.recordHop(traceId, 'H5', {
+          status: 'PASS',
+          metadata: {
+            providerId,
+            modelId,
+            baseUrl,
+            keyPresent: Boolean(apiKey),
+            keyLength: apiKey ? apiKey.length : 0,
+            keySource: candidate.apiKey ? 'candidate' : (settings.apiKeys[providerId] ? 'safeStorage' : 'none')
+          }
+        });
+      } catch {
+        // ignore trace recording error
+      }
+    }
 
     // Phase 5.6: Request Caching for Repeated Queries
     const cacheKey = requestCache.computeKey(modelId, messages, tools, settings.temperature);
@@ -417,12 +515,36 @@ export class ProviderGateway {
       body.tool_choice = 'auto';
     }
 
-    const response = await fetch(`${baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-      signal: abortSignal
-    });
+    let response: Response;
+    const fetchStartTime = performance.now();
+    try {
+      response = await fetch(`${baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+        signal: abortSignal
+      });
+    } catch (networkErr: unknown) {
+      if (traceId) {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-var-requires
+          const { connectivityTracer } = require('../services/diagnostics/connectivity-tracer');
+          connectivityTracer.recordHop(traceId, 'H6', {
+            status: 'FAIL',
+            durationMs: Math.round(performance.now() - fetchStartTime),
+            error: networkErr instanceof Error ? networkErr.message : String(networkErr),
+            metadata: {
+              url: `${baseUrl.replace(/\/+$/, '')}/chat/completions`,
+              method: 'POST',
+              errorType: 'network_blocked'
+            }
+          });
+        } catch {
+          // ignore
+        }
+      }
+      throw networkErr;
+    }
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -433,24 +555,103 @@ export class ProviderGateway {
       } catch {
         // Use provider's raw error response
       }
+
+      if (traceId) {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-var-requires
+          const { connectivityTracer } = require('../services/diagnostics/connectivity-tracer');
+          connectivityTracer.recordHop(traceId, 'H6', {
+            status: 'FAIL',
+            durationMs: Math.round(performance.now() - fetchStartTime),
+            error: `HTTP ${response.status}: ${parsedError}`,
+            metadata: {
+              url: `${baseUrl.replace(/\/+$/, '')}/chat/completions`,
+              method: 'POST',
+              status: response.status,
+              statusText: response.statusText
+            }
+          });
+        } catch {
+          // ignore
+        }
+      }
+
+      if (response.headers) {
+        usageLedger.updateRateLimitsFromHeaders(providerId, response.headers);
+      }
+      void usageLedger.recordTransaction({
+        providerId,
+        modelId,
+        latencyMs: Math.round(performance.now() - requestStartTime),
+        success: false,
+        error: `HTTP ${response.status}: ${parsedError}`,
+        headers: response.headers
+      });
       throw new Error(`[${providerId}] API Error (${response.status}): ${parsedError}`);
+    }
+
+    if (traceId) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const { connectivityTracer } = require('../services/diagnostics/connectivity-tracer');
+        connectivityTracer.recordHop(traceId, 'H6', {
+          status: 'PASS',
+          durationMs: Math.round(performance.now() - fetchStartTime),
+          metadata: {
+            url: `${baseUrl.replace(/\/+$/, '')}/chat/completions`,
+            method: 'POST',
+            status: 200,
+            statusText: 'OK'
+          }
+        });
+      } catch {
+        // ignore
+      }
+    }
+
+    if (response.headers) {
+      usageLedger.updateRateLimitsFromHeaders(providerId, response.headers);
     }
 
     if (!response.body) throw new Error(`[${providerId}] Response body is empty`);
 
     let fullText = '';
     let fullThought = '';
+    let firstChunkReported = false;
+    let streamUsage: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } | null = null;
     const toolCalls = new Map<number, AccumulatedToolCall>();
     const reader = response.body.getReader();
     const decoder = new TextDecoder('utf-8');
     let buffer = '';
 
     const consume = (payload: StreamPayload) => {
+      if (payload.usage) {
+        streamUsage = payload.usage;
+      }
       const delta = payload.choices?.[0]?.delta;
       if (!delta) return;
       if (delta.content) {
         fullText += delta.content;
         callbacks.onToken?.(delta.content);
+
+        if (traceId && !firstChunkReported) {
+          firstChunkReported = true;
+          try {
+            // eslint-disable-next-line @typescript-eslint/no-var-requires
+            const { connectivityTracer } = require('../services/diagnostics/connectivity-tracer');
+            connectivityTracer.recordHop(traceId, 'H7', {
+              status: 'PASS',
+              payloadSize: delta.content.length,
+              metadata: {
+                firstChunkParsed: true,
+                deltaPreview: delta.content.slice(0, 40),
+                timeToFirstTokenMs: Math.round(performance.now() - fetchStartTime)
+              }
+            });
+          } catch {
+            // ignore
+          }
+        }
       }
       const thought = delta.reasoning_content || delta.reasoning;
       if (thought) {
@@ -502,16 +703,32 @@ export class ProviderGateway {
       fccManager.recordTokenUsage(Math.max(10, Math.ceil(fullText.length / 4)));
     }
 
-    const promptTokens = Math.max(1, Math.ceil(JSON.stringify(messages).length / 3.8));
-    const completionTokens = Math.max(1, Math.ceil(fullText.length / 3.8));
+    const finalUsage = streamUsage as { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } | null;
+    const isExact = Boolean(finalUsage && (finalUsage.prompt_tokens || finalUsage.total_tokens));
+    const promptTokens = finalUsage?.prompt_tokens ?? Math.max(1, Math.ceil(JSON.stringify(messages).length / 3.8));
+    const completionTokens = finalUsage?.completion_tokens ?? Math.max(1, Math.ceil(fullText.length / 3.8));
+    const totalTokens = finalUsage?.total_tokens ?? (promptTokens + completionTokens);
+
     quotaTracker.recordUsage(providerId, modelId, {
       promptTokens,
       completionTokens,
-      totalTokens: promptTokens + completionTokens
+      totalTokens
     }, true);
 
     const elapsedMs = Math.max(1, Math.round(performance.now() - requestStartTime));
     performanceManager.recordLatency(elapsedMs);
+
+    void usageLedger.recordTransaction({
+      providerId,
+      modelId,
+      promptTokens,
+      completionTokens,
+      totalTokens,
+      isExactUsage: isExact,
+      latencyMs: elapsedMs,
+      success: true,
+      headers: response.headers
+    });
 
     requestCache.set(cacheKey, {
       fullText,

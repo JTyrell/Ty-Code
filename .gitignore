@@ -53,7 +53,11 @@ Thumbs.db
 .wrangler/
 .cache/
 
-# Local test & validation scripts
+# Local test & validation scratch artifacts
 scripts/validate-*.mjs
 scripts/fetch-ecc-assets.mjs
-
+.tmp-live-e2e/
+.tmp*/
+*.tmp
+live-check.md
+test-repo/

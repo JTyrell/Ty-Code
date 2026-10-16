@@ -1,4 +1,5 @@
 import { bootProfiler } from './services/perf/boot-profiler';
+import { openProfiler } from './services/perf/open-profiler';
 import { bootScheduler } from './services/boot/boot-scheduler';
 import { app, BrowserWindow, ipcMain, session, shell, dialog, type IpcMainInvokeEvent } from 'electron';
 import path from 'path';
@@ -7,7 +8,7 @@ import { ProviderGateway } from './providers/provider-gateway';
 import { PRECONFIGURED_PROVIDERS } from './config/provider-registry';
 import { historyExtractor } from './services/history-extractor';
 import {
-  selectWorkspaceFolder, getWorkspaceTree, readFile, writeFile, createFile,
+  selectWorkspaceFolder, getWorkspaceTree, getWorkspaceTreeChunked, setupWorkspaceWatcher, readFile, writeFile, createFile,
   createDirectory, deletePath, renamePath, searchWorkspaceFiles,
   searchInWorkspaceFiles, replaceInWorkspaceFiles
 } from './ipc/fs-handlers';
@@ -90,6 +91,9 @@ import { diagnosticService } from './services/diagnostics/diagnostic-service';
 import { capabilitySuite } from './services/diagnostics/capability-suite';
 import { remediationEngine } from './services/diagnostics/remediation-engine';
 import { diagnosticsHealthMonitor } from './services/diagnostics/health-monitor';
+import { connectivityTracer } from './services/diagnostics/connectivity-tracer';
+import { providerOAuth } from './services/auth/provider-oauth';
+import { usageLedger } from './services/usage/ledger';
 
 let mainWindow: BrowserWindow | null = null;
 let currentWorkspacePath = process.cwd();
@@ -187,6 +191,9 @@ function registerIpcHandlers(): void {
       await settingsManager.setWorkspacePath(currentWorkspacePath);
       updateAiServicesWorkspace(currentWorkspacePath);
       getRecentWorkspacesManager().addRecent(response.data);
+      setupWorkspaceWatcher(currentWorkspacePath, (type, relPath) => {
+        mainWindow?.webContents.send('fs:tree-updated', { type, relPath });
+      });
     }
     return response;
   });
@@ -196,9 +203,18 @@ function registerIpcHandlers(): void {
     await settingsManager.setWorkspacePath(currentWorkspacePath);
     updateAiServicesWorkspace(currentWorkspacePath);
     getRecentWorkspacesManager().addRecent(folderPath);
+    setupWorkspaceWatcher(currentWorkspacePath, (type, relPath) => {
+      mainWindow?.webContents.send('fs:tree-updated', { type, relPath });
+    });
     return getWorkspaceTree(folderPath);
   });
   ipcMain.handle('fs:get-tree', async () => getWorkspaceTree(currentWorkspacePath));
+  ipcMain.handle('fs:get-tree-chunked', async (_event, rootPath?: string) => {
+    const target = rootPath || currentWorkspacePath;
+    return getWorkspaceTreeChunked(target, (chunk, isComplete, totalSoFar) => {
+      mainWindow?.webContents.send('fs:tree-chunk', { entries: chunk, isComplete, totalSoFar });
+    });
+  });
   ipcMain.handle('fs:read-file', (_event, filePath: string) => readFile(filePath, currentWorkspacePath));
   ipcMain.handle('fs:write-file', (_event, filePath: string, content: string) => writeFile(filePath, content, currentWorkspacePath));
   ipcMain.handle('fs:create-file', (_event, filePath: string) => createFile(filePath, currentWorkspacePath));
@@ -339,6 +355,17 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle('agent:start-task', async (_event, params) => {
     if (!mainWindow) return { success: false, error: 'No main window' };
+    if (params?.traceId) {
+      connectivityTracer.recordHop(params.traceId, 'H3', {
+        status: 'PASS',
+        payloadSize: JSON.stringify(params).length,
+        metadata: {
+          taskId: params.taskId,
+          workspacePath: currentWorkspacePath,
+          hasWindow: Boolean(mainWindow)
+        }
+      });
+    }
     const result = await startAgentTask(mainWindow, { ...params, workspacePath: currentWorkspacePath });
     if (result.success) void getTelemetryManager().recordFeatureUsed('agent_chat');
     return result;
@@ -397,6 +424,97 @@ function registerIpcHandlers(): void {
         apiKeys: { openkilo: 'anonymous' }
       });
       return { success: true, data: openKiloProvider.getStatus() };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  // Scale 1: Zero-Server OAuth & Device Flow
+  ipcMain.handle('oauth:start-openrouter-pkce', async () => {
+    try {
+      const res = await providerOAuth.startOpenRouterPKCE();
+      return { success: true, data: res };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('oauth:start-openkilo', async () => {
+    try {
+      const res = await providerOAuth.startOpenKiloOAuth();
+      return { success: true, data: res };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('oauth:start-copilot-device', async () => {
+    try {
+      const res = await providerOAuth.startCopilotDeviceFlow();
+      return { success: true, data: res };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('oauth:poll-copilot-device', async (_event, deviceCode?: string) => {
+    try {
+      const res = await providerOAuth.pollCopilotDeviceFlow(deviceCode);
+      return { success: true, data: res };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('oauth:cancel-copilot-device', async () => {
+    try {
+      providerOAuth.cancelCopilotDeviceFlow();
+      return { success: true };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('oauth:disconnect', async (_event, providerId: string) => {
+    try {
+      const res = await providerOAuth.disconnectProvider(providerId);
+      return { success: true, data: res };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('oauth:get-status', async () => {
+    try {
+      const res = await providerOAuth.getAuthStatus();
+      return { success: true, data: res };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  // Scale 1: Usage Ledger Handlers
+  ipcMain.handle('usage:get-ledger', async () => {
+    try {
+      return { success: true, data: usageLedger.getSnapshot() };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('usage:export-ledger', async (_event, format?: 'json' | 'csv') => {
+    try {
+      const data = format === 'csv' ? usageLedger.exportCsv() : usageLedger.exportJson();
+      return { success: true, data };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('usage:clear-ledger', async () => {
+    try {
+      await usageLedger.clearLedger();
+      return { success: true };
     } catch (err: unknown) {
       return { success: false, error: err instanceof Error ? err.message : String(err) };
     }
@@ -1148,6 +1266,50 @@ function registerIpcHandlers(): void {
     return { success: true, data: health };
   });
 
+  // Diagnostics Fix 1: End-to-End Connectivity Trace & Mock Detection
+  ipcMain.handle('diagnostics:run-connectivity-trace', async (event, _options?: any) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      const report = await connectivityTracer.runFullTrace(currentWorkspacePath, mainWindow);
+      return { success: true, data: report };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('diagnostics:record-trace-hop', async (event, payload: any) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      if (payload?.traceId && payload?.hop) {
+        connectivityTracer.recordHop(payload.traceId, payload.hop, {
+          status: payload.status,
+          payloadSize: payload.payloadSize,
+          metadata: payload.metadata,
+          error: payload.error
+        });
+      }
+      return { success: true };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('diagnostics:get-connectivity-trace', async (event) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    return { success: true, data: connectivityTracer.getLatestReport() };
+  });
+
+  ipcMain.handle('diagnostics:scan-mock-paths', async (event) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      const report = await connectivityTracer.scanMockPaths(currentWorkspacePath);
+      return { success: true, data: report };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+
   ipcMain.handle('pty:run-command', (_event, options: CommandExecutionOptions) => runCommand({
     ...options,
     cwd: options.cwd || currentWorkspacePath
@@ -1438,6 +1600,21 @@ function registerPerfHandlers(): void {
     bootProfiler.injectSyncDelay(durationMs, label);
     return { success: true };
   });
+
+  // Open-Path Performance Profiler (Fix 3)
+  ipcMain.handle('perf:profile-open-paths', async () => {
+    try {
+      const trace = await openProfiler.profileAll();
+      return { success: true, data: trace };
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('perf:get-open-trace', () => ({
+    success: true,
+    data: openProfiler.getTrace()
+  }));
 }
 
 function registerProviderHandlers(): void {
@@ -1590,6 +1767,7 @@ function createWindow(): void {
     }
   });
   mainWindow = window;
+  connectivityTracer.setMainWindow(window);
   bootProfiler.recordMark('window_created');
 
   window.on('maximize', () => {
@@ -1629,6 +1807,20 @@ app.whenReady().then(async () => {
 
   bootScheduler.registerIpcHandlers();
   registerIpcHandlers();
+
+  try {
+    if (app && typeof app.setAsDefaultProtocolClient === 'function') {
+      app.setAsDefaultProtocolClient('ty-code');
+    }
+  } catch {
+    // Protocol registration non-blocking
+  }
+
+  providerOAuth.onStatusChange((status) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('oauth:status-changed', status);
+    }
+  });
 
   // -------------------------------------------------------------
   // TIER 0: Before first paint (<800ms budget)
@@ -1870,5 +2062,23 @@ app.on('before-quit', cleanupAllResources);
 app.on('window-all-closed', () => {
   cleanupAllResources();
   if (process.platform !== 'darwin') app.quit();
+});
+
+// Deep-link capture on macOS
+app.on('open-url', (event, url) => {
+  event.preventDefault();
+  void providerOAuth.handleDeepLinkCallback(url);
+});
+
+// Deep-link capture on Windows / Linux via second-instance
+app.on('second-instance', (_event, commandLine) => {
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
+  }
+  const deepLinkArg = commandLine.find((arg) => arg.startsWith('ty-code://'));
+  if (deepLinkArg) {
+    void providerOAuth.handleDeepLinkCallback(deepLinkArg);
+  }
 });
 

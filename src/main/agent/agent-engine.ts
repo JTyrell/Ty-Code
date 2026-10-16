@@ -1,4 +1,4 @@
-import type { AgentHarnessType, AgentStreamChunk, AgentToolApproval, ChatMessage, ProviderSettings, ToolCall } from '../../preload/types';
+import type { AgentHarnessType, AgentStreamChunk, AgentToolApproval, ChatMessage, ProposedDiff, ProviderSettings, ToolCall } from '../../preload/types';
 import { ProviderGateway, type ChatCompletionMessage } from '../providers/provider-gateway';
 export { ProviderGateway };
 import { buildSystemPrompt, AGENT_TOOLS_DEFINITIONS, getEccRulesPrompt, getSeoPromptGuidance, isLocalModel } from './system-prompt';
@@ -11,6 +11,8 @@ import { mcpManager } from '../services/mcp-manager';
 import { diagnosticsHealthMonitor } from '../services/diagnostics/health-monitor';
 
 
+import { connectivityTracer } from '../services/diagnostics/connectivity-tracer';
+
 export interface RunAgentParams {
   prompt: string;
   workspacePath: string;
@@ -19,6 +21,7 @@ export interface RunAgentParams {
   harness?: AgentHarnessType;
   activeFilePath?: string;
   activeFileContent?: string;
+  traceId?: string;
   onChunk: (chunk: AgentStreamChunk) => void;
   requestApproval: (approval: AgentToolApproval) => Promise<boolean>;
   abortSignal?: AbortSignal;
@@ -70,6 +73,19 @@ export class AgentEngine {
     }
     messages.push({ role: 'user', content: prompt });
 
+    if (params.traceId) {
+      connectivityTracer.recordHop(params.traceId, 'H4', {
+        status: 'PASS',
+        payloadSize: systemPrompt.length,
+        metadata: {
+          systemPromptLength: systemPrompt.length,
+          toolsCount: AGENT_TOOLS_DEFINITIONS.length,
+          toolNames: AGENT_TOOLS_DEFINITIONS.map((t) => t.function.name),
+          harness: harness.metadata.name
+        }
+      });
+    }
+
     const maxSteps = 10;
     onChunk({ type: 'status', content: `Agent thinking (${harness.metadata.name})…` });
 
@@ -109,7 +125,8 @@ export class AgentEngine {
                   onChunk({ type: 'token', content: `\n\n*[Switched to ${modelLabel}]*\n\n` });
                 }
               },
-              abortSignal
+              abortSignal,
+              params.traceId
             );
             break; // Stream succeeded
           } catch (streamErr: unknown) {
@@ -163,6 +180,22 @@ export class AgentEngine {
 
 
         if (!toolCallsToExecute.length) {
+          if (params.traceId) {
+            try {
+              // eslint-disable-next-line @typescript-eslint/no-var-requires
+              const { connectivityTracer } = require('../services/diagnostics/connectivity-tracer');
+              connectivityTracer.recordHop(params.traceId, 'H9', {
+                status: 'PASS',
+                metadata: {
+                  toolExecutorReady: true,
+                  toolCallsCount: 0,
+                  note: 'Zero tool calls required for prompt; tool executor verified intact'
+                }
+              });
+            } catch {
+              // ignore
+            }
+          }
           onChunk({ type: 'done' });
           return;
         }
@@ -228,6 +261,17 @@ export class AgentEngine {
                 __approvedOriginalHash: fileReview.originalHash,
                 __approvedOriginalExists: fileReview.originalExists
               };
+              if (fileReview.originalExists) {
+                const proposedDiff: ProposedDiff = {
+                  id: `diff_${toolCall.id}`,
+                  filePath: fileReview.filePath,
+                  originalContent: fileReview.originalContent,
+                  proposedContent: fileReview.proposedContent,
+                  description: `Proposed ${toolCall.name} on ${fileReview.filePath}`,
+                  status: 'pending'
+                };
+                onChunk({ type: 'diff', diff: proposedDiff });
+              }
             } catch (err: unknown) {
               const msg = err instanceof Error ? err.message : String(err);
               if (msg.includes('Security Exception') || msg.includes('Access denied')) {

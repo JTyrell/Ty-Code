@@ -1,0 +1,9 @@
+{
+  "version": "1.0.0",
+  "description": "Known forbidden mock, fixture, and canned response strings that must never appear in src/ outside tests/",
+  "forbiddenStrings": [
+    "FCC proxy response streaming real tokens verified from anonymous provider.",
+    "FCC proxy response streaming",
+    "LIVE-OK: real streaming tokens verified from anonymous provider."
+  ]
+}

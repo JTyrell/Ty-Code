@@ -43,11 +43,23 @@ jobs:
       - name: Check direct dependencies
         run: npx --yes depcheck@1.4.7
 
+      - name: Anti-Phantom Guard: Verify No Mock Paths in Agent/Providers
+        run: node scripts/no-mock-agent-path.mjs
+
+      - name: Anti-Phantom Guard: Verify Trace Artifact Freshness & Integrity
+        run: node scripts/verify-audit-artifacts.mjs
+
+      - name: Live Validation Gate: Run Real Network & Disk E2E Suite
+        run: npm run test:live
+
       - name: Run Test Suites (Phases 2-7)
         run: npm test
 
       - name: Build Application
         run: npm run build
+
+      - name: Scan bundles for baked credentials
+        run: npm run test:no-baked-secrets
 
   build-cross-platform:
     name: Package for ${{ matrix.os }}

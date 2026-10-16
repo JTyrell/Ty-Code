@@ -14,6 +14,7 @@ import type { ChatCompletionMessage } from '../../providers/provider-gateway';
 import { ConnectionPool, connectionPool } from './connection-pool';
 import { ProviderRegistry, providerRegistry, type ProviderMetadata, type ModelMetadata } from './provider-registry';
 import { getRoutingStrategy } from './strategies';
+import { fccManager } from './fcc-manager';
 import type { ProviderCandidate, RoutingContext } from './strategies/types';
 
 export interface FailoverEvent {
@@ -162,6 +163,14 @@ export class OmniRouteRouter {
       const isConfigured = Boolean(apiKey);
       const isLocal = provider.category === 'local';
 
+      // REMOVE fcc-proxy from generic fallback chain: only allowed if activeProvider AND (customEndpoint or genuine binary running)
+      if (provider.id === 'fcc-proxy') {
+        const hasEndpoint = Boolean(customEndpoint) || Boolean(customEndpoints['fcc-proxy']);
+        if (provider.id !== settings.activeProvider || (!hasEndpoint && !fccManager.isGenuineBinaryRunning())) {
+          continue;
+        }
+      }
+
       // Local providers are only candidates if their endpoint is configured, or if provider is ollama with configured endpoint, or if activeProvider
       if (isLocal) {
         const hasEndpoint = Boolean(customEndpoint) || (provider.id === 'ollama' && Boolean(customEndpoints.ollama));
@@ -208,10 +217,10 @@ export class OmniRouteRouter {
         prov = {
           id: activeProviderId,
           name: activeProviderId,
-          category: 'api_key',
-          authMethod: 'api_key',
-          defaultEndpoint: customEndpoints[activeProviderId] || 'https://openrouter.ai/api/v1',
-          isFreeTierAvailable: false,
+          category: activeProviderId === 'fcc-proxy' || activeProviderId === 'ollama' ? 'local' : 'api_key',
+          authMethod: activeProviderId === 'fcc-proxy' || activeProviderId === 'ollama' ? 'none' : 'api_key',
+          defaultEndpoint: customEndpoints[activeProviderId] || (activeProviderId === 'fcc-proxy' ? 'http://127.0.0.1:8082/v1' : activeProviderId === 'ollama' ? 'http://localhost:11434/v1' : 'https://openrouter.ai/api/v1'),
+          isFreeTierAvailable: activeProviderId === 'fcc-proxy' || activeProviderId === 'ollama',
           rateLimitPattern: { requestsPerMinute: 60, tokensPerMinute: 100_000, cooldownBaseMs: 5000, maxCooldownMs: 120_000 },
           supportedModels: []
         };
@@ -355,8 +364,13 @@ export class OmniRouteRouter {
           // Identify next candidate for notification
           const peekContext: RoutingContext = { ...routeContext, excludedProviders };
           const next = this.route(peekContext, settings);
-          event.nextProvider = next?.provider.id;
-          event.nextModel = next?.model.id;
+          if (!next) {
+            throw new Error(
+              `[OmniRoute Failover Exhausted] Failed after ${attempt} attempt: ${failoverHistory.map((h) => `${h.failedProvider} (${h.error})`).join(' -> ')}`
+            );
+          }
+          event.nextProvider = next.provider.id;
+          event.nextModel = next.model.id;
           onFailover?.(event);
         } else {
           // Out of retry attempts

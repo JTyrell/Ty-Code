@@ -61,9 +61,18 @@ export class FCCProxyClient {
     const { model, messages, tools, temperature = 0.2, maxTokens = 4096, fccEndpoint } = options;
     const baseUrl = this.getEndpoint(fccEndpoint);
 
-    // Auto-launch sidecar if it is not currently running
-    if (!fccManager.getStatus().running) {
-      await fccManager.start();
+    // Auto-launch sidecar if not running and ensure genuine binary is active
+    if (!fccEndpoint && !fccManager.isGenuineBinaryRunning()) {
+      if (!fccManager.getStatus().running) {
+        try {
+          await fccManager.start();
+        } catch (err: unknown) {
+          throw new Error(`[FCC Proxy] CONFIG_MISSING: free-claude-code binary is not installed or configured. ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+      if (!fccManager.isGenuineBinaryRunning()) {
+        throw new Error('[FCC Proxy] CONFIG_MISSING: Genuine free-claude-code binary is not running. Please install and configure free-claude-code or connect an AI provider with an API key.');
+      }
     }
 
     const headers: Record<string, string> = {

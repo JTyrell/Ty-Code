@@ -4,7 +4,25 @@ import type { SecurityPolicySettings, SettingsData, SettingsPatch, SettingsScope
 import type { FreeProvider, ModelTier, TierClassification, ProviderHealthStatus } from '../shared/types/free-providers';
 import type { DetectedApiKey, CustomProviderConfig, StoredKeySummary, ByokExportBundle, ByokImportResult, KeyDetectionSource } from '../shared/types/byok';
 import type { OpenCodeDetectionResult, OpenCodeFreeTierSummary, OpenCodeImportResult, AgentFramework } from '../shared/types/opencode-sync';
-import type { BootTrace, PerfMark, TransitionMetric } from '../shared/types/perf';
+import type {
+  BootTrace,
+  PerfMark,
+  TransitionMetric,
+  OpenPerfTraceReport,
+  FolderBenchmarkResult,
+  FileBenchmarkResult,
+  BlockerHuntReport,
+  OpenOffenderItem,
+  SyncBlockerFinding,
+  HugeIpcPayloadFinding,
+  RendererMainThreadFinding,
+  SyncWatcherOrAutoSaveFinding,
+  OpenOffenderCategory,
+  FolderOpenStages,
+  FileOpenStages,
+  OpenStageMetric,
+  ReproducibilityVerification
+} from '../shared/types/perf';
 import type {
   TaskType,
   TaskClassificationResult,
@@ -52,8 +70,33 @@ import type {
   ProviderHealthState,
   ProviderHealthDetail,
   DiagnosticsFleetHealth,
-  FailoverNoticeInfo
+  FailoverNoticeInfo,
+  HopId,
+  HopTraceRecord,
+  ProviderConnectivityTrace,
+  MockScanReport,
+  FullConnectivityTraceReport
 } from '../shared/types/diagnostics';
+export type {
+  AgentStreamTokenPayload,
+  AgentReasoningTokenPayload,
+  AgentToolStartPayload,
+  AgentToolResultPayload,
+  AgentDiffProposedPayload,
+  AgentDonePayload,
+  ChatErrorCard,
+  AgentErrorPayload
+} from '../shared/types/agent-events';
+import type {
+  AgentStreamTokenPayload,
+  AgentReasoningTokenPayload,
+  AgentToolStartPayload,
+  AgentToolResultPayload,
+  AgentDiffProposedPayload,
+  AgentDonePayload,
+  ChatErrorCard,
+  AgentErrorPayload
+} from '../shared/types/agent-events';
 import type {
   MarketplaceExtensionEntry,
   MarketplaceSearchOptions,
@@ -141,6 +184,24 @@ export interface FileNode {
   size?: number;
   extension?: string;
   children?: FileNode[];
+}
+
+export interface FlatFileNodeEntry {
+  path: string;
+  depth: number;
+  type: 'file' | 'directory';
+  name: string;
+  isDirectory: boolean;
+  size?: number;
+  extension?: string;
+  relativePath?: string;
+}
+
+export interface TreeChunkPayload {
+  entries: FlatFileNodeEntry[];
+  isComplete: boolean;
+  totalSoFar: number;
+  fromCache?: boolean;
 }
 
 export type RoutingStrategyType = 'auto' | 'free-first' | 'fastest' | 'balanced' | 'manual';
@@ -283,6 +344,7 @@ export interface ProviderSettings {
   integrations?: Record<string, boolean>;
   modules?: Record<string, { enabled: boolean; installedAt?: number; customConfig?: Record<string, unknown> }>;
   telemetry?: TelemetrySettings;
+  offlineDemoMode?: boolean;
 }
 
 export interface ToolCall {
@@ -298,6 +360,13 @@ export interface ToolResult {
   isError?: boolean;
 }
 
+export interface AssistantStreamMetadata {
+  source: 'provider-stream';
+  providerId: string;
+  modelId: string;
+  streamEventCount: number;
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant' | 'system' | 'tool';
@@ -308,6 +377,8 @@ export interface ChatMessage {
   toolResult?: ToolResult;
   proposedDiffs?: ProposedDiff[];
   reasoning?: string;
+  errorCard?: ChatErrorCard;
+  metadata?: AssistantStreamMetadata;
   timestamp: number;
 }
 
@@ -538,6 +609,9 @@ export interface ElectronAPI {
   selectWorkspaceFolder: () => Promise<IpcResponse<string>>;
   getFilePathForDroppedFile: (file: File) => string;
   getWorkspaceTree: (rootPath: string) => Promise<IpcResponse<FileNode>>;
+  getWorkspaceTreeChunked?: (rootPath: string) => Promise<IpcResponse<{ flatTree: FlatFileNodeEntry[]; fromCache: boolean; cacheKey?: string }>>;
+  onTreeChunk?: (callback: (payload: TreeChunkPayload) => void) => () => void;
+  onTreeUpdated?: (callback: (event: { type: 'change' | 'add' | 'unlink'; relPath: string }) => void) => () => void;
   readFile: (filePath: string) => Promise<IpcResponse<string>>;
   writeFile: (filePath: string, content: string) => Promise<IpcResponse<void>>;
   createFile: (filePath: string) => Promise<IpcResponse<void>>;
@@ -559,6 +633,7 @@ export interface ElectronAPI {
   onSettingsChanged: (callback: () => void) => () => void;
   startAgentTask: (params: {
     taskId?: string;
+    traceId?: string;
     prompt: string;
     workspacePath: string;
     history: ChatMessage[];
@@ -566,12 +641,21 @@ export interface ElectronAPI {
     sessionId?: string;
     activeFilePath?: string;
     activeFileContent?: string;
+    providerOverride?: ProviderType;
+    modelOverride?: string;
     skills?: SkillDefinition[];
   }) => Promise<IpcResponse<string>>;
   stopAgentTask: (taskId: string) => Promise<IpcResponse<void>>;
   respondAgentApproval: (approvalId: string, approved: boolean) => Promise<IpcResponse<void>>;
   userApproveDiff?: (payload: { approvalId?: string; diffId?: string; approved?: boolean } | boolean) => Promise<IpcResponse<void>>;
   onAgentStream: (callback: (chunk: AgentStreamChunk) => void) => () => void;
+  onAgentStreamToken?: (callback: (payload: AgentStreamTokenPayload) => void) => () => void;
+  onAgentReasoningToken?: (callback: (payload: AgentReasoningTokenPayload) => void) => () => void;
+  onAgentToolStart?: (callback: (payload: AgentToolStartPayload) => void) => () => void;
+  onAgentToolResult?: (callback: (payload: AgentToolResultPayload) => void) => () => void;
+  onAgentDiffProposed?: (callback: (payload: AgentDiffProposedPayload) => void) => () => void;
+  onAgentDone?: (callback: (payload: AgentDonePayload) => void) => () => void;
+  onAgentError?: (callback: (payload: AgentErrorPayload) => void) => () => void;
   applyDiff: (diff: ProposedDiff) => Promise<IpcResponse<void>>;
   resolvePtyApproval?: (approvalId: string, approved: boolean) => Promise<IpcResponse<void>>;
   onPtyApprovalRequired?: (callback: (data: { approvalId: string; ptyId: string; command: string; reason: string }) => void) => () => void;
@@ -823,11 +907,26 @@ export interface ElectronAPI {
   diagnosticsSimulateRecovery?: (providerId: string) => Promise<IpcResponse<DiagnosticsFleetHealth>>;
   onDiagnosticsFleetHealthChanged?: (callback: (health: DiagnosticsFleetHealth) => void) => () => void;
 
+  // Diagnostics Fix 1: End-to-End Connectivity Trace
+  runConnectivityTrace?: (options?: { providerId?: string }) => Promise<IpcResponse<FullConnectivityTraceReport>>;
+  recordTraceHop?: {
+    (payload: { traceId: string; hop: HopId; status: 'PASS' | 'FAIL' | 'PENDING' | 'SKIPPED'; payloadSize?: number; metadata?: Record<string, unknown>; error?: string }): Promise<IpcResponse<void>>;
+    (traceId: string, hop: HopId, details?: { status?: 'PASS' | 'FAIL' | 'PENDING' | 'SKIPPED'; payloadSize?: number; metadata?: Record<string, unknown>; error?: string }): Promise<IpcResponse<void>>;
+  };
+  getConnectivityTrace?: () => Promise<IpcResponse<FullConnectivityTraceReport | null>>;
+  scanMockPaths?: () => Promise<IpcResponse<MockScanReport>>;
+  onConnectivityTraceUpdate?: (callback: (data: { traceId: string; trace: ProviderConnectivityTrace }) => void) => () => void;
+
+
   // Performance Profiler APIs (Perf 1)
   perfGetBootTrace?: () => Promise<IpcResponse<BootTrace>>;
   perfRecordRendererMark?: (mark: PerfMark) => Promise<IpcResponse<void>>;
   perfRecordTransition?: (metric: TransitionMetric) => Promise<IpcResponse<void>>;
   perfInjectDelay?: (durationMs: number, label?: string) => Promise<IpcResponse<void>>;
+
+  // Open-Path Performance Trace (Fix 3)
+  perfProfileOpenPaths?: () => Promise<IpcResponse<OpenPerfTraceReport>>;
+  perfGetOpenTrace?: () => Promise<IpcResponse<OpenPerfTraceReport | null>>;
 
   // Tiered Boot Scheduler APIs (Perf 2)
   bootSchedulerGetState?: () => Promise<IpcResponse<BootSchedulerStatePayload>>;
@@ -837,6 +936,21 @@ export interface ElectronAPI {
 
   // UI-Polish 2: Platform Inset Metrics
   getPlatformInsets?: () => Promise<IpcResponse<PlatformInsets>>;
+
+  // Scale 1: Zero-Server OAuth & Device Flow
+  oauthStartOpenRouterPKCE?: () => Promise<IpcResponse<{ authUrl: string; redirectUri: string; state: string }>>;
+  oauthStartOpenKilo?: () => Promise<IpcResponse<{ authUrl: string; redirectUri: string; state: string }>>;
+  oauthStartCopilotDevice?: () => Promise<IpcResponse<any>>;
+  oauthPollCopilotDevice?: (deviceCode?: string) => Promise<IpcResponse<{ status: string; accessToken?: string; error?: string }>>;
+  oauthCancelCopilotDevice?: () => Promise<IpcResponse<void>>;
+  oauthDisconnect?: (providerId: string) => Promise<IpcResponse<boolean>>;
+  oauthGetStatus?: () => Promise<IpcResponse<Record<string, any>>>;
+  onOAuthStatusChanged?: (callback: (status: Record<string, any>) => void) => () => void;
+
+  // Scale 1: Usage Ledger
+  usageGetLedger?: () => Promise<IpcResponse<any>>;
+  usageExportLedger?: (format?: 'json' | 'csv') => Promise<IpcResponse<string>>;
+  usageClearLedger?: () => Promise<IpcResponse<void>>;
 }
 
 export interface BootSchedulerTaskPayload {
@@ -1467,4 +1581,22 @@ declare global {
     electronAPI: ElectronAPI;
   }
 }
+
+export type {
+  OpenPerfTraceReport,
+  FolderBenchmarkResult,
+  FileBenchmarkResult,
+  BlockerHuntReport,
+  OpenOffenderItem,
+  SyncBlockerFinding,
+  HugeIpcPayloadFinding,
+  RendererMainThreadFinding,
+  SyncWatcherOrAutoSaveFinding,
+  OpenOffenderCategory,
+  FolderOpenStages,
+  FileOpenStages,
+  OpenStageMetric,
+  ReproducibilityVerification
+};
+
 

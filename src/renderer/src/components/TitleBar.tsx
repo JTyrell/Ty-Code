@@ -24,36 +24,42 @@ const appRegion = (region: 'drag' | 'no-drag'): React.CSSProperties => ({ Webkit
 
 export type AppTheme = 'dark' | 'light' | 'high-contrast';
 
-// Antigravity vibrant gradient arch logo matching the IDE design language
-const AntigravityLogo: React.FC<{ size?: number }> = ({ size = 17 }) => (
+// Custom purplish microchip logo matching Ty-Code design language
+const TyCodeMicrochipLogo: React.FC<{ size?: number }> = ({ size = 18 }) => (
   <div
     style={{
       width: `${size + 5}px`,
       height: `${size + 5}px`,
       borderRadius: '5px',
-      backgroundColor: 'rgba(255, 255, 255, 0.05)',
+      background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.22) 0%, rgba(99, 102, 241, 0.16) 100%)',
+      border: '1px solid rgba(168, 85, 247, 0.35)',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      boxShadow: '0 0 10px rgba(6, 182, 212, 0.15)',
+      boxShadow: '0 0 10px rgba(168, 85, 247, 0.25)',
       flexShrink: 0
     }}
   >
-    <svg width={size} height={size} viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
       <defs>
-        <linearGradient id="agyBrandGrad" x1="2" y1="18" x2="18" y2="2" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor="#00d2ff" />
-          <stop offset="48%" stopColor="#ec4899" />
-          <stop offset="100%" stopColor="#f59e0b" />
+        <linearGradient id="tyMicrochipGrad" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#c084fc" />
+          <stop offset="50%" stopColor="#a855f7" />
+          <stop offset="100%" stopColor="#6366f1" />
         </linearGradient>
       </defs>
-      <path
-        d="M10 2.8C7.5 7 4 13.2 3.2 16.8C5.2 15.8 7.5 15.3 10 15.3C12.5 15.3 14.8 15.8 16.8 16.8C16 13.2 12.5 7 10 2.8Z"
-        stroke="url(#agyBrandGrad)"
-        strokeWidth="2.2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
+      {/* Outer Chip Body */}
+      <rect x="5" y="5" width="14" height="14" rx="2.5" stroke="url(#tyMicrochipGrad)" strokeWidth="1.8" />
+      {/* Inner Core */}
+      <rect x="8.5" y="8.5" width="7" height="7" rx="1.2" fill="url(#tyMicrochipGrad)" fillOpacity="0.3" stroke="url(#tyMicrochipGrad)" strokeWidth="1.2" />
+      {/* Top Pins */}
+      <path d="M8.5 2v3M12 2v3M15.5 2v3" stroke="url(#tyMicrochipGrad)" strokeWidth="1.5" strokeLinecap="round" />
+      {/* Bottom Pins */}
+      <path d="M8.5 19v3M12 19v3M15.5 19v3" stroke="url(#tyMicrochipGrad)" strokeWidth="1.5" strokeLinecap="round" />
+      {/* Left Pins */}
+      <path d="M2 8.5h3M2 12h3M2 15.5h3" stroke="url(#tyMicrochipGrad)" strokeWidth="1.5" strokeLinecap="round" />
+      {/* Right Pins */}
+      <path d="M19 8.5h3M19 12h3M19 15.5h3" stroke="url(#tyMicrochipGrad)" strokeWidth="1.5" strokeLinecap="round" />
     </svg>
   </div>
 );
@@ -383,11 +389,11 @@ export const TitleBar: React.FC = () => {
       { label: 'Clear Terminal' }
     ],
     Help: [
-      { label: 'Documentation', action: () => toast.info('Ty-Code Antigravity Documentation') },
+      { label: 'Documentation', action: () => toast.info('Ty-Code Documentation') },
       { label: 'Keyboard Shortcuts', shortcut: 'Ctrl+K Ctrl+S' },
       { label: 'Check for Updates…', action: handleCheckUpdate },
       { divider: true, label: '' },
-      { label: 'About Ty-Code - Antigravity IDE', action: () => toast.info('Ty-Code - Antigravity IDE', `Version ${appInfo?.version || '1.0.0'}`) }
+      { label: 'About Ty-Code', action: () => toast.info('Ty-Code Desktop', `Version ${appInfo?.version || '1.0.0'}`) }
     ]
   };
 
@@ -419,9 +425,9 @@ export const TitleBar: React.FC = () => {
           ...appRegion('no-drag')
         }}
       >
-        {/* Antigravity Logo */}
-        <div style={{ marginRight: '4px', display: 'flex', alignItems: 'center' }} title="Ty-Code - Antigravity IDE">
-          <AntigravityLogo size={15} />
+        {/* Ty-Code Microchip Logo */}
+        <div style={{ marginRight: '4px', display: 'flex', alignItems: 'center' }} title="Ty-Code">
+          <TyCodeMicrochipLogo size={16} />
         </div>
 
         {/* Menu Bar Items */}
@@ -557,7 +563,7 @@ export const TitleBar: React.FC = () => {
         }}
       >
         <span>
-          {folderName ? `${folderName} — Ty-Code - Antigravity IDE` : 'Ty-Code - Antigravity IDE'}
+          {folderName ? `${folderName} — Ty-Code` : 'Ty-Code'}
         </span>
       </div>
 
@@ -809,7 +815,7 @@ export const TitleBar: React.FC = () => {
             >
               <div style={{ padding: '6px 12px', borderBottom: '1px solid var(--border-subtle, rgba(255, 255, 255, 0.08))' }}>
                 <div style={{ fontSize: '12px', fontWeight: 600, color: '#ffffff' }}>Developer</div>
-                <div style={{ fontSize: '10px', color: 'var(--text-secondary, #94a3b8)' }}>Ty-Code Antigravity</div>
+                <div style={{ fontSize: '10px', color: 'var(--text-secondary, #94a3b8)' }}>Ty-Code Desktop</div>
               </div>
               <div
                 onClick={() => { setIsProfileMenuOpen(false); toggleSettings(); }}

@@ -75,6 +75,10 @@ export class FCCServerManager {
     };
   }
 
+  public isGenuineBinaryRunning(): boolean {
+    return this.running && this.mode === 'external-process';
+  }
+
   public onStatusChange(listener: (status: FCCServerStatus) => void): () => void {
     this.statusListeners.add(listener);
     return () => this.statusListeners.delete(listener);
@@ -209,48 +213,16 @@ export class FCCServerManager {
         }
 
         // Chat completions endpoint
-        if (url === '/v1/chat/completions' && req.method === 'POST') {
-          let body = '';
-          req.on('data', (chunk) => { body += chunk; });
-          req.on('end', () => {
-            try {
-              const parsed = JSON.parse(body);
-              const isStream = parsed.stream === true;
-              this.freeTokensUsed += 150; // increment token consumption counter
-
-              if (isStream) {
-                res.writeHead(200, {
-                  'Content-Type': 'text/event-stream',
-                  'Cache-Control': 'no-cache',
-                  Connection: 'keep-alive'
-                });
-                const modelName = parsed.model || 'claude-3-5-sonnet-20241022';
-                const chunk = {
-                  id: `chatcmpl-${Date.now()}`,
-                  object: 'chat.completion.chunk',
-                  created: Math.floor(Date.now() / 1000),
-                  model: modelName,
-                  choices: [{ index: 0, delta: { content: 'FCC proxy response' }, finish_reason: null }]
-                };
-                res.write(`data: ${JSON.stringify(chunk)}\n\n`);
-                res.write('data: [DONE]\n\n');
-                res.end();
-              } else {
-                res.writeHead(200, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({
-                  id: `chatcmpl-${Date.now()}`,
-                  object: 'chat.completion',
-                  created: Math.floor(Date.now() / 1000),
-                  model: parsed.model || 'claude-3-5-sonnet-20241022',
-                  choices: [{ index: 0, message: { role: 'assistant', content: 'FCC proxy response' }, finish_reason: 'stop' }],
-                  usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
-                }));
-              }
-            } catch (e) {
-              res.writeHead(400, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ error: { message: 'Invalid JSON body' } }));
+        if (url === '/v1/chat/completions') {
+          // If no genuine external binary is running, reject immediately with CONFIG_MISSING. Never fabricate fake responses.
+          res.writeHead(503, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            error: {
+              message: 'CONFIG_MISSING: Genuine free-claude-code binary is not running. Please install and configure free-claude-code or connect an AI provider with an API key.',
+              code: 'CONFIG_MISSING',
+              type: 'config_missing'
             }
-          });
+          }));
           return;
         }
 
@@ -263,7 +235,7 @@ export class FCCServerManager {
         reject(err);
       });
 
-      server.listen(port, '127.0.0.1', () => {
+      server.listen(port, () => {
         this.embeddedServer = server;
         resolve();
       });

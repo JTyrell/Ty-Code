@@ -9,7 +9,7 @@
  * Brand: Ty-Code
  */
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   Activity,
   Play,
@@ -36,7 +36,13 @@ import {
   CheckSquare,
   Square,
   Clock,
-  Terminal
+  Terminal,
+  Network,
+  Radio,
+  ShieldCheck,
+  Layers,
+  Bug,
+  Info
 } from 'lucide-react';
 import type {
   DiagnosticRunSummary,
@@ -50,7 +56,13 @@ import type {
   MissingFromCodeItem,
   ExternalOutageItem,
   RecommendedAction,
-  SmokeTestStep
+  SmokeTestStep,
+  HopId,
+  HopTraceRecord,
+  ProviderConnectivityTrace,
+  FullConnectivityTraceReport,
+  MockScanFinding,
+  MockScanReport
 } from '../../../../shared/types/diagnostics';
 import { SMOKE_TEST_STEPS, SMOKE_TEST_FAILURE_PROTOCOL } from '../../../../shared/types/diagnostics';
 import { toast } from '../../state/toast-store';
@@ -73,7 +85,7 @@ const SCENARIO_ICONS: Record<string, React.ReactNode> = {
 };
 
 export const DiagnosticsPanel: React.FC = () => {
-  const [subTab, setSubTab] = useState<'connection' | 'capabilities' | 'remediation'>('connection');
+  const [subTab, setSubTab] = useState<'connection' | 'capabilities' | 'remediation' | 'trace'>('connection');
 
   // Connection diagnostics state (Phase Diagnostics 1)
   const [isConnRunning, setIsConnRunning] = useState(false);
@@ -98,6 +110,48 @@ export const DiagnosticsPanel: React.FC = () => {
   // Manual smoke-test state (Phase Diagnostics 4)
   const [copiedSmokeId, setCopiedSmokeId] = useState<string | null>(null);
   const [copiedAllSmoke, setCopiedAllSmoke] = useState(false);
+
+  // Connectivity Trace state (Fix 1)
+  const [isTraceRunning, setIsTraceRunning] = useState(false);
+  const [traceReport, setTraceReport] = useState<FullConnectivityTraceReport | null>(null);
+  const [activeTraceProvider, setActiveTraceProvider] = useState<string>('openkilo');
+  const [expandedHopId, setExpandedHopId] = useState<string | null>(null);
+  const [mockScanReport, setMockScanReport] = useState<MockScanReport | null>(null);
+  const [isScanningMocks, setIsScanningMocks] = useState(false);
+  const [traceCopied, setTraceCopied] = useState(false);
+
+  // Load latest trace report and subscribe to live hop updates
+  useEffect(() => {
+    if (window.electronAPI?.getConnectivityTrace) {
+      void window.electronAPI.getConnectivityTrace().then((res) => {
+        if (res.success && res.data) {
+          setTraceReport(res.data);
+          if (res.data.mockScan) setMockScanReport(res.data.mockScan);
+          const provs = Object.keys(res.data.providers || {});
+          if (provs.length > 0) setActiveTraceProvider(provs[0]);
+        }
+      });
+    }
+
+    if (window.electronAPI?.onConnectivityTraceUpdate) {
+      const unsub = window.electronAPI.onConnectivityTraceUpdate(({ trace }) => {
+        setTraceReport((prev) => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            providers: {
+              ...prev.providers,
+              [trace.providerId]: trace
+            }
+          };
+        });
+      });
+      return () => {
+        unsub?.();
+      };
+    }
+    return undefined;
+  }, []);
 
   // Fetch remediation report
   const loadRemediationReport = useCallback(async () => {
@@ -310,6 +364,71 @@ export const DiagnosticsPanel: React.FC = () => {
     }
   }, [capSummary]);
 
+  // Run End-to-End Connectivity Trace (Fix 1)
+  const handleRunTrace = useCallback(async () => {
+    if (!window.electronAPI?.runConnectivityTrace) {
+      toast.error('Connectivity trace API not available in current environment');
+      return;
+    }
+    setIsTraceRunning(true);
+    try {
+      const res = await window.electronAPI.runConnectivityTrace();
+      if (res.success && res.data) {
+        setTraceReport(res.data);
+        if (res.data.mockScan) setMockScanReport(res.data.mockScan);
+        const provs = Object.keys(res.data.providers || {});
+        if (provs.length > 0 && !provs.includes(activeTraceProvider)) {
+          setActiveTraceProvider(provs[0]);
+        }
+        if (res.data.overallStatus === 'PASS') {
+          toast.success('Live Trace Passed! All hops verified.');
+        } else {
+          toast.warning(`Trace Failed at ${res.data.firstFailingHop || 'unknown hop'} (${res.data.firstFailingProvider || 'provider'})`);
+        }
+      } else {
+        toast.error(res.error || 'Failed to complete connectivity trace');
+      }
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Trace probe execution failed');
+    } finally {
+      setIsTraceRunning(false);
+    }
+  }, [activeTraceProvider]);
+
+  // Run Mock Scanner
+  const handleScanMocks = useCallback(async () => {
+    if (!window.electronAPI?.scanMockPaths) return;
+    setIsScanningMocks(true);
+    try {
+      const res = await window.electronAPI.scanMockPaths();
+      if (res.success && res.data) {
+        setMockScanReport(res.data);
+        if (res.data.hasShortCircuits) {
+          toast.error('Mock scan found short-circuits in streaming path!');
+        } else {
+          toast.success(`Mock scan clean! Scanned ${res.data.filesScanned} files with zero short circuits.`);
+        }
+      }
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Mock scan failed');
+    } finally {
+      setIsScanningMocks(false);
+    }
+  }, []);
+
+  // Copy Trace JSON
+  const handleCopyTraceJson = useCallback(async () => {
+    if (!traceReport) return;
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(traceReport, null, 2));
+      setTraceCopied(true);
+      toast.success('Trace report JSON copied to clipboard!');
+      setTimeout(() => setTraceCopied(false), 2500);
+    } catch {
+      toast.error('Failed to copy trace JSON');
+    }
+  }, [traceReport]);
+
   const toggleConnEvidence = (providerId: string) => {
     setExpandedConnEvidence((prev) => ({ ...prev, [providerId]: !prev[providerId] }));
   };
@@ -393,7 +512,20 @@ export const DiagnosticsPanel: React.FC = () => {
           }`}
         >
           <ListChecks size={14} className={subTab === 'remediation' ? 'text-emerald-400' : ''} />
-          <span>What&apos;s Needed Checklist (Remediation)</span>
+          <span>What&apos;s Needed Checklist</span>
+        </button>
+
+        <button
+          onClick={() => setSubTab('trace')}
+          id="diag-subtab-trace"
+          className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+            subTab === 'trace'
+              ? 'bg-zinc-800 text-white shadow'
+              : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40'
+          }`}
+        >
+          <Network size={14} className={subTab === 'trace' ? 'text-purple-400' : ''} />
+          <span>Connectivity Trace (H1–H10)</span>
         </button>
       </div>
 
@@ -1454,6 +1586,366 @@ export const DiagnosticsPanel: React.FC = () => {
                   </div>
                 </div>
               </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* SECTION 4: END-TO-END CONNECTIVITY TRACE (H1–H10 WATERFALL)               */}
+      {/* ========================================================================= */}
+      {subTab === 'trace' && (
+        <div className="space-y-6">
+          {/* Header & Main Actions */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-xl bg-gradient-to-r from-zinc-900 via-zinc-900 to-zinc-950 border border-zinc-800 shadow-lg">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-lg bg-purple-500/10 border border-purple-500/20 text-purple-400">
+                  <Network size={20} />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold tracking-tight text-white">End-to-End Connectivity Trace</h2>
+                  <p className="text-xs text-zinc-400">
+                    Real-path probe tracing Hops H1 through H10 through actual app code to identify broken hops
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                onClick={handleScanMocks}
+                disabled={isScanningMocks}
+                id="btn-scan-mocks"
+                className="flex items-center gap-2 px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-medium border border-zinc-700 transition-colors disabled:opacity-50 cursor-pointer"
+              >
+                {isScanningMocks ? <RotateCw size={13} className="animate-spin text-purple-400" /> : <ShieldCheck size={13} className="text-purple-400" />}
+                <span>{isScanningMocks ? 'Scanning...' : 'Scan Mock Paths'}</span>
+              </button>
+
+              <button
+                onClick={handleCopyTraceJson}
+                disabled={!traceReport}
+                id="btn-copy-trace-json"
+                className="flex items-center gap-2 px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-medium border border-zinc-700 transition-colors disabled:opacity-50 cursor-pointer"
+              >
+                {traceCopied ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
+                <span>{traceCopied ? 'Copied JSON!' : 'Copy Trace JSON'}</span>
+              </button>
+
+              <button
+                onClick={handleRunTrace}
+                disabled={isTraceRunning}
+                id="btn-run-connectivity-trace"
+                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold shadow-md shadow-purple-600/20 transition-all disabled:opacity-50 cursor-pointer"
+              >
+                {isTraceRunning ? (
+                  <>
+                    <RotateCw size={14} className="animate-spin" />
+                    <span>Tracing Hops H1–H10...</span>
+                  </>
+                ) : (
+                  <>
+                    <Play size={14} />
+                    <span>Run Live Trace</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+
+          {/* Overall Trace Status Banner */}
+          {traceReport && (
+            <div
+              className={`p-4 rounded-xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 ${
+                traceReport.overallStatus === 'PASS'
+                  ? 'bg-emerald-950/20 border-emerald-500/30 text-emerald-300'
+                  : 'bg-rose-950/20 border-rose-500/30 text-rose-300'
+              }`}
+            >
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  {traceReport.overallStatus === 'PASS' ? (
+                    <CheckCircle2 size={18} className="text-emerald-400" />
+                  ) : (
+                    <XCircle size={18} className="text-rose-400" />
+                  )}
+                  <span className="font-semibold text-sm">
+                    {traceReport.overallStatus === 'PASS'
+                      ? 'End-to-End Connectivity Verified Across Providers'
+                      : `Connectivity Broken at Hop ${traceReport.firstFailingHop || 'H6'} (${traceReport.firstFailingProvider || 'unknown provider'})`}
+                  </span>
+                </div>
+                <div className="text-xs opacity-90 pl-6">
+                  {traceReport.summary.passedCount} of {traceReport.summary.totalTested} providers passed.
+                  Canned probe prompt: &ldquo;{traceReport.cannedPrompt}&rdquo;
+                </div>
+              </div>
+
+              {traceReport.firstFailingProvider && traceReport.providers[traceReport.firstFailingProvider]?.taxonomyCode && (
+                <div className="px-3 py-1.5 rounded-lg bg-rose-500/20 border border-rose-500/30 text-xs font-mono font-semibold text-rose-300">
+                  Taxonomy: {traceReport.providers[traceReport.firstFailingProvider]?.taxonomyCode}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Provider Selection Tabs */}
+          {traceReport && Object.keys(traceReport.providers).length > 0 && (
+            <div className="flex items-center gap-2 overflow-x-auto pb-1">
+              {Object.entries(traceReport.providers).map(([pId, trace]) => {
+                const isActive = activeTraceProvider === pId;
+                const isPass = trace.status === 'PASS';
+                return (
+                  <button
+                    key={pId}
+                    onClick={() => setActiveTraceProvider(pId)}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium border transition-all cursor-pointer ${
+                      isActive
+                        ? 'bg-zinc-800 text-white border-purple-500/50 shadow-sm'
+                        : 'bg-zinc-900/60 text-zinc-400 border-zinc-800 hover:text-zinc-200'
+                    }`}
+                  >
+                    <span>{trace.providerName || pId}</span>
+                    <span
+                      className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+                        isPass
+                          ? 'bg-emerald-500/20 text-emerald-400'
+                          : 'bg-rose-500/20 text-rose-400'
+                      }`}
+                    >
+                      {isPass ? 'PASS' : `FAIL (${trace.firstFailingHop || 'ERR'})`}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Selected Provider Waterfall Details */}
+          {traceReport && traceReport.providers[activeTraceProvider] && (
+            <div className="space-y-4">
+              {/* Provider Info Summary */}
+              {(() => {
+                const trace = traceReport.providers[activeTraceProvider];
+                return (
+                  <div className="p-4 rounded-xl bg-zinc-900/90 border border-zinc-800 space-y-3">
+                    <div className="flex items-center justify-between gap-4 flex-wrap">
+                      <div className="flex items-center gap-3">
+                        <span className="font-semibold text-white text-sm">{trace.providerName}</span>
+                        <span className="text-xs text-zinc-400 font-mono">Model: {trace.modelId}</span>
+                        <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-zinc-800 text-zinc-300 border border-zinc-700">
+                          Auth: {trace.authType}
+                        </span>
+                      </div>
+                      <div className="text-xs text-zinc-400">
+                        Total Latency: <strong className="text-zinc-200">{trace.totalDurationMs}ms</strong>
+                      </div>
+                    </div>
+
+                    {trace.firstFailingHop && (
+                      <div className="p-3 rounded-lg bg-rose-950/30 border border-rose-500/30 text-xs space-y-1">
+                        <div className="font-semibold text-rose-300 flex items-center gap-1.5">
+                          <AlertTriangle size={14} className="text-rose-400" />
+                          <span>Failing Hop: {trace.firstFailingHop} &mdash; Classification: {trace.taxonomyCode || 'UNCLASSIFIED'}</span>
+                        </div>
+                        <div className="text-rose-200/90 pl-5">{trace.errorSummary}</div>
+                        {trace.remedy && (
+                          <div className="text-zinc-300 pl-5 pt-1">
+                            <strong className="text-purple-300">Remedy: </strong>
+                            <span>{trace.remedy}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* H1 to H10 Waterfall Rows */}
+              <div className="space-y-2">
+                {(['H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'H7', 'H8', 'H9', 'H10'] as HopId[]).map((hopId) => {
+                  const trace = traceReport.providers[activeTraceProvider];
+                  const hop = trace?.hops[hopId];
+                  const isExpanded = expandedHopId === hopId;
+                  const isPass = hop?.status === 'PASS';
+                  const isFail = hop?.status === 'FAIL';
+                  const isSkipped = hop?.status === 'SKIPPED';
+                  const isPending = !hop || hop.status === 'PENDING';
+
+                  const HOP_META: Record<HopId, { title: string; subtitle: string }> = {
+                    H1: { title: 'Renderer Chat Handler', subtitle: 'ChatSidecar send handler invoked' },
+                    H2: { title: 'Preload IPC Bridge', subtitle: 'window.electronAPI.startAgentTask called' },
+                    H3: { title: 'Main IPC Receiver', subtitle: "ipcMain.handle('agent:start-task') entered" },
+                    H4: { title: 'Agent Engine Setup', subtitle: 'run() started, system prompt + tools assembled' },
+                    H5: { title: 'Provider Gateway Resolution', subtitle: 'safeStorage key presence checked, endpoint resolved' },
+                    H6: { title: 'Network Fetch & Handshake', subtitle: 'HTTP fetch /chat/completions (URL, status, headers)' },
+                    H7: { title: 'SSE Stream Parsing', subtitle: 'First chunk parsed, delta extracted (TTFT)' },
+                    H8: { title: 'Stream IPC Fanout', subtitle: 'agent:stream-token events forwarded to renderer' },
+                    H9: { title: 'Tool Sandbox Execution', subtitle: 'Tool sandbox verified or tool call executed' },
+                    H10: { title: 'Renderer Presentation', subtitle: 'Tokens rendered into UI state' }
+                  };
+
+                  return (
+                    <div
+                      key={hopId}
+                      className={`rounded-xl border transition-all ${
+                        isFail
+                          ? 'bg-rose-950/20 border-rose-500/40'
+                          : isPass
+                            ? 'bg-zinc-900/80 border-zinc-800 hover:border-zinc-700'
+                            : 'bg-zinc-900/40 border-zinc-800/50 opacity-60'
+                      }`}
+                    >
+                      <div
+                        onClick={() => setExpandedHopId(isExpanded ? null : hopId)}
+                        className="flex items-center justify-between p-3.5 cursor-pointer select-none"
+                      >
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                          {/* Hop ID Badge */}
+                          <span
+                            className={`px-2.5 py-1 rounded-md text-xs font-mono font-bold shrink-0 ${
+                              isPass
+                                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                : isFail
+                                  ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                                  : 'bg-zinc-800 text-zinc-400 border border-zinc-700'
+                            }`}
+                          >
+                            {hopId}
+                          </span>
+
+                          {/* Title & Subtitle */}
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold text-xs text-white">
+                                {HOP_META[hopId]?.title || hop?.name || hopId}
+                              </span>
+                              {hop?.durationMs !== undefined && (
+                                <span className="text-[10px] font-mono text-zinc-400">
+                                  {hop.durationMs}ms
+                                </span>
+                              )}
+                              {hop?.payloadSize !== undefined && (
+                                <span className="text-[10px] text-zinc-500">
+                                  ({hop.payloadSize} bytes)
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[11px] text-zinc-400 truncate">
+                              {HOP_META[hopId]?.subtitle}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Status Icon & Expand Chevron */}
+                        <div className="flex items-center gap-3 shrink-0 ml-3">
+                          {isPass && (
+                            <span className="flex items-center gap-1 text-xs text-emerald-400 font-medium">
+                              <CheckCircle2 size={15} />
+                              <span className="hidden sm:inline">PASS</span>
+                            </span>
+                          )}
+                          {isFail && (
+                            <span className="flex items-center gap-1 text-xs text-rose-400 font-medium">
+                              <XCircle size={15} />
+                              <span className="hidden sm:inline">FAIL</span>
+                            </span>
+                          )}
+                          {isSkipped && (
+                            <span className="text-xs text-zinc-500 font-medium">SKIPPED</span>
+                          )}
+                          {isPending && (
+                            <span className="text-xs text-zinc-600 font-medium">PENDING</span>
+                          )}
+
+                          {isExpanded ? (
+                            <ChevronDown size={14} className="text-zinc-400" />
+                          ) : (
+                            <ChevronRight size={14} className="text-zinc-400" />
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Expandable Hop Metadata Drawer */}
+                      {isExpanded && (
+                        <div className="px-4 pb-4 pt-1 border-t border-zinc-800/80 space-y-3 text-xs">
+                          {hop?.error && (
+                            <div className="p-3 rounded-lg bg-rose-950/40 border border-rose-500/30 text-rose-300 font-mono text-[11px] break-all">
+                              <strong>Error: </strong> {hop.error}
+                            </div>
+                          )}
+
+                          {hop?.metadata && (
+                            <div className="space-y-1.5">
+                              <div className="text-[11px] font-semibold text-zinc-400">Evidence Metadata (Zero Secrets):</div>
+                              <pre className="p-3 rounded-lg bg-black/60 border border-zinc-800 text-zinc-300 font-mono text-[11px] overflow-x-auto leading-relaxed">
+                                {JSON.stringify(hop.metadata, null, 2)}
+                              </pre>
+                            </div>
+                          )}
+
+                          <div className="flex items-center justify-between text-[10px] text-zinc-500 pt-1">
+                            <span>Timestamp: {hop?.timestamp ? new Date(hop.timestamp).toLocaleTimeString() : 'N/A'}</span>
+                            <span>Hop Status: {hop?.status || 'PENDING'}</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Static Mock Scanner Findings Card */}
+          {mockScanReport && (
+            <div className="p-4 rounded-xl bg-zinc-900/90 border border-zinc-800 space-y-3">
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck size={16} className={mockScanReport.hasShortCircuits ? 'text-rose-400' : 'text-emerald-400'} />
+                  <span className="font-semibold text-sm text-white">Static Mock Scanner Findings</span>
+                  <span className="text-xs text-zinc-400">
+                    ({mockScanReport.filesScanned} files scanned across src/main/agent, src/main/providers, and ChatSidecar)
+                  </span>
+                </div>
+                <span
+                  className={`px-2.5 py-1 rounded-full text-xs font-semibold ${
+                    mockScanReport.hasShortCircuits
+                      ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                      : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                  }`}
+                >
+                  {mockScanReport.hasShortCircuits ? 'SHORT-CIRCUITS DETECTED' : 'CLEAN — NO STREAMING MOCKS'}
+                </span>
+              </div>
+
+              {mockScanReport.pathsFound.length > 0 ? (
+                <div className="space-y-2 pt-1">
+                  {mockScanReport.pathsFound.map((finding, idx) => (
+                    <div
+                      key={idx}
+                      className="p-3 rounded-lg bg-zinc-950/70 border border-zinc-800 text-xs space-y-1 font-mono"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-purple-300 font-semibold">{finding.file}:{finding.line}</span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700">
+                          {finding.category}
+                        </span>
+                      </div>
+                      <div className="text-zinc-400 text-[11px] truncate bg-black/40 p-1.5 rounded">
+                        {finding.codeSnippet}
+                      </div>
+                      <div className="text-zinc-300 text-[11px] font-sans">
+                        <strong className="text-zinc-400">Verified: </strong>
+                        {finding.explanation}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-xs text-zinc-400">No mock pattern references found.</div>
+              )}
             </div>
           )}
         </div>

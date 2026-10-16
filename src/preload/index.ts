@@ -15,6 +15,17 @@ const api: ElectronAPI = {
   selectWorkspaceFolder: () => ipcRenderer.invoke('fs:select-workspace'),
   getFilePathForDroppedFile: (file) => webUtils.getPathForFile(file),
   getWorkspaceTree: (rootPath: string) => ipcRenderer.invoke('fs:get-tree', rootPath),
+  getWorkspaceTreeChunked: (rootPath: string) => ipcRenderer.invoke('fs:get-tree-chunked', rootPath),
+  onTreeChunk: (callback) => {
+    const handler = (_: IpcRendererEvent, payload: any) => callback(payload);
+    ipcRenderer.on('fs:tree-chunk', handler);
+    return () => ipcRenderer.removeListener('fs:tree-chunk', handler);
+  },
+  onTreeUpdated: (callback) => {
+    const handler = (_: IpcRendererEvent, payload: any) => callback(payload);
+    ipcRenderer.on('fs:tree-updated', handler);
+    return () => ipcRenderer.removeListener('fs:tree-updated', handler);
+  },
   readFile: (filePath: string) => ipcRenderer.invoke('fs:read-file', filePath),
   writeFile: (filePath: string, content: string) => ipcRenderer.invoke('fs:write-file', filePath, content),
   createFile: (filePath: string) => ipcRenderer.invoke('fs:create-file', filePath),
@@ -42,7 +53,22 @@ const api: ElectronAPI = {
     ipcRenderer.on('settings:changed', listener);
     return () => ipcRenderer.removeListener('settings:changed', listener);
   },
-  startAgentTask: (params) => ipcRenderer.invoke('agent:start-task', params),
+  startAgentTask: (params) => {
+    if (params?.traceId) {
+      ipcRenderer.invoke('diagnostics:record-trace-hop', {
+        traceId: params.traceId,
+        hop: 'H2',
+        status: 'PASS',
+        payloadSize: JSON.stringify(params).length,
+        metadata: {
+          taskId: params.taskId,
+          promptSize: params.prompt?.length || 0,
+          workspacePath: params.workspacePath
+        }
+      }).catch(() => {});
+    }
+    return ipcRenderer.invoke('agent:start-task', params);
+  },
   stopAgentTask: (taskId: string) => ipcRenderer.invoke('agent:stop-task', taskId),
   respondAgentApproval: (approvalId: string, approved: boolean) => ipcRenderer.invoke('agent:respond-approval', { approvalId, approved }),
   userApproveDiff: (payload: { approvalId?: string; diffId?: string; approved?: boolean } | boolean) => ipcRenderer.invoke('user_approve_diff', payload),
@@ -50,6 +76,41 @@ const api: ElectronAPI = {
     const listener = (_event: IpcRendererEvent, chunk: AgentStreamChunk) => callback(chunk);
     ipcRenderer.on('agent:stream', listener);
     return () => ipcRenderer.removeListener('agent:stream', listener);
+  },
+  onAgentStreamToken: (callback) => {
+    const listener = (_event: IpcRendererEvent, payload: any) => callback(payload);
+    ipcRenderer.on('agent:stream-token', listener);
+    return () => ipcRenderer.removeListener('agent:stream-token', listener);
+  },
+  onAgentReasoningToken: (callback) => {
+    const listener = (_event: IpcRendererEvent, payload: any) => callback(payload);
+    ipcRenderer.on('agent:reasoning-token', listener);
+    return () => ipcRenderer.removeListener('agent:reasoning-token', listener);
+  },
+  onAgentToolStart: (callback) => {
+    const listener = (_event: IpcRendererEvent, payload: any) => callback(payload);
+    ipcRenderer.on('agent:tool-start', listener);
+    return () => ipcRenderer.removeListener('agent:tool-start', listener);
+  },
+  onAgentToolResult: (callback) => {
+    const listener = (_event: IpcRendererEvent, payload: any) => callback(payload);
+    ipcRenderer.on('agent:tool-result', listener);
+    return () => ipcRenderer.removeListener('agent:tool-result', listener);
+  },
+  onAgentDiffProposed: (callback) => {
+    const listener = (_event: IpcRendererEvent, payload: any) => callback(payload);
+    ipcRenderer.on('agent:diff-proposed', listener);
+    return () => ipcRenderer.removeListener('agent:diff-proposed', listener);
+  },
+  onAgentDone: (callback) => {
+    const listener = (_event: IpcRendererEvent, payload: any) => callback(payload);
+    ipcRenderer.on('agent:done', listener);
+    return () => ipcRenderer.removeListener('agent:done', listener);
+  },
+  onAgentError: (callback) => {
+    const listener = (_event: IpcRendererEvent, payload: any) => callback(payload);
+    ipcRenderer.on('agent:error', listener);
+    return () => ipcRenderer.removeListener('agent:error', listener);
   },
   applyDiff: (diff: ProposedDiff) => ipcRenderer.invoke('agent:apply-diff', diff),
   resolvePtyApproval: (approvalId: string, approved: boolean) => ipcRenderer.invoke('pty:resolve-approval', { approvalId, approved }),
@@ -358,11 +419,32 @@ const api: ElectronAPI = {
     return () => ipcRenderer.removeListener('diagnostics:fleet-health-changed', listener);
   },
 
+  // Diagnostics Fix 1: End-to-End Connectivity Trace
+  runConnectivityTrace: (options?: any) => ipcRenderer.invoke('diagnostics:run-connectivity-trace', options),
+  recordTraceHop: (arg1: any, arg2?: any, arg3?: any) => {
+    if (typeof arg1 === 'string') {
+      return ipcRenderer.invoke('diagnostics:record-trace-hop', { traceId: arg1, hop: arg2, ...(arg3 || {}) });
+    }
+    return ipcRenderer.invoke('diagnostics:record-trace-hop', arg1);
+  },
+  getConnectivityTrace: () => ipcRenderer.invoke('diagnostics:get-connectivity-trace'),
+  scanMockPaths: () => ipcRenderer.invoke('diagnostics:scan-mock-paths'),
+  onConnectivityTraceUpdate: (callback: (data: any) => void) => {
+    const listener = (_event: any, data: any) => callback(data);
+    ipcRenderer.on('diagnostics:trace-update', listener);
+    return () => ipcRenderer.removeListener('diagnostics:trace-update', listener);
+  },
+
+
   // Performance Profiler APIs (Perf 1)
   perfGetBootTrace: () => ipcRenderer.invoke('perf:get-boot-trace'),
   perfRecordRendererMark: (mark: any) => ipcRenderer.invoke('perf:record-renderer-mark', mark),
   perfRecordTransition: (metric: any) => ipcRenderer.invoke('perf:record-transition', metric),
   perfInjectDelay: (durationMs: number, label?: string) => ipcRenderer.invoke('perf:inject-delay', durationMs, label),
+
+  // Open-Path Performance Trace (Fix 3)
+  perfProfileOpenPaths: () => ipcRenderer.invoke('perf:profile-open-paths'),
+  perfGetOpenTrace: () => ipcRenderer.invoke('perf:get-open-trace'),
 
   // Tiered Boot Scheduler APIs (Perf 2)
   bootSchedulerGetState: () => ipcRenderer.invoke('boot-scheduler:get-state'),
@@ -375,7 +457,26 @@ const api: ElectronAPI = {
   },
 
   // UI-Polish 2: Platform Inset Metrics
-  getPlatformInsets: () => ipcRenderer.invoke('platform:get-insets')
+  getPlatformInsets: () => ipcRenderer.invoke('platform:get-insets'),
+
+  // Scale 1: Zero-Server OAuth & Device Flow
+  oauthStartOpenRouterPKCE: () => ipcRenderer.invoke('oauth:start-openrouter-pkce'),
+  oauthStartOpenKilo: () => ipcRenderer.invoke('oauth:start-openkilo'),
+  oauthStartCopilotDevice: () => ipcRenderer.invoke('oauth:start-copilot-device'),
+  oauthPollCopilotDevice: (deviceCode?: string) => ipcRenderer.invoke('oauth:poll-copilot-device', deviceCode),
+  oauthCancelCopilotDevice: () => ipcRenderer.invoke('oauth:cancel-copilot-device'),
+  oauthDisconnect: (providerId: string) => ipcRenderer.invoke('oauth:disconnect', providerId),
+  oauthGetStatus: () => ipcRenderer.invoke('oauth:get-status'),
+  onOAuthStatusChanged: (callback: (status: any) => void) => {
+    const listener = (_event: any, status: any) => callback(status);
+    ipcRenderer.on('oauth:status-changed', listener);
+    return () => ipcRenderer.removeListener('oauth:status-changed', listener);
+  },
+
+  // Scale 1: Usage Ledger
+  usageGetLedger: () => ipcRenderer.invoke('usage:get-ledger'),
+  usageExportLedger: (format?: 'json' | 'csv') => ipcRenderer.invoke('usage:export-ledger', format),
+  usageClearLedger: () => ipcRenderer.invoke('usage:clear-ledger')
 };
 
 contextBridge.exposeInMainWorld('electronAPI', api);

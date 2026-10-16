@@ -148,6 +148,31 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         }
       },
       {
+        id: 'tycode.perf.profile-open-paths',
+        title: 'Ty-Code: Profile Open Paths',
+        category: 'View',
+        icon: <Activity size={14} color="#38bdf8" />,
+        action: async () => {
+          onClose();
+          toast.info('Profiling Open Paths...', 'Measuring folder and file open stages');
+          try {
+            const res = await window.electronAPI.perfProfileOpenPaths?.();
+            if (res?.success && res.data) {
+              const lag = res.data.analysis.primaryLagLocation;
+              const top = res.data.topOffenders[0];
+              toast.success(
+                'Open Path Trace Complete',
+                `Primary lag: ${lag}. Top Offender: ${top?.item || 'N/A'} (${top?.ms ?? 0}ms)`
+              );
+            } else {
+              toast.error('Profiling Failed', res?.error || 'Unknown error');
+            }
+          } catch (err) {
+            toast.error('Profiling Error', String(err));
+          }
+        }
+      },
+      {
         id: 'workbench.splitVertical',
         title: 'Split Editor Right (Vertical)',
         category: 'Editor',
@@ -231,6 +256,18 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         icon: <Activity size={14} color="#38bdf8" />,
         action: () => {
           useChatStore.getState().openSettings('diagnostics');
+          onClose();
+        }
+      },
+      {
+        id: 'tycode.diagnostics.trace',
+        title: 'Ty-Code: Run Live Connectivity Trace',
+        category: 'General',
+        icon: <Activity size={14} color="#a855f7" />,
+        action: () => {
+          useChatStore.getState().openSettings('diagnostics');
+          toast.info('Starting End-to-End Connectivity Trace…');
+          void window.electronAPI.runConnectivityTrace?.();
           onClose();
         }
       },

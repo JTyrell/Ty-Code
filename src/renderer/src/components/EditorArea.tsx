@@ -39,6 +39,7 @@ import { registerMonacoInlineCompletionProvider } from '../services/monaco-inlin
 import { ensureMonaco, useMonacoRuntime } from '../services/monaco-runtime';
 import { usePairProgrammingStore } from '../state/pair-programming-store';
 import { useExtensionPromptStore } from '../state/extension-prompt-store';
+import { LazyModelManager } from '../services/lazy-model-manager';
 
 interface SplitPaneState {
   isSplit: boolean;
@@ -99,7 +100,7 @@ export const EditorArea: React.FC = () => {
     setWordWrap(settings?.editor?.wordWrap ?? 'off');
   }, [settings?.editor?.minimap, settings?.editor?.wordWrap]);
 
-  // Monaco Model Lifecycle: Maintain up to 10 open models; dispose off-screen models beyond 10 tabs
+  // Monaco Model Lifecycle: Defer creation until tab visible; maintain and reuse disposed-model pool
   const recentTabsRef = useRef<string[]>([]);
   useEffect(() => {
     if (!monaco || !activeTab) return;
@@ -120,7 +121,7 @@ export const EditorArea: React.FC = () => {
         const fsPath = m.uri.fsPath.replace(/\\/g, '/');
         const isKeep = keepPaths.has(fsPath) || openTabs.slice(0, 10).some((t) => t.path.replace(/\\/g, '/') === fsPath);
         if (!isKeep && fsPath !== activeTab.path.replace(/\\/g, '/')) {
-          m.dispose();
+          LazyModelManager.getInstance().releaseModel(fsPath);
         }
       }
     }

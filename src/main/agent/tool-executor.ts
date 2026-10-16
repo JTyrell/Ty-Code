@@ -3,6 +3,8 @@ import { pathToFileURL } from 'node:url';
 import fs from 'fs/promises';
 import path from 'path';
 import { spawn } from 'child_process';
+import { BrowserWindow } from 'electron';
+import * as pty from 'node-pty';
 import type { AgentToolApproval, ProposedDiff, ToolCall } from '../../preload/types';
 import { gitService } from '../services/git-service';
 import { SecurityPolicyEngine } from '../services/security-policy';
@@ -71,7 +73,7 @@ export class ToolExecutor {
   }
 
   public async readFile(args: Record<string, unknown>): Promise<ToolExecutionResponse> {
-    const filePath = String(args.filePath || '');
+    const filePath = String(args.filePath || args.path || '');
     if (!filePath) return { output: 'Error: filePath is required', isError: true };
     const allowed = await this.securityPolicy.isFileAllowed(filePath);
     if (!allowed) {
@@ -88,9 +90,9 @@ export class ToolExecutor {
   }
 
   public async replaceFileContent(args: Record<string, unknown>): Promise<ToolExecutionResponse> {
-    const filePath = String(args.filePath || '');
-    const targetContent = String(args.targetContent || '');
-    const replacementContent = String(args.replacementContent ?? '');
+    const filePath = String(args.filePath || args.path || '');
+    const targetContent = String(args.targetContent || args.old_str || args.oldContent || '');
+    const replacementContent = String(args.replacementContent ?? args.new_str ?? args.newContent ?? '');
     if (!filePath) return { output: 'Error: filePath is required', isError: true };
     if (!targetContent) return { output: 'Error: targetContent is required', isError: true };
     const allowed = await this.securityPolicy.isFileAllowed(filePath);
@@ -128,7 +130,7 @@ export class ToolExecutor {
   }
 
   public async writeFile(args: Record<string, unknown>): Promise<ToolExecutionResponse> {
-    const filePath = String(args.filePath || '');
+    const filePath = String(args.filePath || args.path || '');
     const content = String(args.content ?? '');
     const overwrite = Boolean(args.overwrite);
     if (!filePath) return { output: 'Error: filePath is required', isError: true };
@@ -177,45 +179,133 @@ export class ToolExecutor {
     const command = String(args.command || '');
     if (!command) return { output: 'Error: command is required', isError: true };
     if (abortSignal?.aborted) return { output: 'Command execution cancelled.', isError: true };
+
+    // Security policy check
+    const policyDecision = await this.securityPolicy.checkTerminalCommand(command);
+    if (policyDecision.blocked || policyDecision.status === 'BLOCK') {
+      return { output: `Command blocked by security policy: ${policyDecision.reason}`, isError: true };
+    }
+
     const requestedTimeout = typeof args.timeoutMs === 'number' ? args.timeoutMs : 30_000;
     const timeout = Math.min(Math.max(requestedTimeout, 1_000), 120_000);
     const subCwd = args.cwd ? await this.resolveSafePath(String(args.cwd)) : this.workspaceRoot;
 
     return new Promise((resolve) => {
       const isWin = process.platform === 'win32';
-      const shell = isWin ? 'powershell.exe' : '/bin/bash';
-      const shellArgs = isWin ? ['-NoProfile', '-Command', command] : ['-c', command];
       let stdout = '';
-      let stderr = '';
       let timedOut = false;
       let aborted = false;
       let settled = false;
       let timer: ReturnType<typeof setTimeout>;
-      const child = spawn(shell, shellArgs, { cwd: subCwd, env: { ...process.env, PAGER: 'cat' }, windowsHide: true });
+
+      const streamToTerminalDrawer = (chunk: string) => {
+        try {
+          const windows = BrowserWindow.getAllWindows();
+          for (const win of windows) {
+            if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
+              win.webContents.send('terminal:stream', { command, data: chunk });
+              win.webContents.send('pty:agent-output', chunk);
+            }
+          }
+        } catch {
+          // non-electron or test runner
+        }
+      };
+
       const cleanup = () => {
         clearTimeout(timer);
         abortSignal?.removeEventListener('abort', handleAbort);
       };
+
       const finish = (result: ToolExecutionResponse) => {
         if (settled) return;
         settled = true;
         cleanup();
         resolve(result);
       };
+
+      let ptyProcess: pty.IPty | null = null;
+      let child: ReturnType<typeof spawn> | null = null;
+
       const handleAbort = () => {
         aborted = true;
-        child.kill('SIGTERM');
+        if (ptyProcess) {
+          try { ptyProcess.kill(); } catch {}
+        }
+        if (child) {
+          child.kill('SIGTERM');
+        }
       };
-      timer = setTimeout(() => { timedOut = true; child.kill('SIGTERM'); }, timeout);
+
+      timer = setTimeout(() => {
+        timedOut = true;
+        if (ptyProcess) {
+          try { ptyProcess.kill(); } catch {}
+        }
+        if (child) {
+          child.kill('SIGTERM');
+        }
+      }, timeout);
       abortSignal?.addEventListener('abort', handleAbort, { once: true });
-      child.stdout?.on('data', (chunk: Buffer | string) => { stdout += chunk.toString(); });
-      child.stderr?.on('data', (chunk: Buffer | string) => { stderr += chunk.toString(); });
-      child.on('close', (code) => {
-        if (aborted) finish({ output: `Command cancelled. Output before cancellation:\n${stdout}\n${stderr}`, isError: true });
-        else if (timedOut) finish({ output: `Command timed out after ${timeout}ms. Output before timeout:\n${stdout}\n${stderr}`, isError: true });
-        else finish({ output: `Command: ${command}\nExit Code: ${code}\nStdout:\n${stdout || '(empty)'}\nStderr:\n${stderr || '(none)'}`, isError: code !== 0 });
-      });
-      child.on('error', (err) => finish({ output: `Failed to execute command: ${err.message}`, isError: true }));
+
+      try {
+        const root = process.env.SystemRoot || 'C:\\Windows';
+        const shell = isWin
+          ? (process.env.ComSpec || path.join(root, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'))
+          : (process.env.SHELL || '/bin/bash');
+        const shellArgs = isWin ? ['-NoProfile', '-Command', command] : ['-c', command];
+        const ptyEnv: Record<string, string> = Object.fromEntries(
+          Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === 'string')
+        );
+        ptyEnv.TERM = 'xterm-256color';
+
+        ptyProcess = pty.spawn(shell, shellArgs, {
+          name: 'xterm-256color',
+          cols: 100,
+          rows: 30,
+          cwd: subCwd,
+          env: ptyEnv
+        });
+
+        ptyProcess.onData((data: string) => {
+          stdout += data;
+          streamToTerminalDrawer(data);
+        });
+
+        ptyProcess.onExit(({ exitCode }) => {
+          if (aborted) {
+            finish({ output: `Command cancelled. Output before cancellation:\n${stdout}`, isError: true });
+          } else if (timedOut) {
+            finish({ output: `Command timed out after ${timeout}ms. Output before timeout:\n${stdout}`, isError: true });
+          } else {
+            finish({
+              output: `Command: ${command}\nExit Code: ${exitCode}\nOutput:\n${stdout || '(empty)'}`,
+              isError: exitCode !== 0
+            });
+          }
+        });
+      } catch {
+        const shell = isWin ? 'powershell.exe' : '/bin/bash';
+        const shellArgs = isWin ? ['-NoProfile', '-Command', command] : ['-c', command];
+        child = spawn(shell, shellArgs, { cwd: subCwd, env: { ...process.env, PAGER: 'cat' }, windowsHide: true });
+
+        child.stdout?.on('data', (chunk: Buffer | string) => {
+          const str = chunk.toString();
+          stdout += str;
+          streamToTerminalDrawer(str);
+        });
+        child.stderr?.on('data', (chunk: Buffer | string) => {
+          const str = chunk.toString();
+          stdout += str;
+          streamToTerminalDrawer(str);
+        });
+        child.on('close', (code) => {
+          if (aborted) finish({ output: `Command cancelled. Output before cancellation:\n${stdout}`, isError: true });
+          else if (timedOut) finish({ output: `Command timed out after ${timeout}ms. Output before timeout:\n${stdout}`, isError: true });
+          else finish({ output: `Command: ${command}\nExit Code: ${code}\nOutput:\n${stdout || '(empty)'}`, isError: code !== 0 });
+        });
+        child.on('error', (err) => finish({ output: `Failed to execute command: ${err.message}`, isError: true }));
+      }
     });
   }
 

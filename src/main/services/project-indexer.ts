@@ -123,6 +123,8 @@ export class ProjectIndexer {
             await this.indexSingleFile(file, fileIndex);
           })
         );
+        // Yield to event loop every batch to guarantee main thread never blocks >16ms
+        await new Promise((resolve) => setImmediate(resolve));
       }
 
       this.lastIndexDurationMs = Math.max(1, Date.now() - startTime);

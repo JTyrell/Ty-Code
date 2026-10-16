@@ -24,6 +24,11 @@ export interface StreamResponseChoice {
 export interface StreamPayload {
   id?: string;
   choices?: StreamResponseChoice[];
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    total_tokens?: number;
+  };
 }
 
 export function parseSSELines(buffer: string, onChunk: (payload: StreamPayload) => void): string {
