@@ -29,14 +29,17 @@ interface EventContext {
 }
 
 const ALLOWED_FILENAMES = new Set([
-  'SHA256SUMS.txt'
+  'SHA256SUMS.txt',
+  'release.json'
 ]);
 
 const ALLOWED_PATTERNS = [
-  /^Ty-Code-Setup-\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?\.exe$/,
-  /^Ty-Code-\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?-portable\.exe$/,
-  /^Ty-Code-\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?-mac\.(?:dmg|zip)$/,
-  /^Ty-Code-\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?-x64\.(?:AppImage|deb|rpm)$/
+  /^Ty-Code-Setup-\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?\.exe$/i,
+  /^Ty-Code-\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?-portable\.exe$/i,
+  /^Ty-Code-\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?-win\.zip$/i,
+  /^Ty-Code-\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?(?:-mac)?\.(?:dmg|zip)$/i,
+  /^Ty-Code-\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?(?:-x64)?\.(?:AppImage|deb|rpm)$/i,
+  /^ty-code[_-]\d+\.\d+\.\d+[_-].*\.(?:deb|rpm)$/i
 ];
 
 function isAllowedFile(name: string): boolean {

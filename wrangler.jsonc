@@ -9,11 +9,7 @@
   "analytics_engine_datasets": [
     {
       "binding": "SITE_ANALYTICS",
-      "dataset": "ty-code"
-    },
-    {
-      "binding": "ty-code-analytics-eng",
-      "dataset": "ty-code"
+      "dataset": "ty_code_site"
     }
   ],
   "r2_buckets": [

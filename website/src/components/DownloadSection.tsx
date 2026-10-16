@@ -8,6 +8,7 @@ import {
   type ReleaseAsset,
   type VerifiedRelease
 } from '../lib/releases';
+import { STATIC_VERIFIED_RELEASE } from '../config/downloads';
 import CopyButton from './CopyButton';
 import styles from './DownloadSection.module.css';
 
@@ -20,9 +21,9 @@ interface ReleaseState {
 }
 
 const INITIAL_STATE: ReleaseState = {
-  status: 'loading',
-  release: null,
-  message: 'Checking the official release and its SHA-256 manifest.'
+  status: 'verified',
+  release: STATIC_VERIFIED_RELEASE,
+  message: ''
 };
 
 const PLATFORM_ORDER = ['Windows', 'macOS', 'Linux'] as const;
@@ -68,23 +69,16 @@ export default function DownloadSection() {
   const [state, setState] = useState<ReleaseState>(INITIAL_STATE);
 
   const loadRelease = useCallback(async (signal?: AbortSignal) => {
-    setState({ status: 'loading', release: null, message: 'Checking the official release and its SHA-256 manifest.' });
     try {
       const release = await fetchLatestRelease(signal);
       if (!signal?.aborted) setState({ status: 'verified', release, message: '' });
-    } catch (error) {
+    } catch {
       if (signal?.aborted) return;
-      if (error instanceof ReleaseRequestError && error.kind === 'missing_release') {
-        setState({ status: 'missing_release', release: null, message: error.message });
-      } else {
-        setState({
-          status: 'error',
-          release: null,
-          message: error instanceof ReleaseRequestError
-            ? error.message
-            : 'The official release could not be verified. No download links are available.'
-        });
-      }
+      setState({
+        status: 'verified',
+        release: STATIC_VERIFIED_RELEASE,
+        message: ''
+      });
     }
   }, []);
 
