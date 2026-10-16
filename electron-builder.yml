@@ -53,7 +53,7 @@ win:
         - x64
   legalTrademarks: Ty-Code
   requestedExecutionLevel: asInvoker
-  verifyUpdateCodeSignature: true
+  verifyUpdateCodeSignature: false
   artifactName: Ty-Code-${version}-${arch}.${ext}
 
 nsis:
@@ -81,7 +81,7 @@ mac:
         - universal
   category: public.app-category.developer-tools
   hardenedRuntime: true
-  notarize: true
+  notarize: false
   gatekeeperAssess: false
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.inherit.plist
@@ -115,8 +115,8 @@ rpm:
 generateUpdatesFilesForAllChannels: true
 publish:
   provider: github
-  owner: ty-code
-  repo: ty-code
+  owner: JTyrell
+  repo: Ty-Code
   releaseType: release
   # electron-builder-generated latest*.yml files embed SHA-512 artifact checksums.
   # CI additionally ships SHA256SUMS.txt covering every release asset.

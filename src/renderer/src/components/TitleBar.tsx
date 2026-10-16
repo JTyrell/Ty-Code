@@ -387,7 +387,7 @@ export const TitleBar: React.FC = () => {
       { label: 'Keyboard Shortcuts', shortcut: 'Ctrl+K Ctrl+S' },
       { label: 'Check for Updates…', action: handleCheckUpdate },
       { divider: true, label: '' },
-      { label: 'About Ty-Code - Antigravity IDE', action: () => toast.info('Ty-Code - Antigravity IDE', `Version ${appInfo?.version || '0.1.0'}`) }
+      { label: 'About Ty-Code - Antigravity IDE', action: () => toast.info('Ty-Code - Antigravity IDE', `Version ${appInfo?.version || '1.0.0'}`) }
     ]
   };
 

@@ -133,7 +133,7 @@ export const SettingsSidebar: React.FC<SettingsSidebarProps> = ({
       {/* Bottom Footer Info */}
       <div className="p-3 border-t border-[#262833] text-[11px] text-gray-500 flex items-center justify-between">
         <span>Ty-Code Settings</span>
-        <span className="font-mono text-[10px] text-gray-600">v0.1.0</span>
+        <span className="font-mono text-[10px] text-gray-600">v1.0.0</span>
       </div>
     </div>
   );

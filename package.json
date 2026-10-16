@@ -1,6 +1,6 @@
 {
   "name": "ty-code",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Standalone Electron Desktop AI Coding Assistant with Monaco Editor and Pluggable LLMs",
   "main": "dist/main/index.js",
   "packageManager": "npm@10.9.2",

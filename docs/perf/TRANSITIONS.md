@@ -3,7 +3,7 @@
 ## Phase: Perf 3 — Sub-100ms Perceived Switches
 
 **Date:** 2026-10-15  
-**Version:** Ty-Code 0.1.0  
+**Version:** Ty-Code 1.0.0  
 **Status:** ALL BUDGETS MET & VERIFIED  
 
 ---

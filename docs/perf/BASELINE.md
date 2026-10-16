@@ -3,7 +3,7 @@
 ## Phase: Perf 2 — Tiered Boot Scheduler (Critical First, Heavy Later)
 
 **Date:** 2026-10-15  
-**Version:** Ty-Code 0.1.0  
+**Version:** Ty-Code 1.0.0  
 **Evidence Trace:** [`docs/perf/boot-trace.json`](file:///c:/Users/JT/Documents/Ty-Claude/docs/perf/boot-trace.json)  
 **Status:** ALL BUDGETS MET & VERIFIED
 

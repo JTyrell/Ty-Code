@@ -23,6 +23,27 @@
 
 ---
 
+## 📥 Downloads (v1.0.0 Production Release)
+
+Download official binaries directly from the [GitHub v1.0.0 Release](https://github.com/JTyrell/Ty-Code/releases/tag/v1.0.0) or visit our [Cloudflare Pages Download Site](https://ty-code.com):
+
+| Platform | Format | Direct Download |
+| :--- | :--- | :--- |
+| **Windows** (x64) | NSIS Installer | [`Ty-Code-Setup-1.0.0.exe`](https://github.com/JTyrell/Ty-Code/releases/download/v1.0.0/Ty-Code-Setup-1.0.0.exe) |
+| **Windows** (x64) | Portable ZIP | [`Ty-Code-1.0.0-win.zip`](https://github.com/JTyrell/Ty-Code/releases/download/v1.0.0/Ty-Code-1.0.0-win.zip) |
+| **macOS** (Universal) | Disk Image | [`Ty-Code-1.0.0.dmg`](https://github.com/JTyrell/Ty-Code/releases/download/v1.0.0/Ty-Code-1.0.0.dmg) |
+| **Linux** (x64) | AppImage | [`Ty-Code-1.0.0.AppImage`](https://github.com/JTyrell/Ty-Code/releases/download/v1.0.0/Ty-Code-1.0.0.AppImage) |
+| **Linux** (x64) | Debian Package | [`ty-code_1.0.0_amd64.deb`](https://github.com/JTyrell/Ty-Code/releases/download/v1.0.0/ty-code_1.0.0_amd64.deb) |
+| **Linux** (x64) | RedHat RPM | [`ty-code-1.0.0.x86_64.rpm`](https://github.com/JTyrell/Ty-Code/releases/download/v1.0.0/ty-code-1.0.0.x86_64.rpm) |
+| **All Platforms** | Checksums | [`SHA256SUMS.txt`](https://github.com/JTyrell/Ty-Code/releases/download/v1.0.0/SHA256SUMS.txt) |
+
+Verify checksums before running:
+```bash
+sha256sum -c SHA256SUMS.txt --ignore-missing
+```
+
+---
+
 ## Architecture
 
 Ty-Code enforces strict separation between presentation, native system access, and the AI agent loop:

@@ -223,7 +223,7 @@ export class LspClient extends EventEmitter {
         const rootUri = toFileUri(this.workspacePath);
         const initParams = {
           processId: process.pid,
-          clientInfo: { name: 'Ty-Code', version: '0.1.0' },
+          clientInfo: { name: 'Ty-Code', version: '1.0.0' },
           rootPath: this.workspacePath,
           rootUri,
           capabilities: {

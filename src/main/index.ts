@@ -1393,7 +1393,7 @@ function registerIpcHandlers(): void {
     success: true,
     data: {
       name: 'Ty-Code',
-      version: app?.getVersion ? app.getVersion() : '0.1.0',
+      version: app?.getVersion ? app.getVersion() : '1.0.0',
       platform: process.platform,
       arch: process.arch,
       isPackaged: Boolean(app?.isPackaged)

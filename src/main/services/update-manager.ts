@@ -103,7 +103,7 @@ export class UpdateManager {
   }
 
   public async checkForUpdates(): Promise<UpdateCheckResult> {
-    const currentVersion = this.currentVersionOverride || (app?.getVersion ? app.getVersion() : '0.1.0');
+    const currentVersion = this.currentVersionOverride || (app?.getVersion ? app.getVersion() : '1.0.0');
 
     if (this.isChecking) {
       return { updateAvailable: false, currentVersion, error: 'Update check already in progress' };
