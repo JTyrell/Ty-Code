@@ -6,6 +6,12 @@ const api: ElectronAPI = {
   minimizeWindow: () => ipcRenderer.send('window:minimize'),
   maximizeWindow: () => ipcRenderer.send('window:maximize'),
   closeWindow: () => ipcRenderer.send('window:close'),
+  isWindowMaximized: () => ipcRenderer.invoke('window:is-maximized'),
+  onWindowMaximizeChange: (callback: (isMaximized: boolean) => void) => {
+    const handler = (_: IpcRendererEvent, isMax: boolean) => callback(isMax);
+    ipcRenderer.on('window:maximize-change', handler);
+    return () => ipcRenderer.removeListener('window:maximize-change', handler);
+  },
   selectWorkspaceFolder: () => ipcRenderer.invoke('fs:select-workspace'),
   getFilePathForDroppedFile: (file) => webUtils.getPathForFile(file),
   getWorkspaceTree: (rootPath: string) => ipcRenderer.invoke('fs:get-tree', rootPath),
@@ -350,8 +356,37 @@ const api: ElectronAPI = {
     const listener = (_event: any, health: any) => callback(health);
     ipcRenderer.on('diagnostics:fleet-health-changed', listener);
     return () => ipcRenderer.removeListener('diagnostics:fleet-health-changed', listener);
-  }
+  },
+
+  // Performance Profiler APIs (Perf 1)
+  perfGetBootTrace: () => ipcRenderer.invoke('perf:get-boot-trace'),
+  perfRecordRendererMark: (mark: any) => ipcRenderer.invoke('perf:record-renderer-mark', mark),
+  perfRecordTransition: (metric: any) => ipcRenderer.invoke('perf:record-transition', metric),
+  perfInjectDelay: (durationMs: number, label?: string) => ipcRenderer.invoke('perf:inject-delay', durationMs, label),
+
+  // Tiered Boot Scheduler APIs (Perf 2)
+  bootSchedulerGetState: () => ipcRenderer.invoke('boot-scheduler:get-state'),
+  bootSchedulerPromote: (idOrCategory: string) => ipcRenderer.invoke('boot-scheduler:promote', idOrCategory),
+  bootSchedulerNotifyInteraction: () => ipcRenderer.invoke('boot-scheduler:notify-interaction'),
+  onBootSchedulerProgress: (callback: (state: any) => void) => {
+    const listener = (_event: any, state: any) => callback(state);
+    ipcRenderer.on('boot-scheduler:progress', listener);
+    return () => ipcRenderer.removeListener('boot-scheduler:progress', listener);
+  },
+
+  // UI-Polish 2: Platform Inset Metrics
+  getPlatformInsets: () => ipcRenderer.invoke('platform:get-insets')
 };
 
-
 contextBridge.exposeInMainWorld('electronAPI', api);
+
+// Signal preload_done to the performance profiler
+try {
+  void ipcRenderer.invoke('perf:record-renderer-mark', {
+    name: 'preload_done',
+    timestamp: performance.now(),
+    phase: 'boot'
+  });
+} catch {
+  // Preload mark is non-blocking
+}

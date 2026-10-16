@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { FileNode, ProposedDiff } from '../../../preload/types';
+import { transitionProfiler } from '../services/perf/transition-profiler';
 
 export interface EditorTab {
   path: string;
@@ -134,7 +135,12 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     set({ openTabs: nextTabs, activeTabPath: nextActive });
   },
 
-  setActiveTab: (filePath: string) => set({ activeTabPath: filePath }),
+  setActiveTab: (filePath: string) => {
+    const filename = filePath.split(/[/\\]/).pop() || filePath;
+    const transId = transitionProfiler.startTransition(`tab_switch:${filename}`);
+    set({ activeTabPath: filePath });
+    void transitionProfiler.endTransition(transId, `tab_switch:${filename}`);
+  },
 
   updateTabContent: (filePath: string, newContent: string) => {
     set((state) => ({
@@ -172,7 +178,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   },
 
   openDiffReview: (diff: ProposedDiff) => {
+    const transId = transitionProfiler.startTransition('diff_open');
     set({ diffReview: { isOpen: true, diff } });
+    void transitionProfiler.endTransition(transId, 'diff_open');
   },
 
   closeDiffReview: () => {

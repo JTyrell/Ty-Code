@@ -1,32 +1,180 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import {
-  FolderOpen,
+  Search,
   Settings,
-  Terminal,
-  Cpu,
-  Minus,
-  Square,
-  X,
+  ChevronDown,
   RefreshCw,
-  Sun,
-  Moon,
-  Contrast,
   DownloadCloud,
-  CheckCircle2
+  CheckCircle2,
+  FolderOpen,
+  FileCode,
+  Terminal as TerminalIcon,
+  HelpCircle,
+  ExternalLink,
+  Shield,
+  Palette
 } from 'lucide-react';
 import { useWorkspaceStore } from '../state/workspace-store';
 import { useChatStore } from '../state/chat-store';
+import { useUsageDashboardStore } from '../state/usage-dashboard-store';
 import { toast } from '../state/toast-store';
-import { DEFAULT_PRESET_MODELS } from '../../../preload/preset-models';
 import type { AppInfo } from '../../../preload/types';
 
 const appRegion = (region: 'drag' | 'no-drag'): React.CSSProperties => ({ WebkitAppRegion: region } as React.CSSProperties);
 
 export type AppTheme = 'dark' | 'light' | 'high-contrast';
 
+// Antigravity vibrant gradient arch logo matching the IDE design language
+const AntigravityLogo: React.FC<{ size?: number }> = ({ size = 17 }) => (
+  <div
+    style={{
+      width: `${size + 5}px`,
+      height: `${size + 5}px`,
+      borderRadius: '5px',
+      backgroundColor: 'rgba(255, 255, 255, 0.05)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      boxShadow: '0 0 10px rgba(6, 182, 212, 0.15)',
+      flexShrink: 0
+    }}
+  >
+    <svg width={size} height={size} viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="agyBrandGrad" x1="2" y1="18" x2="18" y2="2" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#00d2ff" />
+          <stop offset="48%" stopColor="#ec4899" />
+          <stop offset="100%" stopColor="#f59e0b" />
+        </linearGradient>
+      </defs>
+      <path
+        d="M10 2.8C7.5 7 4 13.2 3.2 16.8C5.2 15.8 7.5 15.3 10 15.3C12.5 15.3 14.8 15.8 16.8 16.8C16 13.2 12.5 7 10 2.8Z"
+        stroke="url(#agyBrandGrad)"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  </div>
+);
+
+// Panel & Layout control icons
+const LayoutAllIcon: React.FC<{ size?: number }> = ({ size = 14 }) => (
+  <svg width={size} height={size} viewBox="0 0 16 16" fill="currentColor">
+    <path d="M2 3h12a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zm1 2v6h2V5H3zm3 0v6h4V5H6zm5 0v6h2V5h-2z" fillRule="evenodd" />
+  </svg>
+);
+
+const SidebarLeftIcon: React.FC<{ size?: number; active?: boolean }> = ({ size = 14, active }) => (
+  <svg width={size} height={size} viewBox="0 0 16 16" fill="currentColor">
+    <path d="M2 3h12a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zm3 2H3v6h2V5zm1 0v6h7V5H6z" fillRule="evenodd" opacity={active ? 1 : 0.75} />
+  </svg>
+);
+
+const PanelBottomIcon: React.FC<{ size?: number; active?: boolean }> = ({ size = 14, active }) => (
+  <svg width={size} height={size} viewBox="0 0 16 16" fill="currentColor">
+    <path d="M2 3h12a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zm1 2v4h10V5H3zm0 5v1h10v-1H3z" fillRule="evenodd" opacity={active ? 1 : 0.75} />
+  </svg>
+);
+
+const SidebarRightIcon: React.FC<{ size?: number; active?: boolean }> = ({ size = 14, active }) => (
+  <svg width={size} height={size} viewBox="0 0 16 16" fill="currentColor">
+    <path d="M2 3h12a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zm8 2H3v6h7V5zm1 0v6h2V5h-2z" fillRule="evenodd" opacity={active ? 1 : 0.75} />
+  </svg>
+);
+
+// Native Windows Caption Button SVGs (pixel-crisp 10x10)
+const MinimizeIcon: React.FC = () => (
+  <svg width="10" height="1" viewBox="0 0 10 1" fill="currentColor">
+    <rect width="10" height="1" fill="currentColor" />
+  </svg>
+);
+
+const MaximizeIcon: React.FC = () => (
+  <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1">
+    <rect x="0.5" y="0.5" width="9" height="9" />
+  </svg>
+);
+
+const RestoreIcon: React.FC = () => (
+  <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1">
+    <path d="M2.5 0.5 h 7 v 7 h -1" />
+    <rect x="0.5" y="2.5" width="7" height="7" />
+  </svg>
+);
+
+const CloseIcon: React.FC = () => (
+  <svg width="10" height="10" viewBox="0 0 10 10" stroke="currentColor" strokeWidth="1.2">
+    <line x1="1" y1="1" x2="9" y2="9" />
+    <line x1="9" y1="1" x2="1" y2="9" />
+  </svg>
+);
+
+interface WindowControlButtonProps {
+  onClick: () => void;
+  title: string;
+  isClose?: boolean;
+  children: React.ReactNode;
+}
+
+const WindowControlButton: React.FC<WindowControlButtonProps> = ({ onClick, title, isClose, children }) => {
+  const [hovered, setHovered] = useState(false);
+  const [active, setActive] = useState(false);
+
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => {
+        setHovered(false);
+        setActive(false);
+      }}
+      onMouseDown={() => setActive(true)}
+      onMouseUp={() => setActive(false)}
+      title={title}
+      style={{
+        width: '46px',
+        height: '100%',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: isClose
+          ? active
+            ? '#f1707a'
+            : hovered
+            ? '#e81123'
+            : 'transparent'
+          : active
+          ? 'rgba(255, 255, 255, 0.16)'
+          : hovered
+          ? 'rgba(255, 255, 255, 0.08)'
+          : 'transparent',
+        color: isClose && hovered ? '#ffffff' : 'var(--text-secondary, #94a3b8)',
+        border: 'none',
+        outline: 'none',
+        cursor: 'default',
+        padding: 0,
+        margin: 0,
+        transition: 'background-color 100ms ease, color 100ms ease',
+        ...appRegion('no-drag')
+      }}
+    >
+      {children}
+    </button>
+  );
+};
+
+interface MenuItem {
+  label: string;
+  shortcut?: string;
+  action?: () => void;
+  divider?: boolean;
+}
+
 export const TitleBar: React.FC = () => {
   const { workspacePath, setWorkspacePath, setFileTree } = useWorkspaceStore();
-  const { settings, saveSettings, toggleSettings, toggleTerminal, isTerminalOpen } = useChatStore();
+  const { toggleSettings, toggleTerminal, isTerminalOpen } = useChatStore();
+  const openUsageDashboard = useUsageDashboardStore((s) => s.openDashboard);
 
   const [theme, setTheme] = useState<AppTheme>(() => {
     return (localStorage.getItem('ty_claude_theme') as AppTheme) || 'dark';
@@ -34,19 +182,30 @@ export const TitleBar: React.FC = () => {
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
   const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'available' | 'downloading' | 'downloaded'>('idle');
   const [updatePercent, setUpdatePercent] = useState<number>(0);
+  const [isMaximized, setIsMaximized] = useState<boolean>(false);
 
-  // Apply theme to body element
+  // Menubar state
+  const [activeMenu, setActiveMenu] = useState<string | null>(null);
+  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState<boolean>(false);
+  const menuBarRef = useRef<HTMLDivElement>(null);
+
+  // Apply theme to body
   useEffect(() => {
     document.body.classList.remove('theme-dark', 'theme-light', 'theme-high-contrast');
     document.body.classList.add(`theme-${theme}`);
     localStorage.setItem('ty_claude_theme', theme);
   }, [theme]);
 
-  // Load app info and wait for an explicit user request before checking for updates.
+  // Window maximize & App info listener
   useEffect(() => {
-    const savedChannel = localStorage.getItem('ty_code_update_channel');
-    const channel = savedChannel === 'beta' || savedChannel === 'nightly' ? savedChannel : 'stable';
-    void window.electronAPI?.setUpdateChannel?.(channel).catch((error) => console.warn('Could not restore the saved update channel:', error));
+    void window.electronAPI?.isWindowMaximized?.().then((max) => {
+      setIsMaximized(Boolean(max));
+    });
+
+    const cleanupMaximize = window.electronAPI?.onWindowMaximizeChange?.((max) => {
+      setIsMaximized(max);
+    });
+
     void window.electronAPI?.getAppInfo?.().then((res) => {
       if (res?.success && res.data) setAppInfo(res.data);
     });
@@ -79,8 +238,32 @@ export const TitleBar: React.FC = () => {
     });
 
     return () => {
+      cleanupMaximize?.();
       cleanupStatus?.();
       cleanupProgress?.();
+    };
+  }, []);
+
+  // Close menus when clicking outside or pressing Escape
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuBarRef.current && !menuBarRef.current.contains(e.target as Node)) {
+        setActiveMenu(null);
+        setIsProfileMenuOpen(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setActiveMenu(null);
+        setIsProfileMenuOpen(false);
+      }
+    };
+
+    window.addEventListener('mousedown', handleClickOutside);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('mousedown', handleClickOutside);
+      window.removeEventListener('keydown', handleKeyDown);
     };
   }, []);
 
@@ -100,17 +283,6 @@ export const TitleBar: React.FC = () => {
     }
   };
 
-  const handleModelChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const selectedId = e.target.value;
-    const model = DEFAULT_PRESET_MODELS.find((m) => m.id === selectedId);
-    if (model) {
-      saveSettings({
-        activeModel: model.id,
-        activeProvider: model.provider
-      });
-    }
-  };
-
   const cycleTheme = () => {
     const next: AppTheme = theme === 'dark' ? 'light' : theme === 'light' ? 'high-contrast' : 'dark';
     setTheme(next);
@@ -125,7 +297,6 @@ export const TitleBar: React.FC = () => {
         setUpdateStatus('idle');
         toast.error('Update check failed', res.error);
       } else if (res.updateAvailable) {
-        // The update:available event owns the notification so a manual check never double-toasts.
         setUpdateStatus('available');
       } else {
         setUpdateStatus('idle');
@@ -137,93 +308,391 @@ export const TitleBar: React.FC = () => {
     }
   };
 
-  const folderName = workspacePath ? workspacePath.split(/[/\\]/).pop() : 'No Project Open';
+  const handleHeaderDoubleClick = (e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (target.closest('button, select, input, [data-no-drag="true"]')) {
+      return;
+    }
+    window.electronAPI?.maximizeWindow?.();
+  };
+
+  const folderName = workspacePath ? workspacePath.split(/[/\\]/).pop() : '';
   const isMac = appInfo?.platform === 'darwin';
+
+  // Desktop Menu Definitions
+  const menus: Record<string, MenuItem[]> = {
+    File: [
+      { label: 'New File', shortcut: 'Ctrl+N', action: () => window.dispatchEvent(new CustomEvent('workbench:new-file')) },
+      { label: 'Open Folder…', shortcut: 'Ctrl+O', action: handleOpenFolder },
+      { divider: true, label: '' },
+      { label: 'Save', shortcut: 'Ctrl+S', action: () => toast.info('File saved') },
+      { label: 'Save All', action: () => toast.info('All workspace files saved') },
+      { divider: true, label: '' },
+      { label: 'Settings', shortcut: 'Ctrl+,', action: toggleSettings },
+      { divider: true, label: '' },
+      { label: 'Exit', shortcut: 'Alt+F4', action: () => window.electronAPI.closeWindow() }
+    ],
+    Edit: [
+      { label: 'Undo', shortcut: 'Ctrl+Z', action: () => document.execCommand('undo') },
+      { label: 'Redo', shortcut: 'Ctrl+Y', action: () => document.execCommand('redo') },
+      { divider: true, label: '' },
+      { label: 'Cut', shortcut: 'Ctrl+X', action: () => document.execCommand('cut') },
+      { label: 'Copy', shortcut: 'Ctrl+C', action: () => document.execCommand('copy') },
+      { label: 'Paste', shortcut: 'Ctrl+V', action: () => document.execCommand('paste') },
+      { divider: true, label: '' },
+      { label: 'Find in Files', shortcut: 'Ctrl+Shift+F', action: () => window.dispatchEvent(new CustomEvent('workbench:find-in-files')) }
+    ],
+    Selection: [
+      { label: 'Select All', shortcut: 'Ctrl+A', action: () => document.execCommand('selectAll') },
+      { label: 'Expand Selection', shortcut: 'Alt+Shift+Right' },
+      { label: 'Shrink Selection', shortcut: 'Alt+Shift+Left' },
+      { divider: true, label: '' },
+      { label: 'Copy Line Up', shortcut: 'Alt+Shift+Up' },
+      { label: 'Copy Line Down', shortcut: 'Alt+Shift+Down' }
+    ],
+    View: [
+      { label: 'Command Palette…', shortcut: 'Ctrl+Shift+P', action: () => window.dispatchEvent(new CustomEvent('workbench:command-palette')) },
+      { label: 'Quick Open…', shortcut: 'Ctrl+P', action: () => window.dispatchEvent(new CustomEvent('workbench:quick-open')) },
+      { divider: true, label: '' },
+      { label: 'Toggle Primary Sidebar', shortcut: 'Ctrl+B', action: () => window.dispatchEvent(new CustomEvent('workbench:toggle-left-sidebar')) },
+      { label: 'Toggle Terminal', shortcut: 'Ctrl+`', action: toggleTerminal },
+      { label: 'Toggle AI Assistant', shortcut: 'Ctrl+Alt+B', action: () => window.dispatchEvent(new CustomEvent('workbench:toggle-right-sidebar')) },
+      { divider: true, label: '' },
+      { label: 'Usage & Quota Dashboard', action: openUsageDashboard },
+      { label: 'Boot Timeline', action: () => window.dispatchEvent(new CustomEvent('workbench:show-boot-timeline')) }
+    ],
+    Go: [
+      { label: 'Go to File…', shortcut: 'Ctrl+P', action: () => window.dispatchEvent(new CustomEvent('workbench:quick-open')) },
+      { label: 'Go to Symbol…', shortcut: 'Ctrl+T', action: () => window.dispatchEvent(new CustomEvent('workbench:quick-open-symbols')) },
+      { label: 'Go to Line…', shortcut: 'Ctrl+G', action: () => window.dispatchEvent(new CustomEvent('workbench:quick-open-line')) },
+      { divider: true, label: '' },
+      { label: 'Back', shortcut: 'Alt+Left' },
+      { label: 'Forward', shortcut: 'Alt+Right' }
+    ],
+    Run: [
+      { label: 'Start Debugging', shortcut: 'F5', action: () => toast.info('Starting debug session…') },
+      { label: 'Run Without Debugging', shortcut: 'Ctrl+F5', action: () => toast.info('Running code…') },
+      { divider: true, label: '' },
+      { label: 'Run Active File in Terminal', action: toggleTerminal }
+    ],
+    Terminal: [
+      { label: 'New Terminal', shortcut: 'Ctrl+Shift+`', action: toggleTerminal },
+      { label: 'Toggle Terminal', shortcut: 'Ctrl+`', action: toggleTerminal },
+      { divider: true, label: '' },
+      { label: 'Clear Terminal' }
+    ],
+    Help: [
+      { label: 'Documentation', action: () => toast.info('Ty-Code Antigravity Documentation') },
+      { label: 'Keyboard Shortcuts', shortcut: 'Ctrl+K Ctrl+S' },
+      { label: 'Check for Updates…', action: handleCheckUpdate },
+      { divider: true, label: '' },
+      { label: 'About Ty-Code - Antigravity IDE', action: () => toast.info('Ty-Code - Antigravity IDE', `Version ${appInfo?.version || '0.1.0'}`) }
+    ]
+  };
 
   return (
     <header
+      onDoubleClick={handleHeaderDoubleClick}
       style={{
-        height: '38px',
-        backgroundColor: 'var(--bg-secondary)',
-        borderBottom: '1px solid var(--border-subtle)',
+        height: '35px',
+        backgroundColor: 'var(--bg-secondary, #0e171b)',
+        borderBottom: '1px solid var(--border-subtle, rgba(255, 255, 255, 0.08))',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        padding: isMac ? '0 12px 0 78px' : '0 8px',
+        padding: isMac ? '0 12px 0 78px' : '0 0 0 10px',
         userSelect: 'none',
+        position: 'relative',
+        zIndex: 50,
         ...appRegion('drag')
       }}
     >
-      {/* Left: App Title & Workspace */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', ...appRegion('no-drag') }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600, color: 'var(--text-primary)' }}>
-          <Cpu size={16} color="var(--accent-primary)" />
-          <span style={{ fontSize: '12px' }}>Ty-Code</span>
-          {appInfo && (
-            <span style={{ fontSize: '10px', color: 'var(--text-muted)', backgroundColor: 'var(--bg-tertiary)', padding: '1px 5px', borderRadius: '4px' }}>
-              v{appInfo.version}
-            </span>
-          )}
+      {/* Left: App Logo & Menubar */}
+      <div
+        ref={menuBarRef}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '6px',
+          height: '100%',
+          ...appRegion('no-drag')
+        }}
+      >
+        {/* Antigravity Logo */}
+        <div style={{ marginRight: '4px', display: 'flex', alignItems: 'center' }} title="Ty-Code - Antigravity IDE">
+          <AntigravityLogo size={15} />
         </div>
 
+        {/* Menu Bar Items */}
+        <nav style={{ display: 'flex', alignItems: 'center', gap: '1px', height: '100%' }}>
+          {Object.keys(menus).map((menuKey) => {
+            const isOpen = activeMenu === menuKey;
+            return (
+              <div key={menuKey} style={{ position: 'relative', height: '100%', display: 'flex', alignItems: 'center' }}>
+                <button
+                  onClick={() => setActiveMenu(isOpen ? null : menuKey)}
+                  onMouseEnter={() => {
+                    if (activeMenu !== null && activeMenu !== menuKey) {
+                      setActiveMenu(menuKey);
+                    }
+                  }}
+                  style={{
+                    fontSize: '12px',
+                    padding: '3px 7px',
+                    color: isOpen ? '#ffffff' : 'var(--text-secondary, #94a3b8)',
+                    backgroundColor: isOpen ? 'rgba(255, 255, 255, 0.12)' : 'transparent',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    transition: 'background-color 100ms ease, color 100ms ease'
+                  }}
+                  onMouseOver={(e) => {
+                    if (!isOpen) {
+                      e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)';
+                      e.currentTarget.style.color = '#ffffff';
+                    }
+                  }}
+                  onMouseOut={(e) => {
+                    if (!isOpen) {
+                      e.currentTarget.style.backgroundColor = 'transparent';
+                      e.currentTarget.style.color = 'var(--text-secondary, #94a3b8)';
+                    }
+                  }}
+                >
+                  {menuKey}
+                </button>
+
+                {/* Dropdown Menu */}
+                {isOpen && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: '100%',
+                      left: 0,
+                      backgroundColor: 'var(--bg-secondary, #12181f)',
+                      border: '1px solid var(--border-subtle, rgba(255, 255, 255, 0.12))',
+                      borderRadius: '6px',
+                      padding: '4px 0',
+                      minWidth: '220px',
+                      boxShadow: '0 10px 28px rgba(0, 0, 0, 0.55)',
+                      zIndex: 9999,
+                      backdropFilter: 'blur(16px)'
+                    }}
+                  >
+                    {menus[menuKey].map((item, idx) => {
+                      if (item.divider) {
+                        return (
+                          <div
+                            key={idx}
+                            style={{
+                              height: '1px',
+                              backgroundColor: 'var(--border-subtle, rgba(255, 255, 255, 0.08))',
+                              margin: '4px 0'
+                            }}
+                          />
+                        );
+                      }
+                      return (
+                        <div
+                          key={idx}
+                          onClick={() => {
+                            setActiveMenu(null);
+                            item.action?.();
+                          }}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '5px 12px',
+                            fontSize: '12px',
+                            color: 'var(--text-primary, #e2e8f0)',
+                            cursor: 'pointer',
+                            userSelect: 'none'
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.backgroundColor = 'var(--accent-primary, #0284c7)';
+                            e.currentTarget.style.color = '#ffffff';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = 'transparent';
+                            e.currentTarget.style.color = 'var(--text-primary, #e2e8f0)';
+                          }}
+                        >
+                          <span>{item.label}</span>
+                          {item.shortcut && (
+                            <span style={{ fontSize: '10px', opacity: 0.7, marginLeft: '16px' }}>
+                              {item.shortcut}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </nav>
+      </div>
+
+      {/* Center: Window & Workspace Title */}
+      <div
+        style={{
+          position: 'absolute',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '6px',
+          pointerEvents: 'none',
+          color: 'var(--text-secondary, #94a3b8)',
+          fontSize: '12px',
+          fontWeight: 450,
+          letterSpacing: '0.2px',
+          whiteSpace: 'nowrap',
+          maxWidth: '40vw',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis'
+        }}
+      >
+        <span>
+          {folderName ? `${folderName} — Ty-Code - Antigravity IDE` : 'Ty-Code - Antigravity IDE'}
+        </span>
+      </div>
+
+      {/* Right: Layout Toggles, Search, Utilities, Avatar & Window Controls */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          height: '100%',
+          ...appRegion('no-drag')
+        }}
+      >
+        {/* Layout Icons (Matching Screenshot) */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '2px', marginRight: '4px' }}>
+          {/* Toggle All Panels / Split */}
+          <button
+            onClick={() => window.dispatchEvent(new CustomEvent('workbench:toggle-all-panels'))}
+            style={{
+              padding: '4px 6px',
+              color: 'var(--text-secondary, #94a3b8)',
+              background: 'transparent',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+            title="Customize Layout"
+            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)'; e.currentTarget.style.color = '#ffffff'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--text-secondary, #94a3b8)'; }}
+          >
+            <LayoutAllIcon size={14} />
+          </button>
+
+          {/* Toggle Primary Sidebar (Left) */}
+          <button
+            onClick={() => window.dispatchEvent(new CustomEvent('workbench:toggle-left-sidebar'))}
+            style={{
+              padding: '4px 6px',
+              color: 'var(--text-secondary, #94a3b8)',
+              background: 'transparent',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+            title="Toggle Primary Sidebar (Ctrl+B)"
+            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)'; e.currentTarget.style.color = '#ffffff'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--text-secondary, #94a3b8)'; }}
+          >
+            <SidebarLeftIcon size={14} />
+          </button>
+
+          {/* Toggle Bottom Panel (Terminal) */}
+          <button
+            onClick={toggleTerminal}
+            style={{
+              padding: '4px 6px',
+              color: isTerminalOpen ? 'var(--accent-primary, #38bdf8)' : 'var(--text-secondary, #94a3b8)',
+              background: isTerminalOpen ? 'rgba(56, 189, 248, 0.12)' : 'transparent',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+            title="Toggle Panel (Ctrl+`)"
+            onMouseEnter={(e) => { if (!isTerminalOpen) { e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)'; e.currentTarget.style.color = '#ffffff'; } }}
+            onMouseLeave={(e) => { if (!isTerminalOpen) { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--text-secondary, #94a3b8)'; } }}
+          >
+            <PanelBottomIcon size={14} active={isTerminalOpen} />
+          </button>
+
+          {/* Toggle Secondary Sidebar (AI Assistant) */}
+          <button
+            onClick={() => window.dispatchEvent(new CustomEvent('workbench:toggle-right-sidebar'))}
+            style={{
+              padding: '4px 6px',
+              color: 'var(--text-secondary, #94a3b8)',
+              background: 'transparent',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+            title="Toggle Secondary Sidebar (AI Assistant)"
+            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)'; e.currentTarget.style.color = '#ffffff'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--text-secondary, #94a3b8)'; }}
+          >
+            <SidebarRightIcon size={14} />
+          </button>
+        </div>
+
+        {/* Search Quick Open Icon */}
         <button
-          onClick={handleOpenFolder}
+          onClick={() => window.dispatchEvent(new CustomEvent('workbench:quick-open'))}
           style={{
-            background: 'var(--bg-tertiary)',
-            padding: '3px 8px',
-            fontSize: '11px',
-            color: 'var(--text-secondary)',
-            border: '1px solid var(--border-subtle)',
+            padding: '4px 6px',
+            color: 'var(--text-secondary, #94a3b8)',
+            background: 'transparent',
+            border: 'none',
             borderRadius: '4px',
+            cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
-            gap: '6px',
-            cursor: 'pointer'
+            justifyContent: 'center'
           }}
-          title="Open Workspace Folder"
+          title="Search Files (Ctrl+P)"
+          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)'; e.currentTarget.style.color = '#ffffff'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--text-secondary, #94a3b8)'; }}
         >
-          <FolderOpen size={13} />
-          <span style={{ maxWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {folderName}
-          </span>
+          <Search size={14} />
         </button>
-      </div>
 
-      {/* Center: Model Selector */}
-      <div style={{ ...appRegion('no-drag'), display: 'flex', alignItems: 'center', gap: '6px' }}>
-        <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Model:</div>
-        <select
-          value={settings?.activeModel || 'deepseek/deepseek-chat'}
-          onChange={handleModelChange}
-          style={{
-            fontSize: '11px',
-            padding: '2px 8px',
-            background: 'var(--bg-tertiary)',
-            color: 'var(--text-primary)',
-            border: '1px solid var(--border-subtle)',
-            borderRadius: '4px',
-            cursor: 'pointer'
-          }}
-        >
-          {DEFAULT_PRESET_MODELS.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.name} {m.isFree ? '(Free)' : ''}
-            </option>
-          ))}
-        </select>
-      </div>
+        {/* Vertical Divider */}
+        <div style={{ width: '1px', height: '14px', backgroundColor: 'var(--border-subtle, rgba(255, 255, 255, 0.12))', margin: '0 5px' }} />
 
-      {/* Right: Actions, Updates, Theme & Window Controls */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', ...appRegion('no-drag') }}>
-        {/* Update Button / Indicator */}
+        {/* Global / Updates Check */}
         <button
           onClick={handleCheckUpdate}
           style={{
             padding: '4px 6px',
-            color: updateStatus === 'available' ? 'var(--accent-green)' : updateStatus === 'downloaded' ? 'var(--accent-cyan)' : 'var(--text-secondary)',
+            color: updateStatus === 'available' ? 'var(--accent-green, #10b981)' : updateStatus === 'downloaded' ? 'var(--accent-cyan, #06b6d4)' : 'var(--text-secondary, #94a3b8)',
+            background: 'transparent',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
-            gap: '4px'
+            gap: '3px'
           }}
           title={
             updateStatus === 'checking'
@@ -234,13 +703,15 @@ export const TitleBar: React.FC = () => {
               ? 'Update downloaded! Restart to apply'
               : 'Check for Updates'
           }
+          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
         >
           {updateStatus === 'checking' ? (
             <RefreshCw size={13} className="animate-spin" />
           ) : updateStatus === 'downloaded' ? (
-            <CheckCircle2 size={13} color="var(--accent-green)" />
+            <CheckCircle2 size={13} color="var(--accent-green, #10b981)" />
           ) : updateStatus === 'available' || updateStatus === 'downloading' ? (
-            <DownloadCloud size={13} color="var(--accent-primary)" />
+            <DownloadCloud size={13} color="var(--accent-primary, #38bdf8)" />
           ) : (
             <RefreshCw size={13} />
           )}
@@ -249,62 +720,152 @@ export const TitleBar: React.FC = () => {
           )}
         </button>
 
-        {/* Theme Cycler */}
-        <button
-          onClick={cycleTheme}
-          style={{ padding: '4px 6px', color: 'var(--text-secondary)' }}
-          title={`Current Theme: ${theme}. Click to switch.`}
-        >
-          {theme === 'dark' ? <Moon size={14} /> : theme === 'light' ? <Sun size={14} /> : <Contrast size={14} />}
-        </button>
-
-        <button
-          onClick={toggleTerminal}
-          style={{
-            padding: '4px 6px',
-            color: isTerminalOpen ? 'var(--accent-primary)' : 'var(--text-secondary)',
-            background: isTerminalOpen ? 'var(--bg-hover)' : 'transparent'
-          }}
-          title="Toggle Terminal"
-        >
-          <Terminal size={14} />
-        </button>
-
+        {/* Settings Gear */}
         <button
           onClick={toggleSettings}
-          style={{ padding: '4px 6px', color: 'var(--text-secondary)' }}
-          title="Settings & API Keys"
+          style={{
+            padding: '4px 6px',
+            color: 'var(--text-secondary, #94a3b8)',
+            background: 'transparent',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}
+          title="Settings & API Keys (Ctrl+,)"
+          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)'; e.currentTarget.style.color = '#ffffff'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--text-secondary, #94a3b8)'; }}
         >
           <Settings size={14} />
         </button>
 
+        {/* Avatar Profile Dropdown */}
+        <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+          <button
+            onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
+            style={{
+              padding: '3px 5px',
+              background: 'transparent',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px'
+            }}
+            title="Profile & Preferences"
+            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+          >
+            {/* Cosmic avatar circle matching screenshot */}
+            <div
+              style={{
+                width: '18px',
+                height: '18px',
+                borderRadius: '50%',
+                background: 'radial-gradient(circle at 35% 35%, #38bdf8 0%, #6366f1 50%, #0f172a 100%)',
+                border: '1px solid rgba(255, 255, 255, 0.25)',
+                boxShadow: '0 0 6px rgba(56, 189, 248, 0.25)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '9px',
+                fontWeight: 700,
+                color: '#ffffff',
+                userSelect: 'none'
+              }}
+            >
+              TC
+            </div>
+            <ChevronDown size={10} style={{ color: 'var(--text-secondary, #94a3b8)', opacity: 0.8 }} />
+          </button>
+
+          {isProfileMenuOpen && (
+            <div
+              style={{
+                position: 'absolute',
+                top: '100%',
+                right: 0,
+                backgroundColor: 'var(--bg-secondary, #12181f)',
+                border: '1px solid var(--border-subtle, rgba(255, 255, 255, 0.12))',
+                borderRadius: '6px',
+                padding: '6px 0',
+                minWidth: '200px',
+                boxShadow: '0 10px 28px rgba(0, 0, 0, 0.55)',
+                zIndex: 9999,
+                backdropFilter: 'blur(16px)'
+              }}
+            >
+              <div style={{ padding: '6px 12px', borderBottom: '1px solid var(--border-subtle, rgba(255, 255, 255, 0.08))' }}>
+                <div style={{ fontSize: '12px', fontWeight: 600, color: '#ffffff' }}>Developer</div>
+                <div style={{ fontSize: '10px', color: 'var(--text-secondary, #94a3b8)' }}>Ty-Code Antigravity</div>
+              </div>
+              <div
+                onClick={() => { setIsProfileMenuOpen(false); toggleSettings(); }}
+                style={{ padding: '6px 12px', fontSize: '12px', color: 'var(--text-primary, #e2e8f0)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
+                onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--accent-primary, #0284c7)'; e.currentTarget.style.color = '#ffffff'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--text-primary, #e2e8f0)'; }}
+              >
+                <Shield size={13} />
+                <span>API Keys & BYOK…</span>
+              </div>
+              <div
+                onClick={() => { setIsProfileMenuOpen(false); openUsageDashboard(); }}
+                style={{ padding: '6px 12px', fontSize: '12px', color: 'var(--text-primary, #e2e8f0)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
+                onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--accent-primary, #0284c7)'; e.currentTarget.style.color = '#ffffff'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--text-primary, #e2e8f0)'; }}
+              >
+                <FolderOpen size={13} />
+                <span>Quota & Analytics</span>
+              </div>
+              <div
+                onClick={() => { cycleTheme(); }}
+                style={{ padding: '6px 12px', fontSize: '12px', color: 'var(--text-primary, #e2e8f0)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
+                onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--accent-primary, #0284c7)'; e.currentTarget.style.color = '#ffffff'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--text-primary, #e2e8f0)'; }}
+              >
+                <Palette size={13} />
+                <span>Theme: {theme}</span>
+              </div>
+              <div style={{ height: '1px', backgroundColor: 'var(--border-subtle, rgba(255, 255, 255, 0.08))', margin: '4px 0' }} />
+              <div
+                onClick={() => { setIsProfileMenuOpen(false); void handleCheckUpdate(); }}
+                style={{ padding: '6px 12px', fontSize: '12px', color: 'var(--text-primary, #e2e8f0)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
+                onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--accent-primary, #0284c7)'; e.currentTarget.style.color = '#ffffff'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--text-primary, #e2e8f0)'; }}
+              >
+                <RefreshCw size={13} />
+                <span>Check for Updates…</span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Custom Window Controls (Flush right corner on Windows & Linux) */}
         {!isMac && (
-          <>
-            <div style={{ width: '1px', height: '14px', background: 'var(--border-subtle)', margin: '0 4px' }} />
-            <button
-              onClick={() => window.electronAPI.minimizeWindow()}
-              style={{ padding: '4px 8px', color: 'var(--text-secondary)' }}
+          <div style={{ display: 'flex', alignItems: 'center', height: '100%', marginLeft: '8px' }}>
+            <WindowControlButton
               title="Minimize"
+              onClick={() => window.electronAPI.minimizeWindow()}
             >
-              <Minus size={12} />
-            </button>
-            <button
+              <MinimizeIcon />
+            </WindowControlButton>
+            <WindowControlButton
+              title={isMaximized ? 'Restore' : 'Maximize'}
               onClick={() => window.electronAPI.maximizeWindow()}
-              style={{ padding: '4px 8px', color: 'var(--text-secondary)' }}
-              title="Maximize"
             >
-              <Square size={10} />
-            </button>
-            <button
-              onClick={() => window.electronAPI.closeWindow()}
-              style={{ padding: '4px 8px', color: 'var(--text-secondary)' }}
+              {isMaximized ? <RestoreIcon /> : <MaximizeIcon />}
+            </WindowControlButton>
+            <WindowControlButton
               title="Close"
-              onMouseEnter={(e) => { e.currentTarget.style.color = '#ef4444'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-secondary)'; }}
+              isClose
+              onClick={() => window.electronAPI.closeWindow()}
             >
-              <X size={12} />
-            </button>
-          </>
+              <CloseIcon />
+            </WindowControlButton>
+          </div>
         )}
       </div>
     </header>

@@ -12,6 +12,7 @@ import {
 import { useChatStore } from '../state/chat-store';
 import { useGitStore } from '../state/git-store';
 
+import React, { useRef, useCallback } from 'react';
 import { FileCheck } from 'lucide-react';
 
 export type ActivityTab = 'explorer' | 'search' | 'source-control' | 'code-review' | 'extensions' | 'skills' | 'outline' | 'ui-sketcher';
@@ -22,8 +23,57 @@ interface ActivityBarProps {
 }
 
 export const ActivityBar: React.FC<ActivityBarProps> = ({ activeTab, onTabChange }) => {
-  const { toggleSettings, toggleTerminal, isTerminalOpen } = useChatStore();
-  const { status } = useGitStore();
+  // Zustand selector audit: subscribe to narrow slices only
+  const toggleSettings = useChatStore((s) => s.toggleSettings);
+  const toggleTerminal = useChatStore((s) => s.toggleTerminal);
+  const isTerminalOpen = useChatStore((s) => s.isTerminalOpen);
+  const status = useGitStore((s) => s.status);
+
+  // Prefetch on intent: hover/focus for 150ms triggers dynamic import during idle
+  const prefetchTimerRef = useRef<number | null>(null);
+
+  const prefetchPanel = useCallback((id: string) => {
+    switch (id) {
+      case 'extensions':
+        void import('./ExtensionsPanel');
+        break;
+      case 'code-review':
+        void import('./CodeReviewPanel');
+        break;
+      case 'ui-sketcher':
+        void import('./CanvasWebview');
+        break;
+      case 'settings':
+        void import('./SettingsModal');
+        break;
+      case 'terminal':
+        void import('./TerminalDrawer');
+        break;
+      default:
+        break;
+    }
+  }, []);
+
+  const handleIntentStart = useCallback((id: string) => {
+    if (prefetchTimerRef.current !== null) {
+      window.clearTimeout(prefetchTimerRef.current);
+    }
+    prefetchTimerRef.current = window.setTimeout(() => {
+      prefetchTimerRef.current = null;
+      if ('requestIdleCallback' in window) {
+        window.requestIdleCallback(() => prefetchPanel(id));
+      } else {
+        setTimeout(() => prefetchPanel(id), 32);
+      }
+    }, 150);
+  }, [prefetchPanel]);
+
+  const handleIntentCancel = useCallback(() => {
+    if (prefetchTimerRef.current !== null) {
+      window.clearTimeout(prefetchTimerRef.current);
+      prefetchTimerRef.current = null;
+    }
+  }, []);
 
   const totalChanges =
     (status?.stagedFiles.length || 0) +
@@ -70,6 +120,10 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({ activeTab, onTabChange
             <div key={item.id} style={{ position: 'relative' }}>
               <button
                 onClick={() => onTabChange(item.id)}
+                onPointerEnter={() => handleIntentStart(item.id)}
+                onPointerLeave={handleIntentCancel}
+                onFocus={() => handleIntentStart(item.id)}
+                onBlur={handleIntentCancel}
                 style={{
                   width: '38px',
                   height: '38px',
@@ -115,6 +169,10 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({ activeTab, onTabChange
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%', alignItems: 'center' }}>
         <button
           onClick={toggleTerminal}
+          onPointerEnter={() => handleIntentStart('terminal')}
+          onPointerLeave={handleIntentCancel}
+          onFocus={() => handleIntentStart('terminal')}
+          onBlur={handleIntentCancel}
           style={{
             width: '38px',
             height: '38px',
@@ -129,6 +187,10 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({ activeTab, onTabChange
 
         <button
           onClick={toggleSettings}
+          onPointerEnter={() => handleIntentStart('settings')}
+          onPointerLeave={handleIntentCancel}
+          onFocus={() => handleIntentStart('settings')}
+          onBlur={handleIntentCancel}
           style={{
             width: '38px',
             height: '38px',

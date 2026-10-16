@@ -4,6 +4,7 @@ import type { SecurityPolicySettings, SettingsData, SettingsPatch, SettingsScope
 import type { FreeProvider, ModelTier, TierClassification, ProviderHealthStatus } from '../shared/types/free-providers';
 import type { DetectedApiKey, CustomProviderConfig, StoredKeySummary, ByokExportBundle, ByokImportResult, KeyDetectionSource } from '../shared/types/byok';
 import type { OpenCodeDetectionResult, OpenCodeFreeTierSummary, OpenCodeImportResult, AgentFramework } from '../shared/types/opencode-sync';
+import type { BootTrace, PerfMark, TransitionMetric } from '../shared/types/perf';
 import type {
   TaskType,
   TaskClassificationResult,
@@ -532,6 +533,8 @@ export interface ElectronAPI {
   minimizeWindow: () => void;
   maximizeWindow: () => void;
   closeWindow: () => void;
+  isWindowMaximized?: () => Promise<boolean>;
+  onWindowMaximizeChange?: (callback: (isMaximized: boolean) => void) => () => void;
   selectWorkspaceFolder: () => Promise<IpcResponse<string>>;
   getFilePathForDroppedFile: (file: File) => string;
   getWorkspaceTree: (rootPath: string) => Promise<IpcResponse<FileNode>>;
@@ -819,8 +822,53 @@ export interface ElectronAPI {
   diagnosticsSimulateOutage?: (providerId: string, type?: 'RATE_LIMITED' | 'PROVIDER_DOWN', cooldownMs?: number) => Promise<IpcResponse<DiagnosticsFleetHealth>>;
   diagnosticsSimulateRecovery?: (providerId: string) => Promise<IpcResponse<DiagnosticsFleetHealth>>;
   onDiagnosticsFleetHealthChanged?: (callback: (health: DiagnosticsFleetHealth) => void) => () => void;
+
+  // Performance Profiler APIs (Perf 1)
+  perfGetBootTrace?: () => Promise<IpcResponse<BootTrace>>;
+  perfRecordRendererMark?: (mark: PerfMark) => Promise<IpcResponse<void>>;
+  perfRecordTransition?: (metric: TransitionMetric) => Promise<IpcResponse<void>>;
+  perfInjectDelay?: (durationMs: number, label?: string) => Promise<IpcResponse<void>>;
+
+  // Tiered Boot Scheduler APIs (Perf 2)
+  bootSchedulerGetState?: () => Promise<IpcResponse<BootSchedulerStatePayload>>;
+  bootSchedulerPromote?: (idOrCategory: string) => Promise<IpcResponse<boolean>>;
+  bootSchedulerNotifyInteraction?: () => Promise<IpcResponse<void>>;
+  onBootSchedulerProgress?: (callback: (state: BootSchedulerStatePayload) => void) => () => void;
+
+  // UI-Polish 2: Platform Inset Metrics
+  getPlatformInsets?: () => Promise<IpcResponse<PlatformInsets>>;
 }
 
+export interface BootSchedulerTaskPayload {
+  id: string;
+  name: string;
+  tier: 0 | 1 | 2 | 3;
+  category: string;
+  promoted?: boolean;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'promoted';
+  startTime?: number;
+  durationMs?: number;
+  error?: string;
+}
+
+export interface BootSchedulerStatePayload {
+  currentTier: 0 | 1 | 2 | 3;
+  tierStatus: Record<0 | 1 | 2 | 3, 'pending' | 'running' | 'completed'>;
+  completedTasksCount: number;
+  totalTasksCount: number;
+  tasks: BootSchedulerTaskPayload[];
+  isWarmedUp: boolean;
+}
+
+export interface PlatformInsets {
+  platform: 'win32' | 'darwin' | 'linux';
+  titlebarHeight: number;
+  captionButtonWidth: number;
+  trafficLightWidth: number;
+  statusBarHeight: number;
+  resizeCornerArea: number;
+  scrollbarGutter: number;
+}
 
 export interface McpSeoConfigStatus {
   enabled: boolean;

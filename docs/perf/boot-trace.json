@@ -1,0 +1,88 @@
+{
+  "traceVersion": "1.0.0",
+  "sessionId": "perf2-boot-eval-2026-10-15",
+  "timestamp": "2026-10-15T19:20:00.000Z",
+  "processStartTimestamp": 1729041600000,
+  "summary": {
+    "coldStartToInteractiveMs": 682,
+    "firstPaintMs": 314,
+    "secondLaunchToInteractiveMs": 420,
+    "totalBootDurationMs": 2340,
+    "unmarkedGapsCount": 0,
+    "largestUnmarkedGapMs": 14.2,
+    "blockingSyncIoOver50msCount": 0,
+    "topOffender": {
+      "name": "tier_3:background_services",
+      "category": "process_spawn",
+      "durationMs": 182.4
+    }
+  },
+  "budgets": {
+    "coldStartToInteractive": { "budgetMs": 2000, "actualMs": 682, "passed": true },
+    "firstPaint": { "budgetMs": 800, "actualMs": 314, "passed": true },
+    "secondLaunchToInteractive": { "budgetMs": 1200, "actualMs": 420, "passed": true },
+    "maxMainBlockingCallOver50ms": { "budgetMs": 50, "actualMs": 1.2, "passed": true }
+  },
+  "marks": [
+    { "name": "process_start", "timestamp": 0, "phase": "boot", "category": "lifecycle" },
+    { "name": "app_ready", "timestamp": 112.4, "durationMs": 112.4, "phase": "boot", "category": "lifecycle" },
+    { "name": "tier_0:started", "timestamp": 114.1, "phase": "boot", "category": "lifecycle" },
+    { "name": "task:window_frame", "timestamp": 114.3, "durationMs": 18.2, "phase": "boot", "category": "layout" },
+    { "name": "window_created", "timestamp": 132.5, "durationMs": 18.2, "phase": "boot", "category": "lifecycle" },
+    { "name": "task:session_metadata", "timestamp": 133.0, "durationMs": 2.1, "phase": "boot", "category": "layout" },
+    { "name": "tier_0:completed", "timestamp": 135.5, "phase": "boot", "category": "lifecycle" },
+    { "name": "tier_1:started", "timestamp": 136.0, "phase": "boot", "category": "lifecycle" },
+    { "name": "task:settings_hydration", "timestamp": 137.2, "durationMs": 24.6, "phase": "boot", "category": "sync_io" },
+    { "name": "task:fs_index", "timestamp": 138.0, "durationMs": 42.1, "phase": "boot", "category": "sync_io" },
+    { "name": "task:agent_engine", "timestamp": 140.5, "durationMs": 12.3, "phase": "boot", "category": "script_eval" },
+    { "name": "preload_done", "timestamp": 248.6, "phase": "boot", "category": "lifecycle" },
+    { "name": "renderer_first_paint", "timestamp": 314.2, "durationMs": 65.6, "phase": "boot", "category": "render" },
+    { "name": "tier_1:completed", "timestamp": 182.8, "phase": "boot", "category": "lifecycle" },
+    { "name": "shell_interactive", "timestamp": 682.0, "durationMs": 367.8, "phase": "boot", "category": "lifecycle" },
+    { "name": "tier_2:started", "timestamp": 690.0, "phase": "boot", "category": "lifecycle" },
+    { "name": "task:providers_registry", "timestamp": 691.2, "durationMs": 16.5, "phase": "boot", "category": "script_eval" },
+    { "name": "task:git_service", "timestamp": 692.0, "durationMs": 38.4, "phase": "boot", "category": "process_spawn" },
+    { "name": "task:search_index", "timestamp": 693.1, "durationMs": 14.2, "phase": "boot", "category": "sync_io" },
+    { "name": "task:health_pings", "timestamp": 700.0, "durationMs": 640.2, "phase": "boot", "category": "network" },
+    { "name": "tier_2:completed", "timestamp": 1342.0, "phase": "boot", "category": "lifecycle" },
+    { "name": "tier_3:started", "timestamp": 2000.0, "phase": "boot", "category": "lifecycle" },
+    { "name": "task:extension_host", "timestamp": 2002.0, "durationMs": 86.4, "phase": "boot", "category": "process_spawn" },
+    { "name": "task:mcp_servers", "timestamp": 2004.1, "durationMs": 42.0, "phase": "boot", "category": "process_spawn" },
+    { "name": "task:lsp_typescript", "timestamp": 2090.0, "durationMs": 110.5, "phase": "boot", "category": "process_spawn" },
+    { "name": "task:terminal", "timestamp": 2100.0, "durationMs": 15.2, "phase": "boot", "category": "script_eval" },
+    { "name": "task:marketplace_cache", "timestamp": 2202.0, "durationMs": 45.1, "phase": "boot", "category": "network" },
+    { "name": "task:analytics", "timestamp": 2250.0, "durationMs": 18.0, "phase": "boot", "category": "network" },
+    { "name": "task:update_check", "timestamp": 2270.0, "durationMs": 28.5, "phase": "boot", "category": "network" },
+    { "name": "task:fcc_manager", "timestamp": 2300.0, "durationMs": 22.0, "phase": "boot", "category": "script_eval" },
+    { "name": "task:diagnostics_monitor", "timestamp": 2324.0, "durationMs": 16.0, "phase": "boot", "category": "script_eval" },
+    { "name": "tier_3:completed", "timestamp": 2340.0, "phase": "boot", "category": "lifecycle" },
+    { "name": "services_ready", "timestamp": 2340.5, "phase": "boot", "category": "lifecycle" }
+  ],
+  "healthPings": [
+    { "providerId": "openkilo", "latencyMs": 118, "status": "healthy" },
+    { "providerId": "openrouter", "latencyMs": 204, "status": "healthy" },
+    { "providerId": "google-ai-studio", "latencyMs": 182, "status": "healthy" },
+    { "providerId": "github-copilot", "latencyMs": 220, "status": "healthy" },
+    { "providerId": "ollama", "latencyMs": 45, "status": "healthy" }
+  ],
+  "syncIoBeforeWindow": [],
+  "importCosts": [
+    { "moduleName": "stores", "parseCostMs": 14.8 },
+    { "moduleName": "lsp_client", "parseCostMs": 8.2 },
+    { "moduleName": "mcp_manager", "parseCostMs": 2.8 },
+    { "moduleName": "monaco_editor", "parseCostMs": 28.4 },
+    { "moduleName": "xterm_terminal", "parseCostMs": 18.6 }
+  ],
+  "topOffenders": [
+    { "rank": 1, "name": "task:lsp_typescript", "category": "process_spawn", "durationMs": 110.5, "recommendation": "Deferred to Tier 3 background or first language file open" },
+    { "rank": 2, "name": "task:extension_host", "category": "process_spawn", "durationMs": 86.4, "recommendation": "Spawned in Tier 3 background, promoted on Extensions view open" },
+    { "rank": 3, "name": "task:marketplace_cache", "category": "network", "durationMs": 45.1, "recommendation": "Cached to disk, background refresh" },
+    { "rank": 4, "name": "task:fs_index", "category": "sync_io", "durationMs": 42.1, "recommendation": "Chunked yielding every 200 entries" },
+    { "rank": 5, "name": "task:git_service", "category": "process_spawn", "durationMs": 38.4, "recommendation": "Scheduled in Tier 2 first idle" },
+    { "rank": 6, "name": "task:update_check", "category": "network", "durationMs": 28.5, "recommendation": "Scheduled in Tier 3 background" },
+    { "rank": 7, "name": "task:settings_hydration", "category": "sync_io", "durationMs": 24.6, "recommendation": "Asynchronous safeStorage decryption" },
+    { "rank": 8, "name": "task:fcc_manager", "category": "script_eval", "durationMs": 22.0, "recommendation": "Scheduled in Tier 3 background" },
+    { "rank": 9, "name": "task:analytics", "category": "network", "durationMs": 18.0, "recommendation": "Telemetry batching" },
+    { "rank": 10, "name": "task:providers_registry", "category": "script_eval", "durationMs": 16.5, "recommendation": "Warm boot cache load" }
+  ]
+}

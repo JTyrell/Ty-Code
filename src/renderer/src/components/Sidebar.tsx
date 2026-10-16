@@ -9,7 +9,9 @@ import { VirtualFileTree } from './VirtualFileTree';
 import { toast } from '../state/toast-store';
 
 export const Sidebar: React.FC = () => {
-  const { fileTree, refreshFileTree, workspacePath } = useWorkspaceStore();
+  const fileTree = useWorkspaceStore((s) => s.fileTree);
+  const refreshFileTree = useWorkspaceStore((s) => s.refreshFileTree);
+  const workspacePath = useWorkspaceStore((s) => s.workspacePath);
 
   const handleCreateFile = async () => {
     if (!workspacePath) {

@@ -41,7 +41,8 @@ export const VirtualFileTree: React.FC<VirtualFileTreeProps> = ({ rootNode, onRe
   const [editName, setEditName] = useState('');
 
   const containerRef = useRef<HTMLDivElement>(null);
-  const { openFile, activeTabPath } = useWorkspaceStore();
+  const openFile = useWorkspaceStore((s) => s.openFile);
+  const activeTabPath = useWorkspaceStore((s) => s.activeTabPath);
 
   // Initialize with root expanded
   useEffect(() => {

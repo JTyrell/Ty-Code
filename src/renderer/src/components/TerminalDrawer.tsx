@@ -33,8 +33,12 @@ function activeFileDirectory(filePath: string): string {
 }
 
 export const TerminalDrawer: React.FC = () => {
-  const { isTerminalOpen, toggleTerminal, settings, toggleSettings } = useChatStore();
-  const { workspacePath, activeTabPath } = useWorkspaceStore();
+  const isTerminalOpen = useChatStore((s) => s.isTerminalOpen);
+  const toggleTerminal = useChatStore((s) => s.toggleTerminal);
+  const settings = useChatStore((s) => s.settings);
+  const toggleSettings = useChatStore((s) => s.toggleSettings);
+  const workspacePath = useWorkspaceStore((s) => s.workspacePath);
+  const activeTabPath = useWorkspaceStore((s) => s.activeTabPath);
   const [availableShells, setAvailableShells] = useState<ShellInfo[]>([]);
   const [tabs, setTabs] = useState<TerminalTab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
@@ -64,6 +68,38 @@ export const TerminalDrawer: React.FC = () => {
   orientationRef.current = splitOrientation;
   terminalHeightRef.current = terminalHeight;
   splitRatioRef.current = splitRatio;
+
+  // Keep-alive terminal optimization: pause/blur when hidden, defer fit() to rAF on visible
+  useEffect(() => {
+    if (isTerminalOpen) {
+      const rafId = window.requestAnimationFrame(() => {
+        for (const [id, runtime] of terminalRefs.current.entries()) {
+          try {
+            runtime.fit.fit();
+            const tab = tabsRef.current.find((t) => t.id === id);
+            if (tab) {
+              window.electronAPI.resizePty(tab.ptyId, runtime.term.cols, runtime.term.rows);
+            }
+            if (activeTabRef.current === id) {
+              runtime.term.focus();
+            }
+          } catch {
+            // Non-fatal layout transition
+          }
+        }
+      });
+      return () => window.cancelAnimationFrame(rafId);
+    } else {
+      // Pause cursor and active redraw when hidden
+      for (const runtime of terminalRefs.current.values()) {
+        try {
+          runtime.term.blur();
+        } catch {
+          // Non-fatal
+        }
+      }
+    }
+  }, [isTerminalOpen]);
 
   const updateTabs = useCallback((update: (current: TerminalTab[]) => TerminalTab[]) => {
     const next = update(tabsRef.current);

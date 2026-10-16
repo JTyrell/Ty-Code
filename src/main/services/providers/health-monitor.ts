@@ -13,6 +13,7 @@ import type {
   ProviderHealthStatus
 } from '../../../shared/types/free-providers';
 import { freeProviderRegistry } from './free-provider-registry';
+import { bootProfiler } from '../perf/boot-profiler';
 
 export class ProviderHealthMonitor {
   private static instance: ProviderHealthMonitor;
@@ -227,7 +228,14 @@ export class ProviderHealthMonitor {
       this.recordRequestOutcome(providerId, false, elapsed, msg);
     }
 
-    return this.getProviderHealth(providerId);
+    const currentHealth = this.getProviderHealth(providerId);
+    try {
+      bootProfiler.recordHealthPing(providerId, currentHealth.latencyMs || 0, currentHealth.isHealthy ? 'healthy' : 'unhealthy');
+    } catch {
+      // Non-blocking
+    }
+
+    return currentHealth;
   }
 
   /**
@@ -242,16 +250,56 @@ export class ProviderHealthMonitor {
   }
 
   /**
+   * Pings all registered free providers staggered (Tier 2 boot requirement).
+   * Staggered 200ms apart, max 3 concurrent, non-blocking.
+   */
+  public async pingAllProvidersStaggered(
+    staggerMs = 200,
+    maxConcurrent = 3,
+    customFetch: typeof fetch = globalThis.fetch
+  ): Promise<Record<string, ProviderHealthStatus>> {
+    const providers = freeProviderRegistry.getAllProviders();
+    const queue = [...providers];
+    const executing: Array<Promise<void>> = [];
+
+    while (queue.length > 0 || executing.length > 0) {
+      while (queue.length > 0 && executing.length < maxConcurrent) {
+        const nextProvider = queue.shift()!;
+        const promise = (async () => {
+          await this.pingProvider(nextProvider.id, customFetch);
+        })().finally(() => {
+          const index = executing.indexOf(promise);
+          if (index >= 0) executing.splice(index, 1);
+        });
+        executing.push(promise);
+        if (queue.length > 0 && staggerMs > 0) {
+          await new Promise((r) => setTimeout(r, staggerMs));
+        }
+      }
+      if (executing.length > 0) {
+        await Promise.race(executing);
+      }
+    }
+    return this.getAllHealthStatuses();
+  }
+
+  /**
    * Starts periodic health monitoring (default: 30 seconds).
    */
-  public startMonitoring(intervalMs = 30_000, customFetch: typeof fetch = globalThis.fetch): void {
+  public startMonitoring(
+    intervalMs = 30_000,
+    customFetch: typeof fetch = globalThis.fetch,
+    skipInitialPing = false
+  ): void {
     if (this.isMonitoringActive) return;
     this.isMonitoringActive = true;
 
-    // Run initial health check
-    void this.pingAllProviders(customFetch);
+    // Run initial health check only if not skipped (e.g. at boot, BootScheduler handles staggered pings)
+    if (!skipInitialPing) {
+      void this.pingAllProviders(customFetch);
+    }
 
-    // Schedule 30-second recurring background check
+    // Schedule recurring background check
     this.monitorTimer = setInterval(() => {
       void this.pingAllProviders(customFetch);
     }, intervalMs);

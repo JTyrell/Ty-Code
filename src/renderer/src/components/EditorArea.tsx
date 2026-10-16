@@ -46,24 +46,23 @@ interface SplitPaneState {
 }
 
 export const EditorArea: React.FC = () => {
-  const {
-    openTabs,
-    activeTabPath,
-    workspacePath,
-    setActiveTab,
-    closeTab,
-    updateTabContent,
-    saveActiveFile,
-    saveFile,
-    diffReview,
-    closeDiffReview,
-    applyDiff
-  } = useWorkspaceStore();
+  // Zustand selector audit: narrow slices to eliminate render storms
+  const openTabs = useWorkspaceStore((s) => s.openTabs);
+  const activeTabPath = useWorkspaceStore((s) => s.activeTabPath);
+  const workspacePath = useWorkspaceStore((s) => s.workspacePath);
+  const setActiveTab = useWorkspaceStore((s) => s.setActiveTab);
+  const closeTab = useWorkspaceStore((s) => s.closeTab);
+  const updateTabContent = useWorkspaceStore((s) => s.updateTabContent);
+  const saveActiveFile = useWorkspaceStore((s) => s.saveActiveFile);
+  const saveFile = useWorkspaceStore((s) => s.saveFile);
+  const diffReview = useWorkspaceStore((s) => s.diffReview);
+  const closeDiffReview = useWorkspaceStore((s) => s.closeDiffReview);
+  const applyDiff = useWorkspaceStore((s) => s.applyDiff);
 
   const monacoRuntime = useMonacoRuntime();
   const monaco = monacoRuntime.monaco;
-  const { settings } = useChatStore();
-  const { servers: languageServers } = useLspStore();
+  const settings = useChatStore((s) => s.settings);
+  const languageServers = useLspStore((s) => s.servers);
   const [minimapEnabled, setMinimapEnabled] = useState(true);
   const [wordWrap, setWordWrap] = useState<'off' | 'on' | 'wordWrapColumn' | 'bounded'>('off');
   const [isZenMode, setIsZenMode] = useState(false);
@@ -98,6 +97,46 @@ export const EditorArea: React.FC = () => {
     setMinimapEnabled(settings?.editor?.minimap ?? true);
     setWordWrap(settings?.editor?.wordWrap ?? 'off');
   }, [settings?.editor?.minimap, settings?.editor?.wordWrap]);
+
+  // Monaco Model Lifecycle: Maintain up to 10 open models; dispose off-screen models beyond 10 tabs
+  const recentTabsRef = useRef<string[]>([]);
+  useEffect(() => {
+    if (!monaco || !activeTab) return;
+    const path = activeTab.path;
+    recentTabsRef.current = [path, ...recentTabsRef.current.filter((p) => p !== path)];
+
+    const allModels = monaco.editor.getModels();
+    const openTabPaths = new Set(openTabs.map((t) => t.path));
+    const openTabModels = allModels.filter((m) => {
+      if (m.uri.scheme !== 'file') return false;
+      const fsPath = m.uri.fsPath.replace(/\\/g, '/');
+      return openTabPaths.has(fsPath) || openTabs.some((t) => t.path.replace(/\\/g, '/') === fsPath);
+    });
+
+    if (openTabModels.length > 10) {
+      const keepPaths = new Set(recentTabsRef.current.slice(0, 10));
+      for (const m of openTabModels) {
+        const fsPath = m.uri.fsPath.replace(/\\/g, '/');
+        const isKeep = keepPaths.has(fsPath) || openTabs.slice(0, 10).some((t) => t.path.replace(/\\/g, '/') === fsPath);
+        if (!isKeep && fsPath !== activeTab.path.replace(/\\/g, '/')) {
+          m.dispose();
+        }
+      }
+    }
+  }, [activeTab?.path, monaco, openTabs]);
+
+  // Defer Monaco layout to rAF after visibility change or split change
+  useEffect(() => {
+    if (!editorRef.current) return;
+    const rafId = window.requestAnimationFrame(() => {
+      try {
+        editorRef.current.layout();
+      } catch {
+        // Layout transition
+      }
+    });
+    return () => window.cancelAnimationFrame(rafId);
+  }, [activeTab?.path, splitState.isSplit, splitState.orientation]);
 
   const previousActivePath = useRef<string | null>(activeTabPath);
   useEffect(() => {
@@ -740,7 +779,7 @@ export const EditorArea: React.FC = () => {
             {/* Primary Editor Pane */}
             <div style={{ flex: 1, height: '100%', position: 'relative', overflow: 'hidden' }}>
               <Editor
-                key={`primary_${activeTab.path}`}
+                key="primary_editor"
                 path={monaco?.Uri.file(activeTab.path).toString() ?? activeTab.path}
                 language={activeTab.language}
                 value={activeTab.content}
@@ -752,7 +791,7 @@ export const EditorArea: React.FC = () => {
                 options={{
                   fontSize: settings?.editor?.fontSize ?? 13,
                   fontFamily: "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
-                  automaticLayout: true,
+                  automaticLayout: false,
                   scrollBeyondLastLine: false,
                   minimap: { enabled: minimapEnabled, side: 'right' },
                   wordWrap,
@@ -807,7 +846,7 @@ export const EditorArea: React.FC = () => {
                 </div>
                 <div style={{ height: 'calc(100% - 24px)' }}>
                   <Editor
-                    key={`secondary_${secondaryTab.path}`}
+                    key="secondary_editor"
                     path={monaco?.Uri.file(secondaryTab.path).toString() ?? secondaryTab.path}
                     language={secondaryTab.language}
                     value={secondaryTab.content}

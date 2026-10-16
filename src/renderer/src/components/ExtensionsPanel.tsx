@@ -47,39 +47,38 @@ export function isVersionNewer(registryVer?: string, installedVer?: string): boo
 }
 
 export const ExtensionsPanel: React.FC = () => {
-  const {
-    installed,
-    marketplace,
-    activeTab,
-    selectedCategory,
-    query,
-    sortBy,
-    isLoading,
-    isMarketplaceLoading,
-    isOfflineCache,
-    offlineMessage,
-    rateLimited,
-    retryAfterSec,
-    installingMap,
-    errorMap,
-    error,
-    activeDetail,
-    activeSettings,
-    setActiveTab,
-    setSelectedCategory,
-    setQuery,
-    setSortBy,
-    setActiveDetail,
-    setActiveSettings,
-    loadInstalled,
-    searchMarketplace,
-    installExtension,
-    uninstallExtension,
-    toggleExtension,
-    installFromVsix,
-    retryInstall,
-    retrySearch
-  } = useExtensionStore();
+  // Zustand selector audit: subscribe to narrow slices only
+  const installed = useExtensionStore((s) => s.installed);
+  const marketplace = useExtensionStore((s) => s.marketplace);
+  const activeTab = useExtensionStore((s) => s.activeTab);
+  const selectedCategory = useExtensionStore((s) => s.selectedCategory);
+  const query = useExtensionStore((s) => s.query);
+  const sortBy = useExtensionStore((s) => s.sortBy);
+  const isLoading = useExtensionStore((s) => s.isLoading);
+  const isMarketplaceLoading = useExtensionStore((s) => s.isMarketplaceLoading);
+  const isOfflineCache = useExtensionStore((s) => s.isOfflineCache);
+  const offlineMessage = useExtensionStore((s) => s.offlineMessage);
+  const rateLimited = useExtensionStore((s) => s.rateLimited);
+  const retryAfterSec = useExtensionStore((s) => s.retryAfterSec);
+  const installingMap = useExtensionStore((s) => s.installingMap);
+  const errorMap = useExtensionStore((s) => s.errorMap);
+  const error = useExtensionStore((s) => s.error);
+  const activeDetail = useExtensionStore((s) => s.activeDetail);
+  const activeSettings = useExtensionStore((s) => s.activeSettings);
+  const setActiveTab = useExtensionStore((s) => s.setActiveTab);
+  const setSelectedCategory = useExtensionStore((s) => s.setSelectedCategory);
+  const setQuery = useExtensionStore((s) => s.setQuery);
+  const setSortBy = useExtensionStore((s) => s.setSortBy);
+  const setActiveDetail = useExtensionStore((s) => s.setActiveDetail);
+  const setActiveSettings = useExtensionStore((s) => s.setActiveSettings);
+  const loadInstalled = useExtensionStore((s) => s.loadInstalled);
+  const searchMarketplace = useExtensionStore((s) => s.searchMarketplace);
+  const installExtension = useExtensionStore((s) => s.installExtension);
+  const uninstallExtension = useExtensionStore((s) => s.uninstallExtension);
+  const toggleExtension = useExtensionStore((s) => s.toggleExtension);
+  const installFromVsix = useExtensionStore((s) => s.installFromVsix);
+  const retryInstall = useExtensionStore((s) => s.retryInstall);
+  const retrySearch = useExtensionStore((s) => s.retrySearch);
 
   const [showSimulator, setShowSimulator] = useState(false);
 
@@ -112,20 +111,22 @@ export const ExtensionsPanel: React.FC = () => {
 
   const categories = ['All', 'Languages', 'Tools', 'AI', 'Linters', 'Git & SCM', 'Themes'];
 
-  // Filter installed extensions based on query & category
-  const filteredInstalled = installed.filter((ext) => {
-    const matchesQuery =
-      !query ||
-      ext.manifest.name.toLowerCase().includes(query.toLowerCase()) ||
-      (ext.manifest.displayName && ext.manifest.displayName.toLowerCase().includes(query.toLowerCase())) ||
-      (ext.manifest.description && ext.manifest.description.toLowerCase().includes(query.toLowerCase()));
+  // Memoize derived list of filtered extensions to stop re-render storms
+  const filteredInstalled = useMemo(() => {
+    return installed.filter((ext) => {
+      const matchesQuery =
+        !query ||
+        ext.manifest.name.toLowerCase().includes(query.toLowerCase()) ||
+        (ext.manifest.displayName && ext.manifest.displayName.toLowerCase().includes(query.toLowerCase())) ||
+        (ext.manifest.description && ext.manifest.description.toLowerCase().includes(query.toLowerCase()));
 
-    const matchesCategory =
-      selectedCategory === 'All' ||
-      (ext.manifest.categories && ext.manifest.categories.includes(selectedCategory));
+      const matchesCategory =
+        selectedCategory === 'All' ||
+        (ext.manifest.categories && ext.manifest.categories.includes(selectedCategory));
 
-    return matchesQuery && matchesCategory;
-  });
+      return matchesQuery && matchesCategory;
+    });
+  }, [installed, query, selectedCategory]);
 
   return (
     <div

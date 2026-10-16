@@ -11,7 +11,8 @@
  * Brand: Ty-Code
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Sparkles,
   Zap,
@@ -190,12 +191,22 @@ export const FALLBACK_CATALOG: Record<ModelTier, RankedModelCandidate[]> = {
   ]
 };
 
+interface DropdownPosition {
+  top: number;
+  left: number;
+  width: number;
+  maxHeight: number;
+}
+
 export const ModelSelector: React.FC = () => {
   const { settings, saveSettings } = useChatStore();
   const [isOpen, setIsOpen] = useState(false);
   const [routingMode, setRoutingMode] = useState<RoutingPreferenceMode>('auto');
   const [catalog, setCatalog] = useState<Record<ModelTier, RankedModelCandidate[]>>(FALLBACK_CATALOG);
+  const [dropdownPosition, setDropdownPosition] = useState<DropdownPosition | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const dropdownMenuRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
 
   const activeModelId = settings?.activeModel || 'qwen/qwen-2.5-coder-32b-instruct:free';
   const activeProvider = settings?.activeProvider || 'openrouter';
@@ -236,16 +247,79 @@ export const ModelSelector: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen]);
 
-  // Click outside to close
+  const calculateDropdownPosition = useCallback((): DropdownPosition | null => {
+    const trigger = triggerRef.current;
+    if (!trigger) return null;
+
+    const rect = trigger.getBoundingClientRect();
+    const margin = 12;
+    const gap = 6;
+    const viewportWidth = Math.min(window.innerWidth, document.documentElement.clientWidth || window.innerWidth);
+    const viewportHeight = Math.min(window.innerHeight, document.documentElement.clientHeight || window.innerHeight);
+    const width = Math.max(0, Math.min(310, viewportWidth - margin * 2));
+    const maxLeft = Math.max(margin, viewportWidth - margin - width);
+    const left = Math.min(Math.max(margin, rect.right - width), maxLeft);
+    const spaceBelow = Math.max(0, viewportHeight - rect.bottom - gap - margin);
+    const spaceAbove = Math.max(0, rect.top - gap - margin);
+    const openBelow = spaceBelow >= 220 || spaceBelow >= spaceAbove;
+    const maxHeight = Math.min(440, openBelow ? spaceBelow : spaceAbove);
+    const top = openBelow ? rect.bottom + gap : Math.max(margin, rect.top - gap - maxHeight);
+
+    return { top, left, width, maxHeight };
+  }, []);
+
+  const toggleDropdown = () => {
+    setIsOpen((prev) => {
+      const next = !prev;
+      if (next) {
+        const pos = calculateDropdownPosition();
+        if (pos) setDropdownPosition(pos);
+      }
+      return next;
+    });
+  };
+
+  // Keep the portal menu inside the app window even when its trigger is near an edge.
+  useLayoutEffect(() => {
+    if (!isOpen) {
+      setDropdownPosition(null);
+      return;
+    }
+
+    const updatePosition = () => {
+      const nextPosition = calculateDropdownPosition();
+      if (!nextPosition) return;
+
+      setDropdownPosition((current) => current
+        && current.top === nextPosition.top
+        && current.left === nextPosition.left
+        && current.width === nextPosition.width
+        && current.maxHeight === nextPosition.maxHeight
+        ? current
+        : nextPosition);
+    };
+
+    updatePosition();
+    const trigger = triggerRef.current;
+    const resizeObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updatePosition);
+    if (trigger) resizeObserver?.observe(trigger);
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [isOpen, calculateDropdownPosition]);
+
+  // Click outside closes the trigger and its portaled menu.
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setIsOpen(false);
-      }
+      const target = e.target as Node;
+      if (dropdownRef.current?.contains(target) || dropdownMenuRef.current?.contains(target)) return;
+      setIsOpen(false);
     };
-    if (isOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
+    if (isOpen) document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isOpen]);
 
@@ -324,10 +398,13 @@ export const ModelSelector: React.FC = () => {
     <div
       ref={dropdownRef}
       id="chat-model-selector-container"
+      className="chat-model-selector-container"
       style={{
         position: 'relative',
-        display: 'inline-flex',
+        display: 'flex',
         alignItems: 'center',
+        width: '100%',
+        minWidth: 0,
         userSelect: 'none'
       }}
     >
@@ -335,39 +412,50 @@ export const ModelSelector: React.FC = () => {
       <button
         type="button"
         id="btn-model-selector-trigger"
-        onClick={() => setIsOpen((prev) => !prev)}
+        ref={triggerRef}
+        className="chat-model-selector-trigger"
+        onClick={toggleDropdown}
         title={`Active Model: ${activeModelId} (${currentTierInfo.name}). Press Ctrl+M to switch models.`}
         style={{
           display: 'flex',
           alignItems: 'center',
-          gap: '6px',
-          padding: '3px 8px',
-          borderRadius: '5px',
-          background: isOpen ? 'rgba(255, 255, 255, 0.08)' : 'rgba(255, 255, 255, 0.04)',
+          gap: '5px',
+          height: '24px',
+          padding: '0 6px',
+          borderRadius: '6px',
+          background: isOpen ? 'var(--surface-3, rgba(255, 255, 255, 0.08))' : 'var(--surface-2, rgba(255, 255, 255, 0.04))',
           border: isOpen ? '1px solid var(--accent-primary)' : '1px solid var(--border-subtle)',
           color: 'var(--text-primary)',
           fontSize: '11px',
           fontWeight: 500,
           cursor: 'pointer',
+          maxWidth: '100%',
+          minWidth: 0,
+          flexShrink: 1,
           transition: 'all 0.15s ease'
         }}
       >
-        {routingMode === 'auto' ? (
-          <Sparkles size={12} color="#38bdf8" />
-        ) : routingMode === 'fastest' ? (
-          <Zap size={12} color="#fbbf24" />
-        ) : routingMode === 'most_capable' ? (
-          <Cpu size={12} color="#818cf8" />
-        ) : (
-          <Sliders size={12} color="#cbd5e1" />
-        )}
+        <span style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+          {routingMode === 'auto' ? (
+            <Sparkles size={11} color="#38bdf8" />
+          ) : routingMode === 'fastest' ? (
+            <Zap size={11} color="#fbbf24" />
+          ) : routingMode === 'most_capable' ? (
+            <Cpu size={11} color="#818cf8" />
+          ) : (
+            <Sliders size={11} color="#cbd5e1" />
+          )}
+        </span>
 
         <span
+          className="chat-model-selector-name"
           style={{
-            maxWidth: '130px',
+            maxWidth: '75px',
+            minWidth: 0,
             overflow: 'hidden',
             textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap'
+            whiteSpace: 'nowrap',
+            flexShrink: 1
           }}
         >
           {modelShortName}
@@ -384,32 +472,37 @@ export const ModelSelector: React.FC = () => {
             backgroundColor: currentTierInfo.bg,
             color: currentTierInfo.color,
             border: `1px solid ${currentTierInfo.border}`,
-            textTransform: 'uppercase',
-            letterSpacing: '0.5px'
+            letterSpacing: '0.5px',
+            whiteSpace: 'nowrap',
+            flexShrink: 0
           }}
         >
-          {activeTier.replace('tier_', '').replace('_reasoning', ' S').replace('_coding', ' A').replace('_general', ' B').replace('_fast', ' C')}
+          {currentTierInfo.name.split(':')[0]}
         </span>
 
-        <ChevronDown size={11} color="var(--text-muted)" style={{ transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s ease' }} />
+        <ChevronDown size={11} color="var(--text-muted)" style={{ flexShrink: 0, transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s ease' }} />
       </button>
 
       {/* Dropdown Menu */}
-      {isOpen && (
+      {isOpen && dropdownPosition && createPortal(
         <div
+          ref={dropdownMenuRef}
           id="model-selector-dropdown-menu"
           style={{
-            position: 'absolute',
-            top: 'calc(100% + 6px)',
-            left: 0,
-            width: '320px',
-            maxHeight: '440px',
+            position: 'fixed',
+            top: `${dropdownPosition.top}px`,
+            left: `${dropdownPosition.left}px`,
+            width: `${dropdownPosition.width}px`,
+            maxWidth: 'calc(100vw - 24px)',
+            maxHeight: `${dropdownPosition.maxHeight}px`,
+            boxSizing: 'border-box',
+            overflowX: 'hidden',
             overflowY: 'auto',
             background: '#161922',
             border: '1px solid rgba(255, 255, 255, 0.12)',
             borderRadius: '8px',
             boxShadow: '0 16px 36px rgba(0, 0, 0, 0.55)',
-            zIndex: 100,
+            zIndex: 2000,
             padding: '8px',
             display: 'flex',
             flexDirection: 'column',
@@ -518,9 +611,11 @@ export const ModelSelector: React.FC = () => {
                         }}
                       >
                         <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
                             <span
                               style={{
+                                minWidth: 0,
+                                flex: '1 1 auto',
                                 fontSize: '11px',
                                 fontWeight: isSelected ? 600 : 500,
                                 color: isSelected ? '#ffffff' : 'var(--text-primary)',
@@ -534,6 +629,7 @@ export const ModelSelector: React.FC = () => {
                             {candidate.isFree && (
                               <span
                                 style={{
+                                  flexShrink: 0,
                                   fontSize: '8px',
                                   fontWeight: 700,
                                   padding: '0 4px',
@@ -560,7 +656,8 @@ export const ModelSelector: React.FC = () => {
               );
             })}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

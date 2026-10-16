@@ -44,6 +44,7 @@ interface CommandPaletteProps {
   onSplitEditor?: (orientation: 'horizontal' | 'vertical') => void;
   onOpenWorkspaceSymbols?: () => void;
   onOpenQuickOpen?: (initialQuery: string) => void;
+  onOpenBootTimeline?: () => void;
 }
 
 export const CommandPalette: React.FC<CommandPaletteProps> = ({
@@ -55,7 +56,8 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   onToggleZenMode,
   onSplitEditor,
   onOpenWorkspaceSymbols,
-  onOpenQuickOpen
+  onOpenQuickOpen,
+  onOpenBootTimeline
 }) => {
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -132,6 +134,16 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         icon: <Zap size={14} color="var(--accent-amber)" />,
         action: () => {
           onToggleZenMode?.();
+          onClose();
+        }
+      },
+      {
+        id: 'workbench.action.showBootTimeline',
+        title: 'Ty-Code: Show Boot Timeline',
+        category: 'View',
+        icon: <Zap size={14} color="#38bdf8" />,
+        action: () => {
+          onOpenBootTimeline?.();
           onClose();
         }
       },

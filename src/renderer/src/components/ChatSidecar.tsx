@@ -337,118 +337,72 @@ export const ChatSidecar: React.FC = () => {
 
   return <aside className="chat-sidecar">
     <header className="chat-header">
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-        <button
-          type="button"
-          onClick={() => setSidecarTab('chat')}
-          style={{
-            background: 'none',
-            border: 'none',
-            cursor: 'pointer',
-            padding: '2px 6px',
-            borderRadius: '4px',
-            color: sidecarTab === 'chat' ? 'var(--text-primary)' : 'var(--text-muted)',
-            fontWeight: sidecarTab === 'chat' ? 700 : 400,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 4,
-            fontSize: 12
-          }}
-        >
-          <Sparkles size={13} color={sidecarTab === 'chat' ? 'var(--accent-primary)' : 'inherit'} />
-          <span>Assistant</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => setSidecarTab('pair')}
-          style={{
-            background: 'none',
-            border: 'none',
-            cursor: 'pointer',
-            padding: '2px 6px',
-            borderRadius: '4px',
-            color: sidecarTab === 'pair' ? 'var(--text-primary)' : 'var(--text-muted)',
-            fontWeight: sidecarTab === 'pair' ? 700 : 400,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 4,
-            fontSize: 12
-          }}
-        >
-          <Users size={13} color={sidecarTab === 'pair' ? '#22c55e' : 'inherit'} />
-          <span>Pair Mode</span>
-          {isPairActive && <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#22c55e' }} />}
-        </button>
-        {sidecarTab === 'chat' && (
-          <>
-            <div
+      <div className="chat-header-top">
+        <div className="chat-header-tabs" aria-label="Assistant view">
+          <button
+            type="button"
+            aria-pressed={sidecarTab === 'chat'}
+            onClick={() => setSidecarTab('chat')}
+            className={`chat-header-tab${sidecarTab === 'chat' ? ' is-active' : ''}`}
+          >
+            <Sparkles size={13} aria-hidden="true" />
+            <span>Assistant</span>
+          </button>
+          <button
+            type="button"
+            aria-pressed={sidecarTab === 'pair'}
+            onClick={() => setSidecarTab('pair')}
+            className={`chat-header-tab${sidecarTab === 'pair' ? ' is-active' : ''}`}
+          >
+            <Users size={13} aria-hidden="true" />
+            <span>Pair Mode</span>
+            {isPairActive && <span className="chat-pair-active-dot" aria-label="Pair session active" />}
+          </button>
+        </div>
+        <div className="chat-header-actions">
+          {currentStatus && <span className="chat-status" title={currentStatus}><Loader2 size={10} className="animate-spin" /><span>{currentStatus}</span></span>}
+          {sidecarTab === 'chat' ? (
+            <button onClick={clearChat} title="Clear chat history" aria-label="Clear chat history" className="chat-icon-button"><Trash2 size={13} /></button>
+          ) : (
+            <button onClick={clearSuggestions} title="Clear pair suggestions" aria-label="Clear suggestions" className="chat-icon-button"><Trash2 size={13} /></button>
+          )}
+        </div>
+      </div>
+      {sidecarTab === 'chat' && (
+        <div className="chat-header-controls">
+          <div className="chat-header-agent-mode" aria-label="Agent mode">
+            <button
+              type="button"
+              onClick={() => setAgentMode('build')}
+              title="Build Agent: Full access to read, write, edit files and execute commands (Default)"
+              aria-pressed={agentMode === 'build'}
               style={{
-                display: 'flex',
-                alignItems: 'center',
-                background: 'var(--bg-secondary)',
-                borderRadius: '4px',
-                padding: '2px',
-                border: '1px solid var(--border-subtle)',
-                marginLeft: '4px'
+                background: agentMode === 'build' ? 'var(--accent-primary)' : 'transparent',
+                color: agentMode === 'build' ? '#fff' : 'var(--text-muted)'
               }}
             >
-              <button
-                type="button"
-                onClick={() => setAgentMode('build')}
-                title="Build Agent: Full access to read, write, edit files and execute commands (Default)"
-                style={{
-                  background: agentMode === 'build' ? 'var(--accent-primary)' : 'transparent',
-                  color: agentMode === 'build' ? '#fff' : 'var(--text-muted)',
-                  border: 'none',
-                  borderRadius: '3px',
-                  padding: '2px 6px',
-                  fontSize: '10px',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '3px'
-                }}
-              >
-                <Hammer size={10} />
-                <span>Build</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setAgentMode('plan')}
-                title="Plan Agent: Read-only exploration and planning. Refuses file edits, bash commands require permission."
-                style={{
-                  background: agentMode === 'plan' ? '#f59e0b' : 'transparent',
-                  color: agentMode === 'plan' ? '#fff' : 'var(--text-muted)',
-                  border: 'none',
-                  borderRadius: '3px',
-                  padding: '2px 6px',
-                  fontSize: '10px',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '3px'
-                }}
-              >
-                <Compass size={10} />
-                <span>Plan</span>
-              </button>
-            </div>
-            <div style={{ marginLeft: '4px' }}>
-              <ModelSelector />
-            </div>
-          </>
-        )}
-      </div>
-      <div className="chat-header-actions">
-        {currentStatus && <span className="chat-status"><Loader2 size={10} className="animate-spin" /><span>{currentStatus}</span></span>}
-        {sidecarTab === 'chat' ? (
-          <button onClick={clearChat} title="Clear chat history" aria-label="Clear chat history" className="chat-icon-button"><Trash2 size={13} /></button>
-        ) : (
-          <button onClick={clearSuggestions} title="Clear pair suggestions" aria-label="Clear suggestions" className="chat-icon-button"><Trash2 size={13} /></button>
-        )}
-      </div>
+              <Hammer size={10} aria-hidden="true" />
+              <span>Build</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setAgentMode('plan')}
+              title="Plan Agent: Read-only exploration and planning. Refuses file edits, bash commands require permission."
+              aria-pressed={agentMode === 'plan'}
+              style={{
+                background: agentMode === 'plan' ? '#f59e0b' : 'transparent',
+                color: agentMode === 'plan' ? '#fff' : 'var(--text-muted)'
+              }}
+            >
+              <Compass size={10} aria-hidden="true" />
+              <span>Plan</span>
+            </button>
+          </div>
+          <div className="chat-header-model">
+            <ModelSelector />
+          </div>
+        </div>
+      )}
     </header>
 
     {sidecarTab === 'chat' && agentMode === 'plan' && (

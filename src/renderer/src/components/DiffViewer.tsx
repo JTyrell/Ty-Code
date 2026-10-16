@@ -6,10 +6,17 @@ import { ensureMonaco, useMonacoRuntime } from '../services/monaco-runtime';
 import { useGitStore } from '../state/git-store';
 
 export const DiffViewer: React.FC = () => {
-  const {
-    activeDiff, activeHunks, diffInline, setDiffInline, closeDiff,
-    stageFile, unstageFile, discardChanges, applyHunk
-  } = useGitStore();
+  // Zustand selector audit: narrow slices to eliminate render storms
+  const activeDiff = useGitStore((s) => s.activeDiff);
+  const activeHunks = useGitStore((s) => s.activeHunks);
+  const diffInline = useGitStore((s) => s.diffInline);
+  const setDiffInline = useGitStore((s) => s.setDiffInline);
+  const closeDiff = useGitStore((s) => s.closeDiff);
+  const stageFile = useGitStore((s) => s.stageFile);
+  const unstageFile = useGitStore((s) => s.unstageFile);
+  const discardChanges = useGitStore((s) => s.discardChanges);
+  const applyHunk = useGitStore((s) => s.applyHunk);
+
   const [hunkIndex, setHunkIndex] = useState(0);
   const monacoRuntime = useMonacoRuntime();
   const diffEditorRef = useRef<Monaco.editor.IStandaloneDiffEditor | null>(null);
@@ -23,6 +30,19 @@ export const DiffViewer: React.FC = () => {
       void ensureMonaco().catch(() => undefined);
     }
   }, [activeDiff, monacoRuntime.status]);
+
+  // Defer DiffEditor layout to rAF after visibility or diff change
+  useEffect(() => {
+    if (!diffEditorRef.current) return;
+    const rafId = window.requestAnimationFrame(() => {
+      try {
+        diffEditorRef.current?.layout();
+      } catch {
+        // Layout transition
+      }
+    });
+    return () => window.cancelAnimationFrame(rafId);
+  }, [diffInline, activeDiff?.filePath]);
 
   useEffect(() => {
     setHunkIndex((current) => Math.max(0, Math.min(current, activeHunks.length - 1)));
