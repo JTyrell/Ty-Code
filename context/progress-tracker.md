@@ -129,6 +129,14 @@
 - [ ] Public desktop installer distribution and release deployment.
 - [ ] **Phase 8 (Scheduled, Deferred): Managed LSP Downloads & Browser-Compatible Language Servers** — scope and security acceptance criteria in [LSP-MANAGED-DOWNLOADS-PLAN.md](../docs/LSP-MANAGED-DOWNLOADS-PLAN.md).
 
+### Security Debt - sprintf-js Vulnerability
+- **Status:** Documented, Deferred
+- **Severity:** Moderate (Build-time only)
+- **Discovered:** v1.0.0 audit
+- **Target Resolution:** v1.1.0
+- **Risk:** None to end users
+- **Action Required:** Update electron-builder or override sprintf-js dependency
+
 ## Architecture Decisions
 1. **Direct TypeScript Provider & Agent vs Python Sidecar**:
    - *Option A (Pure TypeScript Native)*: Implement the provider gateway directly in TypeScript within Electron's Main process. Benefits: Single runtime (no Python or `uv` installation required on end-user machine), smaller installer binary, zero inter-process latency.
