@@ -191,7 +191,8 @@ export async function startAgentTask(
             actionUrl: classified.actionUrl,
             actionLabel: classified.actionLabel,
             suggestedFallback: classified.suggestedFallback,
-            retryAfterSec: classified.retryAfterSec
+            retryAfterSec: classified.retryAfterSec,
+            providerId: effectiveSettings.activeProvider
           }
         });
         break;

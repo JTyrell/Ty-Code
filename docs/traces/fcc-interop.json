@@ -1,0 +1,332 @@
+{
+  "timestamp": "2026-10-17T04:56:28.103Z",
+  "gitCommit": "bb0d31db5e37962045ecce162798077b40167a4c",
+  "phase": "FCC-3",
+  "title": "Subscriptions at $0 + Harness Interoperability (Both Directions)",
+  "status": "passed",
+  "summary": {
+    "totalChecks": 57,
+    "passedChecks": 57,
+    "failedChecks": 0,
+    "elapsedMs": 5471
+  },
+  "deliverables": {
+    "subscriptionOAuth": "src/main/services/fcc/subscription-oauth.ts",
+    "localSupplyEndpoint": "src/main/services/fcc/local-supply-endpoint.ts",
+    "harnessConfigsDoc": "docs/HARNESS-CONFIGS.md",
+    "harnessDriver": "src/main/services/fcc/harness-driver.ts",
+    "interopTrace": "docs/traces/fcc-interop.json"
+  },
+  "validationResults": {
+    "copilotDeviceFlowCompleted": true,
+    "copilotBadgeVerified": "via your Copilot — no extra cost",
+    "externalRequestCompleted": true,
+    "openaiCompletionsVerified": true,
+    "streamingSSEVerified": true,
+    "toolCallsVerified": true,
+    "harnessSessionSpawned": true,
+    "structuredDiffParsed": true,
+    "structuredToolEventParsed": true,
+    "revocationWipedAllTraces": true
+  },
+  "harnessesSupported": [
+    "claude-code",
+    "codex",
+    "opencode",
+    "pi",
+    "cline",
+    "aider",
+    "hermes",
+    "deepseek",
+    "grok-build",
+    "muse-code",
+    "vscode-chat"
+  ],
+  "tests": [
+    {
+      "test": "RFC 8628 Copilot device flow starts with verification URI and user code",
+      "passed": true,
+      "details": "UserCode: AUTHENTICATED, URI: https://github.com"
+    },
+    {
+      "test": "Verification URI points to official GitHub endpoint",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Copilot token saved and sealed into operating-system safeStorage",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "SafeStorage securely decrypts Copilot token without plaintext storage on disk",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Copilot subscription reported as connected in subscription fleet",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Exact verbatim attribution badge string verified",
+      "passed": true,
+      "details": "Badge: \"via your Copilot — no extra cost\""
+    },
+    {
+      "test": "Copilot unlocks pro models (Claude 3.5 Sonnet, GPT-4o, o1-preview) at $0 extra cost",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "ModelSelector.tsx renders verbatim badge: \"via your Copilot — no extra cost\"",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "LocalSupplyEndpoint started successfully",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Endpoint running on local port",
+      "passed": true,
+      "details": "Port: 64872, Host: 127.0.0.1"
+    },
+    {
+      "test": "Auto-generated secure local bearer token with tycode_sk_ prefix",
+      "passed": true,
+      "details": "Token: tycode_sk_6b800..."
+    },
+    {
+      "test": "Unauthenticated HTTP request without bearer token is rejected with 401 Unauthorized",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Authenticated GET /v1/models returns HTTP 200",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "OpenAI-compatible models catalog returned",
+      "passed": true,
+      "details": "Total models available to external harnesses: 72"
+    },
+    {
+      "test": "POST /v1/chat/completions returns HTTP 200",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "OpenAI chat completion structure matches standard schema",
+      "passed": true,
+      "details": "ID: chatcmpl-31d8e3ee0710f7acbe3bb556, Model: gpt-4o"
+    },
+    {
+      "test": "Streaming endpoint serves Server-Sent Events (text/event-stream)",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "SSE stream contains standard chunks and terminates with [DONE]",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Tool-calls request returns HTTP 200",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "OpenAI tool call parsed and served in completion message",
+      "passed": true,
+      "details": "Tool: edit_file"
+    },
+    {
+      "test": "LAN exposure switch rejected without explicit security confirmation",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "LAN exposure allowed with explicit confirmation",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Local supply endpoint stopped cleanly",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "HarnessDriverService scans and registers all 11 FCC coding agent harnesses",
+      "passed": true,
+      "details": "Found 11 registered harnesses"
+    },
+    {
+      "test": "Harness driver registered: claude-code",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Harness driver registered: codex",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Harness driver registered: opencode",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Harness driver registered: pi",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Harness driver registered: cline",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Harness driver registered: aider",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Harness driver registered: hermes",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Harness driver registered: deepseek",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Harness driver registered: grok-build",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Harness driver registered: muse-code",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Harness driver registered: vscode-chat",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Harness driver parses streaming unified diff output into StructuredDiffBlock",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Diff metadata accurately extracted (file, additions, deletions)",
+      "passed": true,
+      "details": "File: src/services/app.ts, +2/-1"
+    },
+    {
+      "test": "Harness driver parses structured tool calls from CLI output stream",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Tool event extracted matching harness action",
+      "passed": true,
+      "details": "Tool Name: write_file"
+    },
+    {
+      "test": "Harness session spawned with injected credentials and unique sessionId",
+      "passed": true,
+      "details": "Session: harness_session_1792212987950_xn8gx, Status: running"
+    },
+    {
+      "test": "Copilot revocation completes successfully",
+      "passed": true,
+      "details": "GitHub Copilot credentials and attribution permanently revoked."
+    },
+    {
+      "test": "SafeStorage completely cleared of Copilot tokens (zero residual traces)",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Copilot subscription status reverted to disconnected",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "ChatGPT/OpenAI revocation completes successfully",
+      "passed": true,
+      "details": "ChatGPT/OpenAI credentials and attribution permanently revoked."
+    },
+    {
+      "test": "SafeStorage completely cleared of ChatGPT tokens",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "docs/HARNESS-CONFIGS.md exists in repository",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "HARNESS-CONFIGS.md contains configuration section for claude-code",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "HARNESS-CONFIGS.md contains configuration section for codex",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "HARNESS-CONFIGS.md contains configuration section for opencode",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "HARNESS-CONFIGS.md contains configuration section for pi",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "HARNESS-CONFIGS.md contains configuration section for cline",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "HARNESS-CONFIGS.md contains configuration section for aider",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "HARNESS-CONFIGS.md contains configuration section for hermes",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "HARNESS-CONFIGS.md contains configuration section for deepseek",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "HARNESS-CONFIGS.md contains configuration section for grok-build",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "HARNESS-CONFIGS.md contains configuration section for muse-code",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "HARNESS-CONFIGS.md contains configuration section for vscode-chat",
+      "passed": true,
+      "details": "Verified successfully."
+    }
+  ]
+}

@@ -196,34 +196,41 @@ export const StatusBar: React.FC = () => {
           type="button"
           id="status-bar-provider-chip"
           className={styles.statusBtn}
-          onClick={() => openSettings('providers')}
+          onClick={() => {
+            const isAnon = useOnboardingStore.getState().isSkipped || localStorage.getItem('ty_code_anonymous_tier_active') === 'true';
+            if (isAnon || connectedProviders.length === 0) {
+              useOnboardingStore.getState().openWizard('welcome');
+            } else {
+              openSettings('providers');
+            }
+          }}
           title={
-            connectedProviders.length > 0
-              ? `Connected: ${connectedProviders.join(', ')} (${totalModels} models). Click to open Settings > Providers.`
-              : 'Anonymous tier active (~50 req/h). Click to connect free accounts for higher limits.'
+            (useOnboardingStore.getState().isSkipped || localStorage.getItem('ty_code_anonymous_tier_active') === 'true' || connectedProviders.length === 0)
+              ? 'Anonymous tier active (~50 req/h). Click to enable full free supply (61 providers, 1.3B+ free tokens/month).'
+              : `Connected: ${connectedProviders.join(', ')} (${totalModels} models). Click to open Settings > Providers.`
           }
           style={{
-            color: connectedProviders.length > 0 ? '#34d399' : '#38bdf8',
-            background: connectedProviders.length > 0 ? 'rgba(16, 185, 129, 0.08)' : 'rgba(56, 189, 248, 0.08)',
-            border: `1px solid ${connectedProviders.length > 0 ? 'rgba(16, 185, 129, 0.25)' : 'rgba(56, 189, 248, 0.25)'}`,
+            color: (useOnboardingStore.getState().isSkipped || localStorage.getItem('ty_code_anonymous_tier_active') === 'true' || connectedProviders.length === 0) ? '#38bdf8' : '#34d399',
+            background: (useOnboardingStore.getState().isSkipped || localStorage.getItem('ty_code_anonymous_tier_active') === 'true' || connectedProviders.length === 0) ? 'rgba(56, 189, 248, 0.08)' : 'rgba(16, 185, 129, 0.08)',
+            border: `1px solid ${(useOnboardingStore.getState().isSkipped || localStorage.getItem('ty_code_anonymous_tier_active') === 'true' || connectedProviders.length === 0) ? 'rgba(56, 189, 248, 0.25)' : 'rgba(16, 185, 129, 0.25)'}`,
             padding: '0 6px',
             borderRadius: '4px'
           }}
           aria-label={
-            connectedProviders.length > 0
-              ? `${connectedProviders.length} providers, ${totalModels} models connected`
-              : 'Anonymous tier active, connect for more'
+            (useOnboardingStore.getState().isSkipped || localStorage.getItem('ty_code_anonymous_tier_active') === 'true' || connectedProviders.length === 0)
+              ? 'Anonymous tier active — Enable full free supply'
+              : `${connectedProviders.length} providers, ${totalModels} models connected`
           }
         >
-          {connectedProviders.length > 0 ? (
-            <Sparkles size={11} color="#34d399" />
-          ) : (
+          {(useOnboardingStore.getState().isSkipped || localStorage.getItem('ty_code_anonymous_tier_active') === 'true' || connectedProviders.length === 0) ? (
             <Zap size={11} color="#38bdf8" />
+          ) : (
+            <Sparkles size={11} color="#34d399" />
           )}
           <span>
-            {connectedProviders.length > 0
-              ? `${connectedProviders.length} provider${connectedProviders.length > 1 ? 's' : ''} • ${totalModels} models`
-              : 'Anonymous (Connect for more)'}
+            {(useOnboardingStore.getState().isSkipped || localStorage.getItem('ty_code_anonymous_tier_active') === 'true' || connectedProviders.length === 0)
+              ? 'Enable full free supply'
+              : `${connectedProviders.length} provider${connectedProviders.length > 1 ? 's' : ''} • ${totalModels} models`}
           </span>
         </button>
 

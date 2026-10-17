@@ -604,6 +604,26 @@ export class UsageLedgerService {
   }
 
   /**
+   * Resets local ledger counters for a specific provider (e.g. upon subscription revocation)
+   */
+  public async resetProvider(providerId: string): Promise<void> {
+    for (const [key, counter] of this.providerCounters.entries()) {
+      if (counter.providerId === providerId) {
+        this.providerCounters.delete(key);
+      }
+    }
+    this.rateLimits.delete(providerId);
+    this.recentTransactions = this.recentTransactions.filter((tx) => tx.providerId !== providerId);
+    if (this.sqliteDb) {
+      try {
+        const stmt = this.sqliteDb.prepare('DELETE FROM usage_ledger WHERE provider_id = ?');
+        stmt.run(providerId);
+      } catch {}
+    }
+    await this.persist();
+  }
+
+  /**
    * Retrieves raw transaction rows from SQLite database
    */
   public getSqliteRows(limit = 100): SqliteLedgerRow[] {

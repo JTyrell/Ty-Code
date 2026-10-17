@@ -12,6 +12,7 @@ import { requestCache } from '../services/orchestration/request-cache';
 import { performanceManager } from '../services/orchestration/performance-manager';
 import { usageLedger } from '../services/usage/ledger';
 import { credentialStore } from '../services/auth/credential-store';
+import { optimizationPipeline } from './optimization-pipeline';
 import { getPreconfiguredProvider } from '../config/provider-registry';
 import type { ProviderCandidate } from '../services/orchestration/strategies/types';
 
@@ -372,6 +373,10 @@ export class ProviderGateway {
     const hasTools = tools && tools.length > 0;
     const taskType = hasTools ? 'coding' : 'general';
 
+    // Phase FCC-4: Headroom Context Pruning of Stale Tool Results
+    const headroomResult = optimizationPipeline.pruneMessageHistory(messages);
+    const optimizedMessages = headroomResult.prunedMessages;
+
     const executionResult = await this.router.executeWithFailover({
       context: {
         taskType,
@@ -382,7 +387,7 @@ export class ProviderGateway {
         }
       },
       settings,
-      messages,
+      messages: optimizedMessages,
       abortSignal,
       onFailover: (event) => {
         callbacks.onFailoverNotice?.({
@@ -526,6 +531,25 @@ export class ProviderGateway {
       } catch {
         // ignore trace recording error
       }
+    }
+
+    // Phase FCC-4: Semantic Response Cache (hash-keyed, per-session opt-out)
+    const optCacheKey = optimizationPipeline.computeCacheKey(modelId, messages, tools, settings.temperature);
+    const optCached = optimizationPipeline.getCachedResponse(optCacheKey);
+    if (optCached) {
+      if (optCached.fullText) callbacks.onToken?.(optCached.fullText);
+      if (optCached.fullThought) callbacks.onThought?.(optCached.fullThought);
+      callbacks.onToolCallDelta?.(optCached.toolCalls.map((tc) => ({
+        id: tc.id,
+        name: tc.name,
+        arguments: JSON.stringify(tc.arguments)
+      })));
+      performanceManager.recordLatency(4);
+      return {
+        fullText: optCached.fullText,
+        fullThought: optCached.fullThought,
+        toolCalls: optCached.toolCalls
+      };
     }
 
     // Phase 5.6: Request Caching for Repeated Queries
@@ -805,6 +829,14 @@ export class ProviderGateway {
       toolCalls: parsedToolCalls,
       modelId,
       providerId,
+      promptTokens,
+      completionTokens
+    });
+
+    optimizationPipeline.setCachedResponse(optCacheKey, {
+      fullText,
+      fullThought,
+      toolCalls: parsedToolCalls,
       promptTokens,
       completionTokens
     });

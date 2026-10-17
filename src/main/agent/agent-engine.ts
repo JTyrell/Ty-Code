@@ -9,7 +9,8 @@ import { settingsManager, type SettingsManager } from '../services/settings-mana
 import { moduleRegistry } from '../services/module-registry';
 import { mcpManager } from '../services/mcp-manager';
 import { diagnosticsHealthMonitor } from '../services/diagnostics/health-monitor';
-
+import { optimizationPipeline } from '../providers/optimization-pipeline';
+import { failoverResumeManager } from './failover-resume';
 
 import { connectivityTracer } from '../services/diagnostics/connectivity-tracer';
 
@@ -100,34 +101,52 @@ export class AgentEngine {
       try {
         const tools = harness.formatTools(AGENT_TOOLS_DEFINITIONS);
         let streamResult;
-        const maxRetries = currentSettings.enableFailover !== false ? (currentSettings.maxFailoverRetries ?? 3) : 1;
-        let attempt = 0;
 
-        while (attempt < maxRetries) {
-          attempt++;
+        // Phase FCC-4: Snapshot turn state for continuous mid-turn failover & resume
+        const snapshot = failoverResumeManager.createSnapshot(
+          `turn_${step}_${Date.now()}`,
+          harness.formatMessages(messages),
+          currentSettings.activeProvider,
+          currentSettings.activeModel
+        );
+
+        let activeTurnMessages = [...snapshot.originalMessages];
+
+        while (true) {
           try {
             streamResult = await ProviderGateway.streamChat(
               currentSettings,
-              harness.formatMessages(messages),
+              activeTurnMessages,
               tools,
               {
-                onToken: (content) => onChunk({ type: 'token', content }),
-                onThought: (content) => onChunk({ type: 'thought', content }),
+                onToken: (content) => {
+                  failoverResumeManager.recordTokens(snapshot, content, undefined);
+                  onChunk({ type: 'token', content });
+                },
+                onThought: (content) => {
+                  failoverResumeManager.recordTokens(snapshot, undefined, content);
+                  onChunk({ type: 'thought', content });
+                },
                 onFailoverNotice: (notice) => {
                   const target = notice.nextModel || notice.nextProvider || 'fallback model';
-                  const modelLabel = target.split('/').pop() || target;
+                  const noticeLabel = failoverResumeManager.formatFailoverNotice(target);
                   if (notice.error?.includes('429') || notice.error?.toLowerCase().includes('rate limit')) {
                     diagnosticsHealthMonitor.recordRateLimit(notice.failedProvider);
                   } else {
                     diagnosticsHealthMonitor.recordProviderDown(notice.failedProvider);
                   }
-                  onChunk({ type: 'status', content: `Switched to ${modelLabel}…` });
-                  onChunk({ type: 'token', content: `\n\n*[Switched to ${modelLabel}]*\n\n` });
+                  onChunk({ type: 'status', content: noticeLabel });
+                  onChunk({ type: 'token', content: `\n\n*[${noticeLabel}]*\n\n` });
                 }
               },
               abortSignal,
               params.traceId
             );
+
+            await failoverResumeManager.finalizeSegment(snapshot);
+            if (snapshot.partialText && snapshot.handoffCount > 0) {
+              streamResult.fullText = snapshot.partialText;
+            }
             break; // Stream succeeded
           } catch (streamErr: unknown) {
             if (abortSignal?.aborted) {
@@ -138,36 +157,41 @@ export class AgentEngine {
             const errorMsg = streamErr instanceof Error ? streamErr.message : String(streamErr);
             failedProviders.add(currentSettings.activeProvider);
 
-            if (errorMsg.includes('429') || errorMsg.toLowerCase().includes('rate limit')) {
-              diagnosticsHealthMonitor.recordRateLimit(currentSettings.activeProvider);
+            if (failoverResumeManager.canHandoff(snapshot)) {
+              await failoverResumeManager.finalizeSegment(snapshot, errorMsg);
+
+              // Route to next healthy candidate across graceful hierarchy
+              const fallbackCandidate = ProviderGateway.router.route({
+                taskType: 'coding',
+                excludedProviders: failedProviders
+              }, currentSettings);
+
+              if (!fallbackCandidate) {
+                throw failoverResumeManager.createExhaustedError(snapshot, errorMsg);
+              }
+
+              const continuation = failoverResumeManager.prepareContinuation(
+                snapshot,
+                fallbackCandidate,
+                errorMsg,
+                params.traceId
+              );
+
+              onChunk({ type: 'status', content: continuation.notice });
+              onChunk({ type: 'token', content: `\n\n*[${continuation.notice}]*\n\n` });
+
+              currentSettings = {
+                ...currentSettings,
+                activeProvider: fallbackCandidate.provider.id as any,
+                activeModel: fallbackCandidate.model.id
+              };
+
+              activeTurnMessages = continuation.continuationMessages;
+              continue;
             } else {
-              diagnosticsHealthMonitor.recordProviderDown(currentSettings.activeProvider);
+              await failoverResumeManager.finalizeSegment(snapshot, errorMsg);
+              throw failoverResumeManager.createExhaustedError(snapshot, errorMsg);
             }
-
-            if (attempt >= maxRetries) {
-              throw streamErr;
-            }
-
-            // Route to next healthy fallback candidate
-            const fallbackCandidate = ProviderGateway.router.route({
-              taskType: 'coding',
-              excludedProviders: failedProviders
-            }, currentSettings);
-
-            if (!fallbackCandidate) {
-              throw streamErr;
-            }
-
-            const fallbackModel = fallbackCandidate.model.id;
-            const modelLabel = fallbackModel.split('/').pop() || fallbackModel;
-            onChunk({ type: 'status', content: `Switched to ${modelLabel}…` });
-            onChunk({ type: 'token', content: `\n\n*[Switched to ${modelLabel}]*\n\n` });
-
-            currentSettings = {
-              ...currentSettings,
-              activeProvider: fallbackCandidate.provider.id as any,
-              activeModel: fallbackCandidate.model.id
-            };
           }
         }
 
@@ -343,7 +367,8 @@ export class AgentEngine {
             }
           });
           if (result.proposedDiff) onChunk({ type: 'diff', diff: result.proposedDiff });
-          messages.push({ role: 'tool', name: toolCall.name, tool_call_id: toolCall.id, content: result.output });
+          const compressedResult = optimizationPipeline.compressToolOutput(result.output);
+          messages.push({ role: 'tool', name: toolCall.name, tool_call_id: toolCall.id, content: compressedResult.compressed });
         }
       } catch (err: unknown) {
         if (abortSignal?.aborted) {

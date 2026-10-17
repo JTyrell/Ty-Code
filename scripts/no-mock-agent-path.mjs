@@ -23,7 +23,8 @@ const PROJECT_ROOT = path.resolve(__dirname, '..');
 
 const SCAN_DIRS = [
   path.join(PROJECT_ROOT, 'src', 'main', 'agent'),
-  path.join(PROJECT_ROOT, 'src', 'main', 'providers')
+  path.join(PROJECT_ROOT, 'src', 'main', 'providers'),
+  path.join(PROJECT_ROOT, 'src', 'main', 'services', 'fcc')
 ];
 
 // Patterns strictly forbidden in production agent/provider code
@@ -75,14 +76,19 @@ function isAllowed(lines, index) {
   if (trimmed.includes('offlineDemoMode')) {
     return true;
   }
-  // Check if timer is a process / network abort timeout kill (not a simulated response delay)
+  // Check if timer is a process / network abort timeout kill or background sync/polling loop (not a simulated response delay)
   const blockWindow = lines.slice(index, Math.min(lines.length, index + 12)).join('\n');
   if (
     blockWindow.includes('timedOut') ||
     blockWindow.includes('child.kill') ||
     blockWindow.includes('ptyProcess.kill') ||
     blockWindow.includes('controller.abort') ||
-    blockWindow.includes('timeoutMs')
+    blockWindow.includes('timeoutMs') ||
+    blockWindow.includes('syncCatalog') ||
+    blockWindow.includes('syncTimer') ||
+    blockWindow.includes('pollingTimer') ||
+    blockWindow.includes('pollUpdates') ||
+    blockWindow.includes('syncInterval')
   ) {
     return true;
   }

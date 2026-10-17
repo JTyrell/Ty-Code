@@ -194,6 +194,7 @@ export const TitleBar: React.FC = () => {
   // Menubar state
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState<boolean>(false);
+  const [isAboutOpen, setIsAboutOpen] = useState<boolean>(false);
   const menuBarRef = useRef<HTMLDivElement>(null);
 
   // Apply theme to body
@@ -393,7 +394,7 @@ export const TitleBar: React.FC = () => {
       { label: 'Keyboard Shortcuts', shortcut: 'Ctrl+K Ctrl+S' },
       { label: 'Check for Updates…', action: handleCheckUpdate },
       { divider: true, label: '' },
-      { label: 'About Ty-Code', action: () => toast.info('Ty-Code Desktop', `Version ${appInfo?.version || '1.0.0'}`) }
+      { label: 'About Ty-Code', action: () => setIsAboutOpen(true) }
     ]
   };
 
@@ -883,6 +884,95 @@ export const TitleBar: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* About Ty-Code Modal with Mandatory Upstream FCC Attribution */}
+      {isAboutOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="About Ty-Code"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.75)',
+            backdropFilter: 'blur(8px)',
+            zIndex: 10005,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px',
+            ...appRegion('no-drag')
+          }}
+          onClick={() => setIsAboutOpen(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              backgroundColor: '#0f172a',
+              border: '1px solid rgba(255, 255, 255, 0.12)',
+              borderRadius: '12px',
+              padding: '24px',
+              maxWidth: '520px',
+              width: '100%',
+              boxShadow: '0 20px 40px rgba(0,0,0,0.6)',
+              color: '#f8fafc'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+              <TyCodeMicrochipLogo size={28} />
+              <div>
+                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700 }}>Ty-Code</h3>
+                <div style={{ fontSize: '12px', color: '#94a3b8' }}>
+                  Version {appInfo?.version || '1.0.0'} • MIT License
+                </div>
+              </div>
+            </div>
+
+            <p style={{ fontSize: '13px', color: '#cbd5e1', lineHeight: '1.6', margin: '0 0 16px 0' }}>
+              The high-performance, developer-first AI code editor with zero-cost model supply, real extension security, and local safeStorage.
+            </p>
+
+            <div
+              style={{
+                backgroundColor: 'rgba(99, 102, 241, 0.08)',
+                border: '1px solid rgba(99, 102, 241, 0.25)',
+                borderRadius: '8px',
+                padding: '12px',
+                fontSize: '12px',
+                color: '#c7d2fe',
+                marginBottom: '16px',
+                lineHeight: '1.5'
+              }}
+            >
+              <div style={{ fontWeight: 600, marginBottom: '4px', color: '#818cf8' }}>
+                Upstream Model Supply Attribution
+              </div>
+              <div style={{ wordBreak: 'break-all' }}>
+                Free-model supply layer powered by free-claude-code (FCC) — AGPL-3.0 / MIT — https://github.com/Alishahryar1/free-claude-code
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={() => setIsAboutOpen(false)}
+                style={{
+                  backgroundColor: 'var(--accent-primary, #6366f1)',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '6px',
+                  padding: '8px 16px',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </header>
   );
 };

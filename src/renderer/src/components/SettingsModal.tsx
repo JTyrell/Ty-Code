@@ -952,6 +952,26 @@ export const SettingsModal: React.FC = () => {
                 </button>
               </div>
 
+              {/* Upstream Free-Model Supply Attribution (FCC) */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '8px 12px',
+                  borderRadius: '6px',
+                  background: 'rgba(99, 102, 241, 0.08)',
+                  border: '1px solid rgba(99, 102, 241, 0.2)',
+                  fontSize: '11px',
+                  color: '#a5b4fc'
+                }}
+              >
+                <Zap size={13} color="#818cf8" style={{ flexShrink: 0 }} />
+                <span>
+                  Free-model supply layer powered by free-claude-code (FCC) — AGPL-3.0 / MIT — <a href="https://github.com/Alishahryar1/free-claude-code" target="_blank" rel="noopener noreferrer" style={{ color: '#c7d2fe', textDecoration: 'underline' }}>https://github.com/Alishahryar1/free-claude-code</a>
+                </span>
+              </div>
+
               {/* Provider Selection Grid */}
               <ProviderSelectionGrid
                 providers={registryProviders}
@@ -1450,6 +1470,31 @@ export const SettingsModal: React.FC = () => {
                   <p>Codebase indexing, local search, and history extraction operate on the local filesystem. If you use a remote model provider, the prompts and context needed for that model request are sent to that provider under its terms; this provider traffic is not telemetry.</p>
                   <p>Save Settings applies your telemetry choice. Cancel discards unsaved changes. You can change consent any time in Settings &gt; Privacy &amp; About.</p>
                   {privacyAppInfo && <p className="privacy-version">Ty-Code v{privacyAppInfo.version} · {privacyAppInfo.platform} ({privacyAppInfo.arch})</p>}
+                </section>
+
+                <section className="privacy-section" aria-labelledby="in-app-credits-heading">
+                  <h3 id="in-app-credits-heading"><Sparkles size={15} />In-App Credits &amp; Attribution</h3>
+                  <p style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                    Ty-Code integrates open-source AI infrastructure to offer free, decentralized, and high-performance model access:
+                  </p>
+                  <div
+                    style={{
+                      marginTop: '8px',
+                      padding: '12px',
+                      borderRadius: '6px',
+                      backgroundColor: 'rgba(99, 102, 241, 0.08)',
+                      border: '1px solid rgba(99, 102, 241, 0.25)',
+                      fontSize: '12px',
+                      color: 'var(--text-primary)'
+                    }}
+                  >
+                    <div style={{ fontWeight: 600, color: '#818cf8', marginBottom: '4px' }}>
+                      Free-Claude-Code Supply Layer
+                    </div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)', lineHeight: 1.5, wordBreak: 'break-all' }}>
+                      Free-model supply layer powered by free-claude-code (FCC) — AGPL-3.0 / MIT — <a href="https://github.com/Alishahryar1/free-claude-code" target="_blank" rel="noopener noreferrer" style={{ color: '#a5b4fc', textDecoration: 'underline' }}>https://github.com/Alishahryar1/free-claude-code</a>
+                    </div>
+                  </div>
                 </section>
               </section>
             )

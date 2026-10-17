@@ -14,14 +14,15 @@ import powershell from 'highlight.js/lib/languages/powershell';
 import python from 'highlight.js/lib/languages/python';
 import typescript from 'highlight.js/lib/languages/typescript';
 import yaml from 'highlight.js/lib/languages/yaml';
-import { Send, Square, Sparkles, Trash2, ChevronRight, ChevronDown, Terminal, FileCode, Check, Eye, AlertCircle, Copy, RotateCcw, Loader2, ShieldCheck, X, Users, Lightbulb, Hammer, Compass, Info, Presentation, Play, ExternalLink, Settings, Activity, Key, WifiOff, Clock, RefreshCw } from 'lucide-react';
+import { Send, Square, Sparkles, Trash2, ChevronRight, ChevronDown, Terminal, FileCode, Check, Eye, AlertCircle, Copy, RotateCcw, Loader2, ShieldCheck, X, Users, Lightbulb, Hammer, Compass, Info, Presentation, Play, ExternalLink, Settings, Activity, Key, WifiOff, Clock, RefreshCw, Zap } from 'lucide-react';
 import { useChatStore } from '../state/chat-store';
 import { useWorkspaceStore } from '../state/workspace-store';
 import { usePairProgrammingStore } from '../state/pair-programming-store';
 import { useOnboardingStore } from '../state/onboarding-store';
 import { ModelSelector } from './ChatInterface/ModelSelector';
 import { ProviderSetupCard } from './ProviderSetupCard';
-import type { ChatMessage, ToolCall, ToolExecutionStatus, ChatErrorCard, ProviderType } from '../../../preload/types';
+import { ChatErrorCard } from './ChatErrorCard';
+import type { ChatMessage, ToolCall, ToolExecutionStatus, ChatErrorCard as ChatErrorCardType, ProviderType } from '../../../preload/types';
 
 const languages: Record<string, LanguageFn> = {
   bash, shell: bash, sh: bash,
@@ -279,7 +280,7 @@ function DiffCard({ diff: proposedDiff, onInspect, onApply }: {
 }
 
 // 1. Connect Provider Card (CONFIG_MISSING: In-chat key input)
-export const ConnectProviderCard: React.FC<{ errorCard: ChatErrorCard; onRetry?: () => void }> = ({ errorCard, onRetry }) => {
+export const ConnectProviderCard: React.FC<{ errorCard: ChatErrorCardType; onRetry?: () => void }> = ({ errorCard, onRetry }) => {
   const { settings, saveSettings, openSettings } = useChatStore();
   const [apiKey, setApiKey] = useState('');
   const [saving, setSaving] = useState(false);
@@ -389,7 +390,7 @@ export const ConnectProviderCard: React.FC<{ errorCard: ChatErrorCard; onRetry?:
 };
 
 // 2. Network Error Card (NETWORK_BLOCKED)
-export const NetworkErrorCard: React.FC<{ errorCard: ChatErrorCard; onRetry?: () => void }> = ({ errorCard, onRetry }) => {
+export const NetworkErrorCard: React.FC<{ errorCard: ChatErrorCardType; onRetry?: () => void }> = ({ errorCard, onRetry }) => {
   const openSettings = useChatStore((s) => s.openSettings);
   const [retrying, setRetrying] = useState(false);
 
@@ -451,7 +452,7 @@ export const NetworkErrorCard: React.FC<{ errorCard: ChatErrorCard; onRetry?: ()
 };
 
 // 3. Quota Exhausted Card (RATE_LIMITED / QUOTA_EXCEEDED)
-export const QuotaExhaustedCard: React.FC<{ errorCard: ChatErrorCard; onRetry?: () => void }> = ({ errorCard, onRetry }) => {
+export const QuotaExhaustedCard: React.FC<{ errorCard: ChatErrorCardType; onRetry?: () => void }> = ({ errorCard, onRetry }) => {
   const { openSettings, saveSettings } = useChatStore();
   const { connectedProviders, openWizard, recordRateLimit429 } = useOnboardingStore();
   const [countdown, setCountdown] = useState<number>(errorCard.retryAfterSec || 60);
@@ -540,6 +541,69 @@ export const QuotaExhaustedCard: React.FC<{ errorCard: ChatErrorCard; onRetry?: 
           </div>
         )}
 
+        {/* Subscription Upsell Card */}
+        <div
+          id="quota-exhausted-subscription-upsell"
+          style={{
+            marginTop: '12px',
+            padding: '12px 14px',
+            background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.12), rgba(56, 189, 248, 0.12))',
+            border: '1px solid rgba(16, 185, 129, 0.35)',
+            borderRadius: '8px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '8px'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#34d399', fontWeight: 600, fontSize: '13px' }}>
+            <Sparkles size={16} />
+            <span>Connect your Copilot subscription — no extra cost</span>
+          </div>
+          <p style={{ margin: 0, fontSize: '12px', color: '#cbd5e1' }}>
+            Never hit rate limits. Ty-Code supports device-flow authentication for GitHub Copilot and ChatGPT OAuth. Zero API billing.
+          </p>
+          <div style={{ display: 'flex', gap: '8px', marginTop: '2px' }}>
+            <button
+              type="button"
+              onClick={() => openWizard('subscriptions')}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '6px 14px',
+                background: '#10b981',
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: '6px',
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: 'pointer'
+              }}
+            >
+              <span>Connect Copilot (via your Copilot — no extra cost)</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => openSettings('providers')}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '6px 14px',
+                background: 'rgba(255, 255, 255, 0.08)',
+                color: '#e2e8f0',
+                border: '1px solid rgba(255, 255, 255, 0.15)',
+                borderRadius: '6px',
+                fontSize: '12px',
+                fontWeight: 500,
+                cursor: 'pointer'
+              }}
+            >
+              <span>Manage Subscriptions</span>
+            </button>
+          </div>
+        </div>
+
         <div className="chat-error-alternatives">
           <span className="chat-error-alt-title">Alternative providers available:</span>
           <div className="chat-error-alt-buttons">
@@ -594,7 +658,7 @@ export const QuotaExhaustedCard: React.FC<{ errorCard: ChatErrorCard; onRetry?: 
 };
 
 // 4. Provider Unavailable Card (PROVIDER_DOWN / TIMEOUT)
-export const ProviderUnavailableCard: React.FC<{ errorCard: ChatErrorCard; onRetry?: () => void }> = ({ errorCard, onRetry }) => {
+export const ProviderUnavailableCard: React.FC<{ errorCard: ChatErrorCardType; onRetry?: () => void }> = ({ errorCard, onRetry }) => {
   const openSettings = useChatStore((s) => s.openSettings);
   const [autoRetry, setAutoRetry] = useState(false);
   const [retryCountdown, setRetryCountdown] = useState(5);
@@ -679,7 +743,7 @@ export const ProviderUnavailableCard: React.FC<{ errorCard: ChatErrorCard; onRet
 };
 
 // 5. Standard Error Card (Fallback & Diagnostic Violations)
-export const StandardErrorCard: React.FC<{ errorCard: ChatErrorCard; onRetry?: () => void }> = ({ errorCard, onRetry }) => {
+export const StandardErrorCard: React.FC<{ errorCard: ChatErrorCardType; onRetry?: () => void }> = ({ errorCard, onRetry }) => {
   const openSettings = useChatStore((s) => s.openSettings);
 
   const handleExternalAction = () => {
@@ -760,20 +824,8 @@ export const StandardErrorCard: React.FC<{ errorCard: ChatErrorCard; onRetry?: (
   );
 };
 
-export const ErrorCard: React.FC<{ errorCard: ChatErrorCard; onRetry?: () => void }> = ({ errorCard, onRetry }) => {
-  if (errorCard.taxonomyCode === 'CONFIG_MISSING') {
-    return <ProviderSetupCard errorCard={errorCard} onRetry={onRetry} />;
-  }
-  if (errorCard.taxonomyCode === 'NETWORK_BLOCKED') {
-    return <NetworkErrorCard errorCard={errorCard} onRetry={onRetry} />;
-  }
-  if (errorCard.taxonomyCode === 'RATE_LIMITED' || errorCard.taxonomyCode === 'QUOTA_EXCEEDED') {
-    return <QuotaExhaustedCard errorCard={errorCard} onRetry={onRetry} />;
-  }
-  if (errorCard.taxonomyCode === 'PROVIDER_DOWN' || errorCard.taxonomyCode === 'TIMEOUT') {
-    return <ProviderUnavailableCard errorCard={errorCard} onRetry={onRetry} />;
-  }
-  return <StandardErrorCard errorCard={errorCard} onRetry={onRetry} />;
+export const ErrorCard: React.FC<{ errorCard: ChatErrorCardType; onRetry?: () => void }> = ({ errorCard, onRetry }) => {
+  return <ChatErrorCard errorCard={errorCard} onRetry={onRetry} />;
 };
 
 export const ChatSidecar: React.FC = () => {
@@ -783,14 +835,14 @@ export const ChatSidecar: React.FC = () => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const feedRef = useRef<HTMLDivElement>(null);
   const userAtBottomRef = useRef(true);
-  const { messages, isRunning, currentStatus, currentThought, streamingText, pendingApproval, sendMessage, stopTask, respondToApproval, clearChat, agentMode, setAgentMode, draftPrompt, setDraftPrompt } = useChatStore();
+  const { messages, isRunning, currentStatus, currentThought, streamingText, pendingApproval, sendMessage, stopTask, respondToApproval, clearChat, agentMode, setAgentMode, draftPrompt, setDraftPrompt, activeErrorCard, dismissErrorCard } = useChatStore();
   const { isPairActive, suggestions, togglePairMode, dismissSuggestion, clearSuggestions } = usePairProgrammingStore();
   const [approvalSending, setApprovalSending] = useState(false);
   const { workspacePath, activeTabPath, openTabs, openDiffReview, applyDiff } = useWorkspaceStore();
   const activeTab = openTabs.find((tab) => tab.path === activeTabPath);
   const lastAssistantId = [...messages].reverse().find((message) => message.role === 'assistant')?.id;
   const lastUserMessage = [...messages].reverse().find((message) => message.role === 'user');
-  const firstTokenPending = isRunning && !streamingText && !currentThought && !messages.some((message) => message.role === 'tool' && message.toolStatus === 'running');
+  const firstTokenPending = isRunning && !activeErrorCard && !streamingText && !currentThought && !messages.some((message) => message.role === 'tool' && message.toolStatus === 'running');
 
   useEffect(() => {
     if (draftPrompt) {
@@ -986,11 +1038,52 @@ export const ChatSidecar: React.FC = () => {
         {messages.length === 0 && !streamingText && <div className="chat-empty-state"><Sparkles size={30} color="var(--border-strong)" /><strong>How can Ty-Code help you today?</strong><span>Explore your workspace, implement a feature, fix a bug, or run a test suite.</span></div>}
         {messages.map((message) => <article key={message.id} className={`chat-message is-${message.role}`}>
           {message.role === 'user' ? <div className="user-message-bubble">{message.content}</div> : <div className="assistant-message-bubble">
+            {message.isCached && (
+              <span
+                className="chat-cached-badge"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  padding: '2px 6px',
+                  borderRadius: '4px',
+                  fontSize: '10px',
+                  fontWeight: 600,
+                  backgroundColor: 'rgba(56, 189, 248, 0.15)',
+                  color: '#38bdf8',
+                  border: '1px solid rgba(56, 189, 248, 0.3)',
+                  marginBottom: '6px'
+                }}
+              >
+                <Zap size={10} />
+                cached
+              </span>
+            )}
+            {message.failoverNotice && (
+              <div
+                className="chat-failover-notice"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '3px 8px',
+                  borderRadius: '4px',
+                  fontSize: '11px',
+                  backgroundColor: 'rgba(245, 158, 11, 0.12)',
+                  color: '#f59e0b',
+                  border: '1px solid rgba(245, 158, 11, 0.3)',
+                  marginBottom: '6px'
+                }}
+              >
+                <Clock size={11} />
+                <span>{message.failoverNotice}</span>
+              </div>
+            )}
             {message.toolCall && <ToolCard tool={message.toolCall} status={message.toolStatus} output={message.toolResult?.output ?? (message.toolStatus === 'running' ? undefined : message.content || undefined)} />}
             {message.toolCalls?.map((tool: ToolCall) => <ToolCard key={tool.id} tool={tool} />)}
             {message.proposedDiffs?.map((proposedDiff) => <DiffCard key={proposedDiff.id} diff={proposedDiff} onInspect={() => openDiffReview(proposedDiff)} onApply={() => void applyDiff(proposedDiff)} />)}
             {message.errorCard ? (
-              <ErrorCard errorCard={message.errorCard} onRetry={handleRegenerate} />
+              <ChatErrorCard errorCard={message.errorCard} onRetry={handleRegenerate} />
             ) : (
               message.content && <MarkdownContent content={message.content} />
             )}
@@ -1015,7 +1108,21 @@ export const ChatSidecar: React.FC = () => {
           <span className="agent-approval-note">Nothing runs or changes until approved. Requests expire after two minutes.</span>
         </article>}
         {currentThought && <div className="chat-reasoning is-live"><strong>Reasoning</strong><span>{currentThought}</span></div>}
-        {firstTokenPending && <div className="chat-typing-indicator" role="status"><Loader2 size={12} className="animate-spin" color="var(--accent-primary)" /><span>Ty-Code is thinking…</span></div>}
+        {firstTokenPending && !activeErrorCard && (
+          <div className="chat-typing-indicator" role="status">
+            <Loader2 size={12} className="animate-spin" color="var(--accent-primary)" />
+            <span>Ty-Code is thinking…</span>
+          </div>
+        )}
+        {activeErrorCard && (
+          <div className="chat-active-error-banner" style={{ margin: '8px 0' }}>
+            <ChatErrorCard
+              errorCard={activeErrorCard}
+              onRetry={handleRegenerate}
+              onDismiss={dismissErrorCard}
+            />
+          </div>
+        )}
         <div ref={messagesEndRef} />
       </div>
     )}

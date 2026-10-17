@@ -20,6 +20,9 @@ interface ChatState {
   currentStatus: string;
   currentThought: string;
   streamingText: string;
+  activeErrorCard: ChatErrorCard | null;
+  dismissErrorCard: () => void;
+  setActiveErrorCard: (card: ChatErrorCard | null) => void;
   settings: ProviderSettings | null;
   agentMode: AgentMode;
   contextTokens: number;
@@ -261,6 +264,9 @@ export function savePersistedChat(messages: ChatMessage[]): void {
 
 export const useChatStore = create<ChatState>((set, get) => ({
   messages: loadPersistedChat(), isRunning: false, currentTaskId: null, pendingApproval: null, currentStatus: '', currentThought: '', streamingText: '',
+  activeErrorCard: null,
+  dismissErrorCard: () => set({ activeErrorCard: null }),
+  setActiveErrorCard: (card: ChatErrorCard | null) => set({ activeErrorCard: card }),
   settings: null, agentMode: 'build', contextTokens: 1200, contextLimit: 128_000, isSettingsOpen: false, isTerminalOpen: false,
   draftPrompt: '',
 
@@ -282,6 +288,27 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (!sketcherPromptUnsubscribe && window.electronAPI?.onSketcherPrompt) {
       sketcherPromptUnsubscribe = window.electronAPI.onSketcherPrompt((prompt: string) => {
         set({ draftPrompt: prompt });
+      });
+    }
+    if (window.electronAPI.onAgentError) {
+      window.electronAPI.onAgentError((raw) => {
+        const parsed = AgentErrorPayloadSchema.safeParse(raw);
+        if (!parsed.success) return;
+        const card = parsed.data.errorCard || {
+          taxonomyCode: 'NETWORK_BLOCKED',
+          message: parsed.data.error || 'Network error encountered.',
+          remedy: 'Check your internet connection or proxy settings, then retry.',
+          actionLabel: 'Retry',
+          actionUrl: 'ty-code://action/retry',
+          providerId: get().settings?.activeProvider
+        };
+        set({
+          activeErrorCard: card,
+          isRunning: false,
+          streamingText: '',
+          currentThought: '',
+          currentStatus: 'Task failed.'
+        });
       });
     }
     await refreshSettings();
@@ -331,7 +358,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       pendingApproval: null,
       currentStatus: 'Starting task…',
       currentThought: '',
-      streamingText: ''
+      streamingText: '',
+      activeErrorCard: null
     });
 
     // H1: Renderer chat send handler invoked
@@ -476,11 +504,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
         if (!parsed.success || parsed.data.taskId !== taskId || get().currentTaskId !== taskId) return;
         const state = get();
         const partial = finalizePartialMessage(state.messages, state.streamingText, state.currentThought);
-        const card = parsed.data.errorCard;
+        const card = parsed.data.errorCard || {
+          taxonomyCode: 'NETWORK_BLOCKED',
+          message: parsed.data.error || 'Connection failed or network blocked.',
+          remedy: 'Check your internet connection or proxy settings, then retry.',
+          actionLabel: 'Retry',
+          actionUrl: 'ty-code://action/retry',
+          providerId: get().settings?.activeProvider
+        };
         const content = card
           ? `**[${card.taxonomyCode}]** ${card.message}\n\n*Remediation:* ${card.remedy}`
           : `**Agent error:** ${parsed.data.error || 'The task could not be completed.'}`;
         set({
+          activeErrorCard: card,
           messages: [
             ...partial,
             {
@@ -533,7 +569,20 @@ export const useChatStore = create<ChatState>((set, get) => ({
       if (!response.success || !response.data) {
         const state = get();
         const partial = finalizePartialMessage(state.messages, state.streamingText, state.currentThought);
-        set({ messages: [...partial, { id: createId('error'), role: 'assistant', content: `**Could not start agent:** ${response.error || 'Unknown error'}`, timestamp: Date.now() }] });
+        const errorText = response.error || 'Unknown error';
+        const isNetwork = /network|offline|econnrefused|fetch|connect|timeout|enotfound|dns/i.test(errorText);
+        const fallbackCard: ChatErrorCard = {
+          taxonomyCode: isNetwork ? 'NETWORK_BLOCKED' : 'CONFIG_MISSING',
+          message: errorText,
+          remedy: isNetwork ? 'Check your internet connection or proxy settings, then retry.' : 'Verify provider configuration in Settings.',
+          actionLabel: isNetwork ? 'Retry' : 'Connect Provider',
+          actionUrl: isNetwork ? 'ty-code://action/retry' : 'ty-code://settings/providers',
+          providerId: get().settings?.activeProvider
+        };
+        set({
+          activeErrorCard: fallbackCard,
+          messages: [...partial, { id: createId('error'), role: 'assistant', content: `**Could not start agent:** ${errorText}`, errorCard: fallbackCard, timestamp: Date.now() }]
+        });
         if (traceOptions?.traceId && window.electronAPI?.recordTraceHop) {
           window.electronAPI.recordTraceHop(traceOptions.traceId, 'H2', {
             status: 'FAIL',
@@ -547,7 +596,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const state = get();
       const partial = finalizePartialMessage(state.messages, state.streamingText, state.currentThought);
       const message = err instanceof Error ? err.message : String(err);
-      set({ messages: [...partial, { id: createId('error'), role: 'assistant', content: `**Could not start agent:** ${message}`, timestamp: Date.now() }] });
+      const isNetwork = /network|offline|econnrefused|fetch|connect|timeout|enotfound|dns/i.test(message);
+      const fallbackCard: ChatErrorCard = {
+        taxonomyCode: isNetwork ? 'NETWORK_BLOCKED' : 'CONFIG_MISSING',
+        message,
+        remedy: isNetwork ? 'Check your internet connection or proxy settings, then retry.' : 'Verify provider configuration in Settings.',
+        actionLabel: isNetwork ? 'Retry' : 'Connect Provider',
+        actionUrl: isNetwork ? 'ty-code://action/retry' : 'ty-code://settings/providers',
+        providerId: get().settings?.activeProvider
+      };
+      set({
+        activeErrorCard: fallbackCard,
+        messages: [...partial, { id: createId('error'), role: 'assistant', content: `**Could not start agent:** ${message}`, errorCard: fallbackCard, timestamp: Date.now() }]
+      });
       if (traceOptions?.traceId && window.electronAPI?.recordTraceHop) {
         window.electronAPI.recordTraceHop(traceOptions.traceId, 'H2', {
           status: 'FAIL',
@@ -588,7 +649,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     activeStreamUnsubscribe?.();
     activeStreamUnsubscribe = null;
     if (taskId) void window.electronAPI.stopAgentTask(taskId);
-    set({ messages: [], isRunning: false, currentTaskId: null, pendingApproval: null, streamingText: '', currentThought: '', currentStatus: '', contextTokens: 1200 });
+    set({ messages: [], isRunning: false, currentTaskId: null, pendingApproval: null, streamingText: '', currentThought: '', currentStatus: '', contextTokens: 1200, activeErrorCard: null });
   },
   toggleSettings: () => set((state) => ({ isSettingsOpen: !state.isSettingsOpen, activeSettingsTab: undefined })),
   openSettings: (tab?: string) => set({ isSettingsOpen: true, activeSettingsTab: tab }),

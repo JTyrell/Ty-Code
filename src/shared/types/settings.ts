@@ -103,6 +103,12 @@ export const IntegrationsSettingsSchema = z.object({
   modules: z.record(z.string().min(1).max(128), IntegrationModuleConfigSchema).optional()
 }).strip();
 
+export const GeneralSettingsSchema = z.object({
+  runInBackground: z.boolean().optional(),
+  notifyOnBackgroundCompletion: z.boolean().optional(),
+  notifyOnAttentionNeeded: z.boolean().optional()
+}).strip();
+
 export const SettingsSchema = ProviderSettingsSchema
   .merge(ModelSettingsSchema)
   .merge(RoutingSettingsSchema)
@@ -112,6 +118,7 @@ export const SettingsSchema = ProviderSettingsSchema
   .merge(ExtensionSettingsSchema)
   .merge(SecuritySettingsSchema)
   .merge(IntegrationsSettingsSchema)
+  .merge(GeneralSettingsSchema)
   .merge(z.object({ telemetry: TelemetrySettingsSchema }).strip());
 
 export const SettingsPatchSchema = SettingsSchema.partial().extend({

@@ -4,7 +4,7 @@
  * Prevents layout shift using fixed-width slots and tabular-nums.
  */
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Zap } from 'lucide-react';
 import { useChatStore } from '../../state/chat-store';
 import { useUsageDashboardStore } from '../../state/usage-dashboard-store';
@@ -69,6 +69,22 @@ export const TelemetryBadge: React.FC<TelemetryBadgeProps> = ({
   const storeTokens = useChatStore((s) => s.contextTokens);
   const storeLimit = useChatStore((s) => s.contextLimit);
   const openDashboard = useUsageDashboardStore((s) => s.openDashboard);
+  const [savingsLabel, setSavingsLabel] = useState<string>('Optimization saved 0 tokens (0%) this session');
+
+  useEffect(() => {
+    const fetchSavings = () => {
+      if (window.electronAPI?.fccGetOptimizationSavings) {
+        window.electronAPI.fccGetOptimizationSavings().then((res) => {
+          if (res?.success && res.data?.label) {
+            setSavingsLabel(res.data.label);
+          }
+        }).catch(() => {});
+      }
+    };
+    fetchSavings();
+    const timer = setInterval(fetchSavings, 10000);
+    return () => clearInterval(timer);
+  }, []);
 
   const tokens = propTokens !== undefined ? propTokens : (storeTokens ?? 0);
   const limit = propLimit !== undefined ? propLimit : (storeLimit ?? 128_000);
@@ -86,8 +102,8 @@ export const TelemetryBadge: React.FC<TelemetryBadgeProps> = ({
   const fullTokensStr = new Intl.NumberFormat('en-US').format(tokens);
   const fullLimitStr = new Intl.NumberFormat('en-US').format(limit);
   const percentNum = limit > 0 ? Math.round((tokens / limit) * 100) : 0;
-  const tooltip = `Tokens: ${fullTokensStr} / ${fullLimitStr} (${percentNum}% used). Click to open Smart Orchestration & Quota Dashboard.`;
-  const ariaLabel = `Tokens ${result.label ? `${result.label} ` : ''}${result.formatted}, ${percentNum}% used`;
+  const tooltip = `${savingsLabel} • Tokens: ${fullTokensStr} / ${fullLimitStr} (${percentNum}% used). Click to open Smart Orchestration & Quota Dashboard.`;
+  const ariaLabel = `Tokens ${result.label ? `${result.label} ` : ''}${result.formatted}, ${percentNum}% used, ${savingsLabel}`;
 
   const slotClass =
     breakpoint === 'wide'

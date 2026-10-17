@@ -657,6 +657,8 @@ export const ModelSelector: React.FC = () => {
                                       ? 'rgba(56, 189, 248, 0.2)'
                                       : candidate.provenance === 'anonymous'
                                       ? 'rgba(16, 185, 129, 0.2)'
+                                      : candidate.provenance === 'subscription'
+                                      ? 'rgba(245, 158, 11, 0.2)'
                                       : 'rgba(245, 158, 11, 0.2)',
                                   color:
                                     candidate.provenance === 'FCC'
@@ -665,6 +667,8 @@ export const ModelSelector: React.FC = () => {
                                       ? '#38bdf8'
                                       : candidate.provenance === 'anonymous'
                                       ? '#34d399'
+                                      : candidate.provenance === 'subscription'
+                                      ? '#fbbf24'
                                       : '#fbbf24',
                                   border: `1px solid ${
                                     candidate.provenance === 'FCC'
@@ -673,16 +677,24 @@ export const ModelSelector: React.FC = () => {
                                       ? 'rgba(56, 189, 248, 0.4)'
                                       : candidate.provenance === 'anonymous'
                                       ? 'rgba(16, 185, 129, 0.4)'
+                                      : candidate.provenance === 'subscription'
+                                      ? 'rgba(245, 158, 11, 0.4)'
                                       : 'rgba(245, 158, 11, 0.4)'
                                   }`
                                 }}
                               >
-                                {candidate.provenance}
+                                {candidate.provenance === 'subscription'
+                                  ? (candidate.providerId?.includes('copilot') || candidate.modelId?.includes('copilot'))
+                                    ? 'via your Copilot — no extra cost'
+                                    : 'via your subscription — no extra cost'
+                                  : candidate.provenance}
                               </span>
                             )}
                           </div>
                           <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-                            via {candidate.providerName} • ~{candidate.latencyMs}ms
+                            {(candidate.provenance === 'subscription' || candidate.providerId?.includes('copilot'))
+                              ? 'via your Copilot — no extra cost'
+                              : `via ${candidate.providerName} • ~${candidate.latencyMs}ms`}
                           </span>
                         </div>
 

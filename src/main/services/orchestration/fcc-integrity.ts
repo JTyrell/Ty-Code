@@ -39,23 +39,23 @@ export interface FCCIntegrityReport {
 export interface DegradationHierarchy {
   primary: {
     id: 'fcc-layer';
-    name: 'Free-Claude-Code Supply Layer';
-    description: 'Primary zero-cost model supply layer via local loopback sidecar';
+    name: string;
+    description: string;
     active: boolean;
   };
   fallbackTiers: [
     {
       tier: 1;
       id: 'native-registry';
-      name: 'Native Provider Registry (BYOK & Direct Free Tiers)';
-      description: 'OpenRouter, Groq, Google AI Studio, Ollama with user-configured keys';
+      name: string;
+      description: string;
       automatic: true;
     },
     {
       tier: 0;
       id: 'anonymous-gateway';
-      name: 'OpenKilo Anonymous Gateway';
-      description: 'Zero-config free models (DeepSeek R1, Qwen3 Coder, Llama 3.3)';
+      name: string;
+      description: string;
       automatic: true;
     }
   ];

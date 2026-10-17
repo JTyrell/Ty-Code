@@ -12,6 +12,7 @@ export type BootTaskCategory =
   | 'stores'
   | 'editor'
   | 'providers'
+  | 'fcc'
   | 'health_pings'
   | 'git'
   | 'search'

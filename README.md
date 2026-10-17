@@ -3,6 +3,9 @@
 > **A Standalone Desktop AI Coding Assistant & Monaco IDE**  
 > Powered by Electron, Monaco Editor (VS Code engine), and a multi-provider LLM gateway inspired by [`free-claude-code`](https://github.com/Alishahryar1/free-claude-code).
 
+[![Powered by FCC](https://img.shields.io/badge/Model%20Supply-free--claude--code-indigo.svg)](https://github.com/Alishahryar1/free-claude-code)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 ---
 
 ## Overview
@@ -157,6 +160,12 @@ npm run build:website
 ```
 
 Configure Cloudflare Pages to use the repository root, build command `npm run build:website`, and output directory `website-dist`. See [docs/WEBSITE_SECURITY.md](docs/WEBSITE_SECURITY.md) for the WAF, TLS, HTTP headers, release verification, and privacy setup checklist. A public release with a matching `SHA256SUMS.txt` is required before download links appear.
+
+## Attribution & Upstream Model Supply
+
+Free-model supply layer powered by free-claude-code (FCC) — AGPL-3.0 / MIT — https://github.com/Alishahryar1/free-claude-code
+
+Ty-Code integrates with the `free-claude-code` sidecar daemon over a decoupled local loopback HTTP interface (`http://127.0.0.1:8082`). This provides zero-cost access to 61 curated providers without copyleft taint on Ty-Code's core MIT codebase. For architectural details and binary integrity verification, see [docs/FCC-INTEGRATION-ARCHITECTURE.md](docs/FCC-INTEGRATION-ARCHITECTURE.md) and [docs/THIRD-PARTY.md](docs/THIRD-PARTY.md).
 
 ## License
 MIT

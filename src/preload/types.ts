@@ -380,6 +380,8 @@ export interface ChatMessage {
   reasoning?: string;
   errorCard?: ChatErrorCard;
   metadata?: AssistantStreamMetadata;
+  isCached?: boolean;
+  failoverNotice?: string;
   timestamp: number;
 }
 
@@ -876,6 +878,48 @@ export interface ElectronAPI {
   fccSyncCatalog: () => Promise<IpcResponse<{ count: number; timestamp: number }>>;
   fccToggleProvider: (providerId: string, enabled: boolean) => Promise<IpcResponse<{ providerId: string; enabled: boolean }>>;
   fccTestProvider: (providerId: string) => Promise<IpcResponse<{ providerId: string; success: boolean; latencyMs: number; error?: string }>>;
+  fccDetectHarnessConfigs: (customDir?: string) => Promise<IpcResponse<DetectedHarnessConfig[]>>;
+  fccImportHarnessConfig: (
+    detected: DetectedHarnessConfig,
+    options?: { importModel?: boolean; importHarness?: boolean; importCredentials?: boolean }
+  ) => Promise<IpcResponse<HarnessImportResult>>;
+  fccGetSupportedHarnesses: () => Promise<IpcResponse<HarnessMetadata[]>>;
+  fccConnectSubscription: (
+    subscriptionId: 'copilot' | 'chatgpt',
+    authData?: Record<string, unknown>
+  ) => Promise<IpcResponse<{ success: boolean; message: string; connected: boolean; modelsCount?: number }>>;
+  fccGetSubscriptionStatus: () => Promise<IpcResponse<SubscriptionInfo[]>>;
+  fccStartCopilotDeviceFlow: () => Promise<IpcResponse<CopilotDeviceCodeState>>;
+  fccPollCopilotDeviceFlow: (deviceCode?: string) => Promise<IpcResponse<{ status: string; token?: string; error?: string }>>;
+  fccRevokeSubscription: (subscriptionId: 'copilot' | 'chatgpt') => Promise<IpcResponse<{ success: boolean; message: string }>>;
+  fccRefreshSubscription: (subscriptionId: 'copilot' | 'chatgpt') => Promise<IpcResponse<boolean>>;
+  fccGetSupplyEndpointStatus: () => Promise<IpcResponse<LocalSupplyEndpointStatus>>;
+  fccStartSupplyEndpoint: (port?: number) => Promise<IpcResponse<boolean>>;
+  fccStopSupplyEndpoint: () => Promise<IpcResponse<void>>;
+  fccSetSupplyEndpointLan: (enabled: boolean, acknowledgeWarning?: boolean) => Promise<IpcResponse<boolean>>;
+  fccDetectInstalledHarnesses: () => Promise<IpcResponse<HarnessInstallStatus[]>>;
+  fccRunHarnessSession: (params: {
+    harnessId: AgentHarnessType;
+    workspacePath?: string;
+    initialPrompt?: string;
+  }) => Promise<IpcResponse<HarnessSessionInfo>>;
+  fccGetHarnessSession: (sessionId: string) => Promise<IpcResponse<HarnessSessionInfo | null>>;
+  fccGetOptimizationSavings: () => Promise<IpcResponse<FccOptimizationSavings>>;
+  fccSetSessionCacheOptOut: (sessionId: string, optOut: boolean) => Promise<IpcResponse<boolean>>;
+  fccGetQuotaMeters: () => Promise<IpcResponse<FccQuotaMetersSummary>>;
+
+  // Phase FCC-5: External Clients, Connectors, SessionBridge, and Background Supervisor
+  fccExportEditorConfig: (editor: 'vscode' | 'jetbrains' | 'neovim', variant?: string, customPath?: string) => Promise<IpcResponse<{ success: boolean; snippet: EditorConfigSnippet; savedToPath?: string }>>;
+  fccGetEditorConfigs: () => Promise<IpcResponse<Record<string, EditorConfigSnippet>>>;
+  fccGetConnectorsOverview: () => Promise<IpcResponse<ConnectorsOverview>>;
+  fccSaveConnectorConfig: (type: 'telegram' | 'discord', config: Partial<MessagingConnectorConfig>) => Promise<IpcResponse<boolean>>;
+  fccGetConnectorAuditLogs: (limit?: number, type?: 'telegram' | 'discord') => Promise<IpcResponse<ConnectorAuditLogEntry[]>>;
+  fccGetBackgroundTasks: () => Promise<IpcResponse<BackgroundTaskInfo[]>>;
+  fccPauseBackgroundTask: (taskId: string) => Promise<IpcResponse<boolean>>;
+  fccResumeBackgroundTask: (taskId: string) => Promise<IpcResponse<boolean>>;
+  fccSetRunInBackground: (enabled: boolean) => Promise<IpcResponse<boolean>>;
+  fccIsRunInBackground: () => Promise<IpcResponse<boolean>>;
+  fccListSessionBridges: () => Promise<IpcResponse<SessionBridgeInfo[]>>;
 
   // Phase 5.4: OpenKilo Plugin Integration (Layer 5)
   openkiloGetStatus: () => Promise<IpcResponse<OpenKiloStatus>>;
@@ -1360,6 +1404,213 @@ export interface FCCFleetSummary {
   fallbackActive: boolean;
 }
 
+export interface DetectedHarnessConfig {
+  id: string;
+  name: string;
+  configPath: string;
+  harnessType: AgentHarnessType;
+  modelPreference?: string;
+  hasCredentials: boolean;
+  credentialSummary?: string;
+  apiKey?: string;
+  customInstructions?: string;
+  rawPreferences: Record<string, unknown>;
+}
+
+export interface HarnessImportResult {
+  success: boolean;
+  importedHarness?: AgentHarnessType;
+  importedModel?: string;
+  importedCredentials: string[];
+  importedInstructions?: boolean;
+  error?: string;
+}
+
+export interface SubscriptionInfo {
+  id: 'copilot' | 'chatgpt';
+  name: string;
+  connected: boolean;
+  connectedAt?: number;
+  models: {
+    id: string;
+    name: string;
+    contextWindow: number;
+    badge: string;
+  }[];
+  attributionBadge: string;
+  authMethod: 'device_code' | 'pkce_oauth' | 'config_bridge';
+}
+
+export interface CopilotDeviceCodeState {
+  deviceCode: string;
+  userCode: string;
+  verificationUri: string;
+  expiresAt: number;
+  intervalMs: number;
+  status: 'pending' | 'authorized' | 'expired' | 'error' | 'cancelled';
+  error?: string;
+}
+
+export interface LocalSupplyEndpointStatus {
+  running: boolean;
+  host: string;
+  port: number;
+  baseUrl: string;
+  lanEnabled: boolean;
+  authToken: string;
+  totalModels: number;
+  requestsHandled: number;
+}
+
+export interface HarnessInstallStatus {
+  id: AgentHarnessType;
+  name: string;
+  cliName: string;
+  installed: boolean;
+  binaryPath?: string;
+  version?: string;
+  configSnippet: string;
+}
+
+export interface StructuredDiffBlock {
+  filePath?: string;
+  diff: string;
+  additions: number;
+  deletions: number;
+}
+
+export interface StructuredToolEvent {
+  toolName: string;
+  arguments: Record<string, unknown> | string;
+  status: 'started' | 'completed' | 'error';
+  result?: string;
+}
+
+export interface HarnessSessionInfo {
+  sessionId: string;
+  harnessId: AgentHarnessType;
+  pid?: number;
+  status: 'running' | 'completed' | 'error';
+  logs: string[];
+  parsedDiffs: StructuredDiffBlock[];
+  parsedToolEvents: StructuredToolEvent[];
+  startedAt: number;
+}
+
+export interface FccOptimizationSavings {
+  savedTokens: number;
+  rawTokens: number;
+  optimizedTokens: number;
+  percent: number;
+  label: string; // 'Optimization saved X tokens (Y%) this session'
+  rtkSavedTokens: number;
+  headroomSavedTokens: number;
+  cacheSavedTokens: number;
+}
+
+export interface FccProviderQuotaBar {
+  providerId: string;
+  providerName: string;
+  isFreeTier: boolean;
+  remainingTokens?: number;
+  limitTokens?: number;
+  remainingRequests?: number;
+  limitRequests?: number;
+  percentUsed: number;
+  resetHuman: string;
+  resetsInSeconds?: number;
+  isExhausted: boolean;
+}
+
+export interface FccQuotaMetersSummary {
+  aggregateFreeTokensRemainingToday: number;
+  aggregateFreeTokensDailyBudget: number;
+  providers: FccProviderQuotaBar[];
+  hasAnyExhausted: boolean;
+  activeProviderExhausted: boolean;
+  recommendedAlternative?: {
+    providerId: string;
+    modelId: string;
+    reason: string;
+  };
+}
+
+export interface EditorConfigSnippet {
+  editor: 'vscode' | 'jetbrains' | 'neovim';
+  variant: string;
+  filename: string;
+  targetPath: string;
+  content: string;
+  instructions: string;
+  fileType: 'json' | 'lua' | 'xml';
+}
+
+export interface MessagingConnectorConfig {
+  enabled: boolean;
+  botToken: string;
+  allowlistedUserIds: string[];
+  rateCapPerMinute: number;
+  workspaceContextEnabled: boolean;
+  workspacePath?: string;
+  preferredModel?: string;
+}
+
+export interface MessagingConnectorStatus {
+  type: 'telegram' | 'discord';
+  enabled: boolean;
+  connected: boolean;
+  botUsername?: string;
+  allowlistedCount: number;
+  rateCapPerMinute: number;
+  requestsHandled: number;
+  requestsDenied: number;
+  lastActive?: number;
+  lastError?: string;
+}
+
+export interface ConnectorAuditLogEntry {
+  id: string;
+  timestamp: number;
+  connectorType: 'telegram' | 'discord';
+  senderId: string;
+  senderUsername?: string;
+  action: 'ALLOW' | 'DENY_ALLOWLIST' | 'DENY_RATE_LIMIT' | 'ERROR';
+  promptSnippet: string;
+  responseSnippet?: string;
+  tokensUsed?: number;
+  latencyMs?: number;
+  error?: string;
+}
+
+export interface ConnectorsOverview {
+  telegram: MessagingConnectorStatus;
+  discord: MessagingConnectorStatus;
+  recentAuditLogs: ConnectorAuditLogEntry[];
+}
+
+export interface BackgroundTaskInfo {
+  id: string;
+  name: string;
+  description: string;
+  progress: number;
+  status: 'running' | 'paused' | 'completed' | 'failed' | 'needs-attention';
+  startTime: number;
+  endTime?: number;
+  attentionReason?: string;
+}
+
+export interface SessionBridgeInfo {
+  sessionId: string;
+  workspaceRoot: string;
+  clientType: string;
+  status: 'idle' | 'streaming' | 'paused' | 'disposed';
+  subscriberCount: number;
+  createdAt: number;
+  lastActiveAt: number;
+  tokensStreamed: number;
+  turnCount: number;
+}
+
 export interface RecentWorkspace {
   path: string;
   name: string;
@@ -1743,6 +1994,40 @@ export interface PairProgrammingSuggestion {
   codeSnippet?: string;
   actionLabel?: string;
   actionCommand?: string;
+}
+
+export interface DetectedHarnessConfig {
+  id: string;
+  name: string;
+  configPath: string;
+  harnessType: AgentHarnessType;
+  modelPreference?: string;
+  hasCredentials: boolean;
+  credentialSummary?: string;
+  apiKey?: string;
+  customInstructions?: string;
+  rawPreferences: Record<string, unknown>;
+}
+
+export interface HarnessImportResult {
+  success: boolean;
+  importedHarness?: AgentHarnessType;
+  importedModel?: string;
+  importedCredentials: string[];
+  importedInstructions?: boolean;
+  error?: string;
+}
+
+export interface HarnessMetadata {
+  id: AgentHarnessType;
+  name: string;
+  cliName: string;
+  description: string;
+  defaultModel: string;
+  promptFormat: string;
+  toolProtocol: string;
+  systemPromptRole: string;
+  supportedFeatures: string[];
 }
 
 declare global {

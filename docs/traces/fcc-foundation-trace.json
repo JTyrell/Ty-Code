@@ -1,0 +1,17 @@
+{
+  "timestamp": "2026-10-17T03:25:16.978Z",
+  "phase": "FCC-0",
+  "status": "PASSED",
+  "integrationMode": "mode_a_decoupled_loopback_sidecar",
+  "upstreamLicense": "AGPL-3.0 with MIT subcomponents",
+  "copyleftContainment": "LOOPBACK_HTTP_MERE_AGGREGATION",
+  "checksumAlgorithm": "SHA-256",
+  "attributionString": "Free-model supply layer powered by free-claude-code (FCC) — AGPL-3.0 / MIT — https://github.com/Alishahryar1/free-claude-code",
+  "attributionSurfacesCount": 5,
+  "summary": {
+    "totalTests": 20,
+    "passed": 20,
+    "failed": 0,
+    "passRate": "100.0%"
+  }
+}

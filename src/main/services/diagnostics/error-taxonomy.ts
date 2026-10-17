@@ -121,8 +121,8 @@ export function classifyDiagnosticError(
       code: 'CONFIG_MISSING',
       humanMessage: 'No API key configured for a provider that requires one',
       remedy: 'Add a key in Settings > Providers (one-click link included)',
-      actionUrl: signupUrl,
-      actionLabel: 'Add API Key in Settings'
+      actionUrl: 'ty-code://settings/providers',
+      actionLabel: 'Connect Provider'
     };
   }
 
@@ -178,6 +178,8 @@ export function classifyDiagnosticError(
       code: 'RATE_LIMITED',
       humanMessage: '429',
       remedy: `Rate limited; retry-after ${retryAfter}s; fallback provider suggested: ${fallback}`,
+      actionUrl: 'ty-code://dashboard/quota',
+      actionLabel: 'View Quota Dashboard',
       retryAfterSec: retryAfter,
       suggestedFallback: fallback,
       rawEvidence: rawBody || errMsg
@@ -272,6 +274,8 @@ export function classifyDiagnosticError(
       code: 'PROVIDER_DOWN',
       humanMessage: '5xx',
       remedy: 'Provider outage; auto-failover engaged',
+      actionUrl: 'ty-code://settings/providers',
+      actionLabel: 'Switch Model',
       suggestedFallback: fallback,
       rawEvidence: rawBody || errMsg
     };
@@ -295,7 +299,8 @@ export function classifyDiagnosticError(
       humanMessage: 'DNS/conn/CSP/proxy failure',
       remedy: `Network path blocked: ${errMsg || 'Connection refused or DNS failure'}; check proxy/firewall`,
       suggestedAction: 'check-network',
-      actionLabel: 'Check Network',
+      actionLabel: 'Retry',
+      actionUrl: 'ty-code://action/retry',
       rawEvidence: errMsg || 'Network unreachable'
     };
   }
@@ -306,7 +311,8 @@ export function classifyDiagnosticError(
     humanMessage: 'DNS/conn/CSP/proxy failure',
     remedy: `Network path blocked: ${errMsg}; check proxy/firewall`,
     suggestedAction: 'check-network',
-    actionLabel: 'Check Network',
+    actionLabel: 'Retry',
+    actionUrl: 'ty-code://action/retry',
     rawEvidence: rawBody || errMsg
   };
 }

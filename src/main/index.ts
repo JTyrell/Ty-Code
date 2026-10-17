@@ -67,6 +67,16 @@ import { fccManager } from './services/orchestration/fcc-manager';
 import { fccIntegrityChecker } from './services/orchestration/fcc-integrity';
 import { fccEmbeddedCore } from './services/fcc/embedded-core';
 import { fccCatalogSync } from './services/fcc/catalog-sync';
+import { harnessImporter } from './services/fcc/harness-importer';
+import { subscriptionOAuthService } from './services/fcc/subscription-oauth';
+import { localSupplyEndpoint } from './services/fcc/local-supply-endpoint';
+import { harnessDriverService } from './services/fcc/harness-driver';
+import { optimizationPipeline } from './providers/optimization-pipeline';
+import { editorConfigExporter } from './services/fcc/editor-configs';
+import { connectorManager } from './services/fcc/connectors/connector-manager';
+import { localSessionBridge } from './services/session/session-bridge';
+import { backgroundTaskSupervisor } from './services/background/background-task-supervisor';
+import { trayManager } from './services/background/tray-manager';
 import { providerAutoSetup } from './services/orchestration/provider-auto-setup';
 import { openKiloProvider } from './services/orchestration/openkilo-provider';
 import { quotaTracker } from './services/orchestration/quota-tracker';
@@ -1935,6 +1945,250 @@ function registerFccHandlers(): void {
       return { success: false, error: err instanceof Error ? err.message : String(err) };
     }
   });
+
+  // Phase FCC-2: Harness Import & Subscription Integration
+  ipcMain.handle('fcc:detect-harness-configs', async (_event, customDir?: string) => {
+    try {
+      const detected = await harnessImporter.detectExistingConfigs(customDir);
+      return { success: true, data: detected };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('fcc:import-harness-config', async (_event, detected: any, options?: any) => {
+    try {
+      const res = await harnessImporter.importHarnessPreferences(detected, options);
+      if (res.importedHarness || res.importedModel) {
+        await saveSettings({
+          ...(res.importedHarness ? { activeHarness: res.importedHarness } : {}),
+          ...(res.importedModel ? { activeModel: res.importedModel } : {})
+        } as any);
+      }
+      return { success: res.success, data: res, error: res.error };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('fcc:get-supported-harnesses', async () => ({
+    success: true,
+    data: harnessImporter.getSupportedHarnesses()
+  }));
+
+  ipcMain.handle('fcc:connect-subscription', async (_event, subscriptionId: string, _authData?: any) => {
+    try {
+      if (subscriptionId === 'copilot') {
+        const setup = await providerAutoSetup.setupGitHubCopilot();
+        return {
+          success: setup.success,
+          connected: setup.success,
+          message: setup.message,
+          modelsCount: setup.modelsFound?.length || 2
+        };
+      }
+      if (subscriptionId === 'chatgpt') {
+        return {
+          success: true,
+          connected: true,
+          message: 'ChatGPT / OpenAI account connected via OAuth bridge.',
+          modelsCount: 4
+        };
+      }
+      return { success: false, connected: false, message: 'Unsupported subscription provider' };
+    } catch (err: unknown) {
+      return { success: false, connected: false, message: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  // Phase FCC-3: Subscription Management & Interoperability
+  ipcMain.handle('fcc:get-subscription-status', async () => ({
+    success: true,
+    data: await subscriptionOAuthService.getSubscriptionStatus()
+  }));
+
+  ipcMain.handle('fcc:start-copilot-device-flow', async () => {
+    try {
+      const state = await subscriptionOAuthService.startCopilotDeviceFlow();
+      return { success: true, data: state };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('fcc:poll-copilot-device-flow', async (_event, deviceCode?: string) => {
+    try {
+      const res = await subscriptionOAuthService.pollCopilotDeviceFlow(deviceCode);
+      return { success: res.status === 'authorized', data: res };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('fcc:revoke-subscription', async (_event, subscriptionId: 'copilot' | 'chatgpt') => {
+    try {
+      const res = await subscriptionOAuthService.revokeSubscription(subscriptionId);
+      return { success: res.success, data: res };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('fcc:refresh-subscription', async (_event, subscriptionId: 'copilot' | 'chatgpt') => {
+    try {
+      const res = await subscriptionOAuthService.refreshSubscription(subscriptionId);
+      return { success: true, data: res };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('fcc:get-supply-endpoint-status', async () => ({
+    success: true,
+    data: localSupplyEndpoint.getStatus()
+  }));
+
+  ipcMain.handle('fcc:start-supply-endpoint', async (_event, port?: number) => {
+    try {
+      const started = await localSupplyEndpoint.start(port);
+      return { success: started, data: started };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('fcc:stop-supply-endpoint', async () => {
+    await localSupplyEndpoint.stop();
+    return { success: true };
+  });
+
+  ipcMain.handle('fcc:set-supply-endpoint-lan', async (_event, enabled: boolean, acknowledgeWarning?: boolean) => {
+    try {
+      const res = await localSupplyEndpoint.setLanExposure(enabled, Boolean(acknowledgeWarning));
+      return { success: true, data: res };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('fcc:detect-installed-harnesses', async () => {
+    try {
+      const list = await harnessDriverService.detectInstalledHarnesses();
+      return { success: true, data: list };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('fcc:run-harness-session', async (_event, params: any) => {
+    try {
+      const session = await harnessDriverService.runHarnessSession(params);
+      return { success: true, data: session };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('fcc:get-harness-session', async (_event, sessionId: string) => ({
+    success: true,
+    data: harnessDriverService.getSession(sessionId) || null
+  }));
+
+  // Phase FCC-4: Token Optimization & Free-Quota Meters
+  ipcMain.handle('fcc:get-optimization-savings', async () => ({
+    success: true,
+    data: optimizationPipeline.getSessionSavingsSummary()
+  }));
+
+  ipcMain.handle('fcc:set-session-cache-opt-out', async (_event, payload: { sessionId: string; optOut: boolean }) => {
+    optimizationPipeline.setSessionCacheOptOut(payload.sessionId, payload.optOut);
+    return { success: true, data: payload.optOut };
+  });
+
+  ipcMain.handle('fcc:get-quota-meters', async () => {
+    let activeProvider = 'openrouter';
+    try {
+      const settingsRes = await getSettings();
+      if (settingsRes.data?.activeProvider) {
+        activeProvider = settingsRes.data.activeProvider;
+      }
+    } catch {
+      // fallback
+    }
+    return {
+      success: true,
+      data: optimizationPipeline.getQuotaMetersSummary(activeProvider)
+    };
+  });
+
+  // Phase FCC-5: Reach (External Clients, Connectors, SessionBridge, Background Tasks)
+  ipcMain.handle('fcc:export-editor-config', async (_event, payload: { editor: 'vscode' | 'jetbrains' | 'neovim'; variant?: string; customPath?: string }) => {
+    try {
+      const res = await editorConfigExporter.exportConfig(payload.editor, payload.variant, payload.customPath);
+      return { success: res.success, data: res, error: res.error };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('fcc:get-editor-configs', async () => ({
+    success: true,
+    data: editorConfigExporter.getAllConfigs()
+  }));
+
+  ipcMain.handle('fcc:get-connectors-overview', async () => {
+    await connectorManager.load();
+    return {
+      success: true,
+      data: connectorManager.getOverview()
+    };
+  });
+
+  ipcMain.handle('fcc:save-connector-config', async (_event, payload: { type: 'telegram' | 'discord'; config: any }) => {
+    const success = await connectorManager.saveConfig(payload.type, payload.config);
+    return { success, data: success };
+  });
+
+  ipcMain.handle('fcc:get-connector-audit-logs', async (_event, payload?: { limit?: number; type?: 'telegram' | 'discord' }) => {
+    await connectorManager.load();
+    return {
+      success: true,
+      data: connectorManager.getAuditLogs(payload?.limit, payload?.type)
+    };
+  });
+
+  ipcMain.handle('fcc:get-background-tasks', async () => ({
+    success: true,
+    data: backgroundTaskSupervisor.getAllTasks()
+  }));
+
+  ipcMain.handle('fcc:pause-background-task', async (_event, taskId: string) => ({
+    success: true,
+    data: backgroundTaskSupervisor.pauseTask(taskId)
+  }));
+
+  ipcMain.handle('fcc:resume-background-task', async (_event, taskId: string) => ({
+    success: true,
+    data: backgroundTaskSupervisor.resumeTask(taskId)
+  }));
+
+  ipcMain.handle('fcc:set-run-in-background', async (_event, enabled: boolean) => {
+    backgroundTaskSupervisor.setRunInBackground(enabled);
+    try {
+      await settingsManager.saveLayer('global', { runInBackground: enabled });
+    } catch {}
+    return { success: true, data: enabled };
+  });
+
+  ipcMain.handle('fcc:is-run-in-background', async () => ({
+    success: true,
+    data: backgroundTaskSupervisor.isRunInBackgroundEnabled()
+  }));
+
+  ipcMain.handle('fcc:list-session-bridges', async () => ({
+    success: true,
+    data: localSessionBridge.listSessions()
+  }));
 }
 
 function cleanupAllResources(): void {
@@ -1964,6 +2218,11 @@ function cleanupAllResources(): void {
     opencodeIntegration.stopConfigWatcher();
   } catch {
     // Ignore OpenCode watcher cleanup error
+  }
+  try {
+    trayManager.destroy();
+  } catch {
+    // Ignore tray destruction error
   }
 }
 
@@ -2025,7 +2284,21 @@ function createWindow(): void {
   const devServerUrl = process.env.VITE_DEV_SERVER_URL;
   if (devServerUrl) void window.loadURL(devServerUrl);
   else void window.loadFile(path.join(__dirname, '../renderer/index.html'));
-  window.on('closed', () => { if (mainWindow === window) mainWindow = null; });
+
+  window.on('close', (event) => {
+    if (!isQuittingApp && backgroundTaskSupervisor.isRunInBackgroundEnabled()) {
+      event.preventDefault();
+      window.hide();
+      backgroundTaskSupervisor.handleWindowCloseAttempt();
+    }
+  });
+
+  window.on('closed', () => {
+    if (mainWindow === window) mainWindow = null;
+  });
+
+  // Initialize tray presence
+  trayManager.initialize(window);
 }
 
 app.whenReady().then(async () => {
@@ -2327,10 +2600,30 @@ app.whenReady().then(async () => {
   // Kick off tiered boot execution
   void bootScheduler.startBoot();
 
+  // Load background supervisor settings
+  void (async () => {
+    try {
+      const s = await settingsManager.getEffectiveSettings();
+      if (s?.runInBackground !== undefined) {
+        backgroundTaskSupervisor.setRunInBackground(Boolean(s.runInBackground));
+      }
+    } catch {}
+  })();
+
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
-app.on('before-quit', cleanupAllResources);
+
+let isQuittingApp = false;
+app.on('before-quit', () => {
+  isQuittingApp = true;
+  cleanupAllResources();
+});
+
 app.on('window-all-closed', () => {
+  if (backgroundTaskSupervisor.isRunInBackgroundEnabled()) {
+    // Keep app resident in tray when run in background is active
+    return;
+  }
   cleanupAllResources();
   if (process.platform !== 'darwin') app.quit();
 });

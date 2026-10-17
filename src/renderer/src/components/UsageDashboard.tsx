@@ -15,10 +15,13 @@ import {
   Layers,
   ChevronRight,
   Gauge,
-  Database
+  Database,
+  AlertCircle
 } from 'lucide-react';
 import { useUsageDashboardStore } from '../state/usage-dashboard-store';
-import type { SmartTaskType } from '../../../preload/types';
+import { useChatStore } from '../state/chat-store';
+import { useOnboardingStore } from '../state/onboarding-store';
+import type { SmartTaskType, FccOptimizationSavings, FccQuotaMetersSummary } from '../../../preload/types';
 import { ProviderDashboard } from './dashboard/ProviderDashboard';
 import { UsageLedgerView } from './dashboard/UsageLedgerView';
 
@@ -42,13 +45,32 @@ export const UsageDashboard: React.FC = () => {
     setFreeMode
   } = useUsageDashboardStore();
 
+  const openSettings = useChatStore((s) => s.openSettings);
+  const openWizard = useOnboardingStore((s) => s.openWizard);
+
   const [activeTab, setActiveTab] = useState<'unified' | 'quotas' | 'ledger' | 'rules' | 'logs'>('unified');
+  const [optSavings, setOptSavings] = useState<FccOptimizationSavings | null>(null);
+  const [quotaMeters, setQuotaMeters] = useState<FccQuotaMetersSummary | null>(null);
 
   useEffect(() => {
     if (isOpen) {
       void refreshStats();
+      const fetchMeters = () => {
+        if (window.electronAPI?.fccGetOptimizationSavings) {
+          window.electronAPI.fccGetOptimizationSavings().then((res) => {
+            if (res?.success && res.data) setOptSavings(res.data);
+          }).catch(() => {});
+        }
+        if (window.electronAPI?.fccGetQuotaMeters) {
+          window.electronAPI.fccGetQuotaMeters().then((res) => {
+            if (res?.success && res.data) setQuotaMeters(res.data);
+          }).catch(() => {});
+        }
+      };
+      fetchMeters();
       const interval = setInterval(() => {
         void refreshStats();
+        fetchMeters();
       }, 5000);
       return () => clearInterval(interval);
     }
@@ -322,6 +344,47 @@ export const UsageDashboard: React.FC = () => {
           </div>
         </div>
 
+        {/* Token Optimization Savings Meter Banner */}
+        <div
+          id="fcc-optimization-savings-meter"
+          style={{
+            margin: '0 24px 12px 24px',
+            padding: '12px 18px',
+            borderRadius: '8px',
+            background: 'linear-gradient(90deg, rgba(14, 165, 233, 0.12), rgba(16, 185, 129, 0.12))',
+            border: '1px solid rgba(14, 165, 233, 0.3)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '12px'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <Zap size={18} color="#38bdf8" />
+            <div>
+              <div style={{ fontSize: '13px', fontWeight: 700, color: '#38bdf8' }}>
+                {optSavings?.label || 'Optimization saved 0 tokens (0%) this session'}
+              </div>
+              <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '2px' }}>
+                RTK Output Compression: {new Intl.NumberFormat('en-US').format(optSavings?.rtkSavedTokens || 0)} tok • Headroom Context Pruning: {new Intl.NumberFormat('en-US').format(optSavings?.headroomSavedTokens || 0)} tok • Semantic Response Cache: {new Intl.NumberFormat('en-US').format(optSavings?.cacheSavedTokens || 0)} tok
+              </div>
+            </div>
+          </div>
+          <span
+            style={{
+              fontSize: '11px',
+              padding: '4px 10px',
+              borderRadius: '12px',
+              backgroundColor: 'rgba(16, 185, 129, 0.2)',
+              color: '#34d399',
+              fontWeight: 600,
+              border: '1px solid rgba(16, 185, 129, 0.4)'
+            }}
+          >
+            {optSavings?.percent || 0}% Optimized
+          </span>
+        </div>
+
         {/* Tab Navigation */}
         <div
           style={{
@@ -463,17 +526,54 @@ export const UsageDashboard: React.FC = () => {
 
           {activeTab === 'quotas' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {Object.values(quotaSnapshot?.providers || {}).map((p) => {
-                const usedPct = p.percentUsed ?? (p.monthlyFreeTokens ? Math.min(100, (p.consumedTokens / p.monthlyFreeTokens) * 100) : 0);
-                const isCooldown = p.healthStatus === 'cooling_down';
-                const isExhausted = p.healthStatus === 'exhausted';
+              {quotaMeters && (
+                <div
+                  id="fcc-aggregate-daily-meters"
+                  style={{
+                    padding: '14px 18px',
+                    borderRadius: '8px',
+                    backgroundColor: 'rgba(30, 41, 59, 0.6)',
+                    border: '1px solid rgba(56, 189, 248, 0.3)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    marginBottom: '4px'
+                  }}
+                >
+                  <div>
+                    <div style={{ fontSize: '14px', fontWeight: 700, color: '#38bdf8' }}>
+                      {new Intl.NumberFormat('en-US').format(quotaMeters.aggregateFreeTokensRemainingToday)} free tokens remaining today
+                    </div>
+                    <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '2px' }}>
+                      Daily estimate across {quotaMeters.providers.length} free providers ({new Intl.NumberFormat('en-US').format(quotaMeters.aggregateFreeTokensDailyBudget)} total daily budget)
+                    </div>
+                  </div>
+                  <span
+                    style={{
+                      fontSize: '11px',
+                      padding: '3px 8px',
+                      borderRadius: '12px',
+                      backgroundColor: quotaMeters.hasAnyExhausted ? 'rgba(239, 68, 68, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                      color: quotaMeters.hasAnyExhausted ? '#ef4444' : '#34d399',
+                      border: `1px solid ${quotaMeters.hasAnyExhausted ? 'rgba(239, 68, 68, 0.3)' : 'rgba(16, 185, 129, 0.3)'}`
+                    }}
+                  >
+                    {quotaMeters.hasAnyExhausted ? 'Failover Active' : 'All Pools Healthy'}
+                  </span>
+                </div>
+              )}
+
+              {(quotaMeters?.providers || []).map((p) => {
+                const usedPct = p.percentUsed;
+                const isExhausted = p.isExhausted;
 
                 return (
                   <div
                     key={p.providerId}
+                    id={`quota-bar-${p.providerId}`}
                     style={{
                       backgroundColor: 'rgba(30, 41, 59, 0.4)',
-                      border: '1px solid rgba(51, 65, 85, 0.5)',
+                      border: `1px solid ${isExhausted ? 'rgba(239, 68, 68, 0.4)' : 'rgba(51, 65, 85, 0.5)'}`,
                       borderRadius: '8px',
                       padding: '14px 18px',
                       display: 'flex',
@@ -488,8 +588,8 @@ export const UsageDashboard: React.FC = () => {
                             width: '8px',
                             height: '8px',
                             borderRadius: '50%',
-                            backgroundColor: isCooldown ? '#f59e0b' : isExhausted ? '#ef4444' : '#10b981',
-                            boxShadow: `0 0 8px ${isCooldown ? '#f59e0b' : isExhausted ? '#ef4444' : '#10b981'}`
+                            backgroundColor: isExhausted ? '#ef4444' : '#10b981',
+                            boxShadow: `0 0 8px ${isExhausted ? '#ef4444' : '#10b981'}`
                           }}
                         />
                         <span style={{ fontSize: '14px', fontWeight: 600 }}>{p.providerName}</span>
@@ -502,41 +602,30 @@ export const UsageDashboard: React.FC = () => {
                             color: '#94a3b8'
                           }}
                         >
-                          {p.providerId === 'ollama' ? 'Local Unlimited' : 'Free Tier'}
+                          {p.providerId === 'ollama' ? 'Local Unlimited' : p.providerId === 'copilot' ? 'Subscription' : 'Free Tier'}
                         </span>
                       </div>
 
                       <div style={{ display: 'flex', alignItems: 'center', gap: '14px', fontSize: '12px' }}>
                         <span style={{ color: '#94a3b8' }}>
-                          Used:{' '}
+                          Remaining:{' '}
                           <strong style={{ color: '#f1f5f9' }}>
-                            {formatTokens(p.consumedTokens)}
+                            {p.remainingTokens !== undefined ? formatTokens(p.remainingTokens) : 'Unlimited'}
                           </strong>{' '}
                           /{' '}
-                          {p.monthlyFreeTokens ? formatTokens(p.monthlyFreeTokens) : 'Unlimited'}
+                          {p.limitTokens ? formatTokens(p.limitTokens) : 'Unlimited'}
                         </span>
                         <span
                           style={{
                             fontSize: '11px',
                             padding: '2px 8px',
                             borderRadius: '12px',
-                            backgroundColor:
-                              isCooldown
-                                ? 'rgba(245, 158, 11, 0.15)'
-                                : isExhausted
-                                  ? 'rgba(239, 68, 68, 0.15)'
-                                  : 'rgba(16, 185, 129, 0.15)',
-                            color: isCooldown ? '#f59e0b' : isExhausted ? '#ef4444' : '#34d399',
-                            border: `1px solid ${
-                              isCooldown
-                                ? 'rgba(245, 158, 11, 0.3)'
-                                : isExhausted
-                                  ? 'rgba(239, 68, 68, 0.3)'
-                                  : 'rgba(16, 185, 129, 0.3)'
-                            }`
+                            backgroundColor: isExhausted ? 'rgba(239, 68, 68, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                            color: isExhausted ? '#ef4444' : '#34d399',
+                            border: `1px solid ${isExhausted ? 'rgba(239, 68, 68, 0.3)' : 'rgba(16, 185, 129, 0.3)'}`
                           }}
                         >
-                          {isCooldown ? 'Cooling Down' : isExhausted ? 'Quota Limit' : 'Operational'}
+                          {isExhausted ? 'Quota Limit' : p.resetHuman}
                         </span>
                       </div>
                     </div>
@@ -563,6 +652,72 @@ export const UsageDashboard: React.FC = () => {
                         }}
                       />
                     </div>
+
+                    {/* Exhaustion Upsell Card */}
+                    {isExhausted && (
+                      <div
+                        style={{
+                          marginTop: '8px',
+                          padding: '10px 14px',
+                          borderRadius: '6px',
+                          backgroundColor: 'rgba(239, 68, 68, 0.08)',
+                          border: '1px solid rgba(239, 68, 68, 0.25)',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '6px'
+                        }}
+                      >
+                        <div style={{ fontSize: '12px', fontWeight: 600, color: '#f87171', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <AlertCircle size={14} />
+                          <span>Quota exhausted for {p.providerName}</span>
+                        </div>
+                        <div style={{ fontSize: '11px', color: '#cbd5e1' }}>
+                          {quotaMeters?.recommendedAlternative ? `${quotaMeters.recommendedAlternative.reason} Or connect your GitHub Copilot / ChatGPT subscription at $0 extra cost.` : 'Switch to another free provider or connect your existing subscription.'}
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                          {quotaMeters?.recommendedAlternative && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                closeDashboard();
+                                openSettings('providers');
+                              }}
+                              style={{
+                                padding: '4px 10px',
+                                fontSize: '11px',
+                                fontWeight: 600,
+                                borderRadius: '4px',
+                                backgroundColor: '#0284c7',
+                                color: '#fff',
+                                border: 'none',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              Switch to {quotaMeters.recommendedAlternative.providerId}
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              closeDashboard();
+                              openWizard('subscriptions');
+                            }}
+                            style={{
+                              padding: '4px 10px',
+                              fontSize: '11px',
+                              fontWeight: 600,
+                              borderRadius: '4px',
+                              backgroundColor: 'rgba(16, 185, 129, 0.2)',
+                              color: '#34d399',
+                              border: '1px solid rgba(16, 185, 129, 0.4)',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            Connect Copilot (No extra cost)
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })}

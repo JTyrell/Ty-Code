@@ -1,0 +1,245 @@
+{
+  "phase": "FCC-6",
+  "title": "Provable 100% FCC Coverage + Permanent Attribution",
+  "timestamp": "2026-10-17T10:59:15.407Z",
+  "gitCommit": "bb0d31db5e37962045ecce162798077b40167a4c",
+  "command": "npm run test:fcc-coverage",
+  "summary": {
+    "totalCapabilities": 12,
+    "passedCapabilities": 12,
+    "failedCapabilities": 0,
+    "coveragePercent": "100%",
+    "status": "PASSED"
+  },
+  "attributionInvariant": "Free-model supply layer powered by free-claude-code (FCC) — AGPL-3.0 / MIT — https://github.com/Alishahryar1/free-claude-code",
+  "capabilities": [
+    {
+      "capabilityId": "fcc_cap_01_catalog_count",
+      "name": "Catalog Count >= 60 Providers",
+      "tier": "Supply Core",
+      "status": "PASS",
+      "evidence": {
+        "totalProviders": 61,
+        "sampleProviders": [
+          "openrouter",
+          "groq",
+          "google-ai-studio",
+          "openkilo",
+          "cerebras"
+        ],
+        "compliantProviders": 55
+      },
+      "timestamp": "2026-10-17T10:59:11.941Z"
+    },
+    {
+      "capabilityId": "fcc_cap_02_tos_flag",
+      "name": "ToS Compliance Flag Present & Default Safe",
+      "tier": "Compliance & Safety",
+      "status": "PASS",
+      "evidence": {
+        "totalRisky": 5,
+        "riskyDisabledByDefault": true,
+        "validStatusEnums": true,
+        "sampleRiskyIds": [
+          "huggingchat",
+          "duckduckgo-ai",
+          "phind-web",
+          "you-web",
+          "blackbox-web"
+        ]
+      },
+      "timestamp": "2026-10-17T10:59:11.943Z"
+    },
+    {
+      "capabilityId": "fcc_cap_03_subscription_connect",
+      "name": "Subscription Connect (OAuth Device Code Flow)",
+      "tier": "Authentication",
+      "status": "PASS",
+      "evidence": {
+        "provider": "copilot",
+        "userCode": "AUTHENTICATED",
+        "verificationUri": "https://github.com",
+        "status": "authorized",
+        "proModels": [
+          "copilot/claude-3-5-sonnet",
+          "copilot/gpt-4o",
+          "copilot/o1-mini",
+          "copilot/o1-preview"
+        ]
+      },
+      "timestamp": "2026-10-17T10:59:12.771Z"
+    },
+    {
+      "capabilityId": "fcc_cap_04_harness_spawn",
+      "name": "Harness Spawn & Unified Diff Interoperability",
+      "tier": "CLI Harness",
+      "status": "PASS",
+      "evidence": {
+        "supportedHarnessCount": 11,
+        "supportedHarnessIds": [
+          "claude-code",
+          "codex",
+          "opencode",
+          "pi",
+          "cline",
+          "aider",
+          "hermes",
+          "deepseek",
+          "grok-build",
+          "muse-code",
+          "vscode-chat"
+        ],
+        "parsedDiff": {
+          "filePath": "index.ts",
+          "diff": "--- a/index.ts\n+++ b/index.ts\n@@ -1,3 +1,4 @@\n console.log('hello');\n+console.log('world');",
+          "additions": 1,
+          "deletions": 0
+        },
+        "parsedTool": {
+          "toolName": "readFile",
+          "arguments": "path=\"src/index.ts\"",
+          "status": "started"
+        }
+      },
+      "timestamp": "2026-10-17T10:59:15.041Z"
+    },
+    {
+      "capabilityId": "fcc_cap_05_endpoint_roundtrip",
+      "name": "OpenAI-Compatible Local Endpoint Round-Trip",
+      "tier": "External Access",
+      "status": "PASS",
+      "evidence": {
+        "testPort": 54582,
+        "httpStatusCode": 200,
+        "responseId": "chatcmpl-c85f7bc2c54310f4a195bf91",
+        "modelUsed": "auto-free",
+        "hasMessageContent": true
+      },
+      "timestamp": "2026-10-17T10:59:15.081Z"
+    },
+    {
+      "capabilityId": "fcc_cap_06_failover_resume",
+      "name": "Failover Resume (Mid-Turn Continuity & 2-Handoff Cap)",
+      "tier": "Resilience",
+      "status": "PASS",
+      "evidence": {
+        "totalHandoffsAllowed": 2,
+        "handoffsExecuted": 2,
+        "thirdHandoffBlocked": true,
+        "turnContinuityPreserved": true,
+        "finalResponseLength": 117
+      },
+      "timestamp": "2026-10-17T10:59:15.081Z"
+    },
+    {
+      "capabilityId": "fcc_cap_07_savings_meter",
+      "name": "Savings Meter Non-Zero After Benchmark (RTK/Headroom/Cache)",
+      "tier": "Efficiency",
+      "status": "PASS",
+      "evidence": {
+        "savedTokens": 4650,
+        "percent": 72,
+        "label": "Optimization saved 4,650 tokens (72%) this session",
+        "rtkTokens": 1500,
+        "headroomTokens": 950,
+        "cacheTokens": 2200
+      },
+      "timestamp": "2026-10-17T10:59:15.103Z"
+    },
+    {
+      "capabilityId": "fcc_cap_08_dashboard_fields",
+      "name": "Dashboard Fields (Quota Bars, Daily Budget, Resets, Latency)",
+      "tier": "Telemetry",
+      "status": "PASS",
+      "evidence": {
+        "totalProvidersTracked": 7,
+        "aggregateDailyBudget": 9150000,
+        "aggregateRemainingToday": 9150000,
+        "sampleProviderBar": {
+          "providerId": "openrouter",
+          "providerName": "OpenRouter Free Tier",
+          "isFreeTier": true,
+          "remainingTokens": 200000,
+          "limitTokens": 200000,
+          "remainingRequests": 19,
+          "percentUsed": 0,
+          "resetHuman": "active",
+          "resetsInSeconds": 0,
+          "isExhausted": false
+        }
+      },
+      "timestamp": "2026-10-17T10:59:15.103Z"
+    },
+    {
+      "capabilityId": "fcc_cap_09_connector_module_loads",
+      "name": "Messaging Connectors (Telegram & Discord, Allowlist & Rate Caps)",
+      "tier": "Connectors",
+      "status": "PASS",
+      "evidence": {
+        "defaultOff": true,
+        "disabledRejectionVerified": true,
+        "allowlistEnforced": true,
+        "rateCapEnforced": true,
+        "auditLogsRecorded": 5
+      },
+      "timestamp": "2026-10-17T10:59:15.110Z"
+    },
+    {
+      "capabilityId": "fcc_cap_10_session_bridge_contract",
+      "name": "SessionBridge Contract (Start, Attach, Stream, Pause, Resume, Dispose)",
+      "tier": "Browser Seam",
+      "status": "PASS",
+      "evidence": {
+        "sessionId": "bridge_coverage_1792234755110",
+        "eventsStreamed": 20,
+        "contractDocumentBytes": 6919,
+        "multiplexingVerified": true
+      },
+      "timestamp": "2026-10-17T10:59:15.397Z"
+    },
+    {
+      "capabilityId": "fcc_cap_11_tray_present",
+      "name": "Tray Presence & Background Supervisor (Fleet Health, Quick Chat)",
+      "tier": "Desktop Reach",
+      "status": "PASS",
+      "evidence": {
+        "totalMenuItems": 10,
+        "fleetHealthPresent": true,
+        "quickChatPresent": true,
+        "backgroundTasksPresent": true,
+        "runInBackgroundPresent": true,
+        "testTaskId": "bg_task_1792234755397_l595h"
+      },
+      "timestamp": "2026-10-17T10:59:15.398Z"
+    },
+    {
+      "capabilityId": "fcc_cap_12_credit_strings_present",
+      "name": "Permanent Attribution Credit Strings (About, Settings, README, Website)",
+      "tier": "Attribution & Legal",
+      "status": "PASS",
+      "evidence": {
+        "verbatimString": "Free-model supply layer powered by free-claude-code (FCC) — AGPL-3.0 / MIT — https://github.com/Alishahryar1/free-claude-code",
+        "surfacesChecked": [
+          {
+            "surface": "About Dialog / Modal",
+            "passed": true
+          },
+          {
+            "surface": "Settings Supply / Model Integrations",
+            "passed": true
+          },
+          {
+            "surface": "Repository README Documentation",
+            "passed": true
+          },
+          {
+            "surface": "Website Public Footer",
+            "passed": true
+          }
+        ],
+        "allSurfacesIntact": true
+      },
+      "timestamp": "2026-10-17T10:59:15.406Z"
+    }
+  ]
+}
