@@ -48,13 +48,14 @@ const ProviderIcon: React.FC<{ id: string; size?: number }> = ({ id, size = 20 }
 };
 
 export const ProviderSelectionGrid: React.FC<ProviderSelectionGridProps> = ({
-  providers,
+  providers = [],
   selectedProviderId,
   onSelectProvider,
-  providerStatuses,
+  providerStatuses = {},
   onSelectCustom,
   isCustomSelected = false
 }) => {
+  const safeProviders = Array.isArray(providers) ? providers : [];
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -73,9 +74,10 @@ export const ProviderSelectionGrid: React.FC<ProviderSelectionGridProps> = ({
           gap: '10px'
         }}
       >
-        {providers.map((p) => {
+        {safeProviders.map((p) => {
+          if (!p || !p.id) return null;
           const isSelected = !isCustomSelected && selectedProviderId === p.id;
-          const statusInfo = providerStatuses[p.id] || { status: 'disconnected' };
+          const statusInfo = (providerStatuses && providerStatuses[p.id]) || { status: 'disconnected' };
 
           return (
             <button

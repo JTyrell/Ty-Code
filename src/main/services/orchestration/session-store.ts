@@ -1,7 +1,48 @@
+import { app } from 'electron';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import type { ChatMessage, ProposedDiff } from '../../../preload/types';
 import type { AgentMode } from './tools/types';
+
+function getUserDataPath(): string {
+  try {
+    if (app && typeof app.getPath === 'function') {
+      return app.getPath('userData');
+    }
+  } catch {
+    // fallback if app is not yet initialized
+  }
+  return process.env.APPDATA
+    ? path.join(process.env.APPDATA, 'Ty-Code')
+    : path.join(process.env.HOME || os.homedir(), '.ty-code');
+}
+
+function isAppOrSystemDir(dirPath: string): boolean {
+  if (!dirPath || typeof dirPath !== 'string') return true;
+  const normalized = path.resolve(dirPath).toLowerCase();
+  const programFiles = (process.env.ProgramFiles || 'C:\\Program Files').toLowerCase();
+  const programFilesX86 = (process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)').toLowerCase();
+  if (normalized.startsWith(programFiles) || normalized.startsWith(programFilesX86)) {
+    return true;
+  }
+  try {
+    if (app && typeof app.getAppPath === 'function') {
+      const appPath = path.resolve(app.getAppPath()).toLowerCase();
+      if (normalized === appPath || normalized.startsWith(appPath)) return true;
+    }
+  } catch {
+    // ignore
+  }
+  return false;
+}
+
+function resolveSafeSessionsDir(workspaceRoot: string): string {
+  if (!workspaceRoot || isAppOrSystemDir(workspaceRoot)) {
+    return path.join(getUserDataPath(), 'sessions');
+  }
+  return path.join(workspaceRoot, '.ty-code', 'sessions');
+}
 
 export interface SessionChangeRecord {
   timestamp: number;
@@ -34,12 +75,12 @@ export class SessionStore {
   private sessionsDir: string;
 
   constructor(private workspaceRoot: string) {
-    this.sessionsDir = path.join(workspaceRoot, '.ty-code', 'sessions');
+    this.sessionsDir = resolveSafeSessionsDir(workspaceRoot);
   }
 
   public setWorkspaceRoot(workspaceRoot: string): void {
     this.workspaceRoot = workspaceRoot;
-    this.sessionsDir = path.join(workspaceRoot, '.ty-code', 'sessions');
+    this.sessionsDir = resolveSafeSessionsDir(workspaceRoot);
   }
 
   private async ensureDir(): Promise<void> {
@@ -56,13 +97,28 @@ export class SessionStore {
   }
 
   public async saveSession(session: SessionData): Promise<void> {
-    await this.ensureDir();
     session.metadata.updatedAt = Date.now();
-    const filePath = this.getSessionPath(session.metadata.id);
-    const tempPath = `${filePath}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
-    const serialized = JSON.stringify(session, null, 2);
-    await fs.writeFile(tempPath, serialized, 'utf-8');
-    await fs.rename(tempPath, filePath);
+    try {
+      await this.ensureDir();
+      const filePath = this.getSessionPath(session.metadata.id);
+      const tempPath = `${filePath}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
+      const serialized = JSON.stringify(session, null, 2);
+      await fs.writeFile(tempPath, serialized, 'utf-8');
+      await fs.rename(tempPath, filePath);
+    } catch (primaryErr) {
+      console.warn('[SessionStore] Could not save session to target dir, trying userData fallback:', primaryErr);
+      try {
+        const fallbackDir = path.join(getUserDataPath(), 'sessions');
+        await fs.mkdir(fallbackDir, { recursive: true });
+        const fallbackPath = path.join(fallbackDir, `${session.metadata.id.replace(/[^a-zA-Z0-9_-]/g, '_')}.json`);
+        const tempPath = `${fallbackPath}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
+        await fs.writeFile(tempPath, JSON.stringify(session, null, 2), 'utf-8');
+        await fs.rename(tempPath, fallbackPath);
+      } catch (fallbackErr) {
+        console.error('[SessionStore] Failed to save session to both target dir and userData fallback:', fallbackErr);
+        // CRITICAL: NEVER throw an exception here. Session history write failure must never abort the active task or user stream!
+      }
+    }
   }
 
   public async loadSession(sessionId: string): Promise<SessionData | null> {
@@ -71,7 +127,13 @@ export class SessionStore {
       const content = await fs.readFile(filePath, 'utf-8');
       return JSON.parse(content) as SessionData;
     } catch {
-      return null;
+      try {
+        const fallbackPath = path.join(getUserDataPath(), 'sessions', `${sessionId.replace(/[^a-zA-Z0-9_-]/g, '_')}.json`);
+        const content = await fs.readFile(fallbackPath, 'utf-8');
+        return JSON.parse(content) as SessionData;
+      } catch {
+        return null;
+      }
     }
   }
 

@@ -289,6 +289,7 @@ export const ConnectProviderCard: React.FC<{ errorCard: ChatErrorCardType; onRet
   const activeProvider = errorCard.providerId || settings?.activeProvider || 'openrouter';
   const providerDisplayNames: Record<string, string> = {
     openrouter: 'OpenRouter',
+    openkilo: 'OpenKilo',
     groq: 'Groq',
     openai: 'OpenAI',
     anthropic: 'Anthropic Claude',
@@ -300,6 +301,7 @@ export const ConnectProviderCard: React.FC<{ errorCard: ChatErrorCardType; onRet
   };
   const providerLinks: Record<string, string> = {
     openrouter: 'https://openrouter.ai/keys',
+    openkilo: 'https://openkilo.com',
     groq: 'https://console.groq.com/keys',
     openai: 'https://platform.openai.com/api-keys',
     anthropic: 'https://console.anthropic.com/settings/keys',
@@ -844,6 +846,47 @@ export const ChatSidecar: React.FC = () => {
   const lastUserMessage = [...messages].reverse().find((message) => message.role === 'user');
   const firstTokenPending = isRunning && !activeErrorCard && !streamingText && !currentThought && !messages.some((message) => message.role === 'tool' && message.toolStatus === 'running');
 
+  // Ground Truth Direct Bypass Test State
+  const [groundTruthRunning, setGroundTruthRunning] = useState(false);
+  const [groundTruthText, setGroundTruthText] = useState<string | null>(null);
+  const [groundTruthError, setGroundTruthError] = useState<string | null>(null);
+
+  const handleTestGroundTruth = async () => {
+    setGroundTruthRunning(true);
+    setGroundTruthText('');
+    setGroundTruthError(null);
+
+    const unsubChunk = window.electronAPI?.onGroundTruthChunk?.((chunk: string) => {
+      setGroundTruthText((prev) => (prev || '') + chunk);
+    });
+
+    const unsubEnd = window.electronAPI?.onGroundTruthEnd?.(() => {
+      setGroundTruthRunning(false);
+      unsubChunk?.();
+      unsubEnd?.();
+      unsubErr?.();
+    });
+
+    const unsubErr = window.electronAPI?.onGroundTruthError?.((err: string) => {
+      setGroundTruthError(err);
+      setGroundTruthRunning(false);
+      unsubChunk?.();
+      unsubEnd?.();
+      unsubErr?.();
+    });
+
+    try {
+      const res = await window.electronAPI?.testGroundTruthApi?.();
+      if (res && !res.success) {
+        setGroundTruthError(res.error || 'Failed to trigger ground truth API');
+        setGroundTruthRunning(false);
+      }
+    } catch (e: any) {
+      setGroundTruthError(e?.message || String(e));
+      setGroundTruthRunning(false);
+    }
+  };
+
   useEffect(() => {
     if (draftPrompt) {
       setInput(draftPrompt);
@@ -869,6 +912,26 @@ export const ChatSidecar: React.FC = () => {
     return () => window.cancelAnimationFrame(frame);
   }, [messages, streamingText, currentThought, currentStatus]);
 
+  // Listen for mid-stream provider handoffs (FCC-3)
+  useEffect(() => {
+    const unsub = window.electronAPI?.onProviderHandoff?.((data) => {
+      const modelName = data.newModel || data.toProvider;
+      const handoffText = `⚠️ Previous provider throttled. Continuing with ${modelName}...`;
+      useChatStore.setState((state) => ({
+        messages: [
+          ...state.messages,
+          {
+            id: `handoff_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+            role: 'system',
+            content: handoffText,
+            timestamp: Date.now()
+          }
+        ]
+      }));
+    });
+    return () => unsub?.();
+  }, []);
+
   const sendPrompt = (prompt: string, appendUserMessage = true) => {
     userAtBottomRef.current = true;
     console.log('UI: Sending prompt', prompt);
@@ -882,7 +945,15 @@ export const ChatSidecar: React.FC = () => {
     sendPrompt(prompt);
   };
   const handleRegenerate = () => {
-    if (!isRunning && lastUserMessage) sendPrompt(lastUserMessage.content, false);
+    if (isRunning) {
+      void stopTask();
+    }
+    const promptToRetry = lastUserMessage?.content || input.trim();
+    if (promptToRetry) {
+      sendPrompt(promptToRetry, !lastUserMessage);
+    } else {
+      inputRef.current?.focus();
+    }
   };
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); handleSubmit(); }
@@ -957,6 +1028,82 @@ export const ChatSidecar: React.FC = () => {
         </div>
       )}
     </header>
+
+    {/* Ground Truth Direct Bypass Test Bar */}
+    <div style={{
+      padding: '8px 12px',
+      background: 'rgba(99, 102, 241, 0.08)',
+      borderBottom: '1px solid rgba(99, 102, 241, 0.25)',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '8px'
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+        <button
+          type="button"
+          onClick={() => void handleTestGroundTruth()}
+          disabled={groundTruthRunning}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '6px 14px',
+            fontSize: '11px',
+            fontWeight: 700,
+            color: '#fff',
+            background: groundTruthRunning ? '#4b5563' : 'linear-gradient(135deg, #4f46e5, #7c3aed)',
+            border: '1px solid rgba(255, 255, 255, 0.2)',
+            borderRadius: '5px',
+            cursor: groundTruthRunning ? 'not-allowed' : 'pointer'
+          }}
+        >
+          {groundTruthRunning ? <Loader2 size={12} className="animate-spin" /> : <Zap size={12} color="#fbbf24" />}
+          <span>{groundTruthRunning ? 'FETCHING GROUND TRUTH…' : '⚡ TEST GROUND TRUTH'}</span>
+        </button>
+        {groundTruthText !== null && (
+          <button
+            type="button"
+            onClick={() => { setGroundTruthText(null); setGroundTruthError(null); }}
+            style={{ background: 'transparent', border: 'none', color: '#94a3b8', fontSize: '11px', cursor: 'pointer', textDecoration: 'underline' }}
+          >
+            Clear
+          </button>
+        )}
+      </div>
+
+      {groundTruthError && (
+        <div style={{
+          padding: '6px 8px',
+          background: 'rgba(239, 68, 68, 0.15)',
+          border: '1px solid rgba(239, 68, 68, 0.3)',
+          borderRadius: '4px',
+          color: '#f87171',
+          fontSize: '11px',
+          wordBreak: 'break-all'
+        }}>
+          <strong>Error:</strong> {groundTruthError}
+        </div>
+      )}
+
+      {groundTruthText !== null && (
+        <div style={{
+          padding: '8px 10px',
+          background: 'rgba(15, 23, 42, 0.95)',
+          border: '1px solid rgba(99, 102, 241, 0.35)',
+          borderRadius: '5px',
+          fontSize: '11px',
+          fontFamily: 'var(--font-mono, monospace)',
+          color: '#e2e8f0',
+          maxHeight: '160px',
+          overflowY: 'auto',
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-word',
+          lineHeight: 1.4
+        }}>
+          {groundTruthText || (groundTruthRunning ? 'Connecting to provider and streaming chunks…' : '(empty response)')}
+        </div>
+      )}
+    </div>
 
     {sidecarTab === 'chat' && agentMode === 'plan' && (
       <div
@@ -1038,7 +1185,25 @@ export const ChatSidecar: React.FC = () => {
       <div ref={feedRef} onScroll={handleScroll} className="chat-feed" aria-live="polite">
         {messages.length === 0 && !streamingText && <div className="chat-empty-state"><Sparkles size={30} color="var(--border-strong)" /><strong>How can Ty-Code help you today?</strong><span>Explore your workspace, implement a feature, fix a bug, or run a test suite.</span></div>}
         {messages.map((message) => <article key={message.id} className={`chat-message is-${message.role}`}>
-          {message.role === 'user' ? <div className="user-message-bubble">{message.content}</div> : <div className="assistant-message-bubble">
+          {message.role === 'system' ? (
+            <div
+              className="chat-system-message-bubble"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '4px 10px',
+                borderRadius: 4,
+                fontSize: 11,
+                color: 'var(--text-muted)',
+                backgroundColor: 'rgba(245, 158, 11, 0.08)',
+                border: '1px solid rgba(245, 158, 11, 0.25)',
+                margin: '4px 0'
+              }}
+            >
+              <span>{message.content}</span>
+            </div>
+          ) : message.role === 'user' ? <div className="user-message-bubble">{message.content}</div> : <div className="assistant-message-bubble">
             {message.isCached && (
               <span
                 className="chat-cached-badge"

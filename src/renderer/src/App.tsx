@@ -8,6 +8,7 @@ import { SkillsPanel } from './components/SkillsPanel';
 import { OutlineView } from './components/OutlineView';
 import { EditorArea } from './components/EditorArea';
 import { ViewSkeleton } from './components/common/ViewSkeleton';
+import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { ChatSidecar } from './components/ChatSidecar';
 import { StatusBar } from './components/StatusBar';
 import { AIBadge } from './components/AIBadge';
@@ -426,16 +427,32 @@ export const App: React.FC = () => {
         onOpenExtensionTrace={() => setIsExtensionTraceOpen(true)}
       />
 
-      {/* Settings & Usage Modals */}
-      <React.Suspense fallback={<ViewSkeleton type="modal" />}>
-        <SettingsModal />
-        <UsageDashboard />
-        <BootTimeline
-          isOpen={isBootTimelineOpen}
-          onClose={() => setIsBootTimelineOpen(false)}
-        />
-      </React.Suspense>
-      <OnboardingWizard />
+      {/* Settings & Usage Modals protected with individual ErrorBoundaries */}
+      <ErrorBoundary fallbackTitle="Settings Error" onReset={() => useChatStore.setState({ isSettingsOpen: false })}>
+        <React.Suspense fallback={<ViewSkeleton type="modal" />}>
+          <SettingsModal />
+        </React.Suspense>
+      </ErrorBoundary>
+
+      <ErrorBoundary fallbackTitle="Usage Dashboard Error" onReset={() => useChatStore.getState().openSettings('analytics')}>
+        <React.Suspense fallback={<ViewSkeleton type="modal" />}>
+          <UsageDashboard />
+        </React.Suspense>
+      </ErrorBoundary>
+
+      <ErrorBoundary fallbackTitle="Boot Timeline Error" onReset={() => setIsBootTimelineOpen(false)}>
+        <React.Suspense fallback={null}>
+          <BootTimeline
+            isOpen={isBootTimelineOpen}
+            onClose={() => setIsBootTimelineOpen(false)}
+          />
+        </React.Suspense>
+      </ErrorBoundary>
+
+      <ErrorBoundary fallbackTitle="Onboarding Wizard Error">
+        <OnboardingWizard />
+      </ErrorBoundary>
+
       <ExtensionInputDialog />
       <AgentApprovalModal />
       <ExtensionTracePanel

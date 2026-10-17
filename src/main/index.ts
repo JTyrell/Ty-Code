@@ -4,6 +4,7 @@ import { bootScheduler } from './services/boot/boot-scheduler';
 import { app, BrowserWindow, ipcMain, session, shell, dialog, type IpcMainInvokeEvent } from 'electron';
 import path from 'path';
 import os from 'os';
+import fsSync from 'fs';
 import { ProviderGateway } from './providers/provider-gateway';
 import { PRECONFIGURED_PROVIDERS } from './config/provider-registry';
 import { historyExtractor } from './services/history-extractor';
@@ -64,6 +65,7 @@ import { fileURLToPath } from 'url';
 
 import { initAiFeatureServices, updateAiServicesWorkspace, registerAiFeatureHandlers } from './ipc/ai-features-handlers';
 import { fccManager } from './services/orchestration/fcc-manager';
+import { checkFCCHealth } from './services/fcc-manager';
 import { fccIntegrityChecker } from './services/orchestration/fcc-integrity';
 import { fccEmbeddedCore } from './services/fcc/embedded-core';
 import { fccCatalogSync } from './services/fcc/catalog-sync';
@@ -112,9 +114,40 @@ import { diagnosticsHealthMonitor } from './services/diagnostics/health-monitor'
 import { connectivityTracer } from './services/diagnostics/connectivity-tracer';
 import { providerOAuth } from './services/auth/provider-oauth';
 import { usageLedger } from './services/usage/ledger';
+import { getVerifiedModels } from './services/verified-models';
+import { saveKey, getKey, testKey } from './services/credential-vault';
+import { initiateCopilotDeviceFlow, pollCopilotToken } from './services/auth/subscription-auth';
+
+function isAppOrSystemDir(dirPath: string): boolean {
+  if (!dirPath) return true;
+  const lower = dirPath.toLowerCase().replace(/\\/g, '/');
+  return (
+    lower.includes('/program files') ||
+    lower.includes('/windows') ||
+    lower.includes('/system32') ||
+    lower.endsWith('/ty-code') ||
+    lower.endsWith('/resources') ||
+    lower.endsWith('/resources/app')
+  );
+}
+
+function getInitialWorkspacePath(): string {
+  const cwd = process.cwd();
+  if (isAppOrSystemDir(cwd)) {
+    try {
+      const documents = app.getPath('documents');
+      if (documents && fsSync.existsSync(documents)) return documents;
+      const home = app.getPath('home');
+      if (home && fsSync.existsSync(home)) return home;
+    } catch {
+      return os.homedir();
+    }
+  }
+  return cwd;
+}
 
 let mainWindow: BrowserWindow | null = null;
-let currentWorkspacePath = process.cwd();
+let currentWorkspacePath = getInitialWorkspacePath();
 let workspaceEditPreviewService: WorkspaceEditPreviewService | null = null;
 let workspaceEditPreviewWorkspace = '';
 let ipcRegistered = false;
@@ -2190,6 +2223,178 @@ function registerFccHandlers(): void {
     success: true,
     data: localSessionBridge.listSessions()
   }));
+
+  ipcMain.handle('get-verified-models', async () => {
+    try {
+      const allModels = await getVerifiedModels();
+      return { success: true, data: allModels };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('test-verified-api', async (event, { modelId, prompt, apiKey }) => {
+    console.log(`[MAIN] Attempting real API call for model: ${modelId}`);
+    const allModels = await getVerifiedModels();
+    const config = allModels.find(m => m.modelId === modelId);
+    if (!config) throw new Error("Unverified model requested");
+
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (config.requiresKey && apiKey) {
+      headers["Authorization"] = `Bearer ${apiKey}`;
+    } else if (config.requiresKey && !apiKey) {
+      throw new Error("API key required for this model");
+    }
+
+    const payload = {
+      model: config.modelId,
+      messages: [{ role: "user", content: prompt }],
+      stream: true
+    };
+
+    try {
+      console.log(`[MAIN] Fetching from: ${config.url}`);
+      const response = await fetch(config.url, { method: "POST", headers, body: JSON.stringify(payload) });
+      console.log(`[MAIN] Response status: ${response.status}`);
+
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`HTTP ${response.status}: ${errText}`);
+      }
+
+      if (!response.body) throw new Error("No response body");
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          event.sender.send('verified-api-end');
+          break;
+        }
+        const chunk = decoder.decode(value, { stream: true });
+        event.sender.send('verified-api-chunk', chunk);
+      }
+    } catch (error: any) {
+      console.error(`[MAIN] REAL API CALL FAILED:`, error.message);
+      event.sender.send('verified-api-error', error.message);
+    }
+  });
+
+  ipcMain.handle('test-ground-truth-api', async (event) => {
+    console.log('[GROUND_TRUTH] Attempting fetch...');
+    try {
+      let config = {
+        url: 'https://api.kilo.ai/api/gateway/chat/completions',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'text/event-stream'
+        },
+        payload: {
+          model: 'kilo-auto/free',
+          messages: [{ role: 'user', content: 'Reply with exactly: PYTHON_BACKEND_TEST_SUCCESS' }],
+          stream: true
+        }
+      };
+
+      const possiblePaths = [
+        path.join(process.cwd(), 'working_api_config.json'),
+        path.join(__dirname, '../../working_api_config.json'),
+        path.join(__dirname, '../working_api_config.json')
+      ];
+
+      for (const p of possiblePaths) {
+        if (fsSync.existsSync(p)) {
+          try {
+            const raw = fsSync.readFileSync(p, 'utf8');
+            config = JSON.parse(raw);
+            console.log('[GROUND_TRUTH] Successfully read config from:', p);
+            break;
+          } catch {}
+        }
+      }
+
+      console.log(`[GROUND_TRUTH] Fetching from: ${config.url}`);
+      console.log(`[GROUND_TRUTH] Model: ${config.payload?.model}`);
+
+      const response = await fetch(config.url, {
+        method: 'POST',
+        headers: config.headers,
+        body: JSON.stringify(config.payload)
+      });
+
+      console.log(`[GROUND_TRUTH] Response status: ${response.status}`);
+
+      if (!response.ok) {
+        const errText = await response.text();
+        console.error(`[GROUND_TRUTH] Response error body: ${errText}`);
+        event.sender.send('ground-truth-error', `HTTP ${response.status}: ${errText}`);
+        return { success: false, error: `HTTP ${response.status}: ${errText}` };
+      }
+
+      if (!response.body) {
+        console.error('[GROUND_TRUTH] No response body');
+        event.sender.send('ground-truth-error', 'No response body');
+        return { success: false, error: 'No response body' };
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          console.log('[GROUND_TRUTH] Stream ended');
+          event.sender.send('ground-truth-end');
+          break;
+        }
+        const chunk = decoder.decode(value, { stream: true });
+        console.log('[GROUND_TRUTH] Chunk received:', chunk.slice(0, 100));
+        event.sender.send('ground-truth-chunk', chunk);
+      }
+
+      return { success: true };
+    } catch (error: any) {
+      console.error('[GROUND_TRUTH] REAL API CALL FAILED:', error?.message || error);
+      event.sender.send('ground-truth-error', error?.message || String(error));
+      return { success: false, error: error?.message || String(error) };
+    }
+  });
+
+  ipcMain.handle('test-provider-key', async (_event, arg1: any, arg2?: string) => {
+    const provider = typeof arg1 === 'object' && arg1 !== null ? arg1.provider : arg1;
+    const key = typeof arg1 === 'object' && arg1 !== null ? arg1.key : arg2;
+    return await testKey(provider, key || '');
+  });
+
+  ipcMain.handle('save-provider-key', async (_event, arg1: any, arg2?: string) => {
+    const provider = typeof arg1 === 'object' && arg1 !== null ? arg1.provider : arg1;
+    const key = typeof arg1 === 'object' && arg1 !== null ? arg1.key : arg2;
+    await saveKey(provider, key || '');
+    return { success: true };
+  });
+
+  ipcMain.handle('get-provider-key', async (_event, arg1: any) => {
+    const provider = typeof arg1 === 'object' && arg1 !== null ? arg1.provider : arg1;
+    return await getKey(provider);
+  });
+
+  ipcMain.handle('initiate-copilot-device-flow', async () => {
+    try {
+      const data = await initiateCopilotDeviceFlow();
+      return { success: true, data };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('poll-copilot-token', async (_event, deviceCode: string) => {
+    try {
+      return await pollCopilotToken(deviceCode);
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
 }
 
 function cleanupAllResources(): void {
@@ -2361,6 +2566,18 @@ app.whenReady().then(async () => {
     1,
     'settings',
     async () => {
+      if (isAppOrSystemDir(currentWorkspacePath)) {
+        try {
+          const documents = app.getPath('documents');
+          if (documents && fsSync.existsSync(documents)) {
+            currentWorkspacePath = documents;
+          } else {
+            currentWorkspacePath = app.getPath('home') || os.homedir();
+          }
+        } catch {
+          currentWorkspacePath = os.homedir();
+        }
+      }
       await settingsManager.setWorkspacePath(currentWorkspacePath);
     }
   );
@@ -2609,6 +2826,23 @@ app.whenReady().then(async () => {
         backgroundTaskSupervisor.setRunInBackground(Boolean(s.runInBackground));
       }
     } catch {}
+  })();
+
+  // Dynamic discovery of verified cloud, local Ollama, and FCC models at startup
+  void (async () => {
+    try {
+      const allModels = await getVerifiedModels();
+      console.log(`[STARTUP] Model catalog ready: ${allModels.length} models loaded.`);
+
+      const fccStatus = await checkFCCHealth();
+      if (fccStatus.healthy) {
+        console.log('[STARTUP] FCC sidecar detected and healthy. Extended model catalog loaded.');
+      } else {
+        console.log('[STARTUP] FCC sidecar not detected. Running in native-only mode.');
+      }
+    } catch (e) {
+      console.error('[STARTUP] Error during startup model detection:', e);
+    }
   })();
 
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });

@@ -99,109 +99,24 @@ export class AgentEngine {
         return;
       }
       try {
-        const tools = harness.formatTools(AGENT_TOOLS_DEFINITIONS);
-        let streamResult;
+        console.log('[AGENT] Calling gateway...');
+        const activeProvider = currentSettings.activeProvider || 'openrouter';
+        const activeModel = currentSettings.activeModel || 'qwen/qwen-2.5-coder-32b-instruct:free';
+        console.log(`[AGENT] Provider: ${activeProvider}, Model: ${activeModel}`);
 
-        // Phase FCC-4: Snapshot turn state for continuous mid-turn failover & resume
-        const snapshot = failoverResumeManager.createSnapshot(
-          `turn_${step}_${Date.now()}`,
-          harness.formatMessages(messages),
-          currentSettings.activeProvider,
-          currentSettings.activeModel
+        const streamText = await ProviderGateway.sendChatRequest(
+          activeProvider,
+          activeModel,
+          messages,
+          true,
+          undefined,
+          (content) => {
+            onChunk({ type: 'token', content });
+          }
         );
 
-        let activeTurnMessages = [...snapshot.originalMessages];
-
-        while (true) {
-          try {
-            streamResult = await ProviderGateway.streamChat(
-              currentSettings,
-              activeTurnMessages,
-              tools,
-              {
-                onToken: (content) => {
-                  failoverResumeManager.recordTokens(snapshot, content, undefined);
-                  onChunk({ type: 'token', content });
-                },
-                onThought: (content) => {
-                  failoverResumeManager.recordTokens(snapshot, undefined, content);
-                  onChunk({ type: 'thought', content });
-                },
-                onFailoverNotice: (notice) => {
-                  const target = notice.nextModel || notice.nextProvider || 'fallback model';
-                  const noticeLabel = failoverResumeManager.formatFailoverNotice(target);
-                  if (notice.error?.includes('429') || notice.error?.toLowerCase().includes('rate limit')) {
-                    diagnosticsHealthMonitor.recordRateLimit(notice.failedProvider);
-                  } else {
-                    diagnosticsHealthMonitor.recordProviderDown(notice.failedProvider);
-                  }
-                  onChunk({ type: 'status', content: noticeLabel });
-                  onChunk({ type: 'token', content: `\n\n*[${noticeLabel}]*\n\n` });
-                }
-              },
-              abortSignal,
-              params.traceId
-            );
-
-            await failoverResumeManager.finalizeSegment(snapshot);
-            if (snapshot.partialText && snapshot.handoffCount > 0) {
-              streamResult.fullText = snapshot.partialText;
-            }
-            break; // Stream succeeded
-          } catch (streamErr: unknown) {
-            if (abortSignal?.aborted) {
-              onChunk({ type: 'cancelled' });
-              return;
-            }
-
-            const errorMsg = streamErr instanceof Error ? streamErr.message : String(streamErr);
-            failedProviders.add(currentSettings.activeProvider);
-
-            if (failoverResumeManager.canHandoff(snapshot)) {
-              await failoverResumeManager.finalizeSegment(snapshot, errorMsg);
-
-              // Route to next healthy candidate across graceful hierarchy
-              const fallbackCandidate = ProviderGateway.router.route({
-                taskType: 'coding',
-                excludedProviders: failedProviders
-              }, currentSettings);
-
-              if (!fallbackCandidate) {
-                throw failoverResumeManager.createExhaustedError(snapshot, errorMsg);
-              }
-
-              const continuation = failoverResumeManager.prepareContinuation(
-                snapshot,
-                fallbackCandidate,
-                errorMsg,
-                params.traceId
-              );
-
-              onChunk({ type: 'status', content: continuation.notice });
-              onChunk({ type: 'token', content: `\n\n*[${continuation.notice}]*\n\n` });
-
-              currentSettings = {
-                ...currentSettings,
-                activeProvider: fallbackCandidate.provider.id as any,
-                activeModel: fallbackCandidate.model.id
-              };
-
-              activeTurnMessages = continuation.continuationMessages;
-              continue;
-            } else {
-              await failoverResumeManager.finalizeSegment(snapshot, errorMsg);
-              throw failoverResumeManager.createExhaustedError(snapshot, errorMsg);
-            }
-          }
-        }
-
-        if (!streamResult) {
-          throw new Error('Streaming failed across all available providers.');
-        }
-
-        const parsedResponse = harness.parseResponse(streamResult.fullText, streamResult.toolCalls);
+        const parsedResponse = harness.parseResponse(streamText, []);
         const toolCallsToExecute = parsedResponse.toolCalls;
-
 
         if (!toolCallsToExecute.length) {
           if (params.traceId) {
@@ -226,7 +141,7 @@ export class AgentEngine {
 
         messages.push({
           role: 'assistant',
-          content: parsedResponse.text || streamResult.fullText || '',
+          content: parsedResponse.text || streamText || '',
           tool_calls: toolCallsToExecute.map((toolCall) => ({
             id: toolCall.id,
             type: 'function',

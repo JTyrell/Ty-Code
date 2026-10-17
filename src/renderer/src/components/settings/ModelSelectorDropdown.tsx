@@ -23,32 +23,36 @@ export interface ModelSelectorDropdownProps {
 type ModelCategoryFilter = 'All' | 'Free' | 'Fast' | 'Premium/Reasoning';
 
 export const ModelSelectorDropdown: React.FC<ModelSelectorDropdownProps> = ({
-  models,
+  models = [],
   selectedModelId,
   onSelectModel,
   isLoading = false,
   onRefreshModels,
-  providerName
+  providerName = 'Provider'
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<ModelCategoryFilter>('All');
+
+  const safeModels = Array.isArray(models) ? models : [];
 
   // Compute category counts
   const categoryCounts = useMemo(() => {
     let free = 0;
     let fast = 0;
     let premium = 0;
-    for (const m of models) {
+    for (const m of safeModels) {
+      if (!m) continue;
       if (m.isFree || m.category === 'Free') free++;
       else if (m.category === 'Fast') fast++;
       else premium++;
     }
-    return { all: models.length, free, fast, premium };
-  }, [models]);
+    return { all: safeModels.length, free, fast, premium };
+  }, [safeModels]);
 
   // Filter models based on search query and category
   const filteredModels = useMemo(() => {
-    return models.filter((m) => {
+    return safeModels.filter((m) => {
+      if (!m || !m.id) return false;
       // Category filter
       if (selectedCategory === 'Free' && !m.isFree && m.category !== 'Free') return false;
       if (selectedCategory === 'Fast' && m.category !== 'Fast') return false;
@@ -64,7 +68,7 @@ export const ModelSelectorDropdown: React.FC<ModelSelectorDropdownProps> = ({
       }
       return true;
     });
-  }, [models, selectedCategory, searchQuery]);
+  }, [safeModels, selectedCategory, searchQuery]);
 
   return (
     <div

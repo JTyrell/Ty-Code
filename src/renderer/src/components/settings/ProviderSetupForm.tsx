@@ -43,8 +43,10 @@ export const ProviderSetupForm: React.FC<ProviderSetupFormProps> = ({
   onSelectModel,
   activeModelId
 }) => {
+  const providerId = provider?.id || '';
+  const providerBaseUrl = provider?.baseUrl || '';
   const [apiKey, setApiKey] = useState('');
-  const [customEndpoint, setCustomEndpoint] = useState(initialCustomEndpoint || provider.baseUrl);
+  const [customEndpoint, setCustomEndpoint] = useState(initialCustomEndpoint || providerBaseUrl);
   const [showKey, setShowKey] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<TestConnectionResult | null>(null);
@@ -70,15 +72,15 @@ export const ProviderSetupForm: React.FC<ProviderSetupFormProps> = ({
   const [showManualByok, setShowManualByok] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
 
-  const isZeroConfig = provider.setupType === 'zero_config';
-  const isOpenRouter = provider.id === 'openrouter' || provider.id === 'openrouter-free';
-  const isOpenKilo = provider.id === 'openkilo' || provider.id === 'openkilo-free';
-  const isCopilot = provider.id === 'github-copilot' || provider.id === 'github-models';
+  const isZeroConfig = provider?.setupType === 'zero_config';
+  const isOpenRouter = providerId === 'openrouter' || providerId === 'openrouter-free';
+  const isOpenKilo = providerId === 'openkilo' || providerId === 'openkilo-free';
+  const isCopilot = providerId === 'github-copilot' || providerId === 'github-models';
   const hasOAuthCapability = isOpenRouter || isOpenKilo || isCopilot;
 
   useEffect(() => {
     setApiKey('');
-    setCustomEndpoint(initialCustomEndpoint || provider.baseUrl);
+    setCustomEndpoint(initialCustomEndpoint || providerBaseUrl);
     setTestResult(null);
     setValidationError('');
     setSaveSuccess(false);
@@ -86,15 +88,15 @@ export const ProviderSetupForm: React.FC<ProviderSetupFormProps> = ({
     setOauthState({ status: 'idle' });
     setCopilotFlow(null);
     setShowManualByok(!hasOAuthCapability);
-  }, [provider.id, initialCustomEndpoint, hasOAuthCapability]);
+  }, [providerId, initialCustomEndpoint, providerBaseUrl, hasOAuthCapability]);
 
   // Listen for OAuth status change events pushed from main process
   useEffect(() => {
-    if (!window.electronAPI?.onOAuthStatusChanged) return;
+    if (!window.electronAPI?.onOAuthStatusChanged || !providerId) return;
     const unsub = window.electronAPI.onOAuthStatusChanged((statusMap: Record<string, any>) => {
-      const pStatus = statusMap[provider.id] || statusMap[provider.id.replace('-free', '')];
+      const pStatus = statusMap[providerId] || statusMap[providerId.replace('-free', '')];
       if (pStatus?.connected) {
-        setOauthState({ status: 'success', message: `Connected to ${provider.name} securely!` });
+        setOauthState({ status: 'success', message: `Connected to ${provider?.name || providerId} securely!` });
         setTimeout(() => setOauthState({ status: 'idle' }), 3000);
         void handleTestConnection();
       }
@@ -102,7 +104,15 @@ export const ProviderSetupForm: React.FC<ProviderSetupFormProps> = ({
     return () => {
       unsub();
     };
-  }, [provider.id]);
+  }, [providerId, provider?.name]);
+
+  if (!provider) {
+    return (
+      <div style={{ padding: '16px', color: 'var(--text-muted)', textAlign: 'center' }}>
+        No provider selected. Please select a provider from the grid above.
+      </div>
+    );
+  }
 
   const handleOpenHelp = () => {
     if (provider.signupUrl && window.electronAPI?.openExternal) {

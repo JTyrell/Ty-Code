@@ -22,8 +22,290 @@ import { providerHealthMonitor } from '../services/providers/health-monitor';
 import { readStoredCredentials } from '../ipc/settings-handlers';
 import { keyDetector } from '../services/providers/key-detector';
 
+import { getKey } from '../services/credential-vault';
+import { getVerifiedModels, type VerifiedModelConfig } from '../services/verified-models';
+
+import { BrowserWindow } from 'electron';
 import { DEFAULT_PRESET_MODELS } from '../../preload/preset-models';
-export { DEFAULT_PRESET_MODELS };
+export { DEFAULT_PRESET_MODELS, getVerifiedModels, type VerifiedModelConfig };
+
+/**
+ * Direct Multi-Provider Gateway with Vault Integration (KeyHarvest-3)
+ * Reads credentials dynamically from credential-vault via safeStorage at request time.
+ */
+export async function sendChatRequest(
+  providerId: string,
+  modelId: string,
+  messages: any[],
+  stream: boolean = true,
+  apiKey?: string,
+  onToken?: (chunk: string) => void,
+  handoffCount: number = 0
+): Promise<string> {
+  const provider = providerId;
+  const norm = (providerId || '').toLowerCase().trim().replace(/-free$/, '');
+  const isKilo = norm === 'kilo' || norm === 'openkilo';
+  const isCopilot = norm === 'copilot' || norm === 'github-copilot' || norm === 'copilot-subscription';
+
+  // 1. Fetch verified models catalog and find requested model configuration
+  const allModels = await getVerifiedModels();
+  let config = allModels.find(
+    (m) =>
+      (m.modelId === modelId || m.modelId.toLowerCase() === modelId.toLowerCase()) &&
+      (m.providerId.toLowerCase() === norm || m.providerId.toLowerCase() === providerId.toLowerCase())
+  );
+
+  if (!config) {
+    config = allModels.find(
+      (m) => m.modelId === modelId || m.modelId.toLowerCase() === modelId.toLowerCase()
+    );
+  }
+
+  // Gracefully fallback to standard endpoints if model is not directly listed
+  if (!config) {
+    if (norm === 'openrouter') {
+      config = { modelId, name: modelId, url: 'https://openrouter.ai/api/v1/chat/completions', requiresKey: true, providerId: 'openrouter' };
+    } else if (norm === 'groq') {
+      config = { modelId, name: modelId, url: 'https://api.groq.com/openai/v1/chat/completions', requiresKey: true, providerId: 'groq' };
+    } else if (norm === 'anthropic' || norm === 'claude') {
+      config = { modelId, name: modelId, url: 'https://api.anthropic.com/v1/messages', requiresKey: true, providerId: 'anthropic' };
+    } else if (isKilo) {
+      config = { modelId, name: modelId, url: 'https://api.kilo.ai/api/gateway/chat/completions', requiresKey: false, providerId: 'openkilo' };
+    } else if (isCopilot) {
+      config = { modelId, name: modelId, url: 'https://api.githubcopilot.com/chat/completions', requiresKey: true, providerId: 'copilot' };
+    } else {
+      throw new Error('Unverified model or provider requested');
+    }
+  }
+
+  // 2. Read key from secure vault at request time
+  let key = apiKey;
+  if (config.requiresKey && !key) {
+    if (isCopilot) {
+      key = (await getKey('copilot')) || (await getKey('github-copilot')) || undefined;
+    } else {
+      key = (await getKey(providerId)) || (await getKey(config.providerId)) || (await getKey(norm)) || undefined;
+    }
+  }
+
+  if (config.requiresKey && !key) {
+    throw new Error('No API key configured for ' + providerId);
+  }
+
+  // 3. Construct headers
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json'
+  };
+
+  const normP = (config.providerId || providerId).toLowerCase().trim();
+  if (key) {
+    if (normP === 'anthropic' || normP === 'claude') {
+      headers['x-api-key'] = key;
+      headers['anthropic-version'] = '2023-06-01';
+    } else {
+      headers['Authorization'] = `Bearer ${key}`;
+    }
+  }
+
+  if (isCopilot || normP === 'copilot') {
+    headers['Editor-Version'] = 'vscode/1.85.0';
+    headers['Editor-Plugin-Version'] = 'copilot-chat/0.11.1';
+    headers['Copilot-Integration-Id'] = 'vscode-chat';
+  } else if (normP === 'openrouter') {
+    headers['HTTP-Referer'] = 'https://github.com/Alishahryar1/free-claude-code';
+    headers['X-Title'] = 'Ty-Code';
+  }
+
+  const url = config.url;
+  const providerDisplay = config.name || providerId;
+
+  console.log(`[GATEWAY] Fetching from ${config.url}`);
+  console.log(`[GATEWAY] Provider: ${providerId}, Model: ${modelId}`);
+
+  // Construct payload
+  const formattedMessages = messages.map((m: any) => {
+    if (typeof m === 'string') return { role: 'user', content: m };
+    if (m.role === 'tool') {
+      return {
+        role: 'user',
+        content: `[Tool Result for ${m.name || 'tool'}]: ${m.content}`
+      };
+    }
+    return { role: m.role || 'user', content: m.content || '' };
+  });
+
+  let requestModel = modelId;
+  if (isCopilot) {
+    if (modelId.startsWith('copilot/')) {
+      requestModel = modelId.replace(/^copilot\//, '');
+    } else if (modelId.startsWith('copilot-')) {
+      requestModel = modelId.replace(/^copilot-/, '');
+    }
+  }
+
+  let payload: any;
+  if (norm === 'anthropic' || norm === 'claude') {
+    const systemMsg = formattedMessages.find((m: any) => m.role === 'system');
+    const userAndAssistantMsgs = formattedMessages.filter((m: any) => m.role !== 'system');
+    payload = {
+      model: modelId,
+      messages: userAndAssistantMsgs.map((m: any) => ({ role: m.role, content: m.content })),
+      max_tokens: 4096,
+      stream
+    };
+    if (systemMsg && systemMsg.content) {
+      payload.system = systemMsg.content;
+    }
+  } else {
+    payload = {
+      model: isCopilot ? requestModel : modelId,
+      messages: formattedMessages.map((m: any) => ({ role: m.role, content: m.content })),
+      stream
+    };
+  }
+
+  let fullText = '';
+
+  try {
+    // 4. Make the fetch request with the key in the headers
+    const response = await fetch(config.url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload)
+    });
+
+    console.log(`[GATEWAY] Response status: ${response.status}`);
+
+    const isThrottledOrServerError = response.status === 429 || response.status >= 500;
+    if (isThrottledOrServerError) {
+      if (handoffCount < 2) {
+        console.log(`[GATEWAY] Provider failed mid-stream. Handing off to next provider (Attempt ${handoffCount + 1}/2).`);
+        // Find the next available model from a DIFFERENT provider
+        const nextModel = allModels.find((m) => m.providerId !== config.providerId);
+        if (nextModel) {
+          console.log(`[GATEWAY] Handing off to ${nextModel.providerId} (${nextModel.modelId})`);
+          // Recursively call sendChatRequest with the new provider and incremented handoffCount
+          return await sendChatRequest(nextModel.providerId, nextModel.modelId, messages, stream, apiKey, onToken, handoffCount + 1);
+        } else {
+          throw new Error(`[GATEWAY] All providers failed. Maximum handoffs reached.`);
+        }
+      } else {
+        const errType = response.status === 429 ? 'RATE_LIMITED' : 'PROVIDER_DOWN';
+        throw new Error(`[${errType}] ${providerDisplay} failed (${response.status}) and maximum handoffs (2) reached.`);
+      }
+    }
+
+    if (!response.ok) {
+      const errText = await response.text().catch(() => '');
+      console.error(`[GATEWAY] Request failed with status ${response.status}:`, errText);
+      let parsedMsg = errText;
+      try {
+        const errJson = JSON.parse(errText);
+        parsedMsg = errJson.error?.message || errJson.message || errText;
+      } catch {}
+      throw new Error(`[GATEWAY] ${providerDisplay} API error (${response.status}): ${parsedMsg}`);
+    }
+
+    // 5. Handle the streaming response (response.body.getReader()) and return the text
+    if (!response.body) {
+      throw new Error(`[GATEWAY] Response body is empty from ${providerId}`);
+    }
+
+    if (!stream) {
+      const data: any = await response.json();
+      const text = data.choices?.[0]?.message?.content || data.content?.[0]?.text || '';
+      if (onToken) onToken(text);
+      return text;
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith(':')) continue;
+
+        if (trimmed.startsWith('data: ')) {
+          const dataStr = trimmed.slice(6).trim();
+          if (dataStr === '[DONE]') continue;
+
+          try {
+            const json = JSON.parse(dataStr);
+            let token = json.choices?.[0]?.delta?.content;
+            if (token === undefined || token === null) {
+              if (json.delta?.text) {
+                token = json.delta.text;
+              } else if (json.choices?.[0]?.delta?.reasoning) {
+                token = json.choices[0].delta.reasoning;
+              }
+            }
+
+            if (token) {
+              fullText += token;
+              if (onToken) {
+                onToken(token);
+              }
+            }
+          } catch {
+            // SSE incomplete chunk, continue
+          }
+        }
+      }
+    }
+
+    if (buffer.trim()) {
+      const trimmed = buffer.trim();
+      if (trimmed.startsWith('data: ')) {
+        const dataStr = trimmed.slice(6).trim();
+        if (dataStr !== '[DONE]') {
+          try {
+            const json = JSON.parse(dataStr);
+            const token = json.choices?.[0]?.delta?.content ?? json.delta?.text ?? json.choices?.[0]?.delta?.reasoning;
+            if (token) {
+              fullText += token;
+              if (onToken) onToken(token);
+            }
+          } catch {}
+        }
+      }
+    }
+
+    return fullText;
+  } catch (err: any) {
+    console.error('[GATEWAY] Exact Node.js fetch error:', err);
+    console.error(`[GATEWAY] Error message: ${err?.message || String(err)}`);
+    if (
+      handoffCount < 2 &&
+      (err?.message?.includes('429') ||
+        err?.message?.includes('500') ||
+        err?.message?.includes('502') ||
+        err?.message?.includes('503') ||
+        err?.message?.includes('fetch failed') ||
+        err?.message?.includes('network'))
+    ) {
+      console.log(`[GATEWAY] Provider failed mid-stream. Handing off to next provider (Attempt ${handoffCount + 1}/2).`);
+      // Find the next available model from a DIFFERENT provider
+      const nextModel = allModels.find((m) => m.providerId !== config.providerId);
+      if (nextModel) {
+        console.log(`[GATEWAY] Handing off to ${nextModel.providerId} (${nextModel.modelId})`);
+        // Recursively call sendChatRequest with the new provider and incremented handoffCount
+        return await sendChatRequest(nextModel.providerId, nextModel.modelId, messages, stream, apiKey, onToken, handoffCount + 1);
+      } else {
+        throw new Error(`[GATEWAY] All providers failed. Maximum handoffs reached.`);
+      }
+    }
+    throw err;
+  }
+}
 
 export function isFreeModel(modelId: string, providerId: string): boolean {
   if (freeProviderRegistry.isFreeModel(modelId, providerId)) return true;
@@ -69,6 +351,8 @@ function appendDelta(existing: string, incoming: string | undefined): string {
 }
 
 export class ProviderGateway {
+  public static sendChatRequest = sendChatRequest;
+  public static getVerifiedModels = getVerifiedModels;
   public static router: OmniRouteRouter = omniRouteRouter;
   public static freeRegistry = freeProviderRegistry;
   public static modelClassifier = modelClassifier;
@@ -103,6 +387,19 @@ export class ProviderGateway {
     apiKey?: string,
     customEndpoint?: string
   ): Promise<DiscoveredModel[]> {
+    if (providerId === 'ollama') {
+      const allVerified = await getVerifiedModels();
+      const localModels = allVerified.filter((m) => m.providerId === 'ollama');
+      return localModels.map((m) => ({
+        id: m.modelId,
+        name: m.name,
+        provider: 'ollama',
+        isFree: true,
+        category: 'Free' as const,
+        description: 'Local offline Ollama model'
+      }));
+    }
+
     const preconfigured = getPreconfiguredProvider(providerId);
     const baseUrl = (customEndpoint || preconfigured?.baseUrl || this.getEndpoint(providerId as ProviderType, {})).replace(/\/+$/, '');
 

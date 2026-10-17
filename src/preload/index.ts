@@ -550,7 +550,49 @@ const api: ElectronAPI = {
 
   // Unified Provisioning: Onboarding State
   onboardingGetState: () => ipcRenderer.invoke('onboarding:get-state'),
-  onboardingSaveState: (updates: any) => ipcRenderer.invoke('onboarding:save-state', updates)
+  onboardingSaveState: (updates: any) => ipcRenderer.invoke('onboarding:save-state', updates),
+
+  getVerifiedModels: () => ipcRenderer.invoke('get-verified-models'),
+  testVerifiedApi: (data: { modelId: string; prompt: string; apiKey?: string }) => 
+    ipcRenderer.invoke('test-verified-api', data),
+  onVerifiedApiChunk: (cb: (chunk: string) => void) => 
+    ipcRenderer.on('verified-api-chunk', (_e, chunk) => cb(chunk)),
+  onVerifiedApiEnd: (cb: () => void) => 
+    ipcRenderer.on('verified-api-end', cb),
+  onVerifiedApiError: (cb: (err: string) => void) => 
+    ipcRenderer.on('verified-api-error', (_e, err) => cb(err)),
+
+  testGroundTruthApi: () => ipcRenderer.invoke('test-ground-truth-api'),
+  onGroundTruthChunk: (cb: (chunk: string) => void) => {
+    const listener = (_e: any, chunk: string) => cb(chunk);
+    ipcRenderer.on('ground-truth-chunk', listener);
+    return () => ipcRenderer.removeListener('ground-truth-chunk', listener);
+  },
+  onGroundTruthEnd: (cb: () => void) => {
+    const listener = () => cb();
+    ipcRenderer.on('ground-truth-end', listener);
+    return () => ipcRenderer.removeListener('ground-truth-end', listener);
+  },
+  onGroundTruthError: (cb: (err: string) => void) => {
+    const listener = (_e: any, err: string) => cb(err);
+    ipcRenderer.on('ground-truth-error', listener);
+    return () => ipcRenderer.removeListener('ground-truth-error', listener);
+  },
+
+  testProviderKey: (provider: string, key: string) => ipcRenderer.invoke('test-provider-key', provider, key),
+  saveProviderKey: (provider: string, key: string) => ipcRenderer.invoke('save-provider-key', provider, key),
+  getProviderKey: (provider: string) => ipcRenderer.invoke('get-provider-key', provider),
+
+  initiateCopilotDeviceFlow: () => ipcRenderer.invoke('initiate-copilot-device-flow'),
+  pollCopilotToken: (deviceCode: string) => ipcRenderer.invoke('poll-copilot-token', deviceCode),
+
+  onProviderHandoff: (cb: (data: { fromProvider: string; toProvider: string; newModel: string }) => void) => {
+    const handler = (_event: any, data: any) => cb(data);
+    ipcRenderer.on('agent:provider-handoff', handler);
+    return () => {
+      ipcRenderer.removeListener('agent:provider-handoff', handler);
+    };
+  }
 };
 
 contextBridge.exposeInMainWorld('electronAPI', api);

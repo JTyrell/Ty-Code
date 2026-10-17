@@ -59,6 +59,7 @@ import { BYOKWizard } from './settings/BYOKWizard';
 import { ProviderCards } from './settings/ProviderCards';
 import { AdvancedProviderConfig } from './settings/AdvancedProviderConfig';
 import { APIKeyManager } from './settings/APIKeyManager';
+import { ApiKeyManager } from './ApiKeyManager';
 import { OpenCodeIntegration } from './settings/OpenCodeIntegration';
 import { useOnboardingStore } from '../state/onboarding-store';
 import { DiagnosticsPanel } from './settings/DiagnosticsPanel';
@@ -67,7 +68,7 @@ import type { FreeProvider } from '../../../shared/types/free-providers';
 import type { StoredKeySummary, CustomProviderConfig } from '../../../shared/types/byok';
 
 type UpdateChannelPreference = 'stable' | 'beta' | 'nightly';
-type SettingsTab = 'providers' | 'byok' | 'usage' | 'openkilo' | 'opencode' | 'integrations' | 'orchestration' | 'fcc' | 'endpoints' | 'params' | 'terminal' | 'lsp' | 'editor' | 'shortcuts' | 'extensions' | 'security' | 'privacy' | 'diagnostics';
+type SettingsTab = 'apikeys' | 'providers' | 'byok' | 'usage' | 'openkilo' | 'opencode' | 'integrations' | 'orchestration' | 'fcc' | 'endpoints' | 'params' | 'terminal' | 'lsp' | 'editor' | 'shortcuts' | 'extensions' | 'security' | 'privacy' | 'diagnostics';
 
 const DEFAULT_SECURITY_SETTINGS: SecurityPolicySettings = {
   terminalPolicy: 'restricted',
@@ -144,10 +145,10 @@ export const SettingsModal: React.FC = () => {
   }, [activeTab, loadInstalledExtensions]);
 
   useEffect(() => {
-    if (activeSettingsTab) {
+    if (isSettingsOpen && activeSettingsTab) {
       setActiveTab(activeSettingsTab as SettingsTab);
     }
-  }, [activeSettingsTab]);
+  }, [isSettingsOpen, activeSettingsTab]);
 
   // AI Providers Onboarding state
   const [registryProviders, setRegistryProviders] = useState<PreConfiguredProvider[]>(FALLBACK_PROVIDERS);
@@ -795,7 +796,7 @@ export const SettingsModal: React.FC = () => {
     toast.success('Model Activated', `Switched active model to ${model?.name || modelId}`);
   };
 
-  const currentProvider = registryProviders.find((p) => p.id === selectedGridProviderId) || registryProviders[0];
+  const currentProvider = registryProviders.find((p) => p.id === selectedGridProviderId) || registryProviders[0] || FALLBACK_PROVIDERS[0];
 
   const currentModels = useMemo(() => {
     if (discoveredModels[selectedGridProviderId]?.length) {
@@ -827,8 +828,10 @@ export const SettingsModal: React.FC = () => {
         ? 'Local event recording is on. Events remain on this device; nothing is transmitted.'
         : 'Telemetry is off. No telemetry data is transmitted.';
 
+  if (!isSettingsOpen) return null;
+
   return (
-    <div className="settings-backdrop" onClick={toggleSettings}>
+    <div className="settings-overlay" onClick={toggleSettings}>
       <section className="settings-modal" onClick={(event) => event.stopPropagation()} aria-modal="true" role="dialog" style={{ maxWidth: '820px' }}>
         <header className="settings-header">
           <div className="settings-title"><Key size={16} color="var(--accent-primary)" /><span>Ty-Code Preferences &amp; Configuration</span></div>
@@ -836,6 +839,14 @@ export const SettingsModal: React.FC = () => {
         </header>
 
         <nav className="settings-tabs" aria-label="Settings sections">
+          <button
+            className={activeTab === 'apikeys' ? 'is-active' : ''}
+            onClick={() => setActiveTab('apikeys')}
+            style={{ color: activeTab === 'apikeys' ? 'var(--accent-primary)' : undefined }}
+            id="tab-btn-apikeys"
+          >
+            <Key size={13} color="var(--accent-primary)" />API Keys
+          </button>
           <button className={activeTab === 'providers' ? 'is-active' : ''} onClick={() => setActiveTab('providers')} style={{ color: activeTab === 'providers' ? 'var(--accent-primary)' : undefined }}>
             <Key size={13} color="var(--accent-primary)" />AI Providers &amp; Models
           </button>
@@ -895,6 +906,11 @@ export const SettingsModal: React.FC = () => {
         </nav>
 
         <div className="settings-body" style={{ maxHeight: '480px', overflowY: 'auto' }}>
+          {/* Tab 0: Simple API Key Harvesting & SafeStorage Vault (KeyHarvest) */}
+          {activeTab === 'apikeys' && (
+            <ApiKeyManager />
+          )}
+
           {/* Tab 1: AI Provider Onboarding, Configuration & Dynamic Model Discovery */}
           {activeTab === 'providers' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -992,7 +1008,7 @@ export const SettingsModal: React.FC = () => {
                   initialBaseUrl={settings?.customEndpoints?.custom || 'http://localhost:1234/v1'}
                   onCancel={() => setIsCustomSelected(false)}
                 />
-              ) : (
+              ) : currentProvider ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                   <ProviderSetupForm
                     key={currentProvider.id}
@@ -1015,7 +1031,7 @@ export const SettingsModal: React.FC = () => {
                     providerName={currentProvider.name}
                   />
                 </div>
-              )}
+              ) : null}
             </div>
           )}
 

@@ -52,7 +52,11 @@ export const ChatErrorCard: React.FC<ChatErrorCardProps> = ({ errorCard, error, 
     timed('button_click', () => {
       setActionError(null);
       if (actionUrl === 'ty-code://action/retry' || actionLabel === 'Retry') {
-        onRetry?.();
+        if (onRetry) {
+          onRetry();
+        } else {
+          useChatStore.getState().dismissErrorCard();
+        }
       } else if (actionUrl === 'ty-code://settings/providers' || actionUrl === 'settings:providers') {
         openSettings('providers');
       } else if (actionUrl === 'ty-code://dashboard/quota') {
@@ -88,7 +92,8 @@ export const ChatErrorCard: React.FC<ChatErrorCardProps> = ({ errorCard, error, 
       data-taxonomy-code={code}
       style={{
         margin: '10px 0', padding: '14px 16px', color: '#f1f5f9', borderRadius: 8, border: `1px solid ${border}`,
-        background: 'linear-gradient(180deg, rgba(18,24,38,0.95), rgba(12,16,23,0.98))', boxShadow: `0 4px 20px ${isAmber ? 'rgba(245,158,11,0.12)' : 'rgba(239,68,68,0.12)'}`
+        background: 'linear-gradient(180deg, rgba(18,24,38,0.95), rgba(12,16,23,0.98))', boxShadow: `0 4px 20px ${isAmber ? 'rgba(245,158,11,0.12)' : 'rgba(239,68,68,0.12)'}`,
+        maxWidth: '100%', boxSizing: 'border-box', overflowWrap: 'anywhere', wordBreak: 'break-word', minWidth: 0
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 10 }}>
@@ -103,16 +108,16 @@ export const ChatErrorCard: React.FC<ChatErrorCardProps> = ({ errorCard, error, 
         )}
       </div>
 
-      <p style={{ margin: '0 0 10px', fontSize: 13, lineHeight: 1.5, fontWeight: 500, color: '#f8fafc' }}>{card.message}</p>
+      <p style={{ margin: '0 0 10px', fontSize: 13, lineHeight: 1.5, fontWeight: 500, color: '#f8fafc', overflowWrap: 'anywhere', wordBreak: 'break-word', minWidth: 0 }}>{card.message}</p>
 
       {card.remedy && (
-        <div style={{ display: 'flex', gap: 8, padding: '8px 10px', marginBottom: 12, fontSize: 12, lineHeight: 1.4, color: '#cbd5e1', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 6 }}>
+        <div style={{ display: 'flex', gap: 8, padding: '8px 10px', marginBottom: 12, fontSize: 12, lineHeight: 1.4, color: '#cbd5e1', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 6, minWidth: 0, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
           <Lightbulb size={14} color={AMBER} style={{ flexShrink: 0, marginTop: 2 }} />
-          <span><strong style={{ color: AMBER }}>Remedy:</strong> {card.remedy}</span>
+          <span style={{ minWidth: 0, overflowWrap: 'anywhere', wordBreak: 'break-word', flex: 1 }}><strong style={{ color: AMBER }}>Remedy:</strong> {card.remedy}</span>
         </div>
       )}
 
-      {actionError && <div role="status" style={{ fontSize: 11, color: RED, marginBottom: 8 }}>{actionError}</div>}
+      {actionError && <div role="status" style={{ fontSize: 11, color: RED, marginBottom: 8, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{actionError}</div>}
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         {card.actionLabel ? (

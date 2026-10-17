@@ -1090,6 +1090,25 @@ export interface ElectronAPI {
   credentialsAutoDetect?: () => Promise<{ success: boolean; data?: { totalDetected: number; importedCount: number; importedProviders: string[]; detected: any[] }; error?: string }>;
   onboardingGetState?: () => Promise<IpcResponse<any>>;
   onboardingSaveState?: (updates: any) => Promise<IpcResponse<any>>;
+
+  getVerifiedModels?: () => Promise<IpcResponse<any[]>>;
+  testVerifiedApi?: (data: { modelId: string; prompt: string; apiKey?: string }) => Promise<any>;
+  onVerifiedApiChunk?: (cb: (chunk: string) => void) => any;
+  onVerifiedApiEnd?: (cb: () => void) => any;
+  onVerifiedApiError?: (cb: (err: string) => void) => any;
+
+  testGroundTruthApi?: () => Promise<{ success: boolean; error?: string }>;
+  onGroundTruthChunk?: (cb: (chunk: string) => void) => () => void;
+  onGroundTruthEnd?: (cb: () => void) => () => void;
+  onGroundTruthError?: (cb: (err: string) => void) => () => void;
+
+  testProviderKey?: (provider: string, key: string) => Promise<{ success: boolean; message: string }>;
+  saveProviderKey?: (provider: string, key: string) => Promise<{ success: boolean }>;
+  getProviderKey?: (provider: string) => Promise<string | null>;
+
+  initiateCopilotDeviceFlow?: () => Promise<{ success: boolean; data?: { device_code: string; user_code: string; verification_uri: string; expires_in: number; interval: number }; error?: string }>;
+  pollCopilotToken?: (deviceCode: string) => Promise<{ success: boolean; token?: string; error?: string }>;
+  onProviderHandoff?: (cb: (data: { fromProvider: string; toProvider: string; newModel: string }) => void) => () => void;
 }
 
 export interface BootSchedulerTaskPayload {

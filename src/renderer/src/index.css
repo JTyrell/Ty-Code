@@ -462,7 +462,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent-primary);
 }
 
 /* Settings modal */
-.settings-overlay {
+.settings-overlay,
+.settings-backdrop {
   position: fixed;
   inset: 0;
   z-index: 9999;

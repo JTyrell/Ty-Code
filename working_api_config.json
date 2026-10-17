@@ -1,0 +1,19 @@
+{
+  "url": "https://api.kilo.ai/api/gateway/chat/completions",
+  "headers": {
+    "Content-Type": "application/json",
+    "Accept": "text/event-stream"
+  },
+  "payload": {
+    "model": "kilo-auto/free",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Reply with exactly: PYTHON_BACKEND_TEST_SUCCESS"
+      }
+    ],
+    "stream": true
+  },
+  "status": 200,
+  "note": "This exact HTTP request works. The Node.js backend MUST replicate this."
+}
