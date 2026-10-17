@@ -14,7 +14,7 @@ export const DEFAULT_OMNIROUTE_SETTINGS: ProviderSettings = {
   customEndpoints: {
     ollama: 'http://localhost:11434/v1',
     'fcc-proxy': 'http://localhost:8082/v1',
-    openkilo: 'https://api.openkilo.com/v1'
+    openkilo: 'https://api.kilo.ai/api/gateway'
   },
   temperature: 0.2,
   maxTokens: 4096,

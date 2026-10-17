@@ -93,7 +93,7 @@ const FALLBACK_PROVIDERS: PreConfiguredProvider[] = [
   {
     id: 'openkilo',
     name: 'OpenKilo',
-    baseUrl: 'https://api.openkilo.com/v1',
+    baseUrl: 'https://api.kilo.ai/api/gateway',
     setupType: 'api_key',
     notes: 'Standard OpenAI-compatible format.',
     signupUrl: 'https://openkilo.com',

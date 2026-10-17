@@ -1,0 +1,38 @@
+{
+  "at": "2026-10-17T14:44:48.533Z",
+  "dns": [
+    {
+      "host": "openrouter.ai",
+      "ok": true,
+      "address": "104.18.3.115"
+    },
+    {
+      "host": "api.kilo.ai",
+      "ok": true,
+      "address": "64.239.123.193"
+    },
+    {
+      "host": "api.openkilo.com",
+      "ok": true,
+      "address": "13.223.25.84"
+    }
+  ],
+  "attempts": [
+    {
+      "name": "kilo-anon",
+      "url": "https://api.kilo.ai/v1/chat/completions",
+      "model": "deepseek/deepseek-r1-0528:free",
+      "hasKey": false,
+      "status": 404,
+      "ms": 930,
+      "rawResponse": "<!DOCTYPE html><html data-dpl-id=\"dpl_8sudPoGaqgCFMRc6DFsdtjAgxyjH\" lang=\"en\" class=\"inter_effd56f4-module__DPFDPW__variable roboto_mono_e0515eba-module__HJOgBW__variable jetbrains_mono_5f0647e3-module__UHGtKW__variable font-sans antialiased\"><head><meta charSet=\"utf-8\"/><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/><link rel=\"stylesheet\" href=\"/_next/static/immutable/chunks/2f6kxmvj0sghe.css\" data-precedence=\"next\"/><link rel=\"stylesheet\" href=\"/_next/static/immutable/chunks/3my7-e5swdv5x.css\" data-precedence=\"next\"/><link rel=\"preload\" as=\"script\" fetchPriority=\"low\" href=\"/_next/static/immutable/chunks/072gp81zj43p4.js\"/><script src=\"/_next/static/immutable/chunks/2xezoh8heb-rb.js\" async=\"\"></script><script src=\"/_next/static/immutable/chunks/3pu9pp-1c-dgr.js\" async=\"\"></script><script src=\"/_next/static/immutable/chunks/0qjz8ri1g5aqj.js\" async=\"\"></script><script src=\"/_next/static/immutable/chunks/0h80f8qqmxu24.js\" async=\"\"></script><script src=\"/_next/static/immutable/chunks/turbopack-0ctdewgg5ipog.js\" async=\"\"></script><script src=\"/_next/static/immutable/chunks/2xpeeentjce7i.js\" async=\"\"></script><script src=\"/_next/static/immutable/chunks/27u5oz0zxwfzb.js\" async=\"\"></script><script src=\"/_next/static/immutable/chunks/0ymtqri1wezfy.js\" async=\"\"></script><script src=\"/_next/static/immutable/chunks/2svdqfhr7eemg.js\" async=\"\"></script><script src=\"/_next/static/immutable/chunks/1w4832xhap0pg.js\" async=\"\"></script><script src=\"/_next/static/immutabl"
+    },
+    {
+      "name": "openkilo.com (current registry URL)",
+      "url": "https://api.openkilo.com/v1/chat/completions",
+      "model": "deepseek/deepseek-r1-0528:free",
+      "hasKey": false,
+      "error": "TypeError: fetch failed / cause=ECONNRESET"
+    }
+  ]
+}

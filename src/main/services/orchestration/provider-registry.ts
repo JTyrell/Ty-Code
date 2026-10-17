@@ -195,12 +195,12 @@ export class ProviderRegistry {
       name: 'OpenKilo Gateway',
       category: 'api_key',
       authMethod: 'api_key',
-      defaultEndpoint: 'https://api.openkilo.com/v1',
+      defaultEndpoint: 'https://api.kilo.ai/api/gateway',
       isFreeTierAvailable: true,
       freeTierTokenLimit: 500_000_000,
       monthlyFreeTokens: 500_000_000,
       rateLimitPattern: { requestsPerMinute: 60, tokensPerMinute: 200_000, cooldownBaseMs: 3000, maxCooldownMs: 60_000 },
-      healthCheckEndpoint: 'https://api.openkilo.com/v1/models',
+      healthCheckEndpoint: 'https://api.kilo.ai/api/gateway/models',
       headersFactory: (credentials) => {
         const key = typeof credentials === 'string'
           ? credentials
@@ -1163,13 +1163,13 @@ export class ProviderRegistry {
       name: 'OpenKilo Gateway',
       category: 'api_key',
       authMethod: 'api_key',
-      defaultEndpoint: 'https://api.openkilo.com/v1',
+      defaultEndpoint: 'https://api.kilo.ai/api/gateway',
       isFreeTierAvailable: true,
       freeTierTokenLimit: 500_000_000,
       monthlyFreeTokens: 500_000_000,
       rateLimitPattern: { requestsPerMinute: 200, tokensPerMinute: 2_000_000, cooldownBaseMs: 2000, maxCooldownMs: 30_000 },
       supportedModels: openkiloModels,
-      healthCheckEndpoint: 'https://api.openkilo.com/v1/models',
+      healthCheckEndpoint: 'https://api.kilo.ai/api/gateway/models',
       headersFactory: (credentials) => {
         const key = credentials.apiKey?.trim() || 'anonymous';
         return {

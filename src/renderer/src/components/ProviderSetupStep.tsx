@@ -265,19 +265,20 @@ export const ProviderSetupStep: React.FC<ProviderSetupStepProps> = ({
     setIsSaving(true);
 
     try {
-      if (window.electronAPI?.credentialsSave) {
-        await window.electronAPI.credentialsSave(
-          config.id,
-          apiKey.trim(),
-          `${config.name} Free Key`
-        );
-      }
+      if (!window.electronAPI?.credentialsSave) throw new Error('credentialsSave IPC is not available in preload.');
+      const saveRes = await window.electronAPI.credentialsSave(
+        config.id,
+        apiKey.trim(),
+        `${config.name} Free Key`
+      );
+      if (!saveRes?.success) throw new Error(saveRes?.error || 'Main process refused to save the key.');
 
-      await saveSettings({
+      const settingsOk = await saveSettings({
         activeProvider: config.id as any,
         activeModel: config.defaultModel,
         freeMode: true
       });
+      if (!settingsOk) throw new Error('Key saved, but active provider settings could not be saved.');
 
       markProviderConnected(config.id);
       toast.success(`${config.name} credentials saved securely!`);
@@ -287,7 +288,8 @@ export const ProviderSetupStep: React.FC<ProviderSetupStepProps> = ({
         onNext();
       }
     } catch (err) {
-      toast.error(`Failed to save ${config.name} key.`);
+      console.error('Onboarding: save key failed', err);
+      toast.error(`Failed to save ${config.name} key: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setIsSaving(false);
     }

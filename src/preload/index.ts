@@ -54,6 +54,7 @@ const api: ElectronAPI = {
     return () => ipcRenderer.removeListener('settings:changed', listener);
   },
   startAgentTask: (params) => {
+    console.log('Preload: Forwarding to main', params?.taskId);
     if (params?.traceId) {
       ipcRenderer.invoke('diagnostics:record-trace-hop', {
         traceId: params.traceId,

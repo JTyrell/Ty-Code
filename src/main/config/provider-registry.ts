@@ -18,7 +18,7 @@ export const PRECONFIGURED_PROVIDERS: PreConfiguredProvider[] = [
   {
     id: 'openkilo',
     name: 'OpenKilo Gateway',
-    baseUrl: 'https://api.openkilo.com/v1',
+    baseUrl: 'https://api.kilo.ai/api/gateway',
     setupType: 'zero_config',
     notes: 'Kilo Gateway: 40+ free models without API key, plus OAuth for 350+ paid models.',
     signupUrl: 'https://openkilo.com',

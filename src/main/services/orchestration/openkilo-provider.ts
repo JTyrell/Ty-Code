@@ -495,7 +495,7 @@ export const OPENKILO_CURATED_FREE_MODELS: OpenKiloModelDefinition[] = [
 ];
 
 export class OpenKiloProviderService {
-  public static readonly DEFAULT_BASE_URL = 'https://api.openkilo.com/v1';
+  public static readonly DEFAULT_BASE_URL = 'https://api.kilo.ai/api/gateway';
   public static readonly OAUTH_AUTH_URL = 'https://openkilo.com/oauth/authorize';
   public static readonly OAUTH_CLIENT_ID = 'ty-code-desktop-client';
 

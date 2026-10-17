@@ -47,7 +47,7 @@ export class PerformanceManagerService {
    */
   public async warmConnections(): Promise<{ success: boolean; warmed: string[] }> {
     const targets = [
-      { id: 'openkilo', url: 'https://api.openkilo.com' },
+      { id: 'openkilo', url: 'https://api.kilo.ai' },
       { id: 'openrouter', url: 'https://openrouter.ai' },
       { id: 'groq', url: 'https://api.groq.com' },
       { id: 'fcc-proxy', url: 'http://localhost:8082' },

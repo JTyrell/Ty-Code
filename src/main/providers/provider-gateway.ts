@@ -84,7 +84,7 @@ export class ProviderGateway {
     if (registered?.defaultEndpoint) return registered.defaultEndpoint;
     switch (provider) {
       case 'openrouter': return 'https://openrouter.ai/api/v1';
-      case 'openkilo': return 'https://api.openkilo.com/v1';
+      case 'openkilo': return 'https://api.kilo.ai/api/gateway';
       case 'opencode': return 'https://api.opencode.ai/v1';
       case 'groq': return 'https://api.groq.com/openai/v1';
       case 'deepseek': return 'https://api.deepseek.com';
@@ -604,6 +604,8 @@ export class ProviderGateway {
 
     let response: Response;
     const fetchStartTime = performance.now();
+    const gatewayUrl = `${baseUrl.replace(/\/+$/, '')}/chat/completions`;
+    console.log('Gateway: Fetching from', gatewayUrl, 'with model', modelId, 'headers', JSON.stringify({ ...headers, ...(headers.Authorization ? { Authorization: 'Bearer ***' } : {}) }));
     try {
       response = await fetch(`${baseUrl.replace(/\/+$/, '')}/chat/completions`, {
         method: 'POST',
@@ -612,6 +614,7 @@ export class ProviderGateway {
         signal: abortSignal
       });
     } catch (networkErr: unknown) {
+      console.error('Gateway: NETWORK ERROR for', gatewayUrl, networkErr instanceof Error ? `${networkErr.name}: ${networkErr.message} cause=${(networkErr as { cause?: { code?: string } }).cause?.code ?? ''}` : String(networkErr));
       if (traceId) {
         try {
           // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -633,8 +636,10 @@ export class ProviderGateway {
       throw networkErr;
     }
 
+    console.log('Gateway: Response status', response.status);
     if (!response.ok) {
       const errorText = await response.text();
+      console.error('Gateway: Error body', errorText.slice(0, 500));
       let parsedError = errorText;
       try {
         const errorJson = JSON.parse(errorText) as { error?: { message?: string }; message?: string };
@@ -718,6 +723,7 @@ export class ProviderGateway {
       const delta = payload.choices?.[0]?.delta;
       if (!delta) return;
       if (delta.content) {
+        if (!firstChunkReported) console.log('Gateway: First chunk', JSON.stringify(delta.content.slice(0, 80)));
         fullText += delta.content;
         callbacks.onToken?.(delta.content);
 

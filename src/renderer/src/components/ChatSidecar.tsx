@@ -871,6 +871,7 @@ export const ChatSidecar: React.FC = () => {
 
   const sendPrompt = (prompt: string, appendUserMessage = true) => {
     userAtBottomRef.current = true;
+    console.log('UI: Sending prompt', prompt);
     void sendMessage(prompt, workspacePath, activeTab?.path, activeTab?.content, appendUserMessage);
   };
   const handleSubmit = (event?: React.FormEvent) => {

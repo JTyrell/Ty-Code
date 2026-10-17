@@ -62,7 +62,7 @@ export const PERMANENT_FREE_PROVIDERS: FreeProvider[] = [
   {
     id: 'openkilo-free',
     name: 'OpenKilo (Kilo Gateway)',
-    base_url: 'https://api.kilo.ai/v1',
+    base_url: 'https://api.kilo.ai/api/gateway',
     auth_type: 'anonymous',
     best_free_models: [
       'deepseek/deepseek-r1-0528:free',

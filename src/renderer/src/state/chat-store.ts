@@ -290,27 +290,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
         set({ draftPrompt: prompt });
       });
     }
-    if (window.electronAPI.onAgentError) {
-      window.electronAPI.onAgentError((raw) => {
-        const parsed = AgentErrorPayloadSchema.safeParse(raw);
-        if (!parsed.success) return;
-        const card = parsed.data.errorCard || {
-          taxonomyCode: 'NETWORK_BLOCKED',
-          message: parsed.data.error || 'Network error encountered.',
-          remedy: 'Check your internet connection or proxy settings, then retry.',
-          actionLabel: 'Retry',
-          actionUrl: 'ty-code://action/retry',
-          providerId: get().settings?.activeProvider
-        };
-        set({
-          activeErrorCard: card,
-          isRunning: false,
-          streamingText: '',
-          currentThought: '',
-          currentStatus: 'Task failed.'
-        });
-      });
-    }
     await refreshSettings();
   },
 

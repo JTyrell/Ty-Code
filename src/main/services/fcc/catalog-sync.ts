@@ -205,7 +205,7 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     isFreeTierAvailable: true,
     tosStatus: 'compliant',
     enabled: true,
-    defaultEndpoint: 'https://api.openkilo.com/v1',
+    defaultEndpoint: 'https://api.kilo.ai/api/gateway',
     signupUrl: 'https://openkilo.com',
     models: [
       {

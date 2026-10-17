@@ -323,18 +323,18 @@ function registerIpcHandlers(): void {
   ipcMain.handle('credentials:save', async (event, providerId: string, apiKey: string, label?: string) => {
     if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
     try {
-      await credentialStore.saveCredential(providerId, apiKey, label);
-      try {
-        const { keys } = await readStoredCredentials();
-        keys[providerId] = apiKey.trim();
-        const normId = providerId.replace(/-free$/, '');
-        keys[normId] = apiKey.trim();
-        await writeStoredCredentials(keys);
-      } catch {
-        // Non-blocking
-      }
+      const saved = await credentialStore.saveCredential(providerId, apiKey, label);
+      if (!saved) throw new Error('Credential was not saved: provider id or key was empty.');
+      // The agent reads keys via settings-handlers; a failure here means chat would have no key, so do NOT swallow it.
+      const { keys } = await readStoredCredentials();
+      keys[providerId] = apiKey.trim();
+      const normId = providerId.replace(/-free$/, '');
+      keys[normId] = apiKey.trim();
+      await writeStoredCredentials(keys);
+      console.log('Key saved to safeStorage', { providerId, backend: credentialStore.getBackendName() });
       return { success: true };
     } catch (error) {
+      console.error('credentials:save FAILED', providerId, error instanceof Error ? error.message : error);
       return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   });
@@ -504,6 +504,7 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle('agent:start-task', async (_event, params) => {
+    console.log('Main: Received task', { taskId: params?.taskId, promptLen: params?.prompt?.length, agentMode: params?.agentMode });
     if (!mainWindow) return { success: false, error: 'No main window' };
     if (params?.traceId) {
       connectivityTracer.recordHop(params.traceId, 'H3', {

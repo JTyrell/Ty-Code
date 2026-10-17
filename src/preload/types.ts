@@ -1078,7 +1078,7 @@ export interface ElectronAPI {
   usageClearLedger?: () => Promise<IpcResponse<void>>;
 
   // RealConnect 2: Per-User Credential Storage
-  credentialsSave?: (providerId: string, apiKey: string, label?: string) => Promise<IpcResponse<boolean> | boolean>;
+  credentialsSave?: (providerId: string, apiKey: string, label?: string) => Promise<IpcResponse<void>>;
   credentialsGet?: (providerId?: string) => Promise<IpcResponse<any>>;
   credentialsDelete?: (providerId: string) => Promise<IpcResponse<boolean> | boolean>;
   credentialsReveal?: (providerId: string) => Promise<{ success: boolean; key: string | null }>;
