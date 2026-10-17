@@ -60,6 +60,7 @@ import { ProviderCards } from './settings/ProviderCards';
 import { AdvancedProviderConfig } from './settings/AdvancedProviderConfig';
 import { APIKeyManager } from './settings/APIKeyManager';
 import { OpenCodeIntegration } from './settings/OpenCodeIntegration';
+import { useOnboardingStore } from '../state/onboarding-store';
 import { DiagnosticsPanel } from './settings/DiagnosticsPanel';
 import { UsageLedgerView } from './dashboard/UsageLedgerView';
 import type { FreeProvider } from '../../../shared/types/free-providers';
@@ -897,6 +898,60 @@ export const SettingsModal: React.FC = () => {
           {/* Tab 1: AI Provider Onboarding, Configuration & Dynamic Model Discovery */}
           {activeTab === 'providers' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {/* Unified Provisioning & Wizard Launcher Banner */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '12px 16px',
+                  background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.12), rgba(168, 85, 247, 0.12))',
+                  border: '1px solid rgba(99, 102, 241, 0.3)',
+                  borderRadius: '10px'
+                }}
+              >
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Sparkles size={16} color="#818cf8" />
+                    <span style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc' }}>
+                      Unified Provider Access
+                    </span>
+                    <span style={{ fontSize: '11px', padding: '1px 6px', borderRadius: '4px', background: 'rgba(99, 102, 241, 0.2)', color: '#c7d2fe' }}>
+                      Tiered Provisioning &amp; BYOK
+                    </span>
+                  </div>
+                  <p style={{ margin: '3px 0 0 0', fontSize: '11px', color: '#94a3b8' }}>
+                    Manage free accounts (Tier 1), one-click OAuth (Tier 1b), local Ollama (Tier 2), and power-user BYOK keys (Tier 3) in one credential vault.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  id="settings-re-run-wizard-btn"
+                  onClick={() => {
+                    useOnboardingStore.getState().openWizard('welcome');
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '7px 14px',
+                    borderRadius: '6px',
+                    background: 'var(--accent-primary, #6366f1)',
+                    border: 'none',
+                    color: '#ffffff',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    boxShadow: '0 2px 8px rgba(99, 102, 241, 0.35)',
+                    whiteSpace: 'nowrap'
+                  }}
+                >
+                  <Sparkles size={13} />
+                  <span>Re-run Setup Wizard</span>
+                </button>
+              </div>
+
               {/* Provider Selection Grid */}
               <ProviderSelectionGrid
                 providers={registryProviders}

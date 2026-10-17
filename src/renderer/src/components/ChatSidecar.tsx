@@ -18,6 +18,7 @@ import { Send, Square, Sparkles, Trash2, ChevronRight, ChevronDown, Terminal, Fi
 import { useChatStore } from '../state/chat-store';
 import { useWorkspaceStore } from '../state/workspace-store';
 import { usePairProgrammingStore } from '../state/pair-programming-store';
+import { useOnboardingStore } from '../state/onboarding-store';
 import { ModelSelector } from './ChatInterface/ModelSelector';
 import { ProviderSetupCard } from './ProviderSetupCard';
 import type { ChatMessage, ToolCall, ToolExecutionStatus, ChatErrorCard, ProviderType } from '../../../preload/types';
@@ -452,15 +453,20 @@ export const NetworkErrorCard: React.FC<{ errorCard: ChatErrorCard; onRetry?: ()
 // 3. Quota Exhausted Card (RATE_LIMITED / QUOTA_EXCEEDED)
 export const QuotaExhaustedCard: React.FC<{ errorCard: ChatErrorCard; onRetry?: () => void }> = ({ errorCard, onRetry }) => {
   const { openSettings, saveSettings } = useChatStore();
+  const { connectedProviders, openWizard, recordRateLimit429 } = useOnboardingStore();
   const [countdown, setCountdown] = useState<number>(errorCard.retryAfterSec || 60);
 
+  const isAnonymousRateLimit =
+    connectedProviders.length === 0 ||
+    errorCard.providerId?.includes('openkilo') ||
+    localStorage.getItem('ty_code_anonymous_tier_active') === 'true' ||
+    Boolean(errorCard.message && errorCard.message.toLowerCase().includes('anonymous'));
+
   useEffect(() => {
-    if (countdown <= 0) return;
-    const timer = setInterval(() => {
-      setCountdown((prev: number) => (prev > 0 ? prev - 1 : 0));
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [countdown]);
+    if (isAnonymousRateLimit) {
+      recordRateLimit429();
+    }
+  }, [isAnonymousRateLimit, recordRateLimit429]);
 
   const handleSwitchToProvider = async (provider: ProviderType, model: string) => {
     await saveSettings({ activeProvider: provider, activeModel: model });
@@ -489,6 +495,50 @@ export const QuotaExhaustedCard: React.FC<{ errorCard: ChatErrorCard; onRetry?: 
           <Lightbulb size={12} className="chat-remedy-icon" />
           <span><strong>Remedy:</strong> {errorCard.remedy}</span>
         </div>
+
+        {/* Anonymous 429 Upsell Hook */}
+        {isAnonymousRateLimit && (
+          <div
+            style={{
+              marginTop: '12px',
+              padding: '12px 14px',
+              background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(168, 85, 247, 0.15))',
+              border: '1px solid rgba(99, 102, 241, 0.4)',
+              borderRadius: '8px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '8px'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#c084fc', fontWeight: 600, fontSize: '13px' }}>
+              <Sparkles size={16} />
+              <span>Anonymous tier limit reached — connect your free OpenRouter account for 10x more requests</span>
+            </div>
+            <p style={{ margin: 0, fontSize: '12px', color: '#cbd5e1' }}>
+              Take 2 minutes to connect your free OpenRouter, Groq, or Google AI Studio accounts. No credit card required.
+            </p>
+            <button
+              type="button"
+              onClick={() => openWizard('openrouter')}
+              style={{
+                alignSelf: 'flex-start',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '6px 14px',
+                background: 'var(--accent-primary, #6366f1)',
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: '6px',
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: 'pointer'
+              }}
+            >
+              <span>Connect Free Accounts Now →</span>
+            </button>
+          </div>
+        )}
 
         <div className="chat-error-alternatives">
           <span className="chat-error-alt-title">Alternative providers available:</span>

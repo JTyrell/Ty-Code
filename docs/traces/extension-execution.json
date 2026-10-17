@@ -2,14 +2,14 @@
   "version": 1,
   "phase": "ExtensionsFix 3",
   "title": "Real Extension Host — Worker-Based Execution with API Surface",
-  "timestamp": "2026-10-16T21:32:48.082Z",
-  "gitCommit": "35837e4b8995e19c1315c0c6f43762f2b2a5928c",
+  "timestamp": "2026-10-16T23:39:45.697Z",
+  "gitCommit": "1cd5158a3e1f6ccf79d3f8d8115ef245f11eef19",
   "command": "node scripts/run-extension-execution.mjs",
   "metrics": {
-    "activationDurationMs": 1,
-    "completionQueryDurationMs": 1,
+    "activationDurationMs": 2,
+    "completionQueryDurationMs": 0,
     "commandsCount": 3,
-    "completionItemsCount": 6
+    "completionItemsCount": 10
   },
   "validationCriteria": {
     "pythonActivatesOnOpenLanguage": true,
@@ -32,7 +32,7 @@
       "activatedIds": [
         "ms-python.python"
       ],
-      "durationMs": 1,
+      "durationMs": 2,
       "finalState": "activated",
       "status": "PASS"
     },
@@ -47,14 +47,14 @@
     {
       "step": "MONACO_COMPLETION_ITEMS",
       "language": "python",
-      "itemCount": 6,
+      "itemCount": 10,
       "importSuggestion": {
         "label": "import",
         "kind": 14,
         "detail": "Python keyword",
         "insertText": "import "
       },
-      "durationMs": 1,
+      "durationMs": 0,
       "status": "PASS"
     },
     {

@@ -9,10 +9,12 @@ import {
   Layers,
   Sparkles,
   ExternalLink,
-  Bot
+  Bot,
+  Activity
 } from 'lucide-react';
 import { useChatStore } from '../../state/chat-store';
 import type { AgentHarnessType } from '../../../../preload/types';
+import { ProviderHealthDashboard, FCC_CREDIT_STRING } from '../dashboard/ProviderHealthDashboard';
 
 export interface ProviderSetupState {
   id: string;
@@ -25,6 +27,7 @@ export interface ProviderSetupState {
 
 export const FCCSetup: React.FC = () => {
   const { settings, saveSettings } = useChatStore();
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'harnesses'>('dashboard');
   const [serverRunning, setServerRunning] = useState(true);
   const [serverPort, setServerPort] = useState(8082);
   const [tokensUsed, setTokensUsed] = useState(12_450_000);
@@ -159,15 +162,84 @@ export const FCCSetup: React.FC = () => {
 
   return (
     <div className="fcc-setup-container" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-      {/* Sidecar Status Banner */}
+      {/* First-launch Splash Line (Surface 2) & Credit Banner (Surface 4) */}
       <div
         style={{
-          backgroundColor: 'var(--bg-tertiary, #1e1e24)',
-          border: '1px solid var(--border-subtle, #2e2e38)',
-          borderRadius: '8px',
-          padding: '14px 16px'
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '6px',
+          padding: '12px 16px',
+          background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.14), rgba(168, 85, 247, 0.14))',
+          border: '1px solid rgba(99, 102, 241, 0.3)',
+          borderRadius: '8px'
         }}
       >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Sparkles size={16} color="#818cf8" />
+          <span style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc' }}>
+            Connecting your free model supply (powered by free-claude-code)
+          </span>
+        </div>
+        <p style={{ margin: 0, fontSize: '11px', color: '#c7d2fe' }}>
+          {FCC_CREDIT_STRING}
+        </p>
+      </div>
+
+      {/* Sub-tab navigation */}
+      <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid var(--border-subtle, #2e2e38)', paddingBottom: '8px' }}>
+        <button
+          type="button"
+          onClick={() => setActiveTab('dashboard')}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '6px 12px',
+            borderRadius: '6px',
+            border: activeTab === 'dashboard' ? '1px solid #818cf8' : '1px solid transparent',
+            background: activeTab === 'dashboard' ? 'rgba(99, 102, 241, 0.2)' : 'transparent',
+            color: activeTab === 'dashboard' ? '#c7d2fe' : '#94a3b8',
+            fontSize: '12px',
+            fontWeight: 600,
+            cursor: 'pointer'
+          }}
+        >
+          <Activity size={14} /> Fleet Health Dashboard (61 Providers)
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('harnesses')}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '6px 12px',
+            borderRadius: '6px',
+            border: activeTab === 'harnesses' ? '1px solid #818cf8' : '1px solid transparent',
+            background: activeTab === 'harnesses' ? 'rgba(99, 102, 241, 0.2)' : 'transparent',
+            color: activeTab === 'harnesses' ? '#c7d2fe' : '#94a3b8',
+            fontSize: '12px',
+            fontWeight: 600,
+            cursor: 'pointer'
+          }}
+        >
+          <Bot size={14} /> Agent Harnesses &amp; Quick Setup
+        </button>
+      </div>
+
+      {activeTab === 'dashboard' ? (
+        <ProviderHealthDashboard />
+      ) : (
+        <>
+          {/* Sidecar Status Banner */}
+          <div
+            style={{
+              backgroundColor: 'var(--bg-tertiary, #1e1e24)',
+              border: '1px solid var(--border-subtle, #2e2e38)',
+              borderRadius: '8px',
+              padding: '14px 16px'
+            }}
+          >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Server size={18} color="var(--accent-primary, #6366f1)" />
@@ -355,6 +427,8 @@ export const FCCSetup: React.FC = () => {
           })}
         </div>
       </div>
+        </>
+      )}
     </div>
   );
 };

@@ -299,12 +299,22 @@ const api: ElectronAPI = {
   addConversationMemory: (memory) => ipcRenderer.invoke('ai:add-memory', memory),
   getPairProgrammingSuggestions: (event) => ipcRenderer.invoke('ai:pair-suggestions', event),
 
-  // Phase 5.2: FCC Server Integration (Layer 3)
+  // Phase 5.2 / FCC-0 / FCC-1: FCC Server Integration (Layer 3)
   fccGetStatus: () => ipcRenderer.invoke('fcc:get-status'),
   fccStart: () => ipcRenderer.invoke('fcc:start'),
   fccStop: () => ipcRenderer.invoke('fcc:stop'),
   fccRestart: () => ipcRenderer.invoke('fcc:restart'),
   fccAutoSetup: (providerId?: string) => ipcRenderer.invoke('fcc:auto-setup', providerId),
+  fccSetEnabled: (enabled: boolean) => ipcRenderer.invoke('fcc:set-enabled', enabled),
+  fccGetIntegrity: () => ipcRenderer.invoke('fcc:get-integrity'),
+  fccVerifyBinary: (binaryPath?: string, expectedHash?: string) => ipcRenderer.invoke('fcc:verify-binary', binaryPath, expectedHash),
+  fccGetLogs: () => ipcRenderer.invoke('fcc:get-logs'),
+  fccClearLogs: () => ipcRenderer.invoke('fcc:clear-logs'),
+  fccGetCatalog: () => ipcRenderer.invoke('fcc:get-catalog'),
+  fccGetFleetSummary: () => ipcRenderer.invoke('fcc:get-fleet-summary'),
+  fccSyncCatalog: () => ipcRenderer.invoke('fcc:sync-catalog'),
+  fccToggleProvider: (providerId: string, enabled: boolean) => ipcRenderer.invoke('fcc:toggle-provider', providerId, enabled),
+  fccTestProvider: (providerId: string) => ipcRenderer.invoke('fcc:test-provider', providerId),
 
   // Phase 5.4: OpenKilo Plugin Integration (Layer 5)
   openkiloGetStatus: () => ipcRenderer.invoke('openkilo:get-status'),
@@ -502,7 +512,12 @@ const api: ElectronAPI = {
   credentialsExport: (passphrase?: string) => ipcRenderer.invoke('credentials:export', passphrase),
   credentialsImport: (bundleJson: string, passphrase?: string) => ipcRenderer.invoke('credentials:import', bundleJson, passphrase),
   credentialsHasAny: () => ipcRenderer.invoke('credentials:has-any'),
-  credentialsList: () => ipcRenderer.invoke('credentials:list')
+  credentialsList: () => ipcRenderer.invoke('credentials:list'),
+  credentialsAutoDetect: () => ipcRenderer.invoke('credentials:auto-detect'),
+
+  // Unified Provisioning: Onboarding State
+  onboardingGetState: () => ipcRenderer.invoke('onboarding:get-state'),
+  onboardingSaveState: (updates: any) => ipcRenderer.invoke('onboarding:save-state', updates)
 };
 
 contextBridge.exposeInMainWorld('electronAPI', api);

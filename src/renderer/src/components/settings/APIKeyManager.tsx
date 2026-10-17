@@ -34,6 +34,7 @@ import {
 } from 'lucide-react';
 import type { DetectedApiKey, StoredKeySummary } from '../../../../shared/types/byok';
 import type { CredentialStorageStatus } from '../../../../preload/types';
+import { useOnboardingStore } from '../../state/onboarding-store';
 
 export interface APIKeyManagerProps {
   onRefreshStoredKeys?: () => Promise<void>;
@@ -295,8 +296,30 @@ export const APIKeyManager: React.FC<APIKeyManagerProps> = ({
           </div>
         </div>
 
-        {/* Backup export/import */}
+        {/* Backup export/import & Setup Wizard */}
         <div style={{ display: 'flex', gap: '8px' }}>
+          <button
+            type="button"
+            id="btn-vault-rerun-wizard"
+            onClick={() => useOnboardingStore.getState().openWizard('welcome')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '5px',
+              padding: '6px 10px',
+              borderRadius: '6px',
+              background: 'rgba(99, 102, 241, 0.2)',
+              border: '1px solid rgba(99, 102, 241, 0.4)',
+              color: '#c7d2fe',
+              fontSize: '11px',
+              fontWeight: 600,
+              cursor: 'pointer'
+            }}
+          >
+            <Sparkles size={12} color="#818cf8" />
+            Setup Wizard
+          </button>
+
           <button
             type="button"
             id="btn-export-keys-backup"

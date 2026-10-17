@@ -402,12 +402,13 @@ def generate_checksums():
     return checksums_file
 
 def sync_to_dist():
-    log("Copying all release artifacts to dist/...")
+    log("Copying release manifests (SHA256SUMS.txt, release.json) to dist/...")
     DIST.mkdir(parents=True, exist_ok=True)
-    for p in DIST_RELEASE.iterdir():
-        if p.is_file() and not p.name.endswith(".blockmap") and not p.name.endswith(".yml"):
-            shutil.copy2(p, DIST / p.name)
-            log(f"  Copied {p.name} to dist/")
+    for name in ["SHA256SUMS.txt", "release.json"]:
+        src = DIST_RELEASE / name
+        if src.exists():
+            shutil.copy2(src, DIST / name)
+            log(f"  Copied {name} to dist/")
 
 def main():
     DIST_RELEASE.mkdir(parents=True, exist_ok=True)

@@ -34,6 +34,8 @@ import { providerHealthMonitor } from '../providers/health-monitor';
 import { MODEL_TIERS } from '../providers/model-classifier';
 import { freeProviderRegistry } from '../providers/free-provider-registry';
 import { quotaTracker } from './quota-tracker';
+import { fccCatalogSync } from '../fcc/catalog-sync';
+import { fccIntegrityChecker } from './fcc-integrity';
 
 export interface ModelCatalogEntry {
   modelId: string;
@@ -43,6 +45,7 @@ export interface ModelCatalogEntry {
   tier: ModelTier;
   isFree: boolean;
   baseLatencyMs: number;
+  provenance?: 'FCC' | 'your key' | 'anonymous' | 'subscription';
 }
 
 export const ROUTER_MODEL_CATALOG: ModelCatalogEntry[] = [
@@ -315,7 +318,8 @@ export class ModelRouter {
       healthScore: successRate,
       isRateLimited: health.isRateLimited,
       compositeRankScore: Math.round(score),
-      selectionReason
+      selectionReason,
+      provenance: entry.provenance || 'your key'
     };
   }
 
@@ -383,6 +387,9 @@ export class ModelRouter {
 
   /**
    * Returns all available models in the catalog, optionally grouped by tier.
+   * ModelSelector primary source = FCC catalog (61 providers); native registry merges as secondary;
+   * provenance badges: 'FCC', 'your key', 'anonymous', 'subscription'.
+   * If FCC is unavailable or disabled: graceful instant fallback to native registry + anonymous in <2s.
    */
   public getCatalogGroupedByTier(): Record<ModelTier, RankedModelCandidate[]> {
     const defaultPrefs: RouterUserPreferences = {
@@ -399,7 +406,45 @@ export class ModelRouter {
       tier_c_fast: []
     };
 
+    const seenModelIds = new Set<string>();
+
+    // 1. Primary Source: FCC Catalog (when FCC layer is enabled and not stopped)
+    if (fccIntegrityChecker.isFccEnabled()) {
+      const fccProviders = fccCatalogSync.getCatalog();
+      for (const provider of fccProviders) {
+        if (!provider.enabled || provider.health === 'stopped') continue;
+
+        for (const model of provider.models) {
+          if (seenModelIds.has(model.id)) continue;
+          seenModelIds.add(model.id);
+
+          let tier: ModelTier = 'tier_b_general';
+          if (model.capabilities.reasoning) tier = 'tier_s_reasoning';
+          else if (model.capabilities.coding) tier = 'tier_a_coding';
+          else if (model.capabilities.fast) tier = 'tier_c_fast';
+
+          grouped[tier].push({
+            modelId: model.id,
+            modelName: model.name,
+            providerId: provider.id,
+            providerName: provider.name,
+            tier,
+            isFree: model.isFree,
+            latencyMs: provider.latencyMs || 250,
+            healthScore: provider.health === 'healthy' ? 1.0 : 0.7,
+            isRateLimited: false,
+            compositeRankScore: 180 + (model.isFree ? 20 : 0),
+            selectionReason: model.description || `Powered by free-claude-code (${provider.name})`,
+            provenance: model.provenance || 'FCC'
+          });
+        }
+      }
+    }
+
+    // 2. Secondary Source / Fallback: Native Registry & Anonymous Models
     for (const entry of ROUTER_MODEL_CATALOG) {
+      if (seenModelIds.has(entry.modelId)) continue;
+      seenModelIds.add(entry.modelId);
       const scored = this.scoreCandidate(entry, entry.tier, defaultPrefs);
       grouped[entry.tier].push(scored);
     }

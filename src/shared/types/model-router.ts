@@ -65,6 +65,7 @@ export interface RankedModelCandidate {
   estimatedRemainingTokens?: number;
   compositeRankScore: number; // Higher is better
   selectionReason: string;
+  provenance?: 'FCC' | 'your key' | 'anonymous' | 'subscription';
 }
 
 export interface ModelRoutingDecision {

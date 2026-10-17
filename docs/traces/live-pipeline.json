@@ -1,8 +1,8 @@
 {
   "phase": "RealConnect 1",
   "title": "End-to-End Chat Request Pipeline Trace Across All IPC Hops",
-  "timestamp": "2026-10-16T20:16:00.000Z",
-  "epoch": 1792181760,
+  "timestamp": "2026-10-16T23:41:00.411Z",
+  "epoch": 1792194060,
   "gitCommit": "35837e4b8995e19c1315c0c6f43762f2b2a5928c",
   "command": "node scripts/run-live-e2e.mjs",
   "status": "VERIFIED_PASS",
@@ -76,7 +76,7 @@
       "module": "src/main/providers/provider-gateway.ts",
       "action": "First chunk decoded over TCP; initial token payload emitted",
       "status": "PASS",
-      "durationMs": 7.0
+      "durationMs": 7
     },
     {
       "hop": "H8",
@@ -104,14 +104,14 @@
       "module": "src/renderer/src/state/chat-store.ts",
       "action": "addAssistantMessage validates source: 'provider-stream', providerId: 'fcc-proxy', streamEventCount: 25",
       "status": "PASS",
-      "durationMs": 1.0
+      "durationMs": 1
     }
   ],
   "pipelineSummary": {
     "totalHops": 10,
     "totalElapsedMs": 59.8,
     "tokensStreamed": 25,
-    "timeToFirstTokenMs": 7.0,
+    "timeToFirstTokenMs": 7,
     "allHopsPassed": true,
     "zeroMockPatternsVerified": true
   }

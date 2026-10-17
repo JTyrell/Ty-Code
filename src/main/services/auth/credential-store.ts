@@ -220,19 +220,32 @@ export class CredentialStore {
     return true;
   }
 
+  private getProviderAliases(providerId: string): string[] {
+    const list = [providerId];
+    if (providerId.endsWith('-free')) {
+      list.push(providerId.replace(/-free$/, ''));
+    } else {
+      list.push(`${providerId}-free`);
+    }
+    if (providerId === 'gemini' || providerId === 'google-ai-studio' || providerId === 'google-ai-studio-free') {
+      list.push('gemini', 'google-ai-studio', 'google-ai-studio-free');
+    }
+    return Array.from(new Set(list));
+  }
+
   /**
    * Retrieves the decrypted key for a provider
    */
   public getDecryptedKey(providerId: string): string | null {
-    if (!this.isLoaded) {
-      // Synchronous attempt from cache if already populated
-      const record = this.cache.credentials[providerId];
-      if (!record) return null;
-      return this.decrypt(record.encryptedKey) || null;
+    const aliases = this.getProviderAliases(providerId);
+    for (const id of aliases) {
+      const record = this.cache.credentials[id];
+      if (record?.encryptedKey) {
+        const decrypted = this.decrypt(record.encryptedKey);
+        if (decrypted) return decrypted;
+      }
     }
-    const record = this.cache.credentials[providerId];
-    if (!record) return null;
-    return this.decrypt(record.encryptedKey) || null;
+    return null;
   }
 
   /**
@@ -251,7 +264,8 @@ export class CredentialStore {
    * Checks whether a provider has an encrypted credential saved
    */
   public hasCredential(providerId: string): boolean {
-    return Boolean(this.cache.credentials[providerId]?.encryptedKey);
+    const aliases = this.getProviderAliases(providerId);
+    return aliases.some((id) => Boolean(this.cache.credentials[id]?.encryptedKey));
   }
 
   /**
@@ -392,10 +406,21 @@ export class CredentialStore {
   ): Promise<TestConnectionResult> {
     const startTime = Date.now();
     const trimmedKey = apiKey.trim();
+    const normId = providerId.toLowerCase().replace(/-free$/, '');
 
     try {
+      // 0. OpenKilo anonymous free tier verification (zero key required)
+      if (normId === 'openkilo') {
+        return {
+          success: true,
+          providerId,
+          latencyMs: Date.now() - startTime,
+          modelDetected: modelId || 'qwen/qwen3-coder:free'
+        };
+      }
+
       // 1. Ollama local verification
-      if (providerId === 'ollama') {
+      if (normId === 'ollama') {
         const res = await fetch('http://localhost:11434/api/tags', { signal: AbortSignal.timeout(3500) });
         if (!res.ok) throw new Error(`Ollama returned HTTP ${res.status}`);
         const data = await res.json() as { models?: Array<{ name: string }> };
@@ -409,7 +434,7 @@ export class CredentialStore {
       }
 
       // 2. OpenRouter test
-      if (providerId === 'openrouter') {
+      if (normId === 'openrouter') {
         const res = await fetch('https://openrouter.ai/api/v1/auth/key', {
           headers: { Authorization: `Bearer ${trimmedKey}` },
           signal: AbortSignal.timeout(5000)
@@ -424,7 +449,7 @@ export class CredentialStore {
       }
 
       // 3. Groq test
-      if (providerId === 'groq') {
+      if (normId === 'groq') {
         const res = await fetch('https://api.groq.com/openai/v1/models', {
           headers: { Authorization: `Bearer ${trimmedKey}` },
           signal: AbortSignal.timeout(5000)
@@ -439,7 +464,7 @@ export class CredentialStore {
       }
 
       // 4. OpenAI test
-      if (providerId === 'openai') {
+      if (normId === 'openai') {
         const res = await fetch('https://api.openai.com/v1/models', {
           headers: { Authorization: `Bearer ${trimmedKey}` },
           signal: AbortSignal.timeout(5000)
@@ -454,7 +479,7 @@ export class CredentialStore {
       }
 
       // 5. Anthropic test
-      if (providerId === 'anthropic') {
+      if (normId === 'anthropic') {
         const res = await fetch('https://api.anthropic.com/v1/models', {
           headers: {
             'x-api-key': trimmedKey,
@@ -487,7 +512,7 @@ export class CredentialStore {
       }
 
       // 6. DeepSeek test
-      if (providerId === 'deepseek') {
+      if (normId === 'deepseek') {
         const res = await fetch('https://api.deepseek.com/models', {
           headers: { Authorization: `Bearer ${trimmedKey}` },
           signal: AbortSignal.timeout(5000)
@@ -502,7 +527,7 @@ export class CredentialStore {
       }
 
       // 7. Google Gemini test
-      if (providerId === 'gemini' || providerId === 'google-ai-studio') {
+      if (normId === 'gemini' || normId === 'google-ai-studio') {
         const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(trimmedKey)}`, {
           signal: AbortSignal.timeout(5000)
         });

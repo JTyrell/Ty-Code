@@ -19,6 +19,7 @@ import { freeProviderRegistry } from '../services/providers/free-provider-regist
 import { modelClassifier } from '../services/providers/model-classifier';
 import { providerHealthMonitor } from '../services/providers/health-monitor';
 import { readStoredCredentials } from '../ipc/settings-handlers';
+import { keyDetector } from '../services/providers/key-detector';
 
 import { DEFAULT_PRESET_MODELS } from '../../preload/preset-models';
 export { DEFAULT_PRESET_MODELS };
@@ -415,7 +416,10 @@ export class ProviderGateway {
 
     // Resolve key at call time via safeStorage decryption; anonymous providers use no key
     let apiKey = '';
-    const isAnonymous = providerId === 'openkilo' && (!settings.apiKeys?.[providerId] || settings.apiKeys[providerId] === 'anonymous');
+    const freeProv = freeProviderRegistry.getProvider(providerId) || freeProviderRegistry.getProvider(`${providerId}-free`);
+    const isAnonymous =
+      (providerId === 'openkilo' || providerId === 'openkilo-free' || freeProv?.auth_type === 'anonymous') &&
+      (!settings.apiKeys?.[providerId] || settings.apiKeys[providerId] === 'anonymous');
     const isLocalZeroConfig = providerId === 'ollama';
 
     if (providerId === 'fcc-proxy') {
@@ -437,15 +441,66 @@ export class ProviderGateway {
           // 2. Fall back to settings-handlers or settings.apiKeys
           try {
             const { keys } = await readStoredCredentials();
-            apiKey = keys[providerId] || settings.apiKeys?.[providerId] || '';
+            apiKey = keys[providerId] || keys[providerId.replace(/-free$/, '')] || settings.apiKeys?.[providerId] || '';
           } catch {
             apiKey = settings.apiKeys?.[providerId] || '';
           }
         }
       }
 
+      // 3. Auto-detect from environment variables if not yet saved
       if (!apiKey || !apiKey.trim()) {
-        throw new Error(`[ProviderGateway] CONFIG_MISSING: No API key configured for provider "${providerId}". Please add your API key in Settings or connect your provider.`);
+        const envKeyMap: Record<string, string[]> = {
+          openrouter: ['OPENROUTER_API_KEY'],
+          'openrouter-free': ['OPENROUTER_API_KEY'],
+          groq: ['GROQ_API_KEY'],
+          'groq-free': ['GROQ_API_KEY'],
+          anthropic: ['ANTHROPIC_API_KEY'],
+          openai: ['OPENAI_API_KEY'],
+          'google-ai-studio': ['GEMINI_API_KEY', 'GOOGLE_API_KEY'],
+          'google-ai-studio-free': ['GEMINI_API_KEY', 'GOOGLE_API_KEY'],
+          gemini: ['GEMINI_API_KEY', 'GOOGLE_API_KEY'],
+          deepseek: ['DEEPSEEK_API_KEY'],
+          'together-ai-free': ['TOGETHER_API_KEY', 'TOGETHERAI_API_KEY'],
+          'fireworks-ai-free': ['FIREWORKS_API_KEY'],
+          'huggingface-free': ['HUGGINGFACE_API_KEY', 'HF_TOKEN'],
+          mistral: ['MISTRAL_API_KEY'],
+          cohere: ['COHERE_API_KEY']
+        };
+
+        const envVars = envKeyMap[providerId] || envKeyMap[providerId.replace(/-free$/, '')] || [];
+        for (const ev of envVars) {
+          const val = process.env[ev];
+          if (val && val.trim().length > 4) {
+            apiKey = val.trim();
+            void credentialStore.saveCredential(providerId, apiKey, `Auto-detected from $${ev}`).catch(() => undefined);
+            break;
+          }
+        }
+      }
+
+      // 4. Auto-detect from system config files or git credentials
+      if (!apiKey || !apiKey.trim()) {
+        try {
+          const detected = keyDetector.detectFromEnvironment();
+          const target = detected.find(
+            (d) => d.providerId === providerId || d.providerId === providerId.replace(/-free$/, '')
+          );
+          if (target?.rawKey) {
+            apiKey = target.rawKey;
+            void credentialStore
+              .saveCredential(providerId, apiKey, `Auto-detected from ${target.sourceDescription || target.source}`)
+              .catch(() => undefined);
+          }
+        } catch {
+          // Non-blocking
+        }
+      }
+
+      if (!apiKey || !apiKey.trim()) {
+        throw new Error(
+          `[ProviderGateway] CONFIG_MISSING: No API key configured for provider "${providerId}". Use 1-Click Auto-Detect or switch to OpenKilo (Zero-Key Free) or Ollama (Local).`
+        );
       }
     }
 

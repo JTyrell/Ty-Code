@@ -65,6 +65,7 @@ export { openVsxClient, vsixInstaller, extensionManager };
       title: 'Real Open VSX Integration — Registry API + VSIX Download',
       timestamp: new Date().toISOString(),
       gitCommit: '',
+      command: 'node scripts/run-openvsx-integration.mjs',
       registryUrl: 'https://open-vsx.org',
       metrics: {},
       validationCriteria: {},

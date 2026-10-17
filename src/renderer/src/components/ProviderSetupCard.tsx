@@ -96,6 +96,20 @@ const PROVIDER_METAS: Record<string, ProviderMeta> = {
     signupUrl: 'http://localhost:11434',
     defaultModel: 'qwen2.5-coder',
     isFree: true
+  },
+  openkilo: {
+    id: 'openkilo-free',
+    name: 'OpenKilo Free (Zero-Key)',
+    signupUrl: 'https://openkilo.com',
+    defaultModel: 'qwen/qwen3-coder:free',
+    isFree: true
+  },
+  'openkilo-free': {
+    id: 'openkilo-free',
+    name: 'OpenKilo Free (Zero-Key)',
+    signupUrl: 'https://openkilo.com',
+    defaultModel: 'qwen/qwen3-coder:free',
+    isFree: true
   }
 };
 
@@ -112,6 +126,7 @@ export const ProviderSetupCard: React.FC<ProviderSetupCardProps> = ({
   const [showKey, setShowKey] = useState<boolean>(false);
   const [isTesting, setIsTesting] = useState<boolean>(false);
   const [isSaving, setIsSaving] = useState<boolean>(false);
+  const [isAutoDetecting, setIsAutoDetecting] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isClosed, setIsClosed] = useState<boolean>(false);
@@ -143,6 +158,35 @@ export const ProviderSetupCard: React.FC<ProviderSetupCardProps> = ({
       void window.electronAPI.openExternal(url);
     } else {
       window.open(url, '_blank');
+    }
+  };
+
+  const handleAutoDetect = async () => {
+    setIsAutoDetecting(true);
+    setErrorMessage(null);
+    setSuccessMessage(null);
+    try {
+      if (window.electronAPI?.credentialsAutoDetect) {
+        const res = await window.electronAPI.credentialsAutoDetect();
+        if (res.success && res.data && res.data.importedCount > 0) {
+          const names = res.data.importedProviders.join(', ');
+          setSuccessMessage(`Auto-detected & connected ${res.data.importedCount} provider key(s): ${names}! Retrying...`);
+          toast.success(`Discovered ${res.data.importedCount} API key(s) from system`);
+          if (onRetry) {
+            window.setTimeout(() => {
+              setIsClosed(true);
+              onDismiss?.();
+              onRetry();
+            }, 800);
+          }
+          return;
+        }
+      }
+      setErrorMessage('No API keys found in environment variables or configs. Switch to OpenKilo (Zero-Key) below or paste a key.');
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsAutoDetecting(false);
     }
   };
 
@@ -222,6 +266,26 @@ export const ProviderSetupCard: React.FC<ProviderSetupCardProps> = ({
     setApiKey('');
     setErrorMessage(null);
     setSuccessMessage(null);
+
+    // If switching to OpenKilo (zero-key required), connect instantly
+    if (altId === 'openkilo' || altId === 'openkilo-free') {
+      setIsTesting(true);
+      try {
+        await saveSettings({
+          activeProvider: 'openkilo-free' as any,
+          activeModel: 'qwen/qwen3-coder:free'
+        });
+        toast.success('Switched to OpenKilo Free (Zero-Key Required)');
+        setIsClosed(true);
+        onDismiss?.();
+        if (onRetry) onRetry();
+      } catch (err) {
+        setErrorMessage(err instanceof Error ? err.message : String(err));
+      } finally {
+        setIsTesting(false);
+      }
+      return;
+    }
 
     // If switching to Ollama local, test it directly and auto-retry if available
     if (altId === 'ollama') {
@@ -313,8 +377,49 @@ export const ProviderSetupCard: React.FC<ProviderSetupCardProps> = ({
       </div>
 
       {/* Subheader */}
-      <div style={{ fontSize: '12px', color: '#94a3b8', marginBottom: '14px' }}>
+      <div style={{ fontSize: '12px', color: '#94a3b8', marginBottom: '12px' }}>
         Model: <span style={{ color: '#e2e8f0', fontFamily: 'monospace' }}>{activeModel}</span>
+      </div>
+
+      {/* Auto-detect prompt banner */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          backgroundColor: 'rgba(56, 189, 248, 0.08)',
+          border: '1px dashed rgba(56, 189, 248, 0.35)',
+          borderRadius: '8px',
+          padding: '8px 12px',
+          marginBottom: '12px'
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#cbd5e1' }}>
+          <Zap size={14} color="#38bdf8" />
+          <span>Have keys in your environment or configs?</span>
+        </div>
+        <button
+          type="button"
+          disabled={isAutoDetecting}
+          onClick={handleAutoDetect}
+          style={{
+            padding: '5px 12px',
+            backgroundColor: isAutoDetecting ? '#0369a1' : '#0284c7',
+            border: 'none',
+            borderRadius: '5px',
+            color: '#ffffff',
+            fontSize: '11px',
+            fontWeight: 600,
+            cursor: isAutoDetecting ? 'not-allowed' : 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '5px',
+            boxShadow: '0 2px 8px rgba(2, 132, 199, 0.3)'
+          }}
+        >
+          {isAutoDetecting ? <RefreshCw size={12} className="animate-spin" /> : <Zap size={12} />}
+          <span>{isAutoDetecting ? 'Scanning...' : 'Auto-Detect Keys'}</span>
+        </button>
       </div>
 
       {/* API Key Form */}
@@ -498,6 +603,26 @@ export const ProviderSetupCard: React.FC<ProviderSetupCardProps> = ({
         }}
       >
         <span style={{ fontSize: '11px', color: '#94a3b8' }}>Or switch to free alternative:</span>
+        <button
+          type="button"
+          onClick={() => handleSwitchAlternative('openkilo')}
+          style={{
+            padding: '4px 8px',
+            backgroundColor: 'rgba(56, 189, 248, 0.15)',
+            border: '1px solid rgba(56, 189, 248, 0.4)',
+            borderRadius: '4px',
+            color: '#38bdf8',
+            fontSize: '11px',
+            fontWeight: 600,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px'
+          }}
+        >
+          <Sparkles size={11} color="#38bdf8" />
+          <span>OpenKilo Free (Zero-Key)</span>
+        </button>
         {providerId !== 'groq' && (
           <button
             type="button"

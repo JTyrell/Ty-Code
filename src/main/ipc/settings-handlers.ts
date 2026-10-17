@@ -249,3 +249,49 @@ export async function saveSettings(updates: Partial<ProviderSettings>): Promise<
     return { success: false, error: error instanceof Error ? error.message : String(error) };
   }
 }
+
+const ONBOARDING_FILE = path.join(getUserDataPath(), 'ty-code-onboarding.json');
+
+export interface OnboardingStatePayload {
+  completed: boolean;
+  selectedPath?: 'free_accounts' | 'local' | 'anonymous' | null;
+  currentStep: string;
+  connectedProviders: string[];
+  skipped: boolean;
+  firstSeenAt: number;
+  completedAt?: number | null;
+  lastReminderAt?: number | null;
+  reminderDismissedForever?: boolean;
+  anonymousRateLimitEncountered?: boolean;
+}
+
+export async function readOnboardingState(): Promise<OnboardingStatePayload> {
+  try {
+    const raw = await fs.readFile(ONBOARDING_FILE, 'utf8');
+    return JSON.parse(raw);
+  } catch {
+    return {
+      completed: false,
+      selectedPath: null,
+      currentStep: 'welcome',
+      connectedProviders: [],
+      skipped: false,
+      firstSeenAt: Date.now(),
+      completedAt: null,
+      lastReminderAt: null,
+      reminderDismissedForever: false,
+      anonymousRateLimitEncountered: false
+    };
+  }
+}
+
+export async function writeOnboardingState(state: Partial<OnboardingStatePayload>): Promise<OnboardingStatePayload> {
+  const current = await readOnboardingState();
+  const merged: OnboardingStatePayload = {
+    ...current,
+    ...state
+  };
+  await fs.mkdir(path.dirname(ONBOARDING_FILE), { recursive: true });
+  await fs.writeFile(ONBOARDING_FILE, JSON.stringify(merged, null, 2), 'utf8');
+  return merged;
+}

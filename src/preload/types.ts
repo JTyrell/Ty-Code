@@ -345,6 +345,7 @@ export interface ProviderSettings {
   modules?: Record<string, { enabled: boolean; installedAt?: number; customConfig?: Record<string, unknown> }>;
   telemetry?: TelemetrySettings;
   offlineDemoMode?: boolean;
+  fccEnabled?: boolean;
 }
 
 export interface ToolCall {
@@ -865,6 +866,16 @@ export interface ElectronAPI {
   fccStop: () => Promise<IpcResponse<void>>;
   fccRestart: () => Promise<IpcResponse<boolean>>;
   fccAutoSetup: (providerId?: string) => Promise<IpcResponse<FCCAutoSetupResult | FCCAutoSetupResult[]>>;
+  fccSetEnabled: (enabled: boolean) => Promise<IpcResponse<{ enabled: boolean }>>;
+  fccGetIntegrity: () => Promise<IpcResponse<FCCIntegrityReport | null>>;
+  fccVerifyBinary: (binaryPath?: string, expectedHash?: string) => Promise<IpcResponse<FCCIntegrityReport>>;
+  fccGetLogs: () => Promise<IpcResponse<string[]>>;
+  fccClearLogs: () => Promise<IpcResponse<void>>;
+  fccGetCatalog: () => Promise<IpcResponse<FCCProviderHealthInfo[]>>;
+  fccGetFleetSummary: () => Promise<IpcResponse<FCCFleetSummary>>;
+  fccSyncCatalog: () => Promise<IpcResponse<{ count: number; timestamp: number }>>;
+  fccToggleProvider: (providerId: string, enabled: boolean) => Promise<IpcResponse<{ providerId: string; enabled: boolean }>>;
+  fccTestProvider: (providerId: string) => Promise<IpcResponse<{ providerId: string; success: boolean; latencyMs: number; error?: string }>>;
 
   // Phase 5.4: OpenKilo Plugin Integration (Layer 5)
   openkiloGetStatus: () => Promise<IpcResponse<OpenKiloStatus>>;
@@ -1032,6 +1043,9 @@ export interface ElectronAPI {
   credentialsImport?: (bundleJson: string, passphrase?: string) => Promise<{ success: boolean; count: number; error?: string }>;
   credentialsHasAny?: () => Promise<{ success: boolean; hasAny: boolean }>;
   credentialsList?: () => Promise<IpcResponse<Array<{ providerId: string; label: string; configured: boolean; createdAt?: number; lastUsedAt?: number }>>>;
+  credentialsAutoDetect?: () => Promise<{ success: boolean; data?: { totalDetected: number; importedCount: number; importedProviders: string[]; detected: any[] }; error?: string }>;
+  onboardingGetState?: () => Promise<IpcResponse<any>>;
+  onboardingSaveState?: (updates: any) => Promise<IpcResponse<any>>;
 }
 
 export interface BootSchedulerTaskPayload {
@@ -1245,8 +1259,22 @@ export interface OpenKiloStatus {
   totalModelsAvailable: number;
 }
 
+export interface FCCIntegrityReport {
+  valid: boolean;
+  hash?: string;
+  expectedHash?: string;
+  status: 'verified' | 'mismatch' | 'missing' | 'disabled' | 'unverified';
+  error?: string;
+  code?: 'INTEGRITY_MISMATCH' | 'FILE_NOT_FOUND' | 'LAYER_DISABLED' | 'VERIFIED' | 'UNVERIFIED';
+  timestamp: number;
+  platform: string;
+  targetPath?: string;
+  degradationTarget?: 'native-registry' | 'anonymous-gateway';
+}
+
 export interface FCCServerStatus {
   installed?: boolean;
+  enabled?: boolean;
   running: boolean;
   port: number;
   pid?: number;
@@ -1259,6 +1287,8 @@ export interface FCCServerStatus {
   freeTokensAllocated: number;
   freeTokensUsed: number;
   lastPingTimestamp: number;
+  integrityStatus?: FCCIntegrityReport['status'];
+  integrityError?: string;
 }
 
 export interface FCCAutoSetupResult {
@@ -1270,6 +1300,64 @@ export interface FCCAutoSetupResult {
   endpoint?: string;
   modelsFound?: string[];
   freeMonthlyTokens?: number;
+}
+
+export type FCCToSStatus = 'compliant' | 'verified' | 'conditional' | 'risky';
+
+export interface FCCModelInfo {
+  id: string;
+  name: string;
+  contextWindow: number;
+  maxOutputTokens: number;
+  isFree: boolean;
+  capabilities: {
+    reasoning?: boolean;
+    coding?: boolean;
+    tools?: boolean;
+    vision?: boolean;
+    fast?: boolean;
+    largeContext?: boolean;
+    speedTokensPerSec?: number;
+  };
+  provenance: 'FCC' | 'your key' | 'anonymous' | 'subscription';
+  costTier: 'free' | 'low' | 'medium' | 'high';
+  description?: string;
+}
+
+export interface FCCProviderHealthInfo {
+  id: string;
+  name: string;
+  category: 'api_key' | 'oauth' | 'web_cookie' | 'local';
+  authMethod: 'api_key' | 'oauth' | 'web_cookie' | 'none';
+  health: 'healthy' | 'degraded' | 'stopped';
+  latencyMs: number;
+  successRate: number;
+  quotaRemainingPercent: number;
+  monthlyFreeTokens: number;
+  isFreeTierAvailable: boolean;
+  tosStatus: FCCToSStatus;
+  tosExplanation?: string;
+  enabled: boolean;
+  defaultEndpoint: string;
+  signupUrl?: string;
+  models: FCCModelInfo[];
+}
+
+export interface FCCFleetSummary {
+  running: boolean;
+  health: 'healthy' | 'degraded' | 'stopped';
+  statusText: string;
+  port: number;
+  version: string;
+  providersCount: number;
+  healthyProvidersCount: number;
+  degradedProvidersCount: number;
+  stoppedProvidersCount: number;
+  totalFreeModels: number;
+  aggregateFreeTokens: number;
+  usedTokens: number;
+  integrityStatus: FCCIntegrityReport['status'];
+  fallbackActive: boolean;
 }
 
 export interface RecentWorkspace {

@@ -299,6 +299,7 @@ async function run() {
     title: 'Real Extension Host — Worker-Based Execution with API Surface',
     timestamp: new Date().toISOString(),
     gitCommit,
+    command: 'node scripts/run-extension-execution.mjs',
     metrics: {
       activationDurationMs: actDuration,
       completionQueryDurationMs: compDuration,

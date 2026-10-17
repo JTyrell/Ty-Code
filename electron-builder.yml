@@ -7,7 +7,9 @@ directories:
   buildResources: build
 
 files:
-  - dist/**/*
+  - dist/main/**/*
+  - dist/preload/**/*
+  - dist/renderer/**/*
   - package.json
   - node_modules/**/*
   - "!node_modules/**/*.map"

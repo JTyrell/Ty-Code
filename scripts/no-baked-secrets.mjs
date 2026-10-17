@@ -20,7 +20,8 @@ const PROJECT_ROOT = path.resolve(__dirname, '..');
 
 const SCAN_DIRS = [
   path.join(PROJECT_ROOT, 'dist'),
-  path.join(PROJECT_ROOT, 'src')
+  path.join(PROJECT_ROOT, 'src'),
+  path.join(PROJECT_ROOT, 'docs')
 ];
 
 // Patterns representing real baked secret structures
@@ -31,6 +32,7 @@ const SUSPICIOUS_PATTERNS = [
   { name: 'Anthropic Generic Key', regex: /\bsk-ant-[A-Za-z0-9_-]{16,}\b/ },
   { name: 'OpenRouter Production Key', regex: /\bsk-or-v1-[a-f0-9]{64}\b/ },
   { name: 'OpenRouter Generic Key', regex: /\bsk-or-[A-Za-z0-9_-]{16,}\b/ },
+  { name: 'Groq Production Key', regex: /\bgsk_[A-Za-z0-9_-]{40,}\b/ },
   { name: 'Google Gemini Production Key', regex: /\bAIzaSy[A-Za-z0-9_-]{33}\b/ },
   { name: 'GitHub Personal Token', regex: /\bghp_[A-Za-z0-9]{36}\b/ },
   { name: 'GitHub User Token', regex: /\bghu_[A-Za-z0-9]{36}\b/ },
@@ -46,6 +48,7 @@ const ALLOWED_MATCH_SNIPPETS = [
   'sk-or-v1-000000',
   'sk-or-sample',
   'sk-ant-sample',
+  'gsk_sample',
   'ghu_sample',
   'ghp_sample',
   'AIzaSySample',
@@ -66,7 +69,7 @@ async function collectFiles(dir) {
         }
       } else if (entry.isFile()) {
         const ext = path.extname(entry.name).toLowerCase();
-        if (['.js', '.mjs', '.cjs', '.ts', '.tsx', '.json', '.html', '.css'].includes(ext)) {
+        if (['.js', '.mjs', '.cjs', '.ts', '.tsx', '.json', '.html', '.css', '.md'].includes(ext)) {
           results.push(fullPath);
         }
       }

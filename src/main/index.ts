@@ -21,7 +21,7 @@ import {
   handleLspRename, handleLspDocumentSymbols, handleLspWorkspaceSymbols,
   handleLspCodeActions, handleLspSignatureHelp, getLspManager
 } from './ipc/lsp-handlers';
-import { getCredentialStorageStatusResponse, getSettings, getSettingsLayer, getSecurityPolicy, saveSecurityPolicy, saveSettings, saveSettingsLayer } from './ipc/settings-handlers';
+import { getCredentialStorageStatusResponse, getSettings, getSettingsLayer, getSecurityPolicy, saveSecurityPolicy, saveSettings, saveSettingsLayer, readOnboardingState, writeOnboardingState } from './ipc/settings-handlers';
 import { settingsManager } from './services/settings-manager';
 import { startAgentTask, stopAgentTask, respondAgentApproval, applyDiff, handleUserApproveDiff } from './ipc/agent-handlers';
 import {
@@ -64,6 +64,9 @@ import { fileURLToPath } from 'url';
 
 import { initAiFeatureServices, updateAiServicesWorkspace, registerAiFeatureHandlers } from './ipc/ai-features-handlers';
 import { fccManager } from './services/orchestration/fcc-manager';
+import { fccIntegrityChecker } from './services/orchestration/fcc-integrity';
+import { fccEmbeddedCore } from './services/fcc/embedded-core';
+import { fccCatalogSync } from './services/fcc/catalog-sync';
 import { providerAutoSetup } from './services/orchestration/provider-auto-setup';
 import { openKiloProvider } from './services/orchestration/openkilo-provider';
 import { quotaTracker } from './services/orchestration/quota-tracker';
@@ -77,6 +80,7 @@ import { freeProviderRegistry } from './services/providers/free-provider-registr
 import { modelClassifier } from './services/providers/model-classifier';
 import { providerHealthMonitor } from './services/providers/health-monitor';
 import { keyDetector, maskKey } from './services/providers/key-detector';
+import { credentialStore } from './services/auth/credential-store';
 import { readStoredCredentials, writeStoredCredentials, encryptSecret, decryptSecret } from './ipc/settings-handlers';
 import type { CustomProviderConfig, StoredKeySummary } from '../shared/types/byok';
 import { opencodeIntegration } from './services/providers/opencode-integration';
@@ -294,6 +298,138 @@ function registerIpcHandlers(): void {
   ipcMain.handle('credentials:get-storage-status', (event) => isTrustedExtensionFrame(event)
     ? getCredentialStorageStatusResponse()
     : { success: false, error: 'Untrusted renderer frame.' });
+  ipcMain.handle('credentials:test', async (event, providerId: string, apiKey: string, modelId?: string) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      const res = await credentialStore.testConnection(providerId, apiKey, modelId);
+      if (res.success) {
+        return { success: true, data: res };
+      }
+      return { success: false, error: res.error || `Failed to authenticate ${providerId} key.` };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+  ipcMain.handle('credentials:save', async (event, providerId: string, apiKey: string, label?: string) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      await credentialStore.saveCredential(providerId, apiKey, label);
+      try {
+        const { keys } = await readStoredCredentials();
+        keys[providerId] = apiKey.trim();
+        const normId = providerId.replace(/-free$/, '');
+        keys[normId] = apiKey.trim();
+        await writeStoredCredentials(keys);
+      } catch {
+        // Non-blocking
+      }
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+  ipcMain.handle('credentials:get', async (event, providerId?: string) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      if (providerId) {
+        const key = credentialStore.getDecryptedKey(providerId);
+        return { success: true, data: key };
+      }
+      const all = credentialStore.getAllDecryptedKeys();
+      return { success: true, data: all };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+  ipcMain.handle('credentials:delete', async (event, providerId: string) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      await credentialStore.revokeCredential(providerId);
+      try {
+        const { keys } = await readStoredCredentials();
+        delete keys[providerId];
+        delete keys[providerId.replace(/-free$/, '')];
+        await writeStoredCredentials(keys);
+      } catch {
+        // Non-blocking
+      }
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+  ipcMain.handle('credentials:reveal', async (event, providerId: string) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      const key = credentialStore.revealKey(providerId);
+      if (!key) return { success: false, error: `No credential found for ${providerId}` };
+      return { success: true, data: key };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+  ipcMain.handle('credentials:has-any', async (event) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      const hasAny = await credentialStore.hasAnyCredentials();
+      return { success: true, hasAny };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+  ipcMain.handle('credentials:list', async (event) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      const list = credentialStore.listConfigured();
+      return { success: true, data: list };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+  ipcMain.handle('credentials:export', async (event, passphrase?: string) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      const bundle = await credentialStore.exportBackup(passphrase);
+      return { success: true, data: bundle };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+  ipcMain.handle('credentials:import', async (event, bundleJson: string, passphrase?: string) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      const res = await credentialStore.importBackup(bundleJson, passphrase);
+      return res;
+    } catch (error) {
+      return { success: false, count: 0, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+  ipcMain.handle('credentials:auto-detect', async (event) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      const detected = await keyDetector.detectAllKeys();
+      let importedCount = 0;
+      const importedProviders: string[] = [];
+      for (const k of detected) {
+        if (k.rawKey && !credentialStore.hasCredential(k.providerId)) {
+          await credentialStore.saveCredential(k.providerId, k.rawKey, `Auto-detected from ${k.sourceDescription || k.source}`);
+          importedCount++;
+          importedProviders.push(k.providerName || k.providerId);
+        }
+      }
+      return {
+        success: true,
+        data: {
+          totalDetected: detected.length,
+          importedCount,
+          importedProviders,
+          detected: detected.map((k) => ({ ...k, rawKey: undefined }))
+        }
+      };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
   ipcMain.handle('telemetry:get-preview', async (event) => {
     if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
     try { return { success: true, data: await getTelemetryManager().getPreview() }; }
@@ -599,6 +735,27 @@ function registerIpcHandlers(): void {
     try {
       await saveSettings({ hasCompletedOnboarding: true, freeMode: true });
       return { success: true, data: true };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  // Unified Provisioning: Onboarding Wizard state persistence
+  ipcMain.handle('onboarding:get-state', async (event) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      const state = await readOnboardingState();
+      return { success: true, data: state };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('onboarding:save-state', async (event, updates: any) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      const state = await writeOnboardingState(updates || {});
+      return { success: true, data: state };
     } catch (err: unknown) {
       return { success: false, error: err instanceof Error ? err.message : String(err) };
     }
@@ -1721,9 +1878,51 @@ function registerProviderHandlers(): void {
 
 function registerFccHandlers(): void {
   ipcMain.handle('fcc:get-status', async () => ({ success: true, data: fccManager.getStatus() }));
-  ipcMain.handle('fcc:start', async () => ({ success: true, data: await fccManager.start() }));
-  ipcMain.handle('fcc:stop', async () => { await fccManager.stop(); return { success: true }; });
-  ipcMain.handle('fcc:restart', async () => ({ success: true, data: await fccManager.restart() }));
+  ipcMain.handle('fcc:start', async () => ({ success: true, data: await fccEmbeddedCore.start() }));
+  ipcMain.handle('fcc:stop', async () => { await fccEmbeddedCore.stop(); return { success: true }; });
+  ipcMain.handle('fcc:restart', async () => ({ success: true, data: await fccEmbeddedCore.restart() }));
+  ipcMain.handle('fcc:set-enabled', async (_event, enabled: boolean) => {
+    fccEmbeddedCore.setEnabled(enabled);
+    return { success: true, enabled: fccIntegrityChecker.isFccEnabled() };
+  });
+  ipcMain.handle('fcc:get-integrity', async () => ({
+    success: true,
+    data: fccIntegrityChecker.getLastReport()
+  }));
+  ipcMain.handle('fcc:verify-binary', async (_event, binaryPath?: string, expectedHash?: string) => {
+    const report = binaryPath
+      ? await fccIntegrityChecker.verifyBinaryIntegrity(binaryPath, expectedHash)
+      : await fccIntegrityChecker.verifyBootIntegrity();
+    return { success: report.valid, data: report };
+  });
+  ipcMain.handle('fcc:get-logs', async () => ({
+    success: true,
+    data: fccEmbeddedCore.getLogs()
+  }));
+  ipcMain.handle('fcc:clear-logs', async () => {
+    fccEmbeddedCore.clearLogs();
+    return { success: true };
+  });
+  ipcMain.handle('fcc:get-catalog', async () => ({
+    success: true,
+    data: fccCatalogSync.getCatalog()
+  }));
+  ipcMain.handle('fcc:get-fleet-summary', async () => ({
+    success: true,
+    data: fccEmbeddedCore.getFleetSummary()
+  }));
+  ipcMain.handle('fcc:sync-catalog', async () => ({
+    success: true,
+    data: await fccCatalogSync.syncCatalog()
+  }));
+  ipcMain.handle('fcc:toggle-provider', async (_event, providerId: string, enabled: boolean) => ({
+    success: true,
+    data: fccEmbeddedCore.toggleProvider(providerId, enabled)
+  }));
+  ipcMain.handle('fcc:test-provider', async (_event, providerId: string) => {
+    const res = await fccEmbeddedCore.testProvider(providerId);
+    return { success: res.success, data: res };
+  });
   ipcMain.handle('fcc:auto-setup', async (_event, providerId?: string) => {
     try {
       if (providerId === 'openrouter') return { success: true, data: await providerAutoSetup.setupOpenRouter() };
@@ -1893,6 +2092,40 @@ app.whenReady().then(async () => {
   );
 
   bootScheduler.register(
+    'credentials_hydration',
+    'Credential Store Hydration & Auto-Discovery',
+    1,
+    'providers',
+    async () => {
+      try {
+        await credentialStore.load();
+        try {
+          const { keys } = await readStoredCredentials();
+          for (const [providerId, rawKey] of Object.entries(keys)) {
+            if (rawKey && !credentialStore.hasCredential(providerId)) {
+              await credentialStore.saveCredential(providerId, rawKey, `${providerId} Key`);
+            }
+          }
+        } catch {
+          // Non-blocking
+        }
+        const detected = await keyDetector.detectAllKeys();
+        for (const k of detected) {
+          if (k.rawKey && !credentialStore.hasCredential(k.providerId)) {
+            await credentialStore.saveCredential(
+              k.providerId,
+              k.rawKey,
+              `Auto-detected from ${k.sourceDescription || k.source}`
+            );
+          }
+        }
+      } catch (err) {
+        console.warn('[Tier 1] Credential hydration non-blocking failure:', err);
+      }
+    }
+  );
+
+  bootScheduler.register(
     'fs_index',
     'Workspace FS Index (Chunked)',
     1,
@@ -1935,6 +2168,16 @@ app.whenReady().then(async () => {
       if (!cachedProviders) {
         bootScheduler.setWarmCache('providers', PRECONFIGURED_PROVIDERS.map((p) => p.id));
       }
+    }
+  );
+
+  bootScheduler.register(
+    'fcc_embedded_core',
+    'FCC Embedded Model Supply & Integrity Check',
+    2,
+    'fcc',
+    async () => {
+      await fccEmbeddedCore.initBootTier2();
     }
   );
 

@@ -1,0 +1,182 @@
+{
+  "timestamp": "2026-10-17T01:27:38.350Z",
+  "gitCommit": "1cd5158a3e1f6ccf79d3f8d8115ef245f11eef19",
+  "command": "node scripts/verify-unified-provisioning.mjs",
+  "phase": "UnifiedProvisioning",
+  "title": "Unified Provider Access: Guided Onboarding, Tiered Provisioning, and BYOK in One System",
+  "tests": [
+    {
+      "name": "key_validation_openrouter",
+      "description": "OpenRouter keys must start with sk-or- and be at least 50 chars",
+      "status": "PASS",
+      "details": {
+        "validCheck": {
+          "valid": true
+        },
+        "shortCheck": {
+          "valid": false,
+          "reason": "Too short (11/50+)"
+        },
+        "badPrefixCheck": {
+          "valid": false,
+          "reason": "Must start with sk-or-"
+        }
+      }
+    },
+    {
+      "name": "key_validation_groq",
+      "description": "Groq keys must start with gsk_ and be at least 40 chars",
+      "status": "PASS",
+      "details": {
+        "validCheck": {
+          "valid": true
+        },
+        "shortCheck": {
+          "valid": false,
+          "reason": "Too short (9/40+)"
+        },
+        "badPrefixCheck": {
+          "valid": false,
+          "reason": "Must start with gsk_"
+        }
+      }
+    },
+    {
+      "name": "key_validation_gemini",
+      "description": "Google AI Studio keys must start with AIza and be exactly 39 chars",
+      "status": "PASS",
+      "details": {
+        "validCheck": {
+          "valid": true
+        },
+        "badLenCheck": {
+          "valid": false,
+          "reason": "Length must be exactly 39 (got 12)"
+        },
+        "badPrefixCheck": {
+          "valid": false,
+          "reason": "Must start with AIza"
+        }
+      }
+    },
+    {
+      "name": "status_bar_chip_anonymous",
+      "description": "Zero connected providers shows Anonymous tier with link to connect",
+      "status": "PASS",
+      "details": {
+        "text": "Anonymous (Connect for more)",
+        "tier": "tier_0_anonymous",
+        "color": "#38bdf8"
+      }
+    },
+    {
+      "name": "status_bar_chip_connected",
+      "description": "Connected providers displays count and model sum",
+      "status": "PASS",
+      "details": {
+        "oneConnected": {
+          "text": "1 provider • 10 models",
+          "tier": "tier_1_connected",
+          "color": "#34d399"
+        },
+        "threeConnected": {
+          "text": "3 providers • 16 models",
+          "tier": "tier_1_connected",
+          "color": "#34d399"
+        }
+      }
+    },
+    {
+      "name": "journey_skip_to_anonymous",
+      "description": "Skip flow enables Tier 0 with ~50 req/hr limits and zero account requirement",
+      "status": "PASS",
+      "details": {
+        "currentStep": "skip_anonymous",
+        "selectedPath": "anonymous",
+        "isCompleted": true,
+        "isSkipped": true,
+        "connectedProviders": [],
+        "tier": "tier_0_anonymous",
+        "fallbackProviders": [
+          "openkilo",
+          "huggingface"
+        ],
+        "rateLimitPerHour": 50
+      }
+    },
+    {
+      "name": "journey_full_connect_path",
+      "description": "Full connect path saves all 3 providers and displays summary with 16 models",
+      "status": "PASS",
+      "details": {
+        "currentStep": "summary",
+        "selectedPath": "free_accounts",
+        "isCompleted": true,
+        "isSkipped": false,
+        "connectedProviders": [
+          "openrouter",
+          "groq",
+          "google-gemini"
+        ],
+        "totalActiveModels": 16
+      }
+    },
+    {
+      "name": "journey_partial_connect_persistence",
+      "description": "Partial connect saves OpenRouter immediately while allowing Groq to be skipped",
+      "status": "PASS",
+      "details": {
+        "currentStep": "groq",
+        "selectedPath": "free_accounts",
+        "isCompleted": false,
+        "isSkipped": false,
+        "connectedProviders": [
+          "openrouter"
+        ],
+        "skippedProviders": [
+          "groq"
+        ]
+      }
+    },
+    {
+      "name": "rate_limit_429_upsell_trigger",
+      "description": "Anonymous 429 correctly matches upsell trigger condition with designated copy",
+      "status": "PASS",
+      "details": {
+        "error": {
+          "taxonomyCode": "RATE_LIMITED",
+          "providerId": "openkilo",
+          "message": "Anonymous tier rate limit exceeded (HTTP 429).",
+          "retryAfterSec": 45
+        },
+        "matchesUpsell": true,
+        "copy": "Anonymous tier limit reached — connect your free OpenRouter account for 10x more requests"
+      }
+    },
+    {
+      "name": "reminder_cadence_enforcement",
+      "description": "Reminders fire only after Day 3, max once per week, and respect forever dismissal",
+      "status": "PASS",
+      "details": {
+        "userDay1": false,
+        "userDay3": true,
+        "recentReminderBlocked": true,
+        "foreverSuppressed": true
+      }
+    },
+    {
+      "name": "documentation_artifacts_presence",
+      "description": "AUTO-PROVISIONING-TRADEOFFS.md and ONBOARDING-FLOW.md exist on disk",
+      "status": "PASS",
+      "details": {
+        "tradeoffsDoc": true,
+        "flowDoc": true
+      }
+    }
+  ],
+  "summary": {
+    "total": 11,
+    "passed": 11,
+    "failed": 0
+  }
+}

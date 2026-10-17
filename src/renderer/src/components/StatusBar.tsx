@@ -10,7 +10,9 @@ import {
   GitBranch,
   RefreshCw,
   Activity,
-  Bell
+  Bell,
+  Sparkles,
+  Zap
 } from 'lucide-react';
 import { useWorkspaceStore } from '../state/workspace-store';
 import { useChatStore } from '../state/chat-store';
@@ -18,6 +20,8 @@ import { useGitStore } from '../state/git-store';
 import { useLspStore } from '../state/lsp-store';
 import { useWorkspaceEditStore } from '../state/workspace-edit-store';
 import { useUsageDashboardStore } from '../state/usage-dashboard-store';
+import { useOnboardingStore } from '../state/onboarding-store';
+import { toast } from '../state/toast-store';
 import { FleetHealthIndicator } from './FleetHealthIndicator';
 import { WarmUpIndicator } from './WarmUpIndicator';
 import { TelemetryBadge } from './status/TelemetryBadge';
@@ -49,6 +53,25 @@ export const StatusBar: React.FC = () => {
   const refreshRecentEdits = useWorkspaceEditStore((s) => s.refreshRecentEdits);
 
   const refreshQuota = useUsageDashboardStore((s) => s.refreshStats);
+
+  const connectedProviders = useOnboardingStore((s) => s.connectedProviders);
+  const shouldShowReminder = useOnboardingStore((s) => s.shouldShowReminder);
+  const dismissReminder = useOnboardingStore((s) => s.dismissReminder);
+
+  useEffect(() => {
+    if (shouldShowReminder()) {
+      toast.info('💡 Connect your free provider accounts for 15+ models and higher limits.');
+      dismissReminder(false);
+    }
+  }, [shouldShowReminder, dismissReminder]);
+
+  const totalModels = connectedProviders.reduce((sum, p) => {
+    if (p === 'openrouter') return sum + 10;
+    if (p === 'groq') return sum + 3;
+    if (p === 'google-gemini' || p === 'google-ai-studio') return sum + 3;
+    if (p === 'ollama') return sum + 3;
+    return sum + 2;
+  }, 0);
 
   // Derived calculations
   const activeTab = openTabs.find((tab) => tab.path === activeTabPath);
@@ -167,6 +190,42 @@ export const StatusBar: React.FC = () => {
           <FleetHealthIndicator />
           <WarmUpIndicator />
         </div>
+
+        {/* 3.15 Provider Access Tier Chip */}
+        <button
+          type="button"
+          id="status-bar-provider-chip"
+          className={styles.statusBtn}
+          onClick={() => openSettings('providers')}
+          title={
+            connectedProviders.length > 0
+              ? `Connected: ${connectedProviders.join(', ')} (${totalModels} models). Click to open Settings > Providers.`
+              : 'Anonymous tier active (~50 req/h). Click to connect free accounts for higher limits.'
+          }
+          style={{
+            color: connectedProviders.length > 0 ? '#34d399' : '#38bdf8',
+            background: connectedProviders.length > 0 ? 'rgba(16, 185, 129, 0.08)' : 'rgba(56, 189, 248, 0.08)',
+            border: `1px solid ${connectedProviders.length > 0 ? 'rgba(16, 185, 129, 0.25)' : 'rgba(56, 189, 248, 0.25)'}`,
+            padding: '0 6px',
+            borderRadius: '4px'
+          }}
+          aria-label={
+            connectedProviders.length > 0
+              ? `${connectedProviders.length} providers, ${totalModels} models connected`
+              : 'Anonymous tier active, connect for more'
+          }
+        >
+          {connectedProviders.length > 0 ? (
+            <Sparkles size={11} color="#34d399" />
+          ) : (
+            <Zap size={11} color="#38bdf8" />
+          )}
+          <span>
+            {connectedProviders.length > 0
+              ? `${connectedProviders.length} provider${connectedProviders.length > 1 ? 's' : ''} • ${totalModels} models`
+              : 'Anonymous (Connect for more)'}
+          </span>
+        </button>
 
         {/* 3.2 Telemetry token counter (responsive) */}
         <TelemetryBadge availableWidth={availableWidth} />

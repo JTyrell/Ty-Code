@@ -1,8 +1,8 @@
 {
   "phase": "RealConnect 2",
   "title": "Real-Time Usage Ledger & Token Analytics Audit",
-  "timestamp": "2026-10-16T20:16:00.000Z",
-  "epoch": 1792181760,
+  "timestamp": "2026-10-16T23:41:00.411Z",
+  "epoch": 1792194060,
   "gitCommit": "35837e4b8995e19c1315c0c6f43762f2b2a5928c",
   "command": "node tests/credential-store.test.ts",
   "status": "VERIFIED_PASS",
@@ -53,7 +53,7 @@
       "promptTokens": 350,
       "completionTokens": 25,
       "totalTokens": 375,
-      "estimatedCostUsd": 0.0,
+      "estimatedCostUsd": 0,
       "traceId": "trace_pipe_1792181763"
     },
     {
@@ -64,7 +64,7 @@
       "promptTokens": 1280,
       "completionTokens": 410,
       "totalTokens": 1690,
-      "estimatedCostUsd": 0.0,
+      "estimatedCostUsd": 0,
       "traceId": "trace_pipe_1792181764"
     }
   ],

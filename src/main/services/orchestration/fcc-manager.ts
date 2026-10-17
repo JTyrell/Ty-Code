@@ -10,9 +10,11 @@
 import http from 'http';
 import { spawn, type ChildProcess } from 'child_process';
 import { providerRegistry } from './provider-registry';
+import { fccIntegrityChecker, type FCCIntegrityReport } from './fcc-integrity';
 
 export interface FCCServerStatus {
   installed?: boolean;
+  enabled?: boolean;
   running: boolean;
   port: number;
   pid?: number;
@@ -25,6 +27,8 @@ export interface FCCServerStatus {
   freeTokensAllocated: number; // 1.3B+ free tokens/month
   freeTokensUsed: number;
   lastPingTimestamp: number;
+  integrityStatus?: FCCIntegrityReport['status'];
+  integrityError?: string;
 }
 
 export interface FCCLaunchOptions {
@@ -57,9 +61,11 @@ export class FCCServerManager {
     const uptimeSeconds = this.running && this.startTime > 0
       ? Math.floor((Date.now() - this.startTime) / 1000)
       : 0;
+    const report = fccIntegrityChecker.getLastReport();
 
     return {
       installed: true,
+      enabled: fccIntegrityChecker.isFccEnabled(),
       running: this.running,
       port: this.port,
       pid: this.childProcess?.pid,
@@ -71,8 +77,18 @@ export class FCCServerManager {
       providersCount: providerRegistry.getFccProviders().length || 61,
       freeTokensAllocated: this.freeTokensAllocated,
       freeTokensUsed: this.freeTokensUsed,
-      lastPingTimestamp: this.lastPingTime
+      lastPingTimestamp: this.lastPingTime,
+      integrityStatus: report?.status || 'unverified',
+      integrityError: report?.error
     };
+  }
+
+  public setEnabled(enabled: boolean): void {
+    fccIntegrityChecker.setFccEnabled(enabled);
+    if (!enabled && this.running) {
+      void this.stop();
+    }
+    this.notifyStatus();
   }
 
   public isGenuineBinaryRunning(): boolean {
@@ -101,6 +117,13 @@ export class FCCServerManager {
    * otherwise launches a high-performance native embedded proxy sidecar.
    */
   public async start(options?: FCCLaunchOptions): Promise<FCCServerStatus> {
+    if (!fccIntegrityChecker.isFccEnabled()) {
+      this.running = false;
+      this.health = 'stopped';
+      this.notifyStatus();
+      throw new Error('[FCC Manager] FCC layer is disabled in settings. Operating cleanly on native provider registry and anonymous gateway.');
+    }
+
     if (this.running) {
       return this.getStatus();
     }
@@ -124,6 +147,15 @@ export class FCCServerManager {
     // Attempt to spawn external binary if specified or available
     const externalPath = options?.sidecarBinaryPath || process.env.FCC_SERVER_PATH;
     if (externalPath) {
+      // Cryptographic integrity verification before execution
+      const integrity = await fccIntegrityChecker.verifyBinaryIntegrity(externalPath);
+      if (!integrity.valid) {
+        this.running = false;
+        this.health = 'stopped';
+        this.notifyStatus();
+        throw new Error(integrity.error || `[FCC Manager] INTEGRITY_MISMATCH: Cryptographic checksum verification failed for ${externalPath}. FCC layer disabled.`);
+      }
+
       try {
         const spawned = this.spawnExternal(externalPath);
         if (spawned) {

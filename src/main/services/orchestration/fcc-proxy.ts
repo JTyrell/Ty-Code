@@ -67,7 +67,11 @@ export class FCCProxyClient {
         try {
           await fccManager.start();
         } catch (err: unknown) {
-          throw new Error(`[FCC Proxy] CONFIG_MISSING: free-claude-code binary is not installed or configured. ${err instanceof Error ? err.message : String(err)}`);
+          const msg = err instanceof Error ? err.message : String(err);
+          if (msg.includes('INTEGRITY_MISMATCH') || msg.includes('disabled')) {
+            throw err;
+          }
+          throw new Error(`[FCC Proxy] CONFIG_MISSING: free-claude-code binary is not installed or configured. ${msg}`);
         }
       }
       if (!fccManager.isGenuineBinaryRunning()) {

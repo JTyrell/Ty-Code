@@ -1,107 +1,119 @@
-import React, { useState, useEffect } from 'react';
+/**
+ * OnboardingWizard Component (Phase UnifiedProvisioning)
+ *
+ * Comprehensive, non-blocking onboarding wizard for Ty-Code:
+ * - Multi-step guided wizard: Welcome -> Path Choice -> Sequential Providers -> Summary
+ * - Zero-trap architecture: Skip (Anonymous) is always visible on every step
+ * - Partial completion is valid and immediately persisted to safeStorage
+ * - Re-runnable anytime from Settings > Providers and Status Bar chip
+ *
+ * Brand: Ty-Code
+ */
+
+import React, { useEffect, useCallback } from 'react';
 import {
   Sparkles,
-  Zap,
-  CheckCircle,
-  ArrowRight,
   ShieldCheck,
-  Cpu,
+  CheckCircle2,
+  ArrowRight,
+  Server,
+  Zap,
+  Lock,
   Layers,
-  Code2,
-  Play,
-  RotateCw,
-  X
+  Cpu,
+  ChevronRight,
+  X,
+  Info,
+  ExternalLink,
+  Code2
 } from 'lucide-react';
+import { useOnboardingStore, type OnboardingStepId, type OnboardingPath } from '../state/onboarding-store';
+import { ProviderSetupStep, PROVIDER_CATALOG } from './ProviderSetupStep';
 import { useChatStore } from '../state/chat-store';
-import { useUsageDashboardStore } from '../state/usage-dashboard-store';
 
-interface OnboardingStep {
-  id: number;
-  title: string;
-}
-
-const STEPS: OnboardingStep[] = [
-  { id: 1, title: 'Welcome' },
-  { id: 2, title: 'Free Tier Setup' },
-  { id: 3, title: 'How It Works' },
-  { id: 4, title: 'Quick Start' }
+const STEP_SEQUENCE: { id: OnboardingStepId; label: string; number: number }[] = [
+  { id: 'welcome', label: 'Welcome', number: 1 },
+  { id: 'path_choice', label: 'Setup Path', number: 2 },
+  { id: 'openrouter', label: 'OpenRouter', number: 3 },
+  { id: 'groq', label: 'Groq', number: 4 },
+  { id: 'google-gemini', label: 'Google AI', number: 5 },
+  { id: 'summary', label: 'All Set', number: 6 }
 ];
 
 export const OnboardingWizard: React.FC = () => {
-  const [isOpen, setIsOpen] = useState(false);
-  const [currentStep, setCurrentStep] = useState(1);
-  const [isEnabling, setIsEnabling] = useState(false);
-  const [enabledProviders, setEnabledProviders] = useState<string[]>([]);
-  const { settings, saveSettings, sendMessage } = useChatStore();
-  const { refreshStats } = useUsageDashboardStore();
+  const {
+    isOpen,
+    currentStep,
+    selectedPath,
+    connectedProviders,
+    isCompleted,
+    isSkipped,
+    openWizard,
+    closeWizard,
+    setStep,
+    selectPath,
+    skipToAnonymous,
+    completeWizard
+  } = useOnboardingStore();
+
+  const { settings } = useChatStore();
+
+  // Auto-open on clean install (no onboarding flag)
+  useEffect(() => {
+    const isDone =
+      localStorage.getItem('ty_code_onboarding_completed') === 'true' ||
+      localStorage.getItem('ty_code_first_run_completed') === 'true' ||
+      settings?.hasCompletedOnboarding === true;
+
+    if (!isDone && !isOpen) {
+      openWizard('welcome');
+    }
+  }, [isOpen, openWizard, settings]);
+
+  // Keyboard navigation: Escape key closes or skips gracefully
+  const handleKeyDown = useCallback(
+    (e: KeyboardEvent) => {
+      if (!isOpen) return;
+      if (e.key === 'Escape') {
+        closeWizard();
+      }
+    },
+    [isOpen, closeWizard]
+  );
 
   useEffect(() => {
-    // Check if user has already completed onboarding
-    const completedLocal = localStorage.getItem('ty_code_onboarding_completed') === 'true';
-    if (!completedLocal && (!settings || settings.hasCompletedOnboarding !== true)) {
-      setIsOpen(true);
-    }
-  }, [settings]);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleKeyDown]);
 
   if (!isOpen) return null;
 
-  const handleEnableFreeMode = async () => {
-    setIsEnabling(true);
-    try {
-      // 1. Enable OpenKilo anonymous access
-      if (window.electronAPI?.openkiloEnableAnonymous) {
-        await window.electronAPI.openkiloEnableAnonymous();
-      }
-
-      // 2. Pre-warm HTTP connection pools
-      if (window.electronAPI?.orchestrationWarmConnections) {
-        await window.electronAPI.orchestrationWarmConnections();
-      }
-
-      // 3. Set freeMode: true in orchestrator
-      if (window.electronAPI?.orchestrationSetFreeMode) {
-        await window.electronAPI.orchestrationSetFreeMode(true);
-      }
-
-      // 4. Update settings
-      await saveSettings({
-        freeMode: true,
-        activeProvider: 'openkilo',
-        activeModel: 'deepseek/deepseek-r1-0528:free',
-        hasCompletedOnboarding: true
-      });
-
-      setEnabledProviders(['OpenKilo Gateway', 'Free-Claude-Code Proxy', 'OpenRouter Free', 'Groq LPU', 'Ollama Local']);
-      void refreshStats();
-      setCurrentStep(3);
-    } catch (err) {
-      console.error('Failed to auto-enable free providers:', err);
-    } finally {
-      setIsEnabling(false);
-    }
+  const currentStepMeta = STEP_SEQUENCE.find((s) => s.id === currentStep) || {
+    id: currentStep,
+    label: 'Setup',
+    number: currentStep === 'skip_anonymous' ? 3 : 1
   };
 
-  const handleFinish = async (quickTaskPrompt?: string) => {
-    localStorage.setItem('ty_code_onboarding_completed', 'true');
-    if (window.electronAPI?.orchestrationCompleteOnboarding) {
-      await window.electronAPI.orchestrationCompleteOnboarding();
+  const handleStartCoding = async () => {
+    if (currentStep === 'skip_anonymous') {
+      await skipToAnonymous();
+    } else {
+      await completeWizard();
     }
-    await saveSettings({ hasCompletedOnboarding: true });
-    setIsOpen(false);
-
-    if (quickTaskPrompt) {
-      void sendMessage(quickTaskPrompt, process.cwd());
-    }
+    closeWizard();
   };
 
   return (
     <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Ty-Code Setup Wizard"
       style={{
         position: 'fixed',
         inset: 0,
-        backgroundColor: 'rgba(10, 15, 29, 0.85)',
-        backdropFilter: 'blur(10px)',
-        zIndex: 10000,
+        backgroundColor: 'rgba(7, 11, 22, 0.88)',
+        backdropFilter: 'blur(14px)',
+        zIndex: 10002,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -110,493 +122,764 @@ export const OnboardingWizard: React.FC = () => {
     >
       <div
         style={{
-          width: '760px',
-          maxWidth: '92vw',
-          backgroundColor: '#0f172a',
+          width: '780px',
+          maxWidth: '95vw',
+          maxHeight: '90vh',
+          backgroundColor: '#0b1329',
           borderRadius: '16px',
-          border: '1px solid rgba(56, 189, 248, 0.3)',
-          boxShadow: '0 25px 60px -15px rgba(0, 0, 0, 0.8), 0 0 30px rgba(56, 189, 248, 0.15)',
+          border: '1px solid rgba(255, 255, 255, 0.12)',
+          boxShadow: '0 24px 64px -12px rgba(0, 0, 0, 0.8), 0 0 32px rgba(99, 102, 241, 0.15)',
           display: 'flex',
           flexDirection: 'column',
-          overflow: 'hidden',
-          color: '#f1f5f9'
+          overflow: 'hidden'
         }}
       >
-        {/* Header / Step Bar */}
-        <div
+        {/* Top Progress & Header Bar */}
+        <header
           style={{
-            padding: '20px 28px',
-            borderBottom: '1px solid rgba(51, 65, 85, 0.8)',
+            padding: '16px 24px',
+            borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            background: 'linear-gradient(90deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.8) 100%)'
+            background: 'rgba(15, 23, 42, 0.5)'
           }}
         >
+          {/* Progress Indicator */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <div
               style={{
-                width: '38px',
-                height: '38px',
-                borderRadius: '10px',
-                background: 'linear-gradient(135deg, #0ea5e9, #6366f1)',
+                width: '28px',
+                height: '28px',
+                borderRadius: '8px',
+                background: 'rgba(99, 102, 241, 0.2)',
+                border: '1px solid rgba(99, 102, 241, 0.4)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                boxShadow: '0 4px 14px rgba(14, 165, 233, 0.4)'
+                color: '#818cf8',
+                fontWeight: 700,
+                fontSize: '13px'
               }}
             >
-              <Sparkles size={22} color="#ffffff" />
+              <Sparkles size={15} />
             </div>
+
             <div>
-              <h2 style={{ fontSize: '18px', fontWeight: 600, margin: 0, letterSpacing: '-0.01em' }}>
-                Welcome to Ty-Code
-              </h2>
-              <p style={{ fontSize: '12px', color: '#94a3b8', margin: '2px 0 0 0' }}>
-                Next-generation autonomous AI coding with 2.05B+ monthly free tokens
-              </p>
+              <div style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc' }}>
+                Ty-Code Setup Wizard
+              </div>
+              <div style={{ fontSize: '11px', color: '#94a3b8' }}>
+                Step {currentStepMeta.number} of {STEP_SEQUENCE.length}: {currentStepMeta.label}
+              </div>
             </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              {STEPS.map((s) => (
+          {/* Stepper Dots */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            {STEP_SEQUENCE.map((s) => {
+              const isPast = s.number < currentStepMeta.number;
+              const isCurrent = s.id === currentStep;
+              return (
                 <div
                   key={s.id}
+                  title={s.label}
                   style={{
-                    width: currentStep === s.id ? '20px' : '8px',
+                    width: isCurrent ? '20px' : '8px',
                     height: '8px',
                     borderRadius: '4px',
-                    backgroundColor:
-                      currentStep === s.id
-                        ? '#38bdf8'
-                        : currentStep > s.id
-                          ? '#10b981'
-                          : 'rgba(255, 255, 255, 0.2)',
+                    backgroundColor: isCurrent
+                      ? 'var(--accent-primary, #6366f1)'
+                      : isPast
+                      ? 'rgba(16, 185, 129, 0.7)'
+                      : 'rgba(255, 255, 255, 0.15)',
                     transition: 'all 0.2s ease'
                   }}
-                  title={s.title}
                 />
-              ))}
-            </div>
+              );
+            })}
+          </div>
+
+          {/* Right Action: Never-Trapping Skip / Close */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {currentStep !== 'skip_anonymous' && currentStep !== 'summary' && (
+              <button
+                type="button"
+                onClick={() => void skipToAnonymous()}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: '#94a3b8',
+                  fontSize: '12px',
+                  cursor: 'pointer',
+                  padding: '4px 8px',
+                  textDecoration: 'underline',
+                  transition: 'color 0.15s ease'
+                }}
+              >
+                Skip (Use Anonymous)
+              </button>
+            )}
 
             <button
-              onClick={() => void handleFinish()}
+              type="button"
+              onClick={closeWizard}
+              title="Close wizard (Do this later)"
+              aria-label="Close setup wizard"
               style={{
-                background: 'transparent',
+                background: 'rgba(255, 255, 255, 0.06)',
                 border: 'none',
-                color: '#64748b',
+                borderRadius: '6px',
+                color: '#94a3b8',
                 cursor: 'pointer',
-                padding: '4px'
+                padding: '5px',
+                display: 'flex',
+                alignItems: 'center'
               }}
-              title="Skip setup"
             >
-              <X size={18} />
+              <X size={15} />
             </button>
           </div>
-        </div>
+        </header>
 
-        {/* Body Content by Step */}
-        <div style={{ padding: '32px 36px', minHeight: '340px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-          {/* Step 1: Welcome Screen */}
-          {currentStep === 1 && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', textAlign: 'center', alignItems: 'center' }}>
-              <div
-                style={{
-                  width: '64px',
-                  height: '64px',
-                  borderRadius: '16px',
-                  backgroundColor: 'rgba(56, 189, 248, 0.1)',
-                  border: '1px solid rgba(56, 189, 248, 0.3)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  boxShadow: '0 0 25px rgba(56, 189, 248, 0.2)'
-                }}
-              >
-                <Zap size={32} color="#38bdf8" />
-              </div>
-
-              <div>
-                <h3 style={{ fontSize: '24px', fontWeight: 700, margin: '0 0 8px 0', letterSpacing: '-0.02em' }}>
-                  Code with Frontier AI Models — 100% Free
-                </h3>
-                <p style={{ fontSize: '14px', color: '#94a3b8', maxWidth: '560px', margin: '0 auto', lineHeight: '1.6' }}>
-                  Ty-Code unifies 61+ free models across OpenKilo, Free-Claude-Code, OpenRouter, and Groq.
-                  No credit card or paid subscriptions required to start building.
-                </p>
-              </div>
-
-              <div
-                style={{
-                  display: 'flex',
-                  gap: '24px',
-                  backgroundColor: 'rgba(30, 41, 59, 0.5)',
-                  padding: '16px 24px',
-                  borderRadius: '10px',
-                  border: '1px solid rgba(51, 65, 85, 0.6)'
-                }}
-              >
-                <div>
-                  <div style={{ fontSize: '20px', fontWeight: 700, color: '#38bdf8' }}>2.05B+</div>
-                  <div style={{ fontSize: '11px', color: '#94a3b8' }}>Free Tokens/Month</div>
-                </div>
-                <div style={{ width: '1px', backgroundColor: 'rgba(255, 255, 255, 0.1)' }} />
-                <div>
-                  <div style={{ fontSize: '20px', fontWeight: 700, color: '#10b981' }}>40+</div>
-                  <div style={{ fontSize: '11px', color: '#94a3b8' }}>Zero-Config Models</div>
-                </div>
-                <div style={{ width: '1px', backgroundColor: 'rgba(255, 255, 255, 0.1)' }} />
-                <div>
-                  <div style={{ fontSize: '20px', fontWeight: 700, color: '#a855f7' }}>&lt; 2s</div>
-                  <div style={{ fontSize: '11px', color: '#94a3b8' }}>Average Latency</div>
-                </div>
-              </div>
-
-              <button
-                onClick={() => setCurrentStep(2)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  padding: '12px 28px',
-                  borderRadius: '8px',
-                  background: 'linear-gradient(135deg, #0ea5e9, #3b82f6)',
-                  color: '#ffffff',
-                  border: 'none',
-                  fontSize: '14px',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  boxShadow: '0 4px 16px rgba(14, 165, 233, 0.4)',
-                  marginTop: '8px'
-                }}
-              >
-                <span>Get Started</span>
-                <ArrowRight size={16} />
-              </button>
-            </div>
-          )}
-
-          {/* Step 2: Auto-enable free providers */}
-          {currentStep === 2 && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-              <div>
-                <h3 style={{ fontSize: '20px', fontWeight: 600, margin: '0 0 6px 0' }}>
-                  Enable Free Mode &amp; Connect Free Providers
-                </h3>
-                <p style={{ fontSize: '13px', color: '#94a3b8', margin: 0 }}>
-                  Click below to automatically configure anonymous gateway keys and pre-warm healthy connections.
-                </p>
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '12px 16px',
-                    borderRadius: '8px',
-                    backgroundColor: 'rgba(30, 41, 59, 0.6)',
-                    border: '1px solid rgba(56, 189, 248, 0.2)'
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <ShieldCheck size={18} color="#10b981" />
-                    <div>
-                      <strong style={{ fontSize: '13px', color: '#f8fafc' }}>OpenKilo Gateway</strong>
-                      <div style={{ fontSize: '11px', color: '#94a3b8' }}>500M tokens/mo · DeepSeek R1, Qwen3 Coder, Llama 3.3 70B</div>
-                    </div>
-                  </div>
-                  <span style={{ fontSize: '11px', color: '#34d399', fontWeight: 600 }}>Anonymous Access</span>
-                </div>
-
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '12px 16px',
-                    borderRadius: '8px',
-                    backgroundColor: 'rgba(30, 41, 59, 0.6)',
-                    border: '1px solid rgba(56, 189, 248, 0.2)'
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <Zap size={18} color="#f59e0b" />
-                    <div>
-                      <strong style={{ fontSize: '13px', color: '#f8fafc' }}>Free-Claude-Code (FCC) Proxy</strong>
-                      <div style={{ fontSize: '11px', color: '#94a3b8' }}>1.35B tokens/mo · 61+ ToS-friendly free providers</div>
-                    </div>
-                  </div>
-                  <span style={{ fontSize: '11px', color: '#34d399', fontWeight: 600 }}>Zero Config</span>
-                </div>
-
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '12px 16px',
-                    borderRadius: '8px',
-                    backgroundColor: 'rgba(30, 41, 59, 0.6)',
-                    border: '1px solid rgba(56, 189, 248, 0.2)'
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <Cpu size={18} color="#38bdf8" />
-                    <div>
-                      <strong style={{ fontSize: '13px', color: '#f8fafc' }}>Groq Cloud &amp; OpenRouter Free</strong>
-                      <div style={{ fontSize: '11px', color: '#94a3b8' }}>250M tokens/mo · Ultra-low latency LPU fast responses</div>
-                    </div>
-                  </div>
-                  <span style={{ fontSize: '11px', color: '#34d399', fontWeight: 600 }}>Included</span>
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '12px' }}>
-                <button
-                  onClick={() => setCurrentStep(1)}
-                  style={{
-                    background: 'transparent',
-                    border: '1px solid rgba(255, 255, 255, 0.1)',
-                    color: '#94a3b8',
-                    padding: '10px 18px',
-                    borderRadius: '6px',
-                    cursor: 'pointer'
-                  }}
-                >
-                  Back
-                </button>
-
-                <button
-                  onClick={handleEnableFreeMode}
-                  disabled={isEnabling}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    padding: '12px 24px',
-                    borderRadius: '8px',
-                    backgroundColor: '#10b981',
-                    color: '#ffffff',
-                    border: 'none',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    boxShadow: '0 4px 14px rgba(16, 185, 129, 0.4)'
-                  }}
-                >
-                  {isEnabling ? (
-                    <>
-                      <RotateCw size={16} className="spin" />
-                      <span>Configuring Free Mode...</span>
-                    </>
-                  ) : (
-                    <>
-                      <CheckCircle size={16} />
-                      <span>Enable Free Mode (1-Click)</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Step 3: Tutorial on Model Selection */}
-          {currentStep === 3 && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
-              <div>
-                <h3 style={{ fontSize: '20px', fontWeight: 600, margin: '0 0 6px 0' }}>
-                  How Ty-Code Chooses Models Automatically
-                </h3>
-                <p style={{ fontSize: '13px', color: '#94a3b8', margin: 0 }}>
-                  You focus on coding. Layer 6 Smart Orchestrator routes every task to the best model:
-                </p>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px' }}>
-                <div style={{ padding: '10px 14px', borderRadius: '6px', backgroundColor: 'rgba(30, 41, 59, 0.4)', border: '1px solid rgba(56, 189, 248, 0.2)' }}>
-                  <div style={{ fontSize: '12px', fontWeight: 600, color: '#38bdf8' }}>Code Generation</div>
-                  <div style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc' }}>Qwen3 Coder (262K)</div>
-                  <div style={{ fontSize: '11px', color: '#94a3b8' }}>Refactoring, algorithms, and bug fixes</div>
-                </div>
-
-                <div style={{ padding: '10px 14px', borderRadius: '6px', backgroundColor: 'rgba(30, 41, 59, 0.4)', border: '1px solid rgba(168, 85, 247, 0.2)' }}>
-                  <div style={{ fontSize: '12px', fontWeight: 600, color: '#a855f7' }}>Complex Reasoning</div>
-                  <div style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc' }}>DeepSeek R1 (164K)</div>
-                  <div style={{ fontSize: '11px', color: '#94a3b8' }}>Deep reflection and multi-file architecture</div>
-                </div>
-
-                <div style={{ padding: '10px 14px', borderRadius: '6px', backgroundColor: 'rgba(30, 41, 59, 0.4)', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
-                  <div style={{ fontSize: '12px', fontWeight: 600, color: '#10b981' }}>Fast Keystrokes</div>
-                  <div style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc' }}>Groq Llama 3.3 70B</div>
-                  <div style={{ fontSize: '11px', color: '#94a3b8' }}>Sub-second inline ghost text autocompletion</div>
-                </div>
-
-                <div style={{ padding: '10px 14px', borderRadius: '6px', backgroundColor: 'rgba(30, 41, 59, 0.4)', border: '1px solid rgba(245, 158, 11, 0.2)' }}>
-                  <div style={{ fontSize: '12px', fontWeight: 600, color: '#f59e0b' }}>Large Contexts</div>
-                  <div style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc' }}>Qwen3 Coder / Long-Context Model</div>
-                  <div style={{ fontSize: '11px', color: '#94a3b8' }}>Full repository index searches &gt; 32K tokens</div>
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '12px' }}>
-                <button
-                  onClick={() => setCurrentStep(2)}
-                  style={{
-                    background: 'transparent',
-                    border: '1px solid rgba(255, 255, 255, 0.1)',
-                    color: '#94a3b8',
-                    padding: '10px 18px',
-                    borderRadius: '6px',
-                    cursor: 'pointer'
-                  }}
-                >
-                  Back
-                </button>
-
-                <button
-                  onClick={() => setCurrentStep(4)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    padding: '10px 22px',
-                    borderRadius: '6px',
-                    backgroundColor: '#0ea5e9',
-                    color: '#ffffff',
-                    border: 'none',
-                    fontWeight: 600,
-                    cursor: 'pointer'
-                  }}
-                >
-                  <span>Next: Try a Coding Task</span>
-                  <ArrowRight size={16} />
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Step 4: Quick Start Coding Tasks */}
-          {currentStep === 4 && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
-              <div>
-                <h3 style={{ fontSize: '20px', fontWeight: 600, margin: '0 0 6px 0' }}>
-                  Quick Start: Launch Your First Task
-                </h3>
-                <p style={{ fontSize: '13px', color: '#94a3b8', margin: 0 }}>
-                  Pick a sample task to watch Ty-Code classify, select the model, and stream code:
-                </p>
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                <button
-                  onClick={() => handleFinish('Write a TypeScript utility function for debounce with immediate execution option and full unit tests.')}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '14px 18px',
-                    borderRadius: '8px',
-                    backgroundColor: 'rgba(30, 41, 59, 0.5)',
-                    border: '1px solid rgba(56, 189, 248, 0.25)',
-                    color: '#f8fafc',
-                    cursor: 'pointer',
-                    textAlign: 'left',
-                    transition: 'all 0.15s ease'
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <Code2 size={18} color="#38bdf8" />
-                    <div>
-                      <div style={{ fontSize: '13px', fontWeight: 600 }}>Create Debounce Utility with Tests</div>
-                      <div style={{ fontSize: '11px', color: '#94a3b8' }}>Auto-routes to Qwen3 Coder free model</div>
-                    </div>
-                  </div>
-                  <Play size={14} color="#38bdf8" />
-                </button>
-
-                <button
-                  onClick={() => handleFinish('Explain the architectural difference between optimistic locking and pessimistic locking with code examples.')}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '14px 18px',
-                    borderRadius: '8px',
-                    backgroundColor: 'rgba(30, 41, 59, 0.5)',
-                    border: '1px solid rgba(168, 85, 247, 0.25)',
-                    color: '#f8fafc',
-                    cursor: 'pointer',
-                    textAlign: 'left',
-                    transition: 'all 0.15s ease'
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <Layers size={18} color="#a855f7" />
-                    <div>
-                      <div style={{ fontSize: '13px', fontWeight: 600 }}>Architecture Deep Dive: Locking Tradeoffs</div>
-                      <div style={{ fontSize: '11px', color: '#94a3b8' }}>Auto-routes to DeepSeek R1 reasoning model</div>
-                    </div>
-                  </div>
-                  <Play size={14} color="#a855f7" />
-                </button>
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '12px' }}>
-                <button
-                  onClick={() => setCurrentStep(3)}
-                  style={{
-                    background: 'transparent',
-                    border: '1px solid rgba(255, 255, 255, 0.1)',
-                    color: '#94a3b8',
-                    padding: '10px 18px',
-                    borderRadius: '6px',
-                    cursor: 'pointer'
-                  }}
-                >
-                  Back
-                </button>
-
-                <button
-                  onClick={() => handleFinish()}
-                  style={{
-                    padding: '10px 24px',
-                    borderRadius: '6px',
-                    backgroundColor: '#10b981',
-                    color: '#ffffff',
-                    border: 'none',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    boxShadow: '0 4px 14px rgba(16, 185, 129, 0.4)'
-                  }}
-                >
-                  Start Coding Now
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Footer */}
+        {/* Modal Body */}
         <div
           style={{
-            padding: '14px 28px',
-            borderTop: '1px solid rgba(51, 65, 85, 0.6)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            background: 'rgba(15, 23, 42, 0.9)',
-            fontSize: '11px',
-            color: '#64748b'
+            padding: '24px',
+            overflowY: 'auto',
+            flex: 1
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <CheckCircle size={13} color="#10b981" />
-            <span>Ready for offline &amp; anonymous local coding</span>
-          </div>
+          {/* STEP 1: WELCOME */}
+          {currentStep === 'welcome' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              <div style={{ textAlign: 'center', padding: '12px 0 8px 0' }}>
+                <div
+                  style={{
+                    width: '56px',
+                    height: '56px',
+                    borderRadius: '16px',
+                    background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.3), rgba(168, 85, 247, 0.3))',
+                    border: '1px solid rgba(168, 85, 247, 0.4)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    margin: '0 auto 16px auto',
+                    color: '#c084fc',
+                    boxShadow: '0 0 24px rgba(99, 102, 241, 0.25)'
+                  }}
+                >
+                  <Code2 size={28} />
+                </div>
+                <h1 style={{ margin: 0, fontSize: '22px', fontWeight: 700, color: '#f8fafc' }}>
+                  Welcome to Ty-Code
+                </h1>
+                <p style={{ margin: '8px auto 0 auto', maxWidth: '540px', fontSize: '13px', color: '#94a3b8', lineHeight: 1.6 }}>
+                  Free AI models for coding, out of the box. Connect your own free accounts for the highest limits, or start instantly with anonymous access.
+                </p>
+              </div>
 
-          <span>You can re-open this wizard anytime from Settings</span>
+              {/* Value prop pillars */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginTop: '4px' }}>
+                <div
+                  style={{
+                    padding: '14px',
+                    borderRadius: '10px',
+                    background: 'rgba(30, 41, 59, 0.4)',
+                    border: '1px solid rgba(255, 255, 255, 0.06)'
+                  }}
+                >
+                  <div style={{ color: '#818cf8', marginBottom: '8px' }}>
+                    <Sparkles size={18} />
+                  </div>
+                  <div style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc', marginBottom: '4px' }}>
+                    15+ Free Models
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#94a3b8', lineHeight: 1.5 }}>
+                    DeepSeek R1, Qwen 2.5 Coder, Llama 3.3, and Gemini 2.0 Flash at zero cost.
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    padding: '14px',
+                    borderRadius: '10px',
+                    background: 'rgba(30, 41, 59, 0.4)',
+                    border: '1px solid rgba(255, 255, 255, 0.06)'
+                  }}
+                >
+                  <div style={{ color: '#34d399', marginBottom: '8px' }}>
+                    <ShieldCheck size={18} />
+                  </div>
+                  <div style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc', marginBottom: '4px' }}>
+                    Local safeStorage
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#94a3b8', lineHeight: 1.5 }}>
+                    Zero server storage. Credentials land strictly in your OS encrypted credential vault.
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    padding: '14px',
+                    borderRadius: '10px',
+                    background: 'rgba(30, 41, 59, 0.4)',
+                    border: '1px solid rgba(255, 255, 255, 0.06)'
+                  }}
+                >
+                  <div style={{ color: '#38bdf8', marginBottom: '8px' }}>
+                    <Zap size={18} />
+                  </div>
+                  <div style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc', marginBottom: '4px' }}>
+                    Instant Fallback
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#94a3b8', lineHeight: 1.5 }}>
+                    Zero-config anonymous tier keeps you coding even if you have no keys.
+                  </div>
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  paddingTop: '16px',
+                  borderTop: '1px solid rgba(255, 255, 255, 0.08)'
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => void skipToAnonymous()}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: '#94a3b8',
+                    fontSize: '13px',
+                    cursor: 'pointer',
+                    padding: '8px 12px'
+                  }}
+                >
+                  Skip (Use Anonymous)
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setStep('path_choice')}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '10px 24px',
+                    borderRadius: '8px',
+                    background: 'var(--accent-primary, #6366f1)',
+                    color: '#ffffff',
+                    border: 'none',
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 14px rgba(99, 102, 241, 0.4)'
+                  }}
+                >
+                  <span>Let&apos;s Go</span>
+                  <ArrowRight size={14} />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* STEP 2: PATH CHOICE */}
+          {currentStep === 'path_choice' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              <div>
+                <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: '#f8fafc' }}>
+                  Choose Your Setup Path
+                </h2>
+                <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#94a3b8' }}>
+                  Select how you want to power Ty-Code. You can switch or connect additional providers anytime in Settings.
+                </p>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {/* Option 1: Connect Free Accounts */}
+                <div
+                  onClick={() => selectPath('free_accounts')}
+                  role="button"
+                  tabIndex={0}
+                  style={{
+                    padding: '16px',
+                    borderRadius: '12px',
+                    background: 'rgba(99, 102, 241, 0.08)',
+                    border: '1px solid rgba(99, 102, 241, 0.3)',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: '14px',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  <div
+                    style={{
+                      width: '40px',
+                      height: '40px',
+                      borderRadius: '10px',
+                      background: 'rgba(99, 102, 241, 0.2)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: '#818cf8',
+                      flexShrink: 0
+                    }}
+                  >
+                    <Sparkles size={20} />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontSize: '14px', fontWeight: 600, color: '#f8fafc' }}>
+                        Connect Free Accounts
+                      </span>
+                      <span
+                        style={{
+                          fontSize: '11px',
+                          padding: '2px 8px',
+                          borderRadius: '999px',
+                          background: 'rgba(99, 102, 241, 0.2)',
+                          color: '#a5b4fc',
+                          fontWeight: 600
+                        }}
+                      >
+                        Recommended (~2-3 min)
+                      </span>
+                    </div>
+                    <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#94a3b8', lineHeight: 1.5 }}>
+                      Connect OpenRouter, Groq, and Google AI Studio for 15+ models, 10x higher rate limits, and full ownership under your own free developer quota.
+                    </p>
+                  </div>
+                  <ChevronRight size={18} style={{ color: '#818cf8', marginTop: '10px' }} />
+                </div>
+
+                {/* Option 2: Local & Private */}
+                <div
+                  onClick={() => selectPath('local')}
+                  role="button"
+                  tabIndex={0}
+                  style={{
+                    padding: '16px',
+                    borderRadius: '12px',
+                    background: 'rgba(30, 41, 59, 0.4)',
+                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: '14px',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  <div
+                    style={{
+                      width: '40px',
+                      height: '40px',
+                      borderRadius: '10px',
+                      background: 'rgba(16, 185, 129, 0.15)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: '#34d399',
+                      flexShrink: 0
+                    }}
+                  >
+                    <Server size={20} />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontSize: '14px', fontWeight: 600, color: '#f8fafc' }}>
+                        Local &amp; Private
+                      </span>
+                      <span
+                        style={{
+                          fontSize: '11px',
+                          padding: '2px 8px',
+                          borderRadius: '999px',
+                          background: 'rgba(16, 185, 129, 0.15)',
+                          color: '#34d399',
+                          fontWeight: 600
+                        }}
+                      >
+                        100% Offline
+                      </span>
+                    </div>
+                    <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#94a3b8', lineHeight: 1.5 }}>
+                      Use Ollama on this machine. Zero telemetry, zero external network calls. Perfect for sensitive enterprise codebases.
+                    </p>
+                  </div>
+                  <ChevronRight size={18} style={{ color: '#94a3b8', marginTop: '10px' }} />
+                </div>
+
+                {/* Option 3: Anonymous Skip */}
+                <div
+                  onClick={() => void skipToAnonymous()}
+                  role="button"
+                  tabIndex={0}
+                  style={{
+                    padding: '16px',
+                    borderRadius: '12px',
+                    background: 'rgba(30, 41, 59, 0.4)',
+                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: '14px',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  <div
+                    style={{
+                      width: '40px',
+                      height: '40px',
+                      borderRadius: '10px',
+                      background: 'rgba(56, 189, 248, 0.15)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: '#38bdf8',
+                      flexShrink: 0
+                    }}
+                  >
+                    <Zap size={20} />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontSize: '14px', fontWeight: 600, color: '#f8fafc' }}>
+                        Anonymous (Instant Skip)
+                      </span>
+                      <span
+                        style={{
+                          fontSize: '11px',
+                          padding: '2px 8px',
+                          borderRadius: '999px',
+                          background: 'rgba(56, 189, 248, 0.15)',
+                          color: '#38bdf8',
+                          fontWeight: 600
+                        }}
+                      >
+                        No Accounts Required
+                      </span>
+                    </div>
+                    <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#94a3b8', lineHeight: 1.5 }}>
+                      Start coding immediately with 3 free models via OpenKilo gateway (~50 req/hour). No signups or credit cards needed.
+                    </p>
+                  </div>
+                  <ChevronRight size={18} style={{ color: '#94a3b8', marginTop: '10px' }} />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+                <button
+                  type="button"
+                  onClick={() => setStep('welcome')}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: '#94a3b8',
+                    fontSize: '12px',
+                    cursor: 'pointer',
+                    padding: '6px 10px'
+                  }}
+                >
+                  ← Back to Welcome
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* STEP 3: OPENROUTER */}
+          {currentStep === 'openrouter' && (
+            <ProviderSetupStep
+              providerId="openrouter"
+              mode="wizard"
+              onNext={() => setStep('groq')}
+              onSkip={() => setStep('groq')}
+              onBack={() => setStep('path_choice')}
+            />
+          )}
+
+          {/* STEP 4: GROQ */}
+          {currentStep === 'groq' && (
+            <ProviderSetupStep
+              providerId="groq"
+              mode="wizard"
+              onNext={() => setStep('google-gemini')}
+              onSkip={() => setStep('google-gemini')}
+              onBack={() => setStep('openrouter')}
+            />
+          )}
+
+          {/* STEP 5: GOOGLE AI STUDIO */}
+          {currentStep === 'google-gemini' && (
+            <ProviderSetupStep
+              providerId="google-gemini"
+              mode="wizard"
+              onNext={() => setStep('summary')}
+              onSkip={() => setStep('summary')}
+              onBack={() => setStep('groq')}
+            />
+          )}
+
+          {/* LOCAL OLLAMA STEP */}
+          {currentStep === 'ollama' && (
+            <ProviderSetupStep
+              providerId="ollama"
+              mode="wizard"
+              onNext={() => setStep('summary')}
+              onSkip={() => setStep('summary')}
+              onBack={() => setStep('path_choice')}
+            />
+          )}
+
+          {/* SKIP FLOW: ANONYMOUS ACCESS ACTIVATED */}
+          {currentStep === 'skip_anonymous' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              <div style={{ textAlign: 'center', padding: '12px 0 4px 0' }}>
+                <div
+                  style={{
+                    width: '56px',
+                    height: '56px',
+                    borderRadius: '16px',
+                    background: 'rgba(56, 189, 248, 0.15)',
+                    border: '1px solid rgba(56, 189, 248, 0.3)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    margin: '0 auto 16px auto',
+                    color: '#38bdf8'
+                  }}
+                >
+                  <Zap size={28} />
+                </div>
+                <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 700, color: '#f8fafc' }}>
+                  Anonymous Access Activated
+                </h2>
+                <p style={{ margin: '8px auto 0 auto', maxWidth: '520px', fontSize: '13px', color: '#94a3b8', lineHeight: 1.6 }}>
+                  You are ready to code immediately! We have enabled the Tier 0 anonymous gateway so you can ask coding questions and edit code without registering anywhere.
+                </p>
+              </div>
+
+              {/* What you get breakdown */}
+              <div
+                style={{
+                  background: 'rgba(30, 41, 59, 0.4)',
+                  borderRadius: '10px',
+                  padding: '16px',
+                  border: '1px solid rgba(255, 255, 255, 0.08)'
+                }}
+              >
+                <div style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc', marginBottom: '10px' }}>
+                  What you get with anonymous access:
+                </div>
+                <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '12px', color: '#94a3b8', lineHeight: 1.7 }}>
+                  <li>
+                    <strong>3 free models:</strong> DeepSeek R1, Qwen3 Coder, and Llama 3.3 70B via OpenKilo gateway.
+                  </li>
+                  <li>
+                    <strong>Shared rate limits:</strong> ~50 requests per hour per instance.
+                  </li>
+                  <li>
+                    <strong>Zero tracking:</strong> No account, no login, zero personally identifying info transmitted.
+                  </li>
+                  <li>
+                    <strong>Upgrade anytime:</strong> Connect your own free accounts from the status bar or Settings for 10x higher quota.
+                  </li>
+                </ul>
+              </div>
+
+              {/* Action buttons */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  paddingTop: '16px',
+                  borderTop: '1px solid rgba(255, 255, 255, 0.08)'
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => setStep('openrouter')}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: '#818cf8',
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    padding: '8px 12px'
+                  }}
+                >
+                  Actually, Let Me Connect Accounts
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => void handleStartCoding()}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '10px 24px',
+                    borderRadius: '8px',
+                    background: 'var(--accent-primary, #6366f1)',
+                    color: '#ffffff',
+                    border: 'none',
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                >
+                  <span>Start Coding</span>
+                  <ArrowRight size={14} />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* STEP 6: SUMMARY ("YOU'RE ALL SET") */}
+          {currentStep === 'summary' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              <div style={{ textAlign: 'center', padding: '12px 0 4px 0' }}>
+                <div
+                  style={{
+                    width: '56px',
+                    height: '56px',
+                    borderRadius: '16px',
+                    background: 'rgba(16, 185, 129, 0.15)',
+                    border: '1px solid rgba(16, 185, 129, 0.3)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    margin: '0 auto 16px auto',
+                    color: '#34d399'
+                  }}
+                >
+                  <CheckCircle2 size={28} />
+                </div>
+                <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 700, color: '#f8fafc' }}>
+                  You&apos;re All Set!
+                </h2>
+                <p style={{ margin: '8px auto 0 auto', maxWidth: '520px', fontSize: '13px', color: '#94a3b8', lineHeight: 1.6 }}>
+                  Your provider configuration is active. Credentials are encrypted in your OS safeStorage, and anonymous fallback is ready if any provider runs out of quota.
+                </p>
+              </div>
+
+              {/* Connected providers review */}
+              <div
+                style={{
+                  background: 'rgba(30, 41, 59, 0.4)',
+                  borderRadius: '10px',
+                  padding: '16px',
+                  border: '1px solid rgba(255, 255, 255, 0.08)'
+                }}
+              >
+                <div style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc', marginBottom: '10px' }}>
+                  Active Provisioning Summary:
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {connectedProviders.length > 0 ? (
+                    connectedProviders.map((pId) => {
+                      const pConfig = PROVIDER_CATALOG[pId];
+                      return (
+                        <div
+                          key={pId}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '8px 12px',
+                            borderRadius: '8px',
+                            background: 'rgba(15, 23, 42, 0.6)',
+                            border: '1px solid rgba(255, 255, 255, 0.05)'
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <CheckCircle2 size={14} color="#10b981" />
+                            <span style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc' }}>
+                              {pConfig?.name || pId.toUpperCase()}
+                            </span>
+                          </div>
+                          <span style={{ fontSize: '11px', color: '#94a3b8' }}>
+                            {pConfig?.freeModels.length || 1} models active
+                          </span>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div
+                      style={{
+                        padding: '10px',
+                        borderRadius: '8px',
+                        background: 'rgba(56, 189, 248, 0.1)',
+                        color: '#38bdf8',
+                        fontSize: '12px'
+                      }}
+                    >
+                      No custom keys configured — running on <strong>Tier 0 Anonymous Access</strong>.
+                    </div>
+                  )}
+
+                  {/* Always-available anonymous backup indicator */}
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '8px 12px',
+                      borderRadius: '8px',
+                      background: 'rgba(15, 23, 42, 0.3)',
+                      border: '1px dashed rgba(255, 255, 255, 0.1)',
+                      fontSize: '11px',
+                      color: '#94a3b8'
+                    }}
+                  >
+                    <span>🛡️ Tier 0 Anonymous Gateway</span>
+                    <span style={{ color: '#10b981' }}>Always Standby Fallback</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action buttons */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'flex-end',
+                  paddingTop: '16px',
+                  borderTop: '1px solid rgba(255, 255, 255, 0.08)'
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => void handleStartCoding()}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '10px 24px',
+                    borderRadius: '8px',
+                    background: 'var(--accent-primary, #6366f1)',
+                    color: '#ffffff',
+                    border: 'none',
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                >
+                  <span>Start Coding</span>
+                  <ArrowRight size={14} />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

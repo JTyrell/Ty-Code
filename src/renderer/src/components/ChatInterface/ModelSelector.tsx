@@ -642,6 +642,44 @@ export const ModelSelector: React.FC = () => {
                                 FREE
                               </span>
                             )}
+                            {candidate.provenance && (
+                              <span
+                                style={{
+                                  flexShrink: 0,
+                                  fontSize: '8px',
+                                  fontWeight: 700,
+                                  padding: '0 4px',
+                                  borderRadius: '2px',
+                                  backgroundColor:
+                                    candidate.provenance === 'FCC'
+                                      ? 'rgba(168, 85, 247, 0.2)'
+                                      : candidate.provenance === 'your key'
+                                      ? 'rgba(56, 189, 248, 0.2)'
+                                      : candidate.provenance === 'anonymous'
+                                      ? 'rgba(16, 185, 129, 0.2)'
+                                      : 'rgba(245, 158, 11, 0.2)',
+                                  color:
+                                    candidate.provenance === 'FCC'
+                                      ? '#c084fc'
+                                      : candidate.provenance === 'your key'
+                                      ? '#38bdf8'
+                                      : candidate.provenance === 'anonymous'
+                                      ? '#34d399'
+                                      : '#fbbf24',
+                                  border: `1px solid ${
+                                    candidate.provenance === 'FCC'
+                                      ? 'rgba(168, 85, 247, 0.4)'
+                                      : candidate.provenance === 'your key'
+                                      ? 'rgba(56, 189, 248, 0.4)'
+                                      : candidate.provenance === 'anonymous'
+                                      ? 'rgba(16, 185, 129, 0.4)'
+                                      : 'rgba(245, 158, 11, 0.4)'
+                                  }`
+                                }}
+                              >
+                                {candidate.provenance}
+                              </span>
+                            )}
                           </div>
                           <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
                             via {candidate.providerName} • ~{candidate.latencyMs}ms

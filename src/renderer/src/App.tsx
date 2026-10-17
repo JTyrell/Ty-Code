@@ -436,7 +436,6 @@ export const App: React.FC = () => {
         />
       </React.Suspense>
       <OnboardingWizard />
-      <FirstRunOnboardingModal />
       <ExtensionInputDialog />
       <AgentApprovalModal />
       <ExtensionTracePanel
