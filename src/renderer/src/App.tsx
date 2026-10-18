@@ -327,9 +327,6 @@ export const App: React.FC = () => {
       {/* Top Application Title Bar */}
       <TitleBar />
 
-      {/* Top-Right Floating AI Model Badge */}
-      <AIBadge variant="floating-top" rightOffset={rightWidth} />
-
       {/* Main Workspace Area (3-Column Layout with Resizers) */}
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden', position: 'relative' }}>
         {/* Leftmost Activity Bar */}

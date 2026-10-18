@@ -115,7 +115,7 @@ export async function startAgentTask(
     ...(params.modelOverride ? { activeModel: params.modelOverride } : {})
   };
 
-  const useOpenCode = Boolean(params.agentMode || effectiveSettings.activeHarness === 'opencode');
+  const useOpenCode = effectiveSettings.activeHarness === 'opencode';
   let tokenCount = 0;
   const emit = (chunk: AgentStreamChunk) => {
     if (task.finished || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) return;

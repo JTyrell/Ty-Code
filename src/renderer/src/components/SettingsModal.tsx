@@ -466,6 +466,41 @@ export const SettingsModal: React.FC = () => {
     }
   }, [settings?.customEndpoints]);
 
+  // Telemetry inspector live-refresh hook (must stay above ALL early returns - Rules of Hooks)
+  useEffect(() => {
+    if (!isSettingsOpen || !telemetryInspectorOpen) return;
+    let cancelled = false;
+    const refreshPreview = async () => {
+      try {
+        const response = await window.electronAPI.getTelemetryPreview();
+        if (!cancelled && response.success && response.data) setTelemetryPreview(response.data);
+      } catch {
+        // Keep the last sanitized snapshot visible if a refresh temporarily fails.
+      }
+    };
+    const unsubscribe = window.electronAPI.onTelemetryChanged(refreshPreview);
+    void refreshPreview();
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [isSettingsOpen, telemetryInspectorOpen]);
+
+  const currentModels = useMemo(() => {
+    if (discoveredModels[selectedGridProviderId]?.length) {
+      return discoveredModels[selectedGridProviderId];
+    }
+    // Fallback to preset models for this provider
+    return DEFAULT_PRESET_MODELS.filter((m) => m.provider === selectedGridProviderId).map((m) => ({
+      id: m.id,
+      name: m.name,
+      provider: m.provider,
+      isFree: m.isFree,
+      category: m.isFree ? ('Free' as const) : ('Premium/Reasoning' as const),
+      description: m.description
+    }));
+  }, [discoveredModels, selectedGridProviderId]);
+
 
   const refreshLspServers = async () => {
     if (!window.electronAPI?.lspGetServers) return;
@@ -527,8 +562,6 @@ export const SettingsModal: React.FC = () => {
     }
     await refreshLspServers();
   };
-
-  if (!isSettingsOpen) return null;
 
   const handleAddProfile = () => {
     setError('');
@@ -676,25 +709,6 @@ export const SettingsModal: React.FC = () => {
     }
   };
 
-  useEffect(() => {
-    if (!isSettingsOpen || !telemetryInspectorOpen) return;
-    let cancelled = false;
-    const refreshPreview = async () => {
-      try {
-        const response = await window.electronAPI.getTelemetryPreview();
-        if (!cancelled && response.success && response.data) setTelemetryPreview(response.data);
-      } catch {
-        // Keep the last sanitized snapshot visible if a refresh temporarily fails.
-      }
-    };
-    const unsubscribe = window.electronAPI.onTelemetryChanged(refreshPreview);
-    void refreshPreview();
-    return () => {
-      cancelled = true;
-      unsubscribe();
-    };
-  }, [isSettingsOpen, telemetryInspectorOpen]);
-
   const handleSave = async () => {
     setError('');
     const saved = await saveSettings({
@@ -798,21 +812,6 @@ export const SettingsModal: React.FC = () => {
 
   const currentProvider = registryProviders.find((p) => p.id === selectedGridProviderId) || registryProviders[0] || FALLBACK_PROVIDERS[0];
 
-  const currentModels = useMemo(() => {
-    if (discoveredModels[selectedGridProviderId]?.length) {
-      return discoveredModels[selectedGridProviderId];
-    }
-    // Fallback to preset models for this provider
-    return DEFAULT_PRESET_MODELS.filter((m) => m.provider === selectedGridProviderId).map((m) => ({
-      id: m.id,
-      name: m.name,
-      provider: m.provider,
-      isFree: m.isFree,
-      category: m.isFree ? ('Free' as const) : ('Premium/Reasoning' as const),
-      description: m.description
-    }));
-  }, [discoveredModels, selectedGridProviderId]);
-
   const filteredKeybindings = DEFAULT_KEYBINDINGS.filter((kb) => {
     if (!keybindingSearch.trim()) return true;
     const q = keybindingSearch.toLowerCase();
@@ -828,7 +827,9 @@ export const SettingsModal: React.FC = () => {
         ? 'Local event recording is on. Events remain on this device; nothing is transmitted.'
         : 'Telemetry is off. No telemetry data is transmitted.';
 
-  if (!isSettingsOpen) return null;
+  if (!isSettingsOpen) {
+    return null;
+  }
 
   return (
     <div className="settings-overlay" onClick={toggleSettings}>
@@ -907,9 +908,7 @@ export const SettingsModal: React.FC = () => {
 
         <div className="settings-body" style={{ maxHeight: '480px', overflowY: 'auto' }}>
           {/* Tab 0: Simple API Key Harvesting & SafeStorage Vault (KeyHarvest) */}
-          {activeTab === 'apikeys' && (
-            <ApiKeyManager />
-          )}
+          {activeTab === 'apikeys' && <ApiKeyManager />}
 
           {/* Tab 1: AI Provider Onboarding, Configuration & Dynamic Model Discovery */}
           {activeTab === 'providers' && (

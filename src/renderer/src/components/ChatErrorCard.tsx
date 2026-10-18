@@ -14,6 +14,7 @@ import React, { useCallback, useState } from 'react';
 import { AlertTriangle, WifiOff, Key, Clock, Server, RotateCcw, Settings, Activity, X, Lightbulb, ExternalLink } from 'lucide-react';
 import type { ChatErrorCard as ChatErrorCardType } from '../../../shared/types/agent-events';
 import { useChatStore } from '../state/chat-store';
+import { QuickConnectProvider } from './QuickConnectProvider';
 
 export interface ChatErrorCardProps {
   errorCard?: ChatErrorCardType;
@@ -40,6 +41,7 @@ export const ChatErrorCard: React.FC<ChatErrorCardProps> = ({ errorCard, error, 
   const card = errorCard ?? error;
   const openSettings = useChatStore((s) => s.openSettings);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [quickConnectOpen, setQuickConnectOpen] = useState(false);
 
   const code = card?.taxonomyCode ?? 'ERROR';
   const isAmber = code === 'NETWORK_BLOCKED' || code === 'RATE_LIMITED' || code === 'QUOTA_EXCEEDED';
@@ -57,8 +59,8 @@ export const ChatErrorCard: React.FC<ChatErrorCardProps> = ({ errorCard, error, 
         } else {
           useChatStore.getState().dismissErrorCard();
         }
-      } else if (actionUrl === 'ty-code://settings/providers' || actionUrl === 'settings:providers') {
-        openSettings('providers');
+      } else if (actionLabel === 'Connect Provider' || actionUrl === 'ty-code://settings/providers' || actionUrl === 'settings:providers') {
+        setQuickConnectOpen(true);
       } else if (actionUrl === 'ty-code://dashboard/quota') {
         openSettings('analytics');
       } else if (actionUrl && /^https?:\/\//i.test(actionUrl)) {
@@ -135,6 +137,18 @@ export const ChatErrorCard: React.FC<ChatErrorCardProps> = ({ errorCard, error, 
         <button type="button" style={secondary} onClick={() => timed('button_click', () => openSettings('providers'))}><Settings size={11} /><span>Settings</span></button>
         <button type="button" style={secondary} onClick={() => timed('button_click', () => openSettings('diagnostics'))}><Activity size={11} /><span>Diagnostics</span></button>
       </div>
+
+      {quickConnectOpen && (
+        <QuickConnectProvider
+          isOpen={quickConnectOpen}
+          onClose={() => setQuickConnectOpen(false)}
+          initialProvider={card.providerId || 'openrouter'}
+          onSuccess={() => {
+            setQuickConnectOpen(false);
+            if (onRetry) onRetry();
+          }}
+        />
+      )}
     </div>
   );
 };

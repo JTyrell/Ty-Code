@@ -101,7 +101,16 @@ export class AgentEngine {
       try {
         console.log('[AGENT] Calling gateway...');
         const activeProvider = currentSettings.activeProvider || 'openrouter';
-        const activeModel = currentSettings.activeModel || 'qwen/qwen-2.5-coder-32b-instruct:free';
+        let activeModel = currentSettings.activeModel;
+        if (!activeModel || (activeProvider === 'openkilo' && !activeModel.includes('openkilo') && !activeModel.includes('deepseek-r1-0528'))) {
+          if (activeProvider === 'openkilo') {
+            activeModel = 'deepseek/deepseek-r1-0528:free';
+          } else if (activeProvider === 'groq') {
+            activeModel = 'llama-3.3-70b-versatile';
+          } else {
+            activeModel = 'qwen/qwen-2.5-coder-32b-instruct:free';
+          }
+        }
         console.log(`[AGENT] Provider: ${activeProvider}, Model: ${activeModel}`);
 
         const streamText = await ProviderGateway.sendChatRequest(

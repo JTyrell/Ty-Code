@@ -311,13 +311,29 @@ export const ConnectProviderCard: React.FC<{ errorCard: ChatErrorCardType; onRet
   const displayName = providerDisplayNames[activeProvider] || activeProvider;
   const keyLink = errorCard.actionUrl || providerLinks[activeProvider] || 'https://openrouter.ai/keys';
 
+  const [saveError, setSaveError] = useState<string | null>(null);
+
   const handleSave = async (e?: React.FormEvent) => {
     e?.preventDefault();
-    if (!apiKey.trim()) return;
+    const cleanKey = apiKey.trim();
+    if (!cleanKey) return;
     setSaving(true);
+    setSaveError(null);
     try {
+      if (window.electronAPI?.testProviderKey) {
+        const testRes = await window.electronAPI.testProviderKey(activeProvider, cleanKey);
+        if (!testRes?.success) {
+          setSaveError(testRes?.message || 'Key validation failed');
+          setSaving(false);
+          return;
+        }
+      }
+      if (window.electronAPI?.saveProviderKey) {
+        await window.electronAPI.saveProviderKey(activeProvider, cleanKey);
+      }
       const ok = await saveSettings({
-        apiKeys: { [activeProvider]: apiKey.trim() }
+        activeProvider: activeProvider as any,
+        apiKeys: { [activeProvider]: cleanKey }
       });
       if (ok) {
         setSaved(true);
@@ -327,6 +343,8 @@ export const ConnectProviderCard: React.FC<{ errorCard: ChatErrorCardType; onRet
           }, 600);
         }
       }
+    } catch (err: unknown) {
+      setSaveError(err instanceof Error ? err.message : String(err));
     } finally {
       setSaving(false);
     }
@@ -374,6 +392,7 @@ export const ConnectProviderCard: React.FC<{ errorCard: ChatErrorCardType; onRet
               <span>{saving ? 'Saving…' : saved ? 'Connected! Retrying…' : 'Save & Connect'}</span>
             </button>
           </div>
+          {saveError && <div style={{ color: '#ef4444', fontSize: '11px', marginTop: '6px' }}>{saveError}</div>}
         </form>
 
         <div className="chat-error-helper-links">
@@ -837,7 +856,7 @@ export const ChatSidecar: React.FC = () => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const feedRef = useRef<HTMLDivElement>(null);
   const userAtBottomRef = useRef(true);
-  const { messages, isRunning, currentStatus, currentThought, streamingText, pendingApproval, sendMessage, stopTask, respondToApproval, clearChat, agentMode, setAgentMode, draftPrompt, setDraftPrompt, activeErrorCard, dismissErrorCard } = useChatStore();
+  const { messages, isRunning, currentStatus, currentThought, streamingText, pendingApproval, sendMessage, stopTask, respondToApproval, clearChat, agentMode, setAgentMode, draftPrompt, setDraftPrompt, activeErrorCard, dismissErrorCard, contextTokens } = useChatStore();
   const { isPairActive, suggestions, togglePairMode, dismissSuggestion, clearSuggestions } = usePairProgrammingStore();
   const [approvalSending, setApprovalSending] = useState(false);
   const { workspacePath, activeTabPath, openTabs, openDiffReview, applyDiff } = useWorkspaceStore();
@@ -1029,82 +1048,6 @@ export const ChatSidecar: React.FC = () => {
       )}
     </header>
 
-    {/* Ground Truth Direct Bypass Test Bar */}
-    <div style={{
-      padding: '8px 12px',
-      background: 'rgba(99, 102, 241, 0.08)',
-      borderBottom: '1px solid rgba(99, 102, 241, 0.25)',
-      display: 'flex',
-      flexDirection: 'column',
-      gap: '8px'
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-        <button
-          type="button"
-          onClick={() => void handleTestGroundTruth()}
-          disabled={groundTruthRunning}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '6px',
-            padding: '6px 14px',
-            fontSize: '11px',
-            fontWeight: 700,
-            color: '#fff',
-            background: groundTruthRunning ? '#4b5563' : 'linear-gradient(135deg, #4f46e5, #7c3aed)',
-            border: '1px solid rgba(255, 255, 255, 0.2)',
-            borderRadius: '5px',
-            cursor: groundTruthRunning ? 'not-allowed' : 'pointer'
-          }}
-        >
-          {groundTruthRunning ? <Loader2 size={12} className="animate-spin" /> : <Zap size={12} color="#fbbf24" />}
-          <span>{groundTruthRunning ? 'FETCHING GROUND TRUTH…' : '⚡ TEST GROUND TRUTH'}</span>
-        </button>
-        {groundTruthText !== null && (
-          <button
-            type="button"
-            onClick={() => { setGroundTruthText(null); setGroundTruthError(null); }}
-            style={{ background: 'transparent', border: 'none', color: '#94a3b8', fontSize: '11px', cursor: 'pointer', textDecoration: 'underline' }}
-          >
-            Clear
-          </button>
-        )}
-      </div>
-
-      {groundTruthError && (
-        <div style={{
-          padding: '6px 8px',
-          background: 'rgba(239, 68, 68, 0.15)',
-          border: '1px solid rgba(239, 68, 68, 0.3)',
-          borderRadius: '4px',
-          color: '#f87171',
-          fontSize: '11px',
-          wordBreak: 'break-all'
-        }}>
-          <strong>Error:</strong> {groundTruthError}
-        </div>
-      )}
-
-      {groundTruthText !== null && (
-        <div style={{
-          padding: '8px 10px',
-          background: 'rgba(15, 23, 42, 0.95)',
-          border: '1px solid rgba(99, 102, 241, 0.35)',
-          borderRadius: '5px',
-          fontSize: '11px',
-          fontFamily: 'var(--font-mono, monospace)',
-          color: '#e2e8f0',
-          maxHeight: '160px',
-          overflowY: 'auto',
-          whiteSpace: 'pre-wrap',
-          wordBreak: 'break-word',
-          lineHeight: 1.4
-        }}>
-          {groundTruthText || (groundTruthRunning ? 'Connecting to provider and streaming chunks…' : '(empty response)')}
-        </div>
-      )}
-    </div>
-
     {sidecarTab === 'chat' && agentMode === 'plan' && (
       <div
         style={{
@@ -1204,6 +1147,11 @@ export const ChatSidecar: React.FC = () => {
               <span>{message.content}</span>
             </div>
           ) : message.role === 'user' ? <div className="user-message-bubble">{message.content}</div> : <div className="assistant-message-bubble">
+            {/* Start token count indicator */}
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '10px', color: '#94a3b8', marginBottom: '6px', padding: '2px 6px', background: 'rgba(255,255,255,0.03)', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.06)' }}>
+              <Zap size={10} color="#818cf8" />
+              <span>Prompt tokens: ~{Math.max(120, Math.round(contextTokens))}</span>
+            </div>
             {message.isCached && (
               <span
                 className="chat-cached-badge"
@@ -1254,10 +1202,31 @@ export const ChatSidecar: React.FC = () => {
               message.content && <MarkdownContent content={message.content} />
             )}
             {message.reasoning && <details className="chat-reasoning"><summary>Reasoning summary</summary><div>{message.reasoning}</div></details>}
+            {/* End token count indicator */}
+            {!message.errorCard && message.content && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', color: '#94a3b8', marginTop: '6px', paddingTop: '4px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                <Sparkles size={10} color="#34d399" />
+                <span>Response tokens: ~{Math.max(1, Math.round(message.content.length / 4))} • Total session context: ~{Math.round(contextTokens + message.content.length / 4)} tokens</span>
+              </div>
+            )}
             {message.id === lastAssistantId && !isRunning && lastUserMessage && <div className="assistant-message-actions"><button onClick={handleRegenerate} title="Regenerate last response"><RotateCcw size={11} />Regenerate</button></div>}
           </div>}
         </article>)}
-        {streamingText && <article className="chat-message is-assistant"><div className="assistant-message-bubble"><MarkdownContent content={streamingText} /></div></article>}
+        {streamingText && (
+          <article className="chat-message is-assistant">
+            <div className="assistant-message-bubble">
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '10px', color: '#94a3b8', marginBottom: '6px', padding: '2px 6px', background: 'rgba(255,255,255,0.03)', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                <Zap size={10} color="#818cf8" />
+                <span>Prompt tokens: ~{Math.max(120, Math.round(contextTokens))}</span>
+              </div>
+              <MarkdownContent content={streamingText} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', color: '#94a3b8', marginTop: '6px', paddingTop: '4px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                <Sparkles size={10} color="#34d399" />
+                <span>Generating: ~{Math.round(streamingText.length / 4)} tokens…</span>
+              </div>
+            </div>
+          </article>
+        )}
         {pendingApproval && <article className="agent-approval" role="alert" aria-labelledby="agent-approval-title">
           <div className="agent-approval-heading"><ShieldCheck size={15} /><div><strong id="agent-approval-title">Approval required</strong><span>{pendingApproval.reason}</span></div></div>
           <div className="agent-approval-tool"><strong>{pendingApproval.toolCall.name}</strong><pre>{JSON.stringify(pendingApproval.toolCall.arguments, null, 2)}</pre></div>

@@ -80,7 +80,7 @@ export async function sendChatRequest(
 
   // 2. Read key from secure vault at request time
   let key = apiKey;
-  if (config.requiresKey && !key) {
+  if (config.requiresKey && !key && config.providerId !== 'openkilo' && norm !== 'openkilo') {
     if (isCopilot) {
       key = (await getKey('copilot')) || (await getKey('github-copilot')) || undefined;
     } else {
@@ -88,7 +88,7 @@ export async function sendChatRequest(
     }
   }
 
-  if (config.requiresKey && !key) {
+  if (config.requiresKey && !key && config.providerId !== 'openkilo' && norm !== 'openkilo') {
     throw new Error('No API key configured for ' + providerId);
   }
 
