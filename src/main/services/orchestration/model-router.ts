@@ -36,6 +36,7 @@ import { freeProviderRegistry } from '../providers/free-provider-registry';
 import { quotaTracker } from './quota-tracker';
 import { fccCatalogSync } from '../fcc/catalog-sync';
 import { fccIntegrityChecker } from './fcc-integrity';
+import { getVerifiedModels, type VerifiedModelConfig } from '../verified-models';
 
 export interface ModelCatalogEntry {
   modelId: string;
@@ -51,8 +52,8 @@ export interface ModelCatalogEntry {
 export const ROUTER_MODEL_CATALOG: ModelCatalogEntry[] = [
   // Tier S: Complex Reasoning & Planning
   {
-    modelId: 'deepseek/deepseek-r1:free',
-    modelName: 'DeepSeek R1 (Free)',
+    modelId: 'nvidia/nemotron-3-ultra-550b-a55b:free',
+    modelName: 'NVIDIA Nemotron 3 Ultra (Free)',
     providerId: 'openrouter-free',
     providerName: 'OpenRouter',
     tier: 'tier_s_reasoning',
@@ -60,8 +61,8 @@ export const ROUTER_MODEL_CATALOG: ModelCatalogEntry[] = [
     baseLatencyMs: 850
   },
   {
-    modelId: 'deepseek/deepseek-r1-0528:free',
-    modelName: 'DeepSeek R1 0528 (Kilo Gateway)',
+    modelId: 'kilo-auto/free',
+    modelName: 'Kilo Auto (Free Router)',
     providerId: 'openkilo-free',
     providerName: 'OpenKilo',
     tier: 'tier_s_reasoning',
@@ -69,33 +70,22 @@ export const ROUTER_MODEL_CATALOG: ModelCatalogEntry[] = [
     baseLatencyMs: 650
   },
   {
-    modelId: 'claude-3.5-sonnet',
-    modelName: 'Claude 3.5 Sonnet (Copilot)',
-    providerId: 'opencode-built-in',
-    providerName: 'OpenCode Copilot',
-    tier: 'tier_s_reasoning',
-    isFree: true,
-    baseLatencyMs: 900
-  },
-
-  // Tier A: Code Generation & Editing
-  {
-    modelId: 'qwen/qwen-2.5-coder-32b-instruct:free',
-    modelName: 'Qwen 2.5 Coder 32B Instruct',
-    providerId: 'openrouter-free',
-    providerName: 'OpenRouter',
-    tier: 'tier_a_coding',
-    isFree: true,
-    baseLatencyMs: 420
-  },
-  {
-    modelId: 'qwen/qwen3-coder:free',
-    modelName: 'Qwen 3 Coder (Kilo Gateway)',
+    modelId: 'poolside/laguna-s-2.1:free',
+    modelName: 'Poolside Laguna S 2.1 (Kilo Gateway)',
     providerId: 'openkilo-free',
     providerName: 'OpenKilo',
     tier: 'tier_a_coding',
     isFree: true,
     baseLatencyMs: 380
+  },
+  {
+    modelId: 'openrouter/free',
+    modelName: 'OpenRouter Free (Kilo Gateway)',
+    providerId: 'openkilo-free',
+    providerName: 'OpenKilo',
+    tier: 'tier_b_general',
+    isFree: true,
+    baseLatencyMs: 400
   },
   {
     modelId: 'llama-3.3-70b-versatile',
@@ -118,8 +108,8 @@ export const ROUTER_MODEL_CATALOG: ModelCatalogEntry[] = [
 
   // Tier B: General Conversation & Assistance
   {
-    modelId: 'meta-llama/llama-3.3-70b-instruct:free',
-    modelName: 'Llama 3.3 70B Instruct',
+    modelId: 'dots-studio/dots-3-note-preview:free',
+    modelName: 'Dots 3 Note Preview (Free)',
     providerId: 'openrouter-free',
     providerName: 'OpenRouter',
     tier: 'tier_b_general',
@@ -127,13 +117,13 @@ export const ROUTER_MODEL_CATALOG: ModelCatalogEntry[] = [
     baseLatencyMs: 350
   },
   {
-    modelId: 'google/gemma-3-27b-it:free',
-    modelName: 'Gemma 3 27B IT',
+    modelId: 'thinkingmachines/inkling-small:free',
+    modelName: 'Inkling Small (Kilo Gateway)',
     providerId: 'openkilo-free',
     providerName: 'OpenKilo',
     tier: 'tier_b_general',
     isFree: true,
-    baseLatencyMs: 290
+    baseLatencyMs: 390
   },
   {
     modelId: 'gemini-1.5-flash',
@@ -163,26 +153,96 @@ export const ROUTER_MODEL_CATALOG: ModelCatalogEntry[] = [
     tier: 'tier_c_fast',
     isFree: true,
     baseLatencyMs: 110
-  },
-  {
-    modelId: 'mistralai/mistral-7b-instruct:free',
-    modelName: 'Mistral 7B Instruct (Free)',
-    providerId: 'openrouter-free',
-    providerName: 'OpenRouter',
-    tier: 'tier_c_fast',
-    isFree: true,
-    baseLatencyMs: 220
   }
 ];
 
 export class ModelRouter {
   private static instance: ModelRouter;
 
+  private supplementalCache: ModelCatalogEntry[] | null = null;
+  private supplementalCacheAt = 0;
+
   public static getInstance(): ModelRouter {
     if (!ModelRouter.instance) {
       ModelRouter.instance = new ModelRouter();
     }
     return ModelRouter.instance;
+  }
+
+  /** Heuristic tier mapping for verified entries that lack FCC capability metadata. */
+  private static classifyTierFromId(modelId: string, name: string): ModelTier {
+    const hay = `${modelId} ${name}`.toLowerCase();
+    if (/reason|think|-r1|o1-|ultra|opus|maverick|405b|550b|70b/.test(hay)) return 'tier_s_reasoning';
+    if (/coder|code|laguna|north|starcoder|deepseek/.test(hay)) return 'tier_a_coding';
+    if (/8b|mini|instant|flash|lightning|small|fast|turbo/.test(hay)) return 'tier_c_fast';
+    return 'tier_b_general';
+  }
+
+  private static providerDisplayName(providerId: string): string {
+    switch ((providerId || '').toLowerCase()) {
+      case 'openkilo': case 'openkilo-free': return 'OpenKilo';
+      case 'opencode': case 'opencode-free': return 'OpenCode Zen';
+      case 'openrouter': case 'openrouter-free': return 'OpenRouter';
+      case 'groq': case 'groq-free': return 'Groq';
+      case 'google-ai-studio': case 'google-ai-studio-free': return 'Google AI Studio';
+      case 'ollama': return 'Ollama (local)';
+      default: return providerId.replace(/-free$/, '');
+    }
+  }
+
+  private static baseLatencyFor(providerId: string): number {
+    const id = (providerId || '').toLowerCase();
+    if (id === 'ollama' || id.startsWith('ollama')) return 60;
+    if (id.startsWith('groq')) return 140;
+    if (id.startsWith('opencode')) return 320;
+    if (id.startsWith('openkilo')) return 400;
+    if (id.startsWith('google-ai-studio')) return 260;
+    return 380;
+  }
+
+  /**
+   * Live backend supply bridge: models actually loaded in the gateway
+   * (verified-models.ts = FCC + OpenKilo + OpenCode Zen + preconfigured + Ollama)
+   * that the FCC catalog block does not already cover. 20s cache.
+   */
+  public async getVerifiedSupplementalEntries(force = false): Promise<ModelCatalogEntry[]> {
+    if (!force && this.supplementalCache && Date.now() - this.supplementalCacheAt < 20_000) {
+      return this.supplementalCache;
+    }
+
+    const fccModelIds = new Set<string>();
+    try {
+      for (const provider of fccCatalogSync.getCatalog() || []) {
+        for (const model of provider.models || []) fccModelIds.add(model.id);
+      }
+    } catch {
+      // FCC service unavailable — supplement everything from verified supply
+    }
+
+    const verified = await getVerifiedModels().catch(() => [] as VerifiedModelConfig[]);
+    const supplemental: ModelCatalogEntry[] = [];
+    const seen = new Set<string>();
+    for (const vm of verified) {
+      const key = `${(vm.providerId || '').toLowerCase()}::${vm.modelId}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      if (fccModelIds.has(vm.modelId)) continue;
+
+      supplemental.push({
+        modelId: vm.modelId,
+        modelName: vm.name || vm.modelId,
+        providerId: vm.providerId,
+        providerName: ModelRouter.providerDisplayName(vm.providerId),
+        tier: ModelRouter.classifyTierFromId(vm.modelId, vm.name || ''),
+        isFree: !vm.requiresKey,
+        baseLatencyMs: ModelRouter.baseLatencyFor(vm.providerId),
+        provenance: vm.requiresKey ? 'your key' : 'anonymous'
+      });
+    }
+
+    this.supplementalCache = supplemental;
+    this.supplementalCacheAt = Date.now();
+    return supplemental;
   }
 
   /**
@@ -208,8 +268,14 @@ export class ModelRouter {
       targetTier = 'tier_c_fast';
     }
 
-    // 3. Get candidate models
-    const allModels = [...ROUTER_MODEL_CATALOG];
+    // 3. Get candidate models (curated registry + live verified backend supply)
+    const supplemental = await this.getVerifiedSupplementalEntries();
+    const seenCatIds = new Set<string>();
+    const allModels = [...ROUTER_MODEL_CATALOG, ...supplemental].filter((entry) => {
+      if (seenCatIds.has(entry.modelId)) return false;
+      seenCatIds.add(entry.modelId);
+      return true;
+    });
 
     // Filter to available candidates (not rate-limited, healthy)
     const availableCandidates = allModels.filter((entry) => {
@@ -391,7 +457,7 @@ export class ModelRouter {
    * provenance badges: 'FCC', 'your key', 'anonymous', 'subscription'.
    * If FCC is unavailable or disabled: graceful instant fallback to native registry + anonymous in <2s.
    */
-  public getCatalogGroupedByTier(): Record<ModelTier, RankedModelCandidate[]> {
+  public async getCatalogGroupedByTier(): Promise<Record<ModelTier, RankedModelCandidate[]>> {
     const defaultPrefs: RouterUserPreferences = {
       mode: 'auto',
       autoFailoverEnabled: true,
@@ -441,8 +507,9 @@ export class ModelRouter {
       }
     }
 
-    // 2. Secondary Source / Fallback: Native Registry & Anonymous Models
-    for (const entry of ROUTER_MODEL_CATALOG) {
+    // 2. Secondary Source: live verified backend supply (FCC extras + OpenKilo + OpenCode Zen + preconfigured + Ollama)
+    const supplemental = await this.getVerifiedSupplementalEntries();
+    for (const entry of supplemental) {
       if (seenModelIds.has(entry.modelId)) continue;
       seenModelIds.add(entry.modelId);
       const scored = this.scoreCandidate(entry, entry.tier, defaultPrefs);

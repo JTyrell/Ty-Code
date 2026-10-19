@@ -13,7 +13,7 @@ Ty-Code classifies prompts into one of six core task domains using syntactic pat
 | Task Domain | Primary Selection | Context Window | Key Strengths & Routing Logic |
 | :--- | :--- | :--- | :--- |
 | **Code Generation** | `qwen/qwen3-coder:free` / `deepseek-coder` | 262,144 tokens | Automatically selected for refactoring, writing functions, algorithmic problem solving, tests, and syntax debugging. |
-| **Complex Reasoning** | `deepseek/deepseek-r1-0528:free` / `deepseek-r1` | 164,000 tokens | Activated for chain-of-thought, mathematical proofs, architectural planning, logic puzzles, and multi-file analysis. |
+| **Complex Reasoning** | `deepseek/deepseek-r1-0528` / `deepseek-r1` | 164,000 tokens | Activated for chain-of-thought, mathematical proofs, architectural planning, logic puzzles, and multi-file analysis. |
 | **Fast Responses** | `groq/llama-3.3-70b-versatile` / `mistral-small` | 128,000 tokens | Routed to ultra-fast Groq LPU inference for real-time Monaco inline ghost-text completions, keystroke autocompletion, and low-latency explanations. |
 | **Large Context** | Long-context coding and multimodal models | 262,144+ tokens | Triggered when prompt and codebase context exceeds 32,000 tokens (e.g. multi-file repositories, large logs, AST indexes). |
 | **Vision & Multimodal** | Vision-capable multimodal models | 131,072+ tokens | Selected whenever screenshots, UI wireframes, diagrams, or image attachments are present in the user request. |
@@ -56,7 +56,9 @@ flowchart TD
 ## 4. User Controls & UI Visibility
 
 ### 1. Interactive Status Bar
+
 Located at the bottom of the editor, the status bar displays:
+
 - **Active Model**: Clean model name (e.g., `qwen3-coder:free`).
 - **Provider Health Dot**: Green (Healthy), Amber (Cooling Down / Rate-Limited), Red (Quota Exhausted).
 - **FREE Badge**: Highlights zero-cost model operation.
@@ -64,13 +66,16 @@ Located at the bottom of the editor, the status bar displays:
 - **One-Click Trigger**: Clicking opens the Usage & Quota Dashboard.
 
 ### 2. Usage & Quota Dashboard
+
 Accessible from the Status Bar or Settings Modal:
+
 - **Hero Metrics**: Total Free Tokens, Consumed Tokens, Dollar Savings ($), Global Quota percentage.
 - **Provider Quota Gauges**: Real-time progress bars for each provider with status pills.
 - **Routing Rules Guide**: Visual breakdown of all 6 classification rules.
 - **Decision Logs (Power User Mode)**: Audit log showing exact timestamps, prompt snippets, task classifications, selected models, and reasoning.
 
 ### 3. One-Click Free Mode
+
 A dedicated toggle in the Dashboard and Settings Modal that enforces $0 commercial spend by restricting routing strictly to free models and local providers.
 
 ---

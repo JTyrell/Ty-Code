@@ -140,7 +140,7 @@ Establish automated CI quality gates that prevent future code regressions from i
    - [`scripts/verify-audit-artifacts.mjs`](file:///c:/Users/JT/Documents/Ty-Code/scripts/verify-audit-artifacts.mjs): Fails build if trace files in `docs/traces/*.json` are stale relative to commits touching agent or provider code.
 2. **Policy & Manual Smoke Protocol**:
    - [`docs/AUDIT-EVIDENCE-POLICY.md`](file:///c:/Users/JT/Documents/Ty-Code/docs/AUDIT-EVIDENCE-POLICY.md): Mandates that any documentation claim of "connected" or "working" must hyperlink to a trace artifact in `docs/traces/`.
-   - [`docs/MANUAL-SMOKE-TEST.md`](file:///c:/Users/JT/Documents/Ty-Code/docs/MANUAL-SMOKE-TEST.md): Detailed 6-step manual protocol (Nonce Echo, Tool Card, Network Cut Error, One-Click Connect, Distinctness, Usage Ledger) required for release sign-off.
+    - [`docs/SMOKE-TEST.md`](file:///c:/Users/JT/Documents/Ty-Code/docs/SMOKE-TEST.md): Detailed 6-step manual protocol (Nonce Echo, Tool Card, Network Cut Error, One-Click Connect, Distinctness, Usage Ledger) required for release sign-off.
 3. **CI Pipeline Integration**:
    - Updated [`.github/workflows/build.yml`](file:///c:/Users/JT/Documents/Ty-Code/.github/workflows/build.yml) to run all 4 guards on Windows, macOS, and Linux runners.
    - Updated [`package.json`](file:///c:/Users/JT/Documents/Ty-Code/package.json) with `"guards"` and `"test"` script orchestrations.

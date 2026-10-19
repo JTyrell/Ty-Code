@@ -21,7 +21,7 @@ import {
 import { useUsageDashboardStore } from '../state/usage-dashboard-store';
 import { useChatStore } from '../state/chat-store';
 import { useOnboardingStore } from '../state/onboarding-store';
-import type { SmartTaskType, FccOptimizationSavings, FccQuotaMetersSummary } from '../../../preload/types';
+import type { SmartTaskType, FccOptimizationSavings, FccQuotaMetersSummary, FCCServerStatus, FCCServiceStatus } from '../../../preload/types';
 import { ProviderDashboard } from './dashboard/ProviderDashboard';
 import { UsageLedgerView } from './dashboard/UsageLedgerView';
 
@@ -51,6 +51,8 @@ export const UsageDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'unified' | 'quotas' | 'ledger' | 'rules' | 'logs'>('unified');
   const [optSavings, setOptSavings] = useState<FccOptimizationSavings | null>(null);
   const [quotaMeters, setQuotaMeters] = useState<FccQuotaMetersSummary | null>(null);
+  const [fccEngine, setFccEngine] = useState<FCCServerStatus | null>(null);
+  const [fccService, setFccService] = useState<FCCServiceStatus | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -64,6 +66,16 @@ export const UsageDashboard: React.FC = () => {
         if (window.electronAPI?.fccGetQuotaMeters) {
           window.electronAPI.fccGetQuotaMeters().then((res) => {
             if (res?.success && res.data) setQuotaMeters(res.data);
+          }).catch(() => {});
+        }
+        if (window.electronAPI?.fccGetStatus) {
+          window.electronAPI.fccGetStatus().then((res) => {
+            if (res?.success && res.data) setFccEngine(res.data);
+          }).catch(() => {});
+        }
+        if (window.electronAPI?.fccGetServiceStatus) {
+          window.electronAPI.fccGetServiceStatus().then((res) => {
+            if (res?.success && res.data) setFccService(res.data);
           }).catch(() => {});
         }
       };
@@ -90,12 +102,17 @@ export const UsageDashboard: React.FC = () => {
 
   if (!isOpen) return null;
 
-  const totalLimit = quotaSnapshot?.totalFreeTokensAvailable || 2_050_000_000;
+  const totalLimit = quotaSnapshot?.totalFreeTokensAvailable || 0;
   const totalUsed = quotaSnapshot?.totalTokensConsumed || 0;
   const savings = quotaSnapshot?.totalCostSavedUsd || 0;
   const freeMode = quotaSnapshot?.freeModeActive ?? true;
+  const connectedProviderCount = quotaSnapshot?.providers ? Object.keys(quotaSnapshot.providers).length : 0;
   const remainingTokens = Math.max(0, totalLimit - totalUsed);
-  const percentUsed = Math.min(100, Math.max(0, (totalUsed / totalLimit) * 100));
+  const percentUsed = totalLimit > 0
+    ? Math.min(100, Math.max(0, (totalUsed / totalLimit) * 100))
+    : 0;
+  const engineRunning = fccEngine?.running ?? false;
+  const engineHealthColor = fccEngine?.health === 'healthy' ? '#34d399' : fccEngine?.health === 'degraded' ? '#fbbf24' : '#64748b';
 
   const formatTokens = (tokens: number): string => {
     if (tokens >= 1_000_000_000) return `${(tokens / 1_000_000_000).toFixed(2)}B`;
@@ -270,10 +287,12 @@ export const UsageDashboard: React.FC = () => {
               <Sparkles size={16} color="#38bdf8" />
             </div>
             <div style={{ fontSize: '22px', fontWeight: 700, marginTop: '6px', color: '#38bdf8' }}>
-              {formatTokens(totalLimit)}+
+              {formatTokens(totalLimit)}
             </div>
             <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>
-              Aggregated monthly across 5 providers
+              {connectedProviderCount > 0
+                ? `Aggregated monthly across ${connectedProviderCount} provider${connectedProviderCount === 1 ? '' : 's'}`
+                : 'No connected providers yet'}
             </div>
           </div>
 
@@ -339,7 +358,7 @@ export const UsageDashboard: React.FC = () => {
               {percentUsed.toFixed(2)}%
             </div>
             <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>
-              Sub-5% estimation accuracy
+              of aggregated monthly free-token capacity
             </div>
           </div>
         </div>
@@ -383,6 +402,90 @@ export const UsageDashboard: React.FC = () => {
           >
             {optSavings?.percent || 0}% Optimized
           </span>
+        </div>
+
+        {/* FCC Engine — live sidecar layer state (genuine binary / embedded core / integrity) */}
+        <div
+          id="fcc-engine-status-banner"
+          style={{
+            margin: '0 24px 12px 24px',
+            padding: '12px 18px',
+            borderRadius: '8px',
+            background: engineRunning ? 'rgba(16, 185, 129, 0.10)' : 'rgba(30, 41, 59, 0.6)',
+            border: engineRunning ? '1px solid rgba(16, 185, 129, 0.35)' : '1px solid rgba(51, 65, 85, 0.6)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '12px'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <Server size={18} color={engineRunning ? '#34d399' : '#64748b'} style={{ flexShrink: 0 }} />
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '13px', fontWeight: 700, color: engineRunning ? '#34d399' : '#94a3b8' }}>
+                  FCC Engine {engineRunning ? 'running' : 'stopped'}
+                </span>
+                <span
+                  style={{
+                    fontSize: '10px',
+                    padding: '1px 8px',
+                    borderRadius: '10px',
+                    backgroundColor: engineRunning ? 'rgba(16, 185, 129, 0.18)' : 'rgba(100, 116, 139, 0.2)',
+                    color: engineHealthColor,
+                    fontWeight: 600
+                  }}
+                >
+                  {fccEngine?.health || 'unknown'}
+                </span>
+                {fccService?.installed && (
+                  <span style={{ fontSize: '10px', color: '#64748b' }}>
+                    genuine binary detected
+                  </span>
+                )}
+              </div>
+              <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '2px' }}>
+                {fccEngine?.mode === 'external-process' ? 'Genuine FCC process' : 'Built-in sidecar'}
+                {fccEngine?.port ? ` • port ${fccEngine.port}` : ''}
+                {fccEngine?.uptimeSeconds ? ` • up ${Math.floor(fccEngine.uptimeSeconds / 60)}m` : ''}
+                {` • ${fccEngine?.providersCount ?? 0} supply models`}
+                {` • integrity: ${fccEngine?.integrityStatus || 'unverified'}`}
+              </div>
+              {(fccService?.lastError || fccEngine?.integrityError) && (
+                <div style={{ fontSize: '11px', color: '#fca5a5', marginTop: '2px' }}>
+                  {fccService?.lastError || fccEngine?.integrityError}
+                </div>
+              )}
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: '13px', fontWeight: 700, color: '#38bdf8' }}>
+                {formatTokens(fccEngine?.freeTokensUsed || 0)} tok
+              </div>
+              <div style={{ fontSize: '10px', color: '#64748b' }}>
+                used this session of {formatTokens(fccEngine?.freeTokensAllocated || 0)} declared
+              </div>
+            </div>
+            {!engineRunning && (
+              <button
+                id="fcc-engine-retry-btn"
+                onClick={() => void window.electronAPI?.fccRetryService?.()}
+                style={{
+                  fontSize: '11px',
+                  padding: '6px 12px',
+                  borderRadius: '6px',
+                  border: '1px solid rgba(255, 255, 255, 0.15)',
+                  background: 'rgba(255, 255, 255, 0.06)',
+                  color: '#94a3b8',
+                  cursor: 'pointer'
+                }}
+                title="Attempt to bring the FCC engine back online"
+              >
+                Retry Engine
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Tab Navigation */}

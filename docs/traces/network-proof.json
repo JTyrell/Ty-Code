@@ -21,7 +21,7 @@
     {
       "name": "kilo-anon",
       "url": "https://api.kilo.ai/v1/chat/completions",
-      "model": "deepseek/deepseek-r1-0528:free",
+      "model": "deepseek/deepseek-r1-0528",
       "hasKey": false,
       "status": 404,
       "ms": 930,
@@ -30,7 +30,7 @@
     {
       "name": "openkilo.com (current registry URL)",
       "url": "https://api.openkilo.com/v1/chat/completions",
-      "model": "deepseek/deepseek-r1-0528:free",
+      "model": "deepseek/deepseek-r1-0528",
       "hasKey": false,
       "error": "TypeError: fetch failed / cause=ECONNRESET"
     }

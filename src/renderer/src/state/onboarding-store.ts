@@ -140,9 +140,25 @@ export const useOnboardingStore = create<OnboardingState>()(
           if (window.electronAPI?.fccSetEnabled) {
             await window.electronAPI.fccSetEnabled(true);
           }
+
+          let serviceNote = 'FCC service layer online (native sidecar mode).';
+          if (window.electronAPI?.fccGetServiceStatus) {
+            const svcRes = await window.electronAPI.fccGetServiceStatus();
+            const svc = svcRes?.data;
+            if (svc && !svc.installed) {
+              serviceNote = 'free-claude-code binary not found — downloading via the official installer (silent)...';
+              if (window.electronAPI?.fccInstall && !svc.installing) {
+                void window.electronAPI
+                  .fccInstall()
+                  .catch(() => undefined);
+              }
+            } else if (svc?.binaryPath) {
+              serviceNote = `FCC binary available: ${svc.binaryPath}`;
+            }
+          }
           set((s) => ({
             autoSetupStatus: 'loading',
-            autoSetupLogs: [...s.autoSetupLogs, '✓ Embedded supply verified (SHA-256 integrity match)', 'Loading 61-provider model catalog...']
+            autoSetupLogs: [...s.autoSetupLogs, serviceNote, 'Loading 61-provider model catalog...']
           }));
 
           let modelCount = 50;
@@ -169,11 +185,11 @@ export const useOnboardingStore = create<OnboardingState>()(
           set((s) => ({
             autoSetupLogs: [
               ...s.autoSetupLogs,
-              '✓ Top free providers health-checked and online',
+              '✓ Top free providers processed by the auto-setup service',
               `✓ Embedded supply ready: ${s.discoveredFreeModelsCount} free models discovered`
             ],
             autoSetupStatus: 'ready',
-            connectedProviders: Array.from(new Set([...s.connectedProviders, 'fcc-layer', 'openrouter', 'groq', 'google-ai-studio']))
+            connectedProviders: Array.from(new Set([...s.connectedProviders, 'fcc-layer']))
           }));
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
@@ -269,7 +285,7 @@ export const useOnboardingStore = create<OnboardingState>()(
             await window.electronAPI.saveSettings({
               freeMode: true,
               activeProvider: 'openkilo' as any,
-              activeModel: 'deepseek-r1-0528:free',
+              activeModel: 'kilo-auto/free',
               hasCompletedOnboarding: true
             });
           }
@@ -302,11 +318,13 @@ export const useOnboardingStore = create<OnboardingState>()(
             await window.electronAPI.orchestrationCompleteOnboarding();
           }
           if (window.electronAPI?.saveSettings) {
-            const primaryProvider = connectedProviders[0] || 'openrouter';
+            const primaryProvider =
+              connectedProviders.find((p) => p !== 'fcc-layer' && p !== 'opencode') || 'openkilo';
             await window.electronAPI.saveSettings({
               hasCompletedOnboarding: true,
               freeMode: true,
-              activeProvider: primaryProvider as any
+              activeProvider: primaryProvider as any,
+              ...(primaryProvider === 'openkilo' ? { activeModel: 'kilo-auto/free' } : {})
             });
           }
         } catch (err) {

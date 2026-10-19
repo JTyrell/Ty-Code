@@ -56,7 +56,28 @@ let activeStreamUnsubscribe: (() => void) | null = null;
 let activeStreamDisposables: Array<() => void> = [];
 let settingsChangedUnsubscribe: (() => void) | null = null;
 let sketcherPromptUnsubscribe: (() => void) | null = null;
+let canvasSyncUnsubscribe: (() => void) | null = null;
+let canvasUpdateUnsubscribe: (() => void) | null = null;
 function createId(prefix: string): string { return `${prefix}_${globalThis.crypto.randomUUID()}`; }
+
+// M3E Canvas overhaul: mirror main-window chat messages into the shared
+// canvas conversation history so the dedicated Canvas window's chat rail
+// stays perfectly in sync with the main IDE chat sidecar (and vice versa).
+function syncMessageToCanvas(message: ChatMessage): void {
+  if (!window.electronAPI?.canvasSyncMessage) return;
+  if ((message.role !== 'user' && message.role !== 'assistant') || !message.content.trim()) return;
+  window.electronAPI
+    .canvasSyncMessage({
+      message: {
+        id: message.id,
+        role: message.role as 'user' | 'assistant',
+        content: message.content,
+        timestamp: message.timestamp,
+        origin: 'main'
+      }
+    })
+    .catch(() => {});
+}
 
 export const FORBIDDEN_FIXTURE_PATTERNS = [
   /fcc\s+proxy\s+response/i,
@@ -290,6 +311,41 @@ export const useChatStore = create<ChatState>((set, get) => ({
         set({ draftPrompt: prompt });
       });
     }
+    if (!canvasSyncUnsubscribe && window.electronAPI?.onCanvasMessageSynced) {
+      canvasSyncUnsubscribe = window.electronAPI.onCanvasMessageSynced((incoming) => {
+        const message = (incoming as { id?: string; role?: string; content?: string; timestamp?: number; origin?: string }) || {};
+        // Ignore echoes of messages that originated in THIS (main) window:
+        // only canvas-originated messages are appended into the sidecar.
+        if (message.origin !== 'canvas') return;
+        if ((message.role !== 'user' && message.role !== 'assistant') || !message.content) return;
+        const messageId = message.id || `canvas_external_${message.timestamp || Date.now()}`;
+        if (get().messages.some((existing) => existing.id === messageId)) return;
+        set({
+          messages: [
+            ...get().messages,
+            {
+              id: messageId,
+              role: message.role as 'user' | 'assistant',
+              content: message.content,
+              timestamp: typeof message.timestamp === 'number' ? message.timestamp : Date.now()
+            }
+          ]
+        });
+      });
+    }
+    if (!canvasUpdateUnsubscribe && window.electronAPI?.onCanvasUpdate) {
+      canvasUpdateUnsubscribe = window.electronAPI.onCanvasUpdate((update) => {
+        const action = (update as { action?: string } | null)?.action || 'updated_ui';
+        const snippet = (update as { codeSnippet?: string } | null)?.codeSnippet || '';
+        const content =
+          `🎨 M3E Canvas updated: ${action}. [View in Canvas]` +
+          (snippet ? `\n\`\`\`\n${snippet.slice(0, 4000)}\n\`\`\`` : '');
+        const messageId = `canvas_update_${Date.now()}`;
+        set({
+          messages: [...get().messages, { id: messageId, role: 'system', content, timestamp: Date.now() }]
+        });
+      });
+    }
     await refreshSettings();
   },
 
@@ -340,6 +396,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       streamingText: '',
       activeErrorCard: null
     });
+    // M3E Canvas sync: mirror the user's message into the shared canvas history
+    if (appendUserMessage) syncMessageToCanvas(userMessage);
 
     // H1: Renderer chat send handler invoked
     if (traceOptions?.traceId && window.electronAPI?.recordTraceHop) {
@@ -459,7 +517,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
           set({ messages: finalizePartialMessage(messages, state.streamingText, state.currentThought) });
           finishTask('Task stopped.');
         } else {
-          set({ messages: finalizePartialMessage(state.messages, state.streamingText, state.currentThought) });
+          const finalizedMessages = finalizePartialMessage(state.messages, state.streamingText, state.currentThought);
+          set({ messages: finalizedMessages });
+          // M3E Canvas sync: mirror the assistant's finalized response
+          const lastMessage = finalizedMessages[finalizedMessages.length - 1];
+          if (lastMessage && lastMessage.role === 'assistant') syncMessageToCanvas(lastMessage);
           if (traceOptions?.traceId && window.electronAPI?.recordTraceHop) {
             window.electronAPI.recordTraceHop(traceOptions.traceId, 'H10', {
               status: 'PASS',

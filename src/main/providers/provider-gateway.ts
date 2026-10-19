@@ -40,7 +40,9 @@ export async function sendChatRequest(
   stream: boolean = true,
   apiKey?: string,
   onToken?: (chunk: string) => void,
-  handoffCount: number = 0
+  handoffCount: number = 0,
+  abortSignal?: AbortSignal,
+  onHandoff?: (info: { fromProvider: string; toProvider: string; toModel: string }) => void
 ): Promise<string> {
   const provider = providerId;
   const norm = (providerId || '').toLowerCase().trim().replace(/-free$/, '');
@@ -79,17 +81,80 @@ export async function sendChatRequest(
   }
 
   // 2. Read key from secure vault at request time
+  // Layered resolution (same pipeline as streamChat): explicit param ->
+  // RealConnect credentialStore -> settings vault file -> legacy vault -> env
   let key = apiKey;
   if (config.requiresKey && !key && config.providerId !== 'openkilo' && norm !== 'openkilo') {
-    if (isCopilot) {
-      key = (await getKey('copilot')) || (await getKey('github-copilot')) || undefined;
-    } else {
-      key = (await getKey(providerId)) || (await getKey(config.providerId)) || (await getKey(norm)) || undefined;
-    }
-  }
+    const keyCandidates = Array.from(new Set([
+      providerId,
+      config.providerId,
+      norm,
+      norm.replace(/-free$/, ''),
+      config.providerId.replace(/-free$/, ''),
+      ...(isCopilot ? ['copilot', 'github-copilot', 'copilot-subscription'] : [])
+    ]));
 
-  if (config.requiresKey && !key && config.providerId !== 'openkilo' && norm !== 'openkilo') {
-    throw new Error('No API key configured for ' + providerId);
+    for (const candidate of keyCandidates) {
+      const stored = credentialStore.getDecryptedKey(candidate);
+      if (stored && stored.trim()) {
+        key = stored.trim();
+        break;
+      }
+    }
+
+    if (!key) {
+      try {
+        const { keys } = await readStoredCredentials();
+        for (const candidate of keyCandidates) {
+          const value = keys[candidate];
+          if (value && value.trim()) { key = value.trim(); break; }
+        }
+      } catch {
+        // Non-blocking: fall through to legacy vault
+      }
+    }
+
+    if (!key) {
+      for (const candidate of keyCandidates) {
+        const vaultKey = await getKey(candidate).catch(() => undefined);
+        if (vaultKey && vaultKey.trim()) {
+          key = vaultKey.trim();
+          break;
+        }
+      }
+    }
+
+    if (!key) {
+      const envKeyMap: Record<string, string[]> = {
+        openrouter: ['OPENROUTER_API_KEY'],
+        groq: ['GROQ_API_KEY'],
+        anthropic: ['ANTHROPIC_API_KEY'],
+        claude: ['ANTHROPIC_API_KEY'],
+        openai: ['OPENAI_API_KEY'],
+        'google-ai-studio': ['GEMINI_API_KEY', 'GOOGLE_API_KEY'],
+        gemini: ['GEMINI_API_KEY', 'GOOGLE_API_KEY'],
+        deepseek: ['DEEPSEEK_API_KEY'],
+        copilot: ['GITHUB_COPILOT_TOKEN', 'COPILOT_TOKEN'],
+        opencode: ['OPENCODE_API_KEY', 'OPENCODE_ZEN_API_KEY']
+      };
+      for (const candidate of keyCandidates) {
+        for (const envVar of envKeyMap[candidate] || envKeyMap[candidate.replace(/-free$/, '')] || []) {
+          const envValue = process.env[envVar];
+          if (envValue && envValue.trim().length > 4) {
+            key = envValue.trim();
+            void credentialStore.saveCredential(candidate, key, `Auto-detected from $${envVar}`).catch(() => undefined);
+            break;
+          }
+        }
+        if (key) break;
+      }
+    }
+
+    if (!key) {
+      throw new Error(
+        `[GATEWAY] CONFIG_MISSING: No API key configured for "${providerId}" in any credential layer. Re-save your ${providerId} key in Settings.`
+      );
+    }
   }
 
   // 3. Construct headers
@@ -171,21 +236,49 @@ export async function sendChatRequest(
     const response = await fetch(config.url, {
       method: 'POST',
       headers,
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
+      signal: abortSignal
     });
 
     console.log(`[GATEWAY] Response status: ${response.status}`);
 
-    const isThrottledOrServerError = response.status === 429 || response.status >= 500;
-    if (isThrottledOrServerError) {
+    const shouldHandoff = response.status === 429 || response.status >= 500 || (response.status === 404 && /:free|\/free/.test(requestModel || modelId));
+    if (shouldHandoff) {
       if (handoffCount < 2) {
-        console.log(`[GATEWAY] Provider failed mid-stream. Handing off to next provider (Attempt ${handoffCount + 1}/2).`);
+        console.log(`[GATEWAY] Provider failed (${response.status}). Handing off to next provider (Attempt ${handoffCount + 1}/2).`);
         // Find the next available model from a DIFFERENT provider
-        const nextModel = allModels.find((m) => m.providerId !== config.providerId);
+        const requestedModel = requestModel || modelId;
+        // Prefer a different provider hosting the SAME model, so the user keeps
+        // the model they picked when one provider's quota/limit runs dry.
+        const sameModelAlt = allModels.find(
+          (m) =>
+            (m.modelId === requestedModel || m.modelId.toLowerCase() === requestedModel.toLowerCase()) &&
+            m.providerId !== (config?.providerId || providerId)
+        );
+        const nextModel = sameModelAlt || allModels.find((m) => m.providerId !== (config?.providerId || providerId));
         if (nextModel) {
           console.log(`[GATEWAY] Handing off to ${nextModel.providerId} (${nextModel.modelId})`);
+          try {
+            onHandoff?.({
+              fromProvider: config.providerId || providerId,
+              toProvider: nextModel.providerId,
+              toModel: nextModel.modelId
+            });
+          } catch {
+            // Notification callback must never break the request chain
+          }
           // Recursively call sendChatRequest with the new provider and incremented handoffCount
-          return await sendChatRequest(nextModel.providerId, nextModel.modelId, messages, stream, apiKey, onToken, handoffCount + 1);
+          return await sendChatRequest(
+            nextModel.providerId,
+            nextModel.modelId,
+            messages,
+            stream,
+            apiKey,
+            onToken,
+            handoffCount + 1,
+            abortSignal,
+            onHandoff
+          );
         } else {
           throw new Error(`[GATEWAY] All providers failed. Maximum handoffs reached.`);
         }
@@ -255,8 +348,8 @@ export async function sendChatRequest(
                 onToken(token);
               }
             }
-          } catch {
-            // SSE incomplete chunk, continue
+          } catch (parseErr) {
+            console.warn('[GATEWAY] SSE chunk parse skipped:', parseErr instanceof Error ? parseErr.message : parseErr);
           }
         }
       }
@@ -283,6 +376,10 @@ export async function sendChatRequest(
   } catch (err: any) {
     console.error('[GATEWAY] Exact Node.js fetch error:', err);
     console.error(`[GATEWAY] Error message: ${err?.message || String(err)}`);
+    // User-initiated abort must never be re-routed to another provider
+    if (abortSignal?.aborted || err?.name === 'AbortError') {
+      throw err;
+    }
     if (
       handoffCount < 2 &&
       (err?.message?.includes('429') ||
@@ -293,12 +390,37 @@ export async function sendChatRequest(
         err?.message?.includes('network'))
     ) {
       console.log(`[GATEWAY] Provider failed mid-stream. Handing off to next provider (Attempt ${handoffCount + 1}/2).`);
-      // Find the next available model from a DIFFERENT provider
-      const nextModel = allModels.find((m) => m.providerId !== config.providerId);
+      // Prefer a different provider hosting the SAME model, then any other provider.
+      const requestedModel = requestModel || modelId;
+      const sameModelAlt = allModels.find(
+        (m) =>
+          (m.modelId === requestedModel || m.modelId.toLowerCase() === requestedModel.toLowerCase()) &&
+          m.providerId !== (config?.providerId || providerId)
+      );
+      const nextModel = sameModelAlt || allModels.find((m) => m.providerId !== (config?.providerId || providerId));
       if (nextModel) {
         console.log(`[GATEWAY] Handing off to ${nextModel.providerId} (${nextModel.modelId})`);
+        try {
+          onHandoff?.({
+            fromProvider: config.providerId || providerId,
+            toProvider: nextModel.providerId,
+            toModel: nextModel.modelId
+          });
+        } catch {
+          // Notification callback must never break the request chain
+        }
         // Recursively call sendChatRequest with the new provider and incremented handoffCount
-        return await sendChatRequest(nextModel.providerId, nextModel.modelId, messages, stream, apiKey, onToken, handoffCount + 1);
+        return await sendChatRequest(
+          nextModel.providerId,
+          nextModel.modelId,
+          messages,
+          stream,
+          apiKey,
+          onToken,
+          handoffCount + 1,
+          abortSignal,
+          onHandoff
+        );
       } else {
         throw new Error(`[GATEWAY] All providers failed. Maximum handoffs reached.`);
       }
@@ -312,7 +434,7 @@ export function isFreeModel(modelId: string, providerId: string): boolean {
   if (providerId === 'ollama' || providerId === 'fcc-proxy' || providerId === 'anthropic-claude-free') return true;
   if (/:free($|:|\/)/i.test(modelId) || modelId.toLowerCase().includes(':free')) return true;
   if (providerId === 'groq' || providerId === 'groq-free') {
-    const groqFree = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'gemma2-9b-it', 'mixtral-8x7b-32768'];
+    const groqFree = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'];
     if (groqFree.includes(modelId)) return true;
   }
   return false;
@@ -592,7 +714,7 @@ export class ProviderGateway {
       };
     }
 
-    const testModel = modelId || preconfigured?.defaultModel || (providerId === 'groq' ? 'llama-3.3-70b-versatile' : 'meta-llama/llama-3.3-70b-instruct:free');
+    const testModel = modelId || preconfigured?.defaultModel || (providerId === 'groq' ? 'llama-3.3-70b-versatile' : providerId.includes('openkilo') ? 'kilo-auto/free' : 'dots-studio/dots-3-note-preview:free');
 
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -767,7 +889,9 @@ export class ProviderGateway {
           'fireworks-ai-free': ['FIREWORKS_API_KEY'],
           'huggingface-free': ['HUGGINGFACE_API_KEY', 'HF_TOKEN'],
           mistral: ['MISTRAL_API_KEY'],
-          cohere: ['COHERE_API_KEY']
+          cohere: ['COHERE_API_KEY'],
+          opencode: ['OPENCODE_API_KEY', 'OPENCODE_ZEN_API_KEY'],
+          'opencode-free': ['OPENCODE_API_KEY', 'OPENCODE_ZEN_API_KEY']
         };
 
         const envVars = envKeyMap[providerId] || envKeyMap[providerId.replace(/-free$/, '')] || [];

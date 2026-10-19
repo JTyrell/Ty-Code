@@ -61,12 +61,12 @@ export const PROVIDER_CATALOG: Record<string, ProviderCatalogEntry> = {
       'Copy the generated key (starts with sk-or-v1-)'
     ],
     keyFormat: 'sk-or-v1-... (50+ characters)',
-    defaultModel: 'deepseek/deepseek-r1:free',
+    defaultModel: 'nvidia/nemotron-3-ultra-550b-a55b:free',
     freeModels: [
-      'deepseek/deepseek-r1:free',
+      'nvidia/nemotron-3-ultra-550b-a55b:free',
       'qwen/qwen-2.5-coder-32b-instruct:free',
-      'meta-llama/llama-3.3-70b-instruct:free',
-      'google/gemini-2.0-flash-exp:free'
+      'dots-studio/dots-3-note-preview:free',
+      'google/gemma-4-31b-it:free'
     ],
     badges: ['Most Popular', '10+ free models'],
     accentColor: '#6366f1'
@@ -87,8 +87,7 @@ export const PROVIDER_CATALOG: Record<string, ProviderCatalogEntry> = {
     defaultModel: 'llama-3.3-70b-versatile',
     freeModels: [
       'llama-3.3-70b-versatile',
-      'llama-3.1-8b-instant',
-      'mixtral-8x7b-32768'
+      'llama-3.1-8b-instant'
     ],
     badges: ['Ultra-Fast', '300+ tok/s'],
     accentColor: '#f97316'
@@ -120,9 +119,9 @@ export const PROVIDER_CATALOG: Record<string, ProviderCatalogEntry> = {
     name: 'Ollama Local',
     tagline: 'Run models 100% locally on your machine with zero telemetry and zero network',
     flow: 'local-detect',
-    signupUrl: 'https://ollama.ai',
+    signupUrl: 'https://ollama.com/download',
     instructions: [
-      'Download and run Ollama from ollama.ai if not installed',
+      'Download and run Ollama from ollama.com/download if not installed',
       'Pull a coding model in your terminal (e.g. ollama run qwen2.5-coder)',
       'Ty-Code connects directly to http://localhost:11434'
     ],
@@ -166,7 +165,43 @@ export const ProviderSetupStep: React.FC<ProviderSetupStepProps> = ({
     freeModels: [`${normId}-default`],
     badges: ['API Key'],
     accentColor: '#6366f1'
+  } as ProviderCatalogEntry;
+  const REAL_SIGNUP_URLS: Record<string, string> = {
+    anthropic: 'https://console.anthropic.com/settings/keys',
+    openai: 'https://platform.openai.com/api-keys',
+    deepseek: 'https://platform.deepseek.com/api_keys',
+    'google-ai-studio': 'https://aistudio.google.com/app/apikey',
+    gemini: 'https://aistudio.google.com/app/apikey',
+    groq: 'https://console.groq.com/keys',
+    openrouter: 'https://openrouter.ai/keys',
+    copilot: 'https://github.com/settings/copilot',
+    openkilo: 'https://openkilo.com',
+    ollama: 'https://ollama.com/download'
   };
+  if (!PROVIDER_CATALOG[normId]) {
+    config.signupUrl = REAL_SIGNUP_URLS[normId] || 'https://openkilo.com';
+  }
+  const REAL_DEFAULT_MODELS: Record<string, string> = {
+    anthropic: 'claude-3-5-sonnet-20241022',
+    openai: 'gpt-4o',
+    deepseek: 'deepseek-chat',
+    'google-ai-studio': 'gemini-2.0-flash',
+    gemini: 'gemini-2.0-flash',
+    'google-gemini': 'gemini-2.0-flash',
+    openrouter: 'nvidia/nemotron-3-ultra-550b-a55b:free',
+    groq: 'llama-3.3-70b-versatile',
+    copilot: 'claude-3.5-sonnet',
+    openkilo: 'kilo-auto/free',
+    'openkilo-free': 'kilo-auto/free',
+    ollama: 'qwen2.5-coder'
+  };
+  const defaultModel = REAL_DEFAULT_MODELS[normId] || 'kilo-auto/free';
+  if (config.defaultModel?.endsWith('-default')) {
+    config.defaultModel = defaultModel;
+  }
+  if (config.freeModels.length === 1 && config.freeModels[0]?.endsWith('-default')) {
+    config.freeModels = [defaultModel];
+  }
 
   const { connectedProviders, markProviderConnected, markProviderSkipped } = useOnboardingStore();
   const { saveSettings } = useChatStore();

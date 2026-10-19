@@ -10,10 +10,12 @@ import {
   Sparkles,
   ExternalLink,
   Bot,
-  Activity
+  Activity,
+  Download,
+  XCircle
 } from 'lucide-react';
 import { useChatStore } from '../../state/chat-store';
-import type { AgentHarnessType } from '../../../../preload/types';
+import type { AgentHarnessType, FCCServiceStatus } from '../../../../preload/types';
 import { ProviderHealthDashboard, FCC_CREDIT_STRING } from '../dashboard/ProviderHealthDashboard';
 
 export interface ProviderSetupState {
@@ -27,12 +29,22 @@ export interface ProviderSetupState {
 
 export const FCCSetup: React.FC = () => {
   const { settings, saveSettings } = useChatStore();
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'harnesses'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'harnesses' | 'service'>('dashboard');
   const [serverRunning, setServerRunning] = useState(true);
   const [serverPort, setServerPort] = useState(8082);
-  const [tokensUsed, setTokensUsed] = useState(12_450_000);
+  const [tokensUsed, setTokensUsed] = useState(0);
   const [loadingAll, setLoadingAll] = useState(false);
   const [activeHarness, setActiveHarness] = useState<AgentHarnessType>(settings?.activeHarness || 'claude-code');
+
+  // FCC Service Manager state
+  const [serviceStatus, setServiceStatus] = useState<FCCServiceStatus | null>(null);
+  const [installingState, setInstallingState] = useState<{ stage: string; percent: number; message: string } | null>(null);
+  const [installError, setInstallError] = useState('');
+  const [testProviderId, setTestProviderId] = useState<string>(typeof settings?.activeProvider === 'string' ? settings.activeProvider : 'openrouter');
+  const [testResult, setTestResult] = useState<{ ok: boolean; text: string } | null>(null);
+  const [testingConnection, setTestingConnection] = useState(false);
+  const [showServiceLogs, setShowServiceLogs] = useState(false);
+  const [serviceLogs, setServiceLogs] = useState<string[]>([]);
 
   const [providers, setProviders] = useState<ProviderSetupState[]>([
     {
@@ -114,6 +126,90 @@ export const FCCSetup: React.FC = () => {
       clearInterval(timer);
     };
   }, []);
+
+  // Fetch FCC Service Manager state + subscribe to live install/service events
+  useEffect(() => {
+    let mounted = true;
+    const unsubInstall = window.electronAPI?.onFccInstallProgress?.((progress) => {
+      if (mounted) {
+        setInstallingState(progress);
+        if (progress.stage === 'done' || progress.stage === 'failed') {
+          setInstallError(progress.stage === 'failed' ? progress.message : '');
+        }
+      }
+    }) || (() => () => undefined);
+    const unsubService = window.electronAPI?.onFccServiceState?.((svc) => {
+      if (mounted) {
+        setServiceStatus(svc);
+        if (svc.installing === false) setInstallingState(svc.installProgress);
+      }
+    }) || (() => () => undefined);
+    void window.electronAPI?.fccGetServiceStatus?.().then((res) => {
+      if (mounted && res?.success) setServiceStatus(res.data || null);
+    }).catch(() => undefined);
+    return () => {
+      mounted = false;
+      unsubInstall();
+      unsubService();
+    };
+  }, []);
+
+  const handleInstallFcc = async () => {
+    setInstallError('');
+    setTestResult(null);
+    try {
+      const res = await window.electronAPI?.fccInstall?.();
+      if (res && !res.success) {
+        setInstallError(res.error || 'FCC installation failed. Check the install logs above.');
+      }
+    } catch (err: unknown) {
+      setInstallError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const handleRetryService = async () => {
+    try {
+      const res = await window.electronAPI?.fccRetryService?.();
+      if (res?.data) setServiceStatus(res.data);
+      setInstallError(res?.success ? '' : res?.error || '');
+    } catch {
+      // Non-blocking
+    }
+  };
+
+  const handleViewServiceLogs = async () => {
+    try {
+      const res = await window.electronAPI?.fccGetLogs?.();
+      const logs = Array.isArray(res?.data) ? res.data : [];
+      setServiceLogs(logs.slice(-30));
+      setShowServiceLogs((prev) => !prev);
+    } catch {
+      // Non-blocking
+    }
+  };
+
+  const handleTestConnection = async () => {
+    const providerId = testProviderId;
+    setTestingConnection(true);
+    setTestResult(null);
+    try {
+      const statusRes = await window.electronAPI?.fccGetStatus?.();
+      if (!statusRes?.success || !statusRes.data?.running) {
+        setTestResult({ ok: false, text: 'FCC service is not running — press Retry Connection or enable FCC.' });
+        return;
+      }
+      const res = await window.electronAPI?.fccTestProvider?.(providerId);
+      if (res?.success && res.data?.success) {
+        setTestResult({ ok: true, text: `Connected to ${providerId} via FCC in ${res.data.latencyMs}ms.` });
+      } else {
+        setTestResult({ ok: false, text: res?.data?.error || res?.error || `${providerId} test failed through the FCC layer.` });
+      }
+    } catch (err: unknown) {
+      setTestResult({ ok: false, text: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setTestingConnection(false);
+    }
+  };
 
   const handleSetupAll = async () => {
     setLoadingAll(true);
@@ -225,7 +321,251 @@ export const FCCSetup: React.FC = () => {
         >
           <Bot size={14} /> Agent Harnesses &amp; Quick Setup
         </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('service')}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '6px 12px',
+            borderRadius: '6px',
+            border: activeTab === 'service' ? '1px solid #818cf8' : '1px solid transparent',
+            background: activeTab === 'service' ? 'rgba(99, 102, 241, 0.2)' : 'transparent',
+            color: activeTab === 'service' ? '#c7d2fe' : '#94a3b8',
+            fontSize: '12px',
+            fontWeight: 600,
+            cursor: 'pointer'
+          }}
+        >
+          <Server size={14} /> Ty-Code AI Settings
+        </button>
       </div>
+
+      {activeTab === 'service' && (
+        <>
+          <div
+            style={{
+              backgroundColor: 'var(--bg-tertiary, #1e1e24)',
+              border: '1px solid var(--border-subtle, #2e2e38)',
+              borderRadius: '8px',
+              padding: '14px 16px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '10px'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Server size={18} color="var(--accent-primary, #6366f1)" />
+                <span style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text-primary, #fff)' }}>
+                  free-claude-code Engine
+                </span>
+                <span
+                  style={{
+                    fontSize: '11px',
+                    padding: '2px 8px',
+                    borderRadius: '12px',
+                    backgroundColor: serviceStatus?.installed ? '#059669' : '#b45309',
+                    color: '#fff',
+                    fontWeight: 500
+                  }}
+                >
+                  {serviceStatus?.installed ? 'Binary Installed' : 'Not Installed (native supply active)'}
+                </span>
+                <span
+                  style={{
+                    fontSize: '11px',
+                    padding: '2px 8px',
+                    borderRadius: '12px',
+                    backgroundColor: serverRunning ? '#059669' : '#dc2626',
+                    color: '#fff',
+                    fontWeight: 500
+                  }}
+                >
+                  {serverRunning ? `Service Healthy (port ${serverPort})` : 'Service Stopped'}
+                </span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <button
+                  onClick={() => void handleInstallFcc()}
+                  disabled={Boolean(serviceStatus?.installing) || Boolean(installingState && installingState.percent < 100)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    backgroundColor: 'var(--accent-primary, #6366f1)',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '6px',
+                    padding: '6px 12px',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                >
+                  <Download size={13} />
+                  {serviceStatus?.installed ? 'Update / Locate Binary' : 'Install FCC Engine'}
+                </button>
+                <button
+                  onClick={() => void handleRetryService()}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    backgroundColor: 'transparent',
+                    border: '1px solid var(--border-subtle, #2e2e38)',
+                    borderRadius: '6px',
+                    padding: '6px 12px',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    color: 'var(--text-secondary, #c7c7d4)',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <RefreshCw size={13} /> Retry Connection
+                </button>
+                <button
+                  onClick={() => void handleViewServiceLogs()}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    backgroundColor: 'transparent',
+                    border: '1px solid var(--border-subtle, #2e2e38)',
+                    borderRadius: '6px',
+                    padding: '6px 12px',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    color: 'var(--text-secondary, #c7c7d4)',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <Activity size={13} /> {showServiceLogs ? 'Hide Logs' : 'View Logs'}
+                </button>
+              </div>
+            </div>
+
+            {serviceStatus?.binaryPath && (
+              <div style={{ fontSize: '11px', color: 'var(--text-muted, #8b8b9e)', fontFamily: 'monospace' }}>
+                Binary: {serviceStatus.binaryPath}
+                {serviceStatus.wrapperCommandsAvailable.length > 0 && (
+                  <> · Terminals: {serviceStatus.wrapperCommandsAvailable.join(', ')}</>
+                )}
+              </div>
+            )}
+
+            {installingState && installingState.percent < 100 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-secondary, #c7c7d4)' }}>
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '70%' }}>
+                    {installingState.message}
+                  </span>
+                  <span style={{ fontWeight: 600 }}>{installingState.percent}%</span>
+                </div>
+                <div style={{ height: '6px', borderRadius: '3px', backgroundColor: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
+                  <div
+                    style={{
+                      height: '100%',
+                      width: `${installingState.percent}%`,
+                      backgroundColor: 'var(--accent-primary, #6366f1)',
+                      transition: 'width 0.25s ease'
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {installError && (
+              <div style={{ fontSize: '11px', color: '#fca5a5', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <span>Install error: {installError}</span>
+                <button onClick={() => void handleRetryService()} style={{ background: 'transparent', border: '1px solid rgba(248,113,113,0.4)', borderRadius: '6px', color: '#fca5a5', fontSize: '11px', fontWeight: 600, cursor: 'pointer', padding: '3px 8px' }}>
+                  Retry
+                </button>
+              </div>
+            )}
+            {serviceStatus?.lastError && !installError && (
+              <div style={{ fontSize: '11px', color: '#fca5a5' }}>Service error: {serviceStatus.lastError}</div>
+            )}
+
+            {showServiceLogs && (
+              <div
+                style={{
+                  background: 'rgba(10, 15, 29, 0.75)',
+                  borderRadius: '8px',
+                  padding: '10px 12px',
+                  border: '1px solid var(--border-subtle, #2e2e38)',
+                  fontFamily: 'monospace',
+                  fontSize: '11px',
+                  color: '#cbd5e1',
+                  maxHeight: '180px',
+                  overflowY: 'auto'
+                }}
+              >
+                {serviceLogs.length === 0 ? <div style={{ color: '#64748b' }}>No FCC service logs available.</div> : serviceLogs.map((log, i) => (
+                  <div key={i}>{log}</div>
+                ))}
+              </div>
+            )}
+
+            {/* Wired Test Connection */}
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: '8px', flexWrap: 'wrap', borderTop: '1px solid var(--border-subtle, #2e2e38)', paddingTop: '10px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', minWidth: '200px' }}>
+                <label style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.4px', color: 'var(--text-muted, #8b8b9e)' }}>
+                  Provider To Test
+                </label>
+                <select
+                  value={testProviderId}
+                  onChange={(e) => { setTestProviderId(e.target.value); setTestResult(null); }}
+                  style={{
+                    background: 'var(--bg-secondary, #18181f)',
+                    border: '1px solid var(--border-subtle, #2e2e38)',
+                    borderRadius: '6px',
+                    color: 'var(--text-primary, #fff)',
+                    fontSize: '12px',
+                    padding: '7px 10px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {providers.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                  <option value="openkilo">OpenKilo (Anonymous)</option>
+                  <option value="ollama">Ollama (Local)</option>
+                </select>
+              </div>
+              <button
+                onClick={() => void handleTestConnection()}
+                disabled={testingConnection}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  backgroundColor: 'var(--accent-primary, #6366f1)',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '6px',
+                  padding: '7px 14px',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  cursor: testingConnection ? 'wait' : 'pointer'
+                }}
+              >
+                {testingConnection ? <RefreshCw size={13} className="spin" /> : <Zap size={13} />}
+                Test Connection
+              </button>
+              <div style={{ flex: 1, minWidth: '220px', fontSize: '11px', color: testResult?.ok ? '#34d399' : '#fca5a5', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                {testResult && (
+                  <>
+                    {testResult.ok ? <CheckCircle2 size={13} /> : <XCircle size={13} />}
+                    <span>{testResult.text}</span>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        </>
+      )}
 
       {activeTab === 'dashboard' ? (
         <ProviderHealthDashboard />

@@ -476,15 +476,15 @@ export const ProviderHealthDashboard: React.FC = () => {
           <div style={{ padding: '10px', background: 'rgba(255, 255, 255, 0.03)', borderRadius: '6px', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
             <span style={{ fontSize: '10px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 600 }}>Total Providers</span>
             <div style={{ fontSize: '18px', fontWeight: 700, color: '#f8fafc', marginTop: '2px' }}>
-              {fleetSummary?.providersCount || 61}
+              {fleetSummary?.providersCount ?? 0}
             </div>
-            <span style={{ fontSize: '10px', color: '#38bdf8' }}>61 Catalog entries</span>
+            <span style={{ fontSize: '10px', color: '#38bdf8' }}>Catalog snapshot entries</span>
           </div>
 
           <div style={{ padding: '10px', background: 'rgba(16, 185, 129, 0.05)', borderRadius: '6px', border: '1px solid rgba(16, 185, 129, 0.15)' }}>
             <span style={{ fontSize: '10px', color: '#34d399', textTransform: 'uppercase', fontWeight: 600 }}>Healthy Providers</span>
             <div style={{ fontSize: '18px', fontWeight: 700, color: '#34d399', marginTop: '2px' }}>
-              {fleetSummary?.healthyProvidersCount || 52}
+              {fleetSummary?.healthyProvidersCount ?? 0}
             </div>
             <span style={{ fontSize: '10px', color: '#94a3b8' }}>Live &amp; responsive</span>
           </div>
@@ -492,7 +492,7 @@ export const ProviderHealthDashboard: React.FC = () => {
           <div style={{ padding: '10px', background: 'rgba(245, 158, 11, 0.05)', borderRadius: '6px', border: '1px solid rgba(245, 158, 11, 0.15)' }}>
             <span style={{ fontSize: '10px', color: '#fbbf24', textTransform: 'uppercase', fontWeight: 600 }}>Degraded / Risky</span>
             <div style={{ fontSize: '18px', fontWeight: 700, color: '#fbbf24', marginTop: '2px' }}>
-              {(fleetSummary?.degradedProvidersCount || 4) + (fleetSummary?.stoppedProvidersCount || 5)}
+              {(fleetSummary?.degradedProvidersCount ?? 0) + (fleetSummary?.stoppedProvidersCount ?? 0)}
             </div>
             <span style={{ fontSize: '10px', color: '#94a3b8' }}>Risky off by default</span>
           </div>
@@ -500,7 +500,7 @@ export const ProviderHealthDashboard: React.FC = () => {
           <div style={{ padding: '10px', background: 'rgba(168, 85, 247, 0.05)', borderRadius: '6px', border: '1px solid rgba(168, 85, 247, 0.15)' }}>
             <span style={{ fontSize: '10px', color: '#c084fc', textTransform: 'uppercase', fontWeight: 600 }}>Free Models Active</span>
             <div style={{ fontSize: '18px', fontWeight: 700, color: '#c084fc', marginTop: '2px' }}>
-              {fleetSummary?.totalFreeModels || 84}+
+              {fleetSummary?.totalFreeModels ?? 0}
             </div>
             <span style={{ fontSize: '10px', color: '#94a3b8' }}>Zero-cost supply</span>
           </div>
@@ -509,14 +509,16 @@ export const ProviderHealthDashboard: React.FC = () => {
         {/* Free Tokens Allowance Bar */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#94a3b8' }}>
-            <span>Aggregate Monthly Free Token Pool: <strong style={{ color: '#f8fafc' }}>1.35 Billion tokens</strong></span>
-            <span>Used: {((fleetSummary?.usedTokens || 12_450_000) / 1_000_000).toFixed(1)}M / 1,350M</span>
+            <span>Aggregate Monthly Free Token Pool: <strong style={{ color: '#f8fafc' }}>
+              {(((fleetSummary?.aggregateFreeTokens || 0) / 1_000_000_000).toFixed(2))} Billion tokens
+            </strong></span>
+            <span>Used: {((fleetSummary?.usedTokens ?? 0) / 1_000_000).toFixed(1)}M / {(fleetSummary?.aggregateFreeTokens ?? 0) / 1_000_000}M</span>
           </div>
           <div style={{ height: '6px', width: '100%', backgroundColor: 'rgba(255, 255, 255, 0.08)', borderRadius: '3px', overflow: 'hidden' }}>
             <div
               style={{
                 height: '100%',
-                width: `${Math.min(100, Math.max(1, ((fleetSummary?.usedTokens || 12_450_000) / 1_350_000_000) * 100))}%`,
+                width: `${Math.min(100, Math.max(1, ((fleetSummary?.usedTokens ?? 0) / Math.max(1, fleetSummary?.aggregateFreeTokens ?? 1)) * 100))}%`,
                 background: 'linear-gradient(90deg, #818cf8, #c084fc)',
                 transition: 'width 0.3s ease'
               }}
@@ -650,6 +652,8 @@ export const ProviderHealthDashboard: React.FC = () => {
               ? '#64748b'
               : p.health === 'healthy'
               ? '#10b981'
+              : p.health === 'untested'
+              ? '#818cf8'
               : '#f59e0b';
 
           return (
@@ -676,8 +680,7 @@ export const ProviderHealthDashboard: React.FC = () => {
                       height: '8px',
                       borderRadius: '50%',
                       backgroundColor: healthColor,
-                      boxShadow: p.enabled && p.health === 'healthy' ? '0 0 6px #10b981' : undefined
-                    }}
+                      boxShadow: p.enabled && p.health === 'healthy' ? '0 0 6px #10b981' : undefined                    }}
                   />
                   <div>
                     <div style={{ fontWeight: 600, fontSize: '13px', color: '#f8fafc' }}>
@@ -751,9 +754,9 @@ export const ProviderHealthDashboard: React.FC = () => {
                   color: '#94a3b8'
                 }}
               >
-                <span>Latency: <strong style={{ color: '#f8fafc' }}>{p.latencyMs}ms</strong></span>
-                <span>Success: <strong style={{ color: '#f8fafc' }}>{p.successRate}%</strong></span>
-                <span>Quota: <strong style={{ color: '#f8fafc' }}>{p.quotaRemainingPercent}%</strong></span>
+                <span>Latency: <strong style={{ color: '#f8fafc' }}>{p.health === 'untested' ? '—' : `${p.latencyMs}ms`}</strong></span>
+                <span>Success: <strong style={{ color: '#f8fafc' }}>{p.successRate > 0 ? `${p.successRate}%` : '—'}</strong></span>
+                <span>Quota: <strong style={{ color: '#f8fafc' }}>{p.quotaRemainingPercent > 0 ? `${p.quotaRemainingPercent}%` : '—'}</strong></span>
               </div>
 
               {/* Free Tokens Banner */}

@@ -4,13 +4,17 @@
  * Curates FCC's complete 61-provider model supply catalog with:
  * - ToS compliance curation ('compliant' | 'verified' | 'conditional' | 'risky')
  * - Automatic disabling of risky providers by default with explanatory tooltips
- * - Aggregate free-token framing: 1.35B+ pooled free tokens/month across 61 providers
- * - Nightly 24h automatic catalog sync + on-demand sync
+ * - Aggregate free-token framing derived from catalog totals
+ * - Nightly 24h automatic catalog sync + on-demand sync (real endpoint probes)
+ * - Probe persistence across restarts (userData/fcc-probe-cache.json)
  * - Model capability metadata: reasoning, coding, fast, large-context
  *
  * Attribution:
  * Free-model supply layer powered by free-claude-code (FCC) — AGPL-3.0 / MIT — https://github.com/Alishahryar1/free-claude-code
  */
+
+import { app } from 'electron';
+import fs from 'node:fs';
 
 export type FCCToSStatus = 'compliant' | 'verified' | 'conditional' | 'risky';
 
@@ -39,10 +43,11 @@ export interface FCCProviderHealthInfo {
   name: string;
   category: 'api_key' | 'oauth' | 'web_cookie' | 'local';
   authMethod: 'api_key' | 'oauth' | 'web_cookie' | 'none';
-  health: 'healthy' | 'degraded' | 'stopped';
+  health: 'healthy' | 'degraded' | 'stopped' | 'untested';
   latencyMs: number;
   successRate: number; // 0 - 100
   quotaRemainingPercent: number; // 0 - 100
+  probedAt?: number;
   monthlyFreeTokens: number;
   isFreeTierAvailable: boolean;
   tosStatus: FCCToSStatus;
@@ -60,10 +65,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: 'OpenRouter Free Tier',
     category: 'api_key',
     authMethod: 'api_key',
-    health: 'healthy',
+    health: 'untested',
     latencyMs: 380,
-    successRate: 99.4,
-    quotaRemainingPercent: 88,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 200_000_000,
     isFreeTierAvailable: true,
     tosStatus: 'compliant',
@@ -72,7 +77,7 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     signupUrl: 'https://openrouter.ai/keys',
     models: [
       {
-        id: 'deepseek/deepseek-r1:free',
+        id: 'nvidia/nemotron-3-ultra-550b-a55b:free',
         name: 'DeepSeek R1 (Free OpenRouter)',
         contextWindow: 64_000,
         maxOutputTokens: 16_384,
@@ -94,7 +99,7 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
         description: 'State-of-the-art open coding specialist'
       },
       {
-        id: 'meta-llama/llama-3.3-70b-instruct:free',
+        id: 'dots-studio/dots-3-note-preview:free',
         name: 'Llama 3.3 70B Instruct',
         contextWindow: 131_072,
         maxOutputTokens: 4096,
@@ -113,10 +118,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: 'Groq Cloud Free Tier',
     category: 'api_key',
     authMethod: 'api_key',
-    health: 'healthy',
+    health: 'untested',
     latencyMs: 75,
-    successRate: 99.8,
-    quotaRemainingPercent: 92,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 150_000_000,
     isFreeTierAvailable: true,
     tosStatus: 'compliant',
@@ -155,10 +160,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: 'Google AI Studio',
     category: 'api_key',
     authMethod: 'api_key',
-    health: 'healthy',
+    health: 'untested',
     latencyMs: 240,
-    successRate: 99.1,
-    quotaRemainingPercent: 85,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 300_000_000,
     isFreeTierAvailable: true,
     tosStatus: 'compliant',
@@ -197,10 +202,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: 'OpenKilo Gateway',
     category: 'api_key',
     authMethod: 'none',
-    health: 'healthy',
+    health: 'untested',
     latencyMs: 320,
-    successRate: 98.9,
-    quotaRemainingPercent: 95,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 500_000_000,
     isFreeTierAvailable: true,
     tosStatus: 'compliant',
@@ -209,15 +214,15 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     signupUrl: 'https://openkilo.com',
     models: [
       {
-        id: 'deepseek-r1-0528:free',
-        name: 'DeepSeek R1 0528 (Kilo Free)',
-        contextWindow: 64_000,
+        id: 'kilo-auto/free',
+        name: 'Kilo Auto (Kilo Free Router)',
+        contextWindow: 256_000,
         maxOutputTokens: 16_384,
         isFree: true,
         capabilities: { reasoning: true, coding: true, tools: true, speedTokensPerSec: 45 },
         provenance: 'anonymous',
         costTier: 'free',
-        description: 'High-availability zero-config reasoning model'
+        description: 'Zero-cost smart router that picks the best live free model per request'
       },
       {
         id: 'qwen3-coder:free',
@@ -239,10 +244,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: 'Cerebras Inference',
     category: 'api_key',
     authMethod: 'api_key',
-    health: 'healthy',
+    health: 'untested',
     latencyMs: 60,
-    successRate: 99.6,
-    quotaRemainingPercent: 90,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 100_000_000,
     isFreeTierAvailable: true,
     tosStatus: 'compliant',
@@ -270,10 +275,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: 'SambaNova Cloud',
     category: 'api_key',
     authMethod: 'api_key',
-    health: 'healthy',
+    health: 'untested',
     latencyMs: 95,
-    successRate: 99.2,
-    quotaRemainingPercent: 88,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 80_000_000,
     isFreeTierAvailable: true,
     tosStatus: 'compliant',
@@ -301,10 +306,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: 'Mistral AI (La Plateforme)',
     category: 'api_key',
     authMethod: 'api_key',
-    health: 'healthy',
+    health: 'untested',
     latencyMs: 290,
-    successRate: 99.5,
-    quotaRemainingPercent: 82,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 40_000_000,
     isFreeTierAvailable: true,
     tosStatus: 'compliant',
@@ -332,10 +337,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: 'Together AI',
     category: 'api_key',
     authMethod: 'api_key',
-    health: 'healthy',
+    health: 'untested',
     latencyMs: 210,
-    successRate: 98.8,
-    quotaRemainingPercent: 75,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 50_000_000,
     isFreeTierAvailable: true,
     tosStatus: 'compliant',
@@ -362,10 +367,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: 'Cohere Trial Tier',
     category: 'api_key',
     authMethod: 'api_key',
-    health: 'healthy',
+    health: 'untested',
     latencyMs: 340,
-    successRate: 98.7,
-    quotaRemainingPercent: 80,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 30_000_000,
     isFreeTierAvailable: true,
     tosStatus: 'compliant',
@@ -392,10 +397,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: 'Fireworks AI',
     category: 'api_key',
     authMethod: 'api_key',
-    health: 'healthy',
+    health: 'untested',
     latencyMs: 140,
-    successRate: 99.3,
-    quotaRemainingPercent: 87,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 40_000_000,
     isFreeTierAvailable: true,
     tosStatus: 'compliant',
@@ -422,10 +427,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: 'Hyperbolic GPU Network',
     category: 'api_key',
     authMethod: 'api_key',
-    health: 'healthy',
+    health: 'untested',
     latencyMs: 160,
-    successRate: 98.5,
-    quotaRemainingPercent: 84,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 50_000_000,
     isFreeTierAvailable: true,
     tosStatus: 'compliant',
@@ -452,10 +457,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: 'Novita AI',
     category: 'api_key',
     authMethod: 'api_key',
-    health: 'healthy',
+    health: 'untested',
     latencyMs: 190,
-    successRate: 98.2,
-    quotaRemainingPercent: 86,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 30_000_000,
     isFreeTierAvailable: true,
     tosStatus: 'compliant',
@@ -482,10 +487,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: 'Perplexity API',
     category: 'api_key',
     authMethod: 'api_key',
-    health: 'healthy',
+    health: 'untested',
     latencyMs: 410,
-    successRate: 99.0,
-    quotaRemainingPercent: 78,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 20_000_000,
     isFreeTierAvailable: true,
     tosStatus: 'compliant',
@@ -512,10 +517,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: 'Cloudflare Workers AI',
     category: 'api_key',
     authMethod: 'api_key',
-    health: 'healthy',
+    health: 'untested',
     latencyMs: 150,
-    successRate: 99.7,
-    quotaRemainingPercent: 93,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 50_000_000,
     isFreeTierAvailable: true,
     tosStatus: 'compliant',
@@ -542,10 +547,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: 'Hugging Face Inference',
     category: 'api_key',
     authMethod: 'api_key',
-    health: 'healthy',
+    health: 'untested',
     latencyMs: 360,
-    successRate: 97.5,
-    quotaRemainingPercent: 88,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 50_000_000,
     isFreeTierAvailable: true,
     tosStatus: 'compliant',
@@ -572,10 +577,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: 'Replicate Free Credits',
     category: 'api_key',
     authMethod: 'api_key',
-    health: 'healthy',
+    health: 'untested',
     latencyMs: 450,
-    successRate: 98.1,
-    quotaRemainingPercent: 70,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 20_000_000,
     isFreeTierAvailable: true,
     tosStatus: 'compliant',
@@ -602,10 +607,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: 'SiliconFlow Cloud',
     category: 'api_key',
     authMethod: 'api_key',
-    health: 'healthy',
+    health: 'untested',
     latencyMs: 230,
-    successRate: 98.9,
-    quotaRemainingPercent: 89,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 50_000_000,
     isFreeTierAvailable: true,
     tosStatus: 'compliant',
@@ -632,10 +637,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: 'GitHub Copilot',
     category: 'oauth',
     authMethod: 'oauth',
-    health: 'healthy',
+    health: 'untested',
     latencyMs: 280,
-    successRate: 99.5,
-    quotaRemainingPercent: 95,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 50_000_000,
     isFreeTierAvailable: true,
     tosStatus: 'verified',
@@ -662,10 +667,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: 'Local Ollama',
     category: 'local',
     authMethod: 'none',
-    health: 'healthy',
+    health: 'untested',
     latencyMs: 35,
-    successRate: 100,
-    quotaRemainingPercent: 100,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 999_999_999,
     isFreeTierAvailable: true,
     tosStatus: 'compliant',
@@ -693,10 +698,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: 'LM Studio (Local Server)',
     category: 'local',
     authMethod: 'none',
-    health: 'healthy',
+    health: 'untested',
     latencyMs: 40,
-    successRate: 100,
-    quotaRemainingPercent: 100,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 999_999_999,
     isFreeTierAvailable: true,
     tosStatus: 'compliant',
@@ -723,10 +728,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: 'vLLM High-Throughput Server',
     category: 'local',
     authMethod: 'none',
-    health: 'stopped',
+    health: 'untested',
     latencyMs: 25,
-    successRate: 100,
-    quotaRemainingPercent: 100,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 999_999_999,
     isFreeTierAvailable: true,
     tosStatus: 'compliant',
@@ -753,10 +758,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: 'LocalAI Container',
     category: 'local',
     authMethod: 'none',
-    health: 'stopped',
+    health: 'untested',
     latencyMs: 50,
-    successRate: 100,
-    quotaRemainingPercent: 100,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 999_999_999,
     isFreeTierAvailable: true,
     tosStatus: 'compliant',
@@ -783,10 +788,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: 'Jan AI (Local Assistant)',
     category: 'local',
     authMethod: 'none',
-    health: 'stopped',
+    health: 'untested',
     latencyMs: 45,
-    successRate: 100,
-    quotaRemainingPercent: 100,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 999_999_999,
     isFreeTierAvailable: true,
     tosStatus: 'compliant',
@@ -813,10 +818,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: 'llama.cpp HTTP Server',
     category: 'local',
     authMethod: 'none',
-    health: 'stopped',
+    health: 'untested',
     latencyMs: 20,
-    successRate: 100,
-    quotaRemainingPercent: 100,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 999_999_999,
     isFreeTierAvailable: true,
     tosStatus: 'compliant',
@@ -843,10 +848,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: 'Text Generation WebUI (Oobabooga)',
     category: 'local',
     authMethod: 'none',
-    health: 'stopped',
+    health: 'untested',
     latencyMs: 60,
-    successRate: 100,
-    quotaRemainingPercent: 100,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 999_999_999,
     isFreeTierAvailable: true,
     tosStatus: 'compliant',
@@ -873,10 +878,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: 'DeepSeek Platform API',
     category: 'api_key',
     authMethod: 'api_key',
-    health: 'healthy',
+    health: 'untested',
     latencyMs: 310,
-    successRate: 98.7,
-    quotaRemainingPercent: 80,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 50_000_000,
     isFreeTierAvailable: true,
     tosStatus: 'compliant',
@@ -913,10 +918,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: 'OpenCode Framework Hub',
     category: 'api_key',
     authMethod: 'api_key',
-    health: 'healthy',
-    latencyMs: 220,
-    successRate: 99.3,
-    quotaRemainingPercent: 95,
+    health: 'untested',
+    latencyMs: 0,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 1_000_000_000,
     isFreeTierAvailable: true,
     tosStatus: 'compliant',
@@ -925,8 +930,8 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     signupUrl: 'https://opencode.ai',
     models: [
       {
-        id: 'opencode-v1',
-        name: 'OpenCode V1',
+        id: 'grok-code',
+        name: 'Grok Code (OpenCode Zen)',
         contextWindow: 128_000,
         maxOutputTokens: 8192,
         isFree: true,
@@ -943,10 +948,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: 'Anthropic Claude (BYOK)',
     category: 'api_key',
     authMethod: 'api_key',
-    health: 'healthy',
+    health: 'untested',
     latencyMs: 420,
-    successRate: 99.8,
-    quotaRemainingPercent: 99,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 0,
     isFreeTierAvailable: false,
     tosStatus: 'verified',
@@ -973,10 +978,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: 'OpenAI (BYOK)',
     category: 'api_key',
     authMethod: 'api_key',
-    health: 'healthy',
+    health: 'untested',
     latencyMs: 380,
-    successRate: 99.7,
-    quotaRemainingPercent: 99,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 0,
     isFreeTierAvailable: false,
     tosStatus: 'verified',
@@ -1003,10 +1008,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: 'NVIDIA NIM Developer Cloud',
     category: 'api_key',
     authMethod: 'api_key',
-    health: 'healthy',
+    health: 'untested',
     latencyMs: 180,
-    successRate: 99.1,
-    quotaRemainingPercent: 88,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 50_000_000,
     isFreeTierAvailable: true,
     tosStatus: 'compliant',
@@ -1033,10 +1038,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: 'AI21 Studio',
     category: 'api_key',
     authMethod: 'api_key',
-    health: 'healthy',
+    health: 'untested',
     latencyMs: 310,
-    successRate: 98.4,
-    quotaRemainingPercent: 80,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 20_000_000,
     isFreeTierAvailable: true,
     tosStatus: 'compliant',
@@ -1063,10 +1068,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: 'Lepton AI',
     category: 'api_key',
     authMethod: 'api_key',
-    health: 'healthy',
+    health: 'untested',
     latencyMs: 160,
-    successRate: 99.0,
-    quotaRemainingPercent: 85,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 30_000_000,
     isFreeTierAvailable: true,
     tosStatus: 'compliant',
@@ -1093,10 +1098,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: 'Anyscale Endpoints',
     category: 'api_key',
     authMethod: 'api_key',
-    health: 'healthy',
+    health: 'untested',
     latencyMs: 250,
-    successRate: 98.6,
-    quotaRemainingPercent: 78,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 20_000_000,
     isFreeTierAvailable: true,
     tosStatus: 'compliant',
@@ -1123,10 +1128,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: 'DeepInfra (Conditional Free)',
     category: 'api_key',
     authMethod: 'api_key',
-    health: 'degraded',
+    health: 'untested',
     latencyMs: 380,
-    successRate: 96.2,
-    quotaRemainingPercent: 65,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 20_000_000,
     isFreeTierAvailable: true,
     tosStatus: 'conditional',
@@ -1154,10 +1159,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: 'Voyage AI Embeddings & Rerank',
     category: 'api_key',
     authMethod: 'api_key',
-    health: 'healthy',
+    health: 'untested',
     latencyMs: 180,
-    successRate: 99.4,
-    quotaRemainingPercent: 90,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 10_000_000,
     isFreeTierAvailable: true,
     tosStatus: 'compliant',
@@ -1184,10 +1189,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: 'Baseten Bridge',
     category: 'api_key',
     authMethod: 'api_key',
-    health: 'healthy',
+    health: 'untested',
     latencyMs: 240,
-    successRate: 98.7,
-    quotaRemainingPercent: 82,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 20_000_000,
     isFreeTierAvailable: true,
     tosStatus: 'compliant',
@@ -1214,10 +1219,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: 'Modal Labs Inference',
     category: 'api_key',
     authMethod: 'api_key',
-    health: 'healthy',
+    health: 'untested',
     latencyMs: 210,
-    successRate: 98.9,
-    quotaRemainingPercent: 85,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 20_000_000,
     isFreeTierAvailable: true,
     tosStatus: 'compliant',
@@ -1244,10 +1249,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: 'RunPod Serverless',
     category: 'api_key',
     authMethod: 'api_key',
-    health: 'healthy',
+    health: 'untested',
     latencyMs: 290,
-    successRate: 98.3,
-    quotaRemainingPercent: 80,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 20_000_000,
     isFreeTierAvailable: true,
     tosStatus: 'compliant',
@@ -1274,10 +1279,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: 'Lambda Cloud API',
     category: 'api_key',
     authMethod: 'api_key',
-    health: 'healthy',
+    health: 'untested',
     latencyMs: 270,
-    successRate: 98.5,
-    quotaRemainingPercent: 78,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 20_000_000,
     isFreeTierAvailable: true,
     tosStatus: 'compliant',
@@ -1304,10 +1309,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: 'Predibase Fine-Tuning Cloud',
     category: 'api_key',
     authMethod: 'api_key',
-    health: 'healthy',
+    health: 'untested',
     latencyMs: 310,
-    successRate: 98.1,
-    quotaRemainingPercent: 85,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 15_000_000,
     isFreeTierAvailable: true,
     tosStatus: 'compliant',
@@ -1334,10 +1339,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: 'Aleph Alpha Luminous',
     category: 'api_key',
     authMethod: 'api_key',
-    health: 'healthy',
+    health: 'untested',
     latencyMs: 460,
-    successRate: 97.8,
-    quotaRemainingPercent: 80,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 10_000_000,
     isFreeTierAvailable: true,
     tosStatus: 'compliant',
@@ -1364,10 +1369,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: 'MonsterAPI Inference',
     category: 'api_key',
     authMethod: 'api_key',
-    health: 'healthy',
+    health: 'untested',
     latencyMs: 350,
-    successRate: 98.0,
-    quotaRemainingPercent: 82,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 15_000_000,
     isFreeTierAvailable: true,
     tosStatus: 'compliant',
@@ -1394,10 +1399,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: 'Scaleway Generative AI',
     category: 'api_key',
     authMethod: 'api_key',
-    health: 'healthy',
+    health: 'untested',
     latencyMs: 330,
-    successRate: 98.8,
-    quotaRemainingPercent: 88,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 20_000_000,
     isFreeTierAvailable: true,
     tosStatus: 'compliant',
@@ -1424,10 +1429,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: 'FriendliAI Dedicated Endpoints',
     category: 'api_key',
     authMethod: 'api_key',
-    health: 'healthy',
+    health: 'untested',
     latencyMs: 140,
-    successRate: 99.2,
-    quotaRemainingPercent: 86,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 15_000_000,
     isFreeTierAvailable: true,
     tosStatus: 'compliant',
@@ -1454,10 +1459,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: 'OctoAI Compute Service',
     category: 'api_key',
     authMethod: 'api_key',
-    health: 'healthy',
+    health: 'untested',
     latencyMs: 220,
-    successRate: 98.9,
-    quotaRemainingPercent: 84,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 20_000_000,
     isFreeTierAvailable: true,
     tosStatus: 'compliant',
@@ -1484,10 +1489,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: 'IBM WatsonX AI Studio',
     category: 'api_key',
     authMethod: 'api_key',
-    health: 'healthy',
+    health: 'untested',
     latencyMs: 440,
-    successRate: 98.4,
-    quotaRemainingPercent: 80,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 15_000_000,
     isFreeTierAvailable: true,
     tosStatus: 'verified',
@@ -1514,10 +1519,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: 'Databricks Mosaic AI',
     category: 'api_key',
     authMethod: 'api_key',
-    health: 'healthy',
+    health: 'untested',
     latencyMs: 370,
-    successRate: 98.9,
-    quotaRemainingPercent: 82,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 20_000_000,
     isFreeTierAvailable: true,
     tosStatus: 'verified',
@@ -1544,10 +1549,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: 'Upstage Solar',
     category: 'api_key',
     authMethod: 'api_key',
-    health: 'healthy',
+    health: 'untested',
     latencyMs: 270,
-    successRate: 98.7,
-    quotaRemainingPercent: 86,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 15_000_000,
     isFreeTierAvailable: true,
     tosStatus: 'compliant',
@@ -1574,10 +1579,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: '01.AI (Yi Models)',
     category: 'api_key',
     authMethod: 'api_key',
-    health: 'healthy',
+    health: 'untested',
     latencyMs: 310,
-    successRate: 98.3,
-    quotaRemainingPercent: 84,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 20_000_000,
     isFreeTierAvailable: true,
     tosStatus: 'compliant',
@@ -1604,10 +1609,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: 'Moonshot AI (Kimi)',
     category: 'api_key',
     authMethod: 'api_key',
-    health: 'healthy',
+    health: 'untested',
     latencyMs: 360,
-    successRate: 98.5,
-    quotaRemainingPercent: 88,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 20_000_000,
     isFreeTierAvailable: true,
     tosStatus: 'compliant',
@@ -1634,10 +1639,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: 'Zhipu AI (GLM-4)',
     category: 'api_key',
     authMethod: 'api_key',
-    health: 'healthy',
+    health: 'untested',
     latencyMs: 330,
-    successRate: 98.6,
-    quotaRemainingPercent: 85,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 20_000_000,
     isFreeTierAvailable: true,
     tosStatus: 'compliant',
@@ -1664,10 +1669,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: 'Baichuan Intelligent',
     category: 'api_key',
     authMethod: 'api_key',
-    health: 'healthy',
+    health: 'untested',
     latencyMs: 370,
-    successRate: 98.0,
-    quotaRemainingPercent: 82,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 15_000_000,
     isFreeTierAvailable: true,
     tosStatus: 'compliant',
@@ -1694,10 +1699,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: 'MiniMax Open Platform',
     category: 'api_key',
     authMethod: 'api_key',
-    health: 'healthy',
+    health: 'untested',
     latencyMs: 320,
-    successRate: 98.4,
-    quotaRemainingPercent: 86,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 20_000_000,
     isFreeTierAvailable: true,
     tosStatus: 'compliant',
@@ -1724,10 +1729,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: 'StepFun (Step-1)',
     category: 'api_key',
     authMethod: 'api_key',
-    health: 'healthy',
+    health: 'untested',
     latencyMs: 380,
-    successRate: 97.9,
-    quotaRemainingPercent: 80,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 15_000_000,
     isFreeTierAvailable: true,
     tosStatus: 'compliant',
@@ -1754,10 +1759,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: 'Qiniu Cloud AI Platform',
     category: 'api_key',
     authMethod: 'api_key',
-    health: 'healthy',
+    health: 'untested',
     latencyMs: 340,
-    successRate: 98.3,
-    quotaRemainingPercent: 85,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 15_000_000,
     isFreeTierAvailable: true,
     tosStatus: 'compliant',
@@ -1784,10 +1789,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: 'DeepL API Free',
     category: 'api_key',
     authMethod: 'api_key',
-    health: 'healthy',
+    health: 'untested',
     latencyMs: 210,
-    successRate: 99.8,
-    quotaRemainingPercent: 95,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 10_000_000,
     isFreeTierAvailable: true,
     tosStatus: 'compliant',
@@ -1818,10 +1823,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: 'HuggingChat Web Session',
     category: 'web_cookie',
     authMethod: 'web_cookie',
-    health: 'degraded',
+    health: 'untested',
     latencyMs: 580,
-    successRate: 91.4,
-    quotaRemainingPercent: 60,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 100_000_000,
     isFreeTierAvailable: true,
     tosStatus: 'risky',
@@ -1850,10 +1855,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: 'DuckDuckGo AI Chat (Web)',
     category: 'web_cookie',
     authMethod: 'none',
-    health: 'degraded',
+    health: 'untested',
     latencyMs: 620,
-    successRate: 89.0,
-    quotaRemainingPercent: 50,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 30_000_000,
     isFreeTierAvailable: true,
     tosStatus: 'risky',
@@ -1881,10 +1886,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: 'Phind Code Search (Web)',
     category: 'web_cookie',
     authMethod: 'none',
-    health: 'degraded',
+    health: 'untested',
     latencyMs: 680,
-    successRate: 88.5,
-    quotaRemainingPercent: 50,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 25_000_000,
     isFreeTierAvailable: true,
     tosStatus: 'risky',
@@ -1912,10 +1917,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: 'You.com Web Agent',
     category: 'web_cookie',
     authMethod: 'web_cookie',
-    health: 'degraded',
+    health: 'untested',
     latencyMs: 740,
-    successRate: 87.2,
-    quotaRemainingPercent: 45,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 25_000_000,
     isFreeTierAvailable: true,
     tosStatus: 'risky',
@@ -1943,10 +1948,10 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     name: 'Blackbox AI (Web)',
     category: 'web_cookie',
     authMethod: 'none',
-    health: 'degraded',
+    health: 'untested',
     latencyMs: 650,
-    successRate: 88.0,
-    quotaRemainingPercent: 50,
+    successRate: 0,
+    quotaRemainingPercent: 0,
     monthlyFreeTokens: 30_000_000,
     isFreeTierAvailable: true,
     tosStatus: 'risky',
@@ -1976,7 +1981,68 @@ export class FCCCatalogSyncService {
 
   constructor() {
     this.initializeCatalog();
+    this.loadProbeCache();
     this.scheduleNightlySync();
+    // Opportunistic early probe shortly after boot so the dashboard reports
+    // measured data without requiring a manual sync.
+    const bootTimer = setTimeout(() => {
+      void this.syncCatalog();
+    }, 30_000);
+    if (bootTimer.unref) {
+      bootTimer.unref();
+    }
+  }
+
+  private getProbeCachePath(): string {
+    try {
+      return `${app.getPath('userData')}/fcc-probe-cache.json`;
+    } catch {
+      return '';
+    }
+  }
+
+  private loadProbeCache(): void {
+    try {
+      const filePath = this.getProbeCachePath();
+      if (!filePath) return;
+      const raw = fs.readFileSync(filePath, 'utf8');
+      const parsed = JSON.parse(raw) as {
+        lastSyncTimestamp?: number;
+        results?: Record<string, { health: FCCProviderHealthInfo['health']; latencyMs?: number; probedAt: number }>;
+      };
+      if (!parsed?.results) return;
+      for (const [id, result] of Object.entries(parsed.results)) {
+        const provider = this.catalog.get(id);
+        if (!provider) continue;
+        provider.health = result.health;
+        if (typeof result.latencyMs === 'number') {
+          provider.latencyMs = result.latencyMs;
+        }
+        provider.probedAt = result.probedAt;
+      }
+      this.lastSyncTimestamp = parsed.lastSyncTimestamp || Date.now();
+    } catch {
+      // No cache file yet — catalog keeps its 'untested' seeds.
+    }
+  }
+
+  private persistProbeCache(): void {
+    try {
+      const filePath = this.getProbeCachePath();
+      if (!filePath) return;
+      const results: Record<string, { health: FCCProviderHealthInfo['health']; latencyMs: number; probedAt: number }> = {};
+      for (const [id, provider] of this.catalog.entries()) {
+        if (provider.health === 'untested') continue;
+        results[id] = { health: provider.health, latencyMs: provider.latencyMs, probedAt: Date.now() };
+      }
+      fs.writeFileSync(
+        filePath,
+        JSON.stringify({ lastSyncTimestamp: this.lastSyncTimestamp, results }, null, 2),
+        'utf8'
+      );
+    } catch {
+      // Non-fatal — persistence failure must not break syncing.
+    }
   }
 
   private initializeCatalog(): void {
@@ -2023,7 +2089,7 @@ export class FCCCatalogSyncService {
     return true;
   }
 
-  public updateProviderHealth(providerId: string, health: 'healthy' | 'degraded' | 'stopped', latencyMs?: number): void {
+  public updateProviderHealth(providerId: string, health: 'healthy' | 'degraded' | 'stopped' | 'untested', latencyMs?: number): void {
     const provider = this.catalog.get(providerId);
     if (!provider) return;
     provider.health = health;
@@ -2032,20 +2098,67 @@ export class FCCCatalogSyncService {
     }
   }
 
+  private static readonly PROBE_TIMEOUT_MS = 3500;
+  private static readonly PROBE_CONCURRENCY = 8;
+
+  private async probeEndpoint(endpoint: string): Promise<{ reachable: boolean; latencyMs: number }> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), FCCCatalogSyncService.PROBE_TIMEOUT_MS);
+    const startedAt = Date.now();
+    try {
+      await fetch(endpoint, {
+        method: 'GET',
+        signal: controller.signal,
+        headers: { 'user-agent': 'Ty-Code-FCC-CatalogSync' }
+      });
+      // Any HTTP response (incl. 4xx auth walls) proves the host is live.
+      return { reachable: true, latencyMs: Date.now() - startedAt };
+    } catch {
+      return { reachable: false, latencyMs: Date.now() - startedAt };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   /**
-   * On-demand or scheduled catalog sync
+   * On-demand or scheduled catalog sync. Performs REAL endpoint probes for
+   * every catalog provider with a usable endpoint (local and remote), writes
+   * measured latency and reachability back, and persists the results.
    */
-  public async syncCatalog(): Promise<{ count: number; timestamp: number }> {
+  public async syncCatalog(): Promise<{ count: number; timestamp: number; probed: number }> {
     this.lastSyncTimestamp = Date.now();
     // Refresh health and ensure risky providers remain disabled by default
+    const probes: Array<{ provider: FCCProviderHealthInfo; endpoint: string }> = [];
     for (const provider of this.catalog.values()) {
       if (provider.tosStatus === 'risky' && provider.enabled === undefined) {
         provider.enabled = false;
       }
+      if (provider.defaultEndpoint) {
+        probes.push({ provider, endpoint: provider.defaultEndpoint });
+      }
     }
+
+    let probedCount = 0;
+    const concurrency = FCCCatalogSyncService.PROBE_CONCURRENCY;
+    for (let start = 0; start < probes.length; start += concurrency) {
+      const batch = probes.slice(start, start + concurrency);
+      await Promise.all(
+        batch.map(async ({ provider, endpoint }) => {
+          const { reachable, latencyMs } = await this.probeEndpoint(endpoint);
+          provider.health = reachable ? 'healthy' : 'stopped';
+          if (reachable && latencyMs > 0) {
+            provider.latencyMs = latencyMs;
+          }
+          provider.probedAt = Date.now();
+          probedCount++;
+        })
+      );
+    }
+    this.persistProbeCache();
     return {
       count: this.catalog.size,
-      timestamp: this.lastSyncTimestamp
+      timestamp: this.lastSyncTimestamp,
+      probed: probedCount
     };
   }
 

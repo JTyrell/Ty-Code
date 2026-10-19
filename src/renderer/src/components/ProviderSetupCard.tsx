@@ -55,7 +55,7 @@ const PROVIDER_METAS: Record<string, ProviderMeta> = {
     id: 'openrouter',
     name: 'OpenRouter Free',
     signupUrl: 'https://openrouter.ai/keys',
-    defaultModel: 'deepseek/deepseek-r1:free',
+    defaultModel: 'nvidia/nemotron-3-ultra-550b-a55b:free',
     isFree: true
   },
   groq: {
@@ -101,14 +101,14 @@ const PROVIDER_METAS: Record<string, ProviderMeta> = {
     id: 'openkilo-free',
     name: 'OpenKilo Free (Zero-Key)',
     signupUrl: 'https://openkilo.com',
-    defaultModel: 'qwen/qwen3-coder:free',
+    defaultModel: 'kilo-auto/free',
     isFree: true
   },
   'openkilo-free': {
     id: 'openkilo-free',
     name: 'OpenKilo Free (Zero-Key)',
     signupUrl: 'https://openkilo.com',
-    defaultModel: 'qwen/qwen3-coder:free',
+    defaultModel: 'kilo-auto/free',
     isFree: true
   }
 };

@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { IpcRendererEvent } from 'electron';
-import type { AgentStreamChunk, CommandExecutionOptions, ElectronAPI, ExtensionMetadata, ProposedDiff, PtySpawnOptions } from './types';
+import type { AgentStreamChunk, CanvasAgentEventPayloadData, CanvasMessageData, CanvasSnapshotData, CanvasUpdateNotificationData, CommandExecutionOptions, ElectronAPI, ExtensionMetadata, ProposedDiff, PtySpawnOptions } from './types';
 
 const api: ElectronAPI = {
   minimizeWindow: () => ipcRenderer.send('window:minimize'),
@@ -336,6 +336,21 @@ const api: ElectronAPI = {
   fccSetSessionCacheOptOut: (sessionId: string, optOut: boolean) => ipcRenderer.invoke('fcc:set-session-cache-opt-out', { sessionId, optOut }),
   fccGetQuotaMeters: () => ipcRenderer.invoke('fcc:get-quota-meters'),
 
+  // FCC Service Manager (installer, service lifecycle, terminal bridge)
+  fccInstall: () => ipcRenderer.invoke('fcc:install'),
+  fccGetServiceStatus: () => ipcRenderer.invoke('fcc:get-service-status'),
+  fccRetryService: () => ipcRenderer.invoke('fcc:retry-service'),
+  onFccInstallProgress: (callback: (progress: any) => void) => {
+    const handler = (_event: unknown, progress: any) => callback(progress);
+    ipcRenderer.on('fcc:install-progress', handler);
+    return () => { ipcRenderer.removeListener('fcc:install-progress', handler); };
+  },
+  onFccServiceState: (callback: (status: any) => void) => {
+    const handler = (_event: unknown, status: any) => callback(status);
+    ipcRenderer.on('fcc:service-state', handler);
+    return () => { ipcRenderer.removeListener('fcc:service-state', handler); };
+  },
+
   // Phase FCC-5: Reach (External Clients, Connectors, SessionBridge, Background Tasks)
   fccExportEditorConfig: (editor: any, variant?: string, customPath?: string) => ipcRenderer.invoke('fcc:export-editor-config', { editor, variant, customPath }),
   fccGetEditorConfigs: () => ipcRenderer.invoke('fcc:get-editor-configs'),
@@ -395,11 +410,49 @@ const api: ElectronAPI = {
 
   // Phase 3.5: Visual UI Sketcher (M3E Canvas)
   sketcherSendPrompt: (prompt: string) => ipcRenderer.invoke('sketcher:send-prompt', prompt),
+  sketcherOpenWindow: () => ipcRenderer.invoke('sketcher:open-window'),
   onSketcherPrompt: (callback: (prompt: string) => void) => {
     const listener = (_event: unknown, prompt: string) => callback(prompt);
     ipcRenderer.on('sketcher:prompt-received', listener);
     return () => {
       ipcRenderer.removeListener('sketcher:prompt-received', listener);
+    };
+  },
+
+  // M3E Canvas overhaul: shared context & chat sync bridge
+  canvasUpdateState: (payload: unknown) => ipcRenderer.invoke('canvas:update-state', payload),
+  canvasRequestState: () => ipcRenderer.invoke('canvas:request-state'),
+  canvasSyncMessage: (payload: unknown) => ipcRenderer.invoke('main:sync-message', payload),
+  canvasAgentGenerate: (prompt: string) => ipcRenderer.invoke('canvas:agent-generate', prompt),
+  canvasChatSend: (payload: unknown) => ipcRenderer.invoke('canvas:chat-send', payload),
+  notifyMainChatOfCanvasUpdate: (payload: unknown) => ipcRenderer.invoke('canvas:notify-main-chat-update', payload),
+  focusCanvasWindow: () => ipcRenderer.invoke('canvas:focus-window'),
+  onCanvasStateSynced: (callback: (state: CanvasSnapshotData) => void) => {
+    const listener = (_event: unknown, state: CanvasSnapshotData) => callback(state);
+    ipcRenderer.on('canvas:state-synced', listener);
+    return () => {
+      ipcRenderer.removeListener('canvas:state-synced', listener);
+    };
+  },
+  onCanvasMessageSynced: (callback: (message: CanvasMessageData) => void) => {
+    const listener = (_event: unknown, message: CanvasMessageData) => callback(message);
+    ipcRenderer.on('canvas:message-synced', listener);
+    return () => {
+      ipcRenderer.removeListener('canvas:message-synced', listener);
+    };
+  },
+  onCanvasAgentEvent: (callback: (event: CanvasAgentEventPayloadData) => void) => {
+    const listener = (_event: unknown, payload: CanvasAgentEventPayloadData) => callback(payload);
+    ipcRenderer.on('canvas:agent-event', listener);
+    return () => {
+      ipcRenderer.removeListener('canvas:agent-event', listener);
+    };
+  },
+  onCanvasUpdate: (callback: (update: CanvasUpdateNotificationData) => void) => {
+    const listener = (_event: unknown, update: CanvasUpdateNotificationData) => callback(update);
+    ipcRenderer.on('canvas:main-chat-update', listener);
+    return () => {
+      ipcRenderer.removeListener('canvas:main-chat-update', listener);
     };
   },
 
@@ -431,6 +484,8 @@ const api: ElectronAPI = {
   opencodeSetFramework: (framework: string) => ipcRenderer.invoke('opencode:set-framework', framework),
   opencodeGetFramework: () => ipcRenderer.invoke('opencode:get-framework'),
   opencodeGetMergedProviders: () => ipcRenderer.invoke('opencode:get-merged-providers'),
+  opencodeGetServiceStatus: () => ipcRenderer.invoke('opencode:get-service-status'),
+  opencodeRefreshStandardSupply: () => ipcRenderer.invoke('opencode:refresh-standard-supply'),
 
   // Phase 6.4: Intelligent Model Router
   modelRouterClassifyTask: (prompt: string) => ipcRenderer.invoke('model-router:classify-task', prompt),
@@ -531,9 +586,9 @@ const api: ElectronAPI = {
 
   // Scale 1 & RealConnect 2: Usage Ledger
   usageGetLedger: () => ipcRenderer.invoke('usage:get-ledger'),
-  usageGetStats: () => ipcRenderer.invoke('usage:get-stats'),
+  usageGetStats: () => ipcRenderer.invoke('usage:get-ledger'),
   usageExportLedger: (format?: 'json' | 'csv') => ipcRenderer.invoke('usage:export-ledger', format),
-  usageExport: (format?: 'json' | 'csv') => ipcRenderer.invoke('usage:export', format),
+  usageExport: (format?: 'json' | 'csv') => ipcRenderer.invoke('usage:export-ledger', format),
   usageClearLedger: () => ipcRenderer.invoke('usage:clear-ledger'),
 
   // RealConnect 2: Per-User Credential Storage

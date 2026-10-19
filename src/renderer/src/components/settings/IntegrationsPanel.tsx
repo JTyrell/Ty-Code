@@ -465,26 +465,52 @@ export const IntegrationsPanel: React.FC = () => {
 
   const handleStartCopilotFlow = async () => {
     try {
-      if (window.electronAPI?.fccStartCopilotDeviceFlow) {
-        const res = await window.electronAPI.fccStartCopilotDeviceFlow();
-        if (res.success && res.data) {
-          setCopilotFlow(res.data);
-          toast.info('Copilot Device Code', `Enter code ${res.data.userCode} on GitHub to authorize.`);
-          if (window.electronAPI?.fccPollCopilotDeviceFlow) {
-            const pollRes = await window.electronAPI.fccPollCopilotDeviceFlow(res.data.deviceCode);
-            if (pollRes.success) {
-              toast.success('Copilot Connected', 'GitHub Copilot subscription connected at $0 extra cost.');
-              setCopilotFlow(null);
-              await fetchFccStatus();
-            } else {
-              toast.error('Copilot Auth Failed', pollRes.error || 'Authorization expired or cancelled.');
-              setCopilotFlow(null);
-            }
-          }
-        } else {
-          toast.error('Device Flow Failed', res.error || 'Failed to start device flow.');
+      if (!window.electronAPI?.fccStartCopilotDeviceFlow) return;
+      const res = await window.electronAPI.fccStartCopilotDeviceFlow();
+      if (!res.success || !res.data) {
+        toast.error('Device Flow Failed', res.error || 'Failed to start device flow.');
+        return;
+      }
+      if (res.data.status === 'error') {
+        toast.error('Device Flow Failed', res.data.error || 'GitHub could not start the device flow.');
+        return;
+      }
+      // Local Copilot token auto-detected — already authorized.
+      if (res.data.status === 'authorized') {
+        toast.success('Copilot Connected', 'GitHub Copilot subscription connected — no extra cost.');
+        setCopilotFlow(null);
+        await fetchFccStatus();
+        return;
+      }
+      setCopilotFlow(res.data);
+      toast.info('Copilot Device Code', `Enter code ${res.data.userCode} on GitHub to authorize.`);
+      // Real polling loop: only report success once GitHub confirms authorization.
+      const intervalMs = Math.max(3000, res.data.intervalMs || 5000);
+      const maxAttempts = Math.ceil(150_000 / intervalMs);
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, intervalMs));
+        if (!window.electronAPI?.fccPollCopilotDeviceFlow) return;
+        const pollRes = await window.electronAPI.fccPollCopilotDeviceFlow(res.data.deviceCode);
+        if (!pollRes.success) {
+          toast.error('Copilot Auth Failed', pollRes.error || 'Authorization failed.');
+          setCopilotFlow(null);
+          return;
+        }
+        const status = pollRes.data?.status;
+        if (status === 'authorized') {
+          toast.success('Copilot Connected', 'GitHub Copilot subscription connected — no extra cost.');
+          setCopilotFlow(null);
+          await fetchFccStatus();
+          return;
+        }
+        if (status === 'expired' || status === 'cancelled' || status === 'error') {
+          toast.error('Copilot Auth Failed', pollRes.data?.error || 'Authorization expired or cancelled.');
+          setCopilotFlow(null);
+          return;
         }
       }
+      toast.error('Copilot Auth Timed Out', 'Device authorization window expired. Start the flow again.');
+      setCopilotFlow(null);
     } catch (err: unknown) {
       toast.error('Copilot Flow Error', err instanceof Error ? err.message : String(err));
       setCopilotFlow(null);

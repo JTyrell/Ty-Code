@@ -342,7 +342,7 @@ export class OptimizationPipeline {
     const counters = ledger.providerCounters || {};
 
     const freeProviderDefs = [
-      { id: 'openrouter', name: 'OpenRouter Free Tier', dailyBudget: 200_000, defaultModel: 'meta-llama/llama-3.3-70b-instruct:free' },
+      { id: 'openrouter', name: 'OpenRouter Free Tier', dailyBudget: 200_000, defaultModel: 'dots-studio/dots-3-note-preview:free' },
       { id: 'google-ai-studio', name: 'Google AI Studio Free', dailyBudget: 1_000_000, defaultModel: 'gemini-2.5-flash' },
       { id: 'groq', name: 'Groq High-Speed Free', dailyBudget: 500_000, defaultModel: 'llama-3.3-70b-versatile' },
       { id: 'huggingchat', name: 'HuggingChat Free', dailyBudget: 150_000, defaultModel: 'meta-llama/Llama-3.3-70B-Instruct' },
@@ -372,10 +372,22 @@ export class OptimizationPipeline {
         ? Math.min(100, Math.max(0, Math.round(((limitTokens - remainingTokens) / limitTokens) * 100)))
         : 0;
 
-      const resetsInSeconds = rl?.resetsInSeconds ?? 14400; // default ~4h
-      const resetHuman = rl?.resetHuman || (resetsInSeconds > 0
-        ? `resets in ${Math.floor(resetsInSeconds / 3600)}h ${Math.floor((resetsInSeconds % 3600) / 60)}m`
-        : 'active');
+      // Honest reset reporting: only claim a reset window the provider sheet
+      // actually told us about, otherwise state it plainly.
+      let resetHuman: string;
+      let resetsInSeconds: number;
+      if (rl?.resetsInSeconds !== undefined) {
+        resetsInSeconds = rl.resetsInSeconds;
+        resetHuman = rl?.resetHuman || (resetsInSeconds > 0
+          ? `resets in ${Math.floor(resetsInSeconds / 3600)}h ${Math.floor((resetsInSeconds % 3600) / 60)}m`
+          : 'active');
+      } else if (usedTokens > 0) {
+        resetsInSeconds = 0;
+        resetHuman = 'reset time unknown (no provider header yet)';
+      } else {
+        resetsInSeconds = 0;
+        resetHuman = 'no usage recorded yet';
+      }
 
       aggregateDailyBudget += limitTokens;
       aggregateRemainingToday += remainingTokens;
@@ -403,11 +415,17 @@ export class OptimizationPipeline {
     const candidates = providerBars.filter((p) => !p.isExhausted && p.providerId !== activeProviderId);
     const bestCandidate = candidates.sort((a, b) => (b.remainingTokens || 0) - (a.remainingTokens || 0))[0] || providerBars[0];
 
-    const recommendedAlternative = {
-      providerId: bestCandidate?.providerId || 'google-ai-studio',
-      modelId: freeProviderDefs.find((d) => d.id === bestCandidate?.providerId)?.defaultModel || 'gemini-2.5-flash',
-      reason: `${bestCandidate?.providerName || 'Google AI Studio'} has ${(bestCandidate?.remainingTokens || 1_000_000).toLocaleString()} free tokens available.`
-    };
+    const recommendedAlternative = bestCandidate
+      ? {
+          providerId: bestCandidate.providerId,
+          modelId: freeProviderDefs.find((d) => d.id === bestCandidate.providerId)?.defaultModel || 'gemini-2.5-flash',
+          reason: `${bestCandidate.providerName}: ${(bestCandidate.remainingTokens || 0).toLocaleString()} free tokens available of ${(bestCandidate.limitTokens || 0).toLocaleString()}.`
+        }
+      : {
+          providerId: 'openrouter',
+          modelId: freeProviderDefs.find((d) => d.id === 'openrouter')?.defaultModel || 'dots-studio/dots-3-note-preview:free',
+          reason: 'No free-tier provider data available yet.'
+        };
 
     return {
       aggregateFreeTokensRemainingToday: aggregateRemainingToday,

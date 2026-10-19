@@ -74,13 +74,22 @@ export const TelemetryBadge: React.FC<TelemetryBadgeProps> = ({
   const openDashboard = useUsageDashboardStore((s) => s.openDashboard);
   const [savingsLabel, setSavingsLabel] = useState<string>('Optimization saved 0 tokens (0%) this session');
   const [viewMode, setViewMode] = useState<'tokens' | 'model'>('tokens');
+  const [isFading, setIsFading] = useState(false);
 
-  // 7-second transition between token amount and model view
+  // 7-second transition between token amount and model view with smooth fade in/out
   useEffect(() => {
+    let fadeTimer: NodeJS.Timeout | null = null;
     const interval = setInterval(() => {
-      setViewMode((prev) => (prev === 'tokens' ? 'model' : 'tokens'));
+      setIsFading(true);
+      fadeTimer = setTimeout(() => {
+        setViewMode((prev) => (prev === 'tokens' ? 'model' : 'tokens'));
+        setIsFading(false);
+      }, 300);
     }, 7000);
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      if (fadeTimer) clearTimeout(fadeTimer);
+    };
   }, []);
 
   useEffect(() => {
@@ -101,7 +110,7 @@ export const TelemetryBadge: React.FC<TelemetryBadgeProps> = ({
   const tokens = propTokens !== undefined ? propTokens : (storeTokens ?? 0);
   const limit = propLimit !== undefined ? propLimit : (storeLimit ?? 128_000);
 
-  const activeModel = settings?.activeModel || 'qwen/qwen-2.5-coder-32b-instruct:free';
+  const activeModel = settings?.activeModel || 'kilo-auto/free';
   const activeProvider = settings?.activeProvider || 'openrouter';
   const modelShortName = activeModel.split('/').pop() || activeModel;
   const isFreeModel =
@@ -109,6 +118,15 @@ export const TelemetryBadge: React.FC<TelemetryBadgeProps> = ({
     activeProvider === 'openkilo' ||
     activeProvider === 'fcc-proxy' ||
     activeProvider === 'ollama';
+
+  // Real per-provider / per-model quota from the orchestration quota tracker.
+  // QuotaTracker forward-counts consumed tokens with healthStatus earned by usage.
+  const providerQuota = quotaSnapshot?.providers?.[activeProvider];
+  const usedQuotaTokens = providerQuota?.consumedTokens ?? 0;
+  const quotaLimit = limit === 0 ? 0 : Math.max(0, providerQuota?.monthlyFreeTokens ?? 0);
+  const quotaUserData = providerQuota?.monthlyFreeTokens !== undefined;
+  const quotaDisplay = quotaUserData ? usedQuotaTokens : tokens;
+  const quotaDisplayLimit = quotaUserData ? (quotaLimit > 0 ? quotaLimit : limit) : limit;
 
   const currentTier = useMemo(() => {
     const m = activeModel.toLowerCase();
@@ -121,16 +139,19 @@ export const TelemetryBadge: React.FC<TelemetryBadgeProps> = ({
     return { label: 'Tier B', name: 'General', color: '#34d399', bg: 'rgba(52, 211, 153, 0.15)', border: 'rgba(52, 211, 153, 0.3)' };
   }, [activeModel]);
 
-  const providerQuota = quotaSnapshot?.providers?.[activeProvider];
-  const providerHealth = providerQuota?.healthStatus || 'healthy';
+  const providerQuotaAlt =
+    providerQuota || (quotaSnapshot?.providers ? quotaSnapshot.providers[`${activeProvider}-free`] : undefined);
+  const providerHealth = providerQuotaAlt?.healthStatus || 'untested';
   const dotColor =
     isRunning
       ? '#38bdf8'
-      : providerHealth === 'exhausted'
-        ? '#ef4444'
-        : providerHealth === 'cooling_down' || providerHealth === 'degraded'
-          ? '#f59e0b'
-          : '#10b981';
+      : providerHealth === 'untested'
+        ? '#818cf8'
+        : providerHealth === 'exhausted'
+          ? '#ef4444'
+          : providerHealth === 'cooling_down' || providerHealth === 'degraded'
+            ? '#f59e0b'
+            : '#10b981';
 
   // Compute breakpoint from explicit availableWidth or default to wide
   const breakpoint = availableWidth !== undefined ? getTelemetryBreakpoint(availableWidth) : 'wide';
@@ -139,14 +160,25 @@ export const TelemetryBadge: React.FC<TelemetryBadgeProps> = ({
     return null;
   }
 
-  const result = formatTelemetryTokens(tokens, limit, breakpoint);
+  // The badge's primary counter is the ACTIVE PROVIDER's real quota usage
+  // (tokens consumed vs the provider's tracked free limit), so users can see
+  // when to switch providers without waiting for a usage window to reset.
+  const result = formatTelemetryTokens(quotaDisplay, quotaDisplayLimit, breakpoint);
   if (!result) return null;
 
-  const fullTokensStr = new Intl.NumberFormat('en-US').format(tokens);
-  const fullLimitStr = new Intl.NumberFormat('en-US').format(limit);
-  const percentNum = limit > 0 ? Math.round((tokens / limit) * 100) : 0;
-  const tooltip = `${savingsLabel} • Model: ${activeModel} (${currentTier.label}) • Tokens: ${fullTokensStr} / ${fullLimitStr} (${percentNum}% used). Click to open Smart Orchestration & Quota Dashboard.`;
-  const ariaLabel = `Tokens ${result.label ? `${result.label} ` : ''}${result.formatted}, ${percentNum}% used, model: ${modelShortName}`;
+  const fullQuotaStr = new Intl.NumberFormat('en-US').format(quotaDisplay);
+  const fullQuotaLimitStr = new Intl.NumberFormat('en-US').format(quotaDisplayLimit);
+  const contextFullStr = new Intl.NumberFormat('en-US').format(tokens);
+  const percentNum = quotaDisplayLimit > 0 ? Math.round((quotaDisplay / quotaDisplayLimit) * 100) : 0;
+  const quotaSource = quotaUserData
+    ? `${activeProvider}: ${fullQuotaStr} / ${fullQuotaLimitStr} free-token quota used (${percentNum}%)`
+    : `No quota data recorded yet for ${activeProvider} — showing session context: ${contextFullStr} tokens`;
+  const switchHint =
+    providerHealth === 'exhausted' || providerHealth === 'cooling_down'
+      ? ' • Provider limit reached — switch to another provider hosting this same model to keep working (Ctrl+M).'
+      : '';
+  const tooltip = `${savingsLabel} • Model: ${activeModel} (${currentTier.label}) • ${quotaSource}${switchHint} Click to open Smart Orchestration & Quota Dashboard.`;
+  const ariaLabel = `Provider tokens ${result.label ? `${result.label} ` : ''}${result.formatted}, ${percentNum}% used, model: ${modelShortName}`;
 
   const slotClass =
     breakpoint === 'wide'
@@ -166,63 +198,81 @@ export const TelemetryBadge: React.FC<TelemetryBadgeProps> = ({
       title={tooltip}
       aria-label={ariaLabel}
       data-breakpoint={breakpoint}
-      data-tokens={tokens}
-      data-limit={limit}
-      style={{
-        transition: 'all 0.3s ease',
-        minWidth: viewMode === 'model' && breakpoint === 'wide' ? '220px' : undefined
-      }}
+      data-tokens={quotaDisplay}
+      data-limit={quotaDisplayLimit}
     >
-      {viewMode === 'tokens' ? (
-        <>
-          <Zap size={11} className={styles.icon} />
-          {breakpoint === 'wide' && <span className={styles.label}>Tokens</span>}
-          <span className={styles.value}>{result.formatted}</span>
-        </>
-      ) : (
-        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
-          <div
-            style={{
-              width: '6px',
-              height: '6px',
-              borderRadius: '50%',
-              backgroundColor: dotColor,
-              boxShadow: `0 0 6px ${dotColor}`
-            }}
-            aria-hidden="true"
-          />
-          <Cpu size={11} color="var(--accent-primary, #818cf8)" />
-          <span style={{ fontWeight: 500, color: 'var(--text-primary)', maxWidth: '100px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {modelShortName}
-          </span>
-          <span
-            style={{
-              fontSize: '9px',
-              fontWeight: 700,
-              padding: '1px 4px',
-              borderRadius: '3px',
-              backgroundColor: currentTier.bg,
-              color: currentTier.color,
-              border: `1px solid ${currentTier.border}`
-            }}
-          >
-            {currentTier.label}
-          </span>
-          <span
-            style={{
-              fontSize: '9px',
-              fontWeight: 700,
-              padding: '1px 4px',
-              borderRadius: '3px',
-              backgroundColor: isFreeModel ? 'rgba(16, 185, 129, 0.15)' : 'rgba(56, 189, 248, 0.15)',
-              color: isFreeModel ? '#34d399' : '#38bdf8',
-              border: `1px solid ${isFreeModel ? 'rgba(16, 185, 129, 0.3)' : 'rgba(56, 189, 248, 0.3)'}`
-            }}
-          >
-            {isFreeModel ? 'FREE' : 'PAID'}
-          </span>
-        </div>
-      )}
+      <div
+        className={styles.viewContent}
+        style={{
+          opacity: isFading ? 0 : 1,
+          transform: isFading ? 'scale(0.96)' : 'scale(1)',
+          transition: 'opacity 0.28s ease, transform 0.28s ease'
+        }}
+      >
+        {viewMode === 'tokens' ? (
+          <>
+            <Zap size={11} className={styles.icon} />
+            {breakpoint === 'wide' && <span className={styles.label}>Quota</span>}
+            <span className={styles.value}>{result.formatted}</span>
+          </>
+        ) : (
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', maxWidth: '100%', minWidth: 0 }}>
+            <div
+              style={{
+                width: '6px',
+                height: '6px',
+                borderRadius: '50%',
+                backgroundColor: dotColor,
+                boxShadow: `0 0 6px ${dotColor}`,
+                flexShrink: 0
+              }}
+              aria-hidden="true"
+            />
+            {breakpoint !== 'narrow' && (
+              <>
+                <Cpu size={10} color="var(--accent-primary, #818cf8)" style={{ flexShrink: 0 }} />
+                <div className={styles.marqueeContainer}>
+                  <span className={styles.marqueeText} style={{ fontWeight: 500, color: 'var(--text-primary)', fontSize: '10.5px' }}>
+                    {modelShortName}
+                  </span>
+                </div>
+              </>
+            )}
+            <span
+              style={{
+                fontSize: '8.5px',
+                fontWeight: 700,
+                padding: '1px 3px',
+                borderRadius: '3px',
+                backgroundColor: currentTier.bg,
+                color: currentTier.color,
+                border: `1px solid ${currentTier.border}`,
+                flexShrink: 0,
+                lineHeight: 1
+              }}
+            >
+              {currentTier.label}
+            </span>
+            {breakpoint === 'wide' && (
+              <span
+                style={{
+                  fontSize: '8.5px',
+                  fontWeight: 700,
+                  padding: '1px 3px',
+                  borderRadius: '3px',
+                  backgroundColor: isFreeModel ? 'rgba(16, 185, 129, 0.15)' : 'rgba(56, 189, 248, 0.15)',
+                  color: isFreeModel ? '#34d399' : '#38bdf8',
+                  border: `1px solid ${isFreeModel ? 'rgba(16, 185, 129, 0.3)' : 'rgba(56, 189, 248, 0.3)'}`,
+                  flexShrink: 0,
+                  lineHeight: 1
+                }}
+              >
+                {isFreeModel ? 'FREE' : 'PAID'}
+              </span>
+            )}
+          </div>
+        )}
+      </div>
     </button>
   );
 };

@@ -161,7 +161,7 @@ export class CapabilitySuite {
 
     // Fallback is the next healthy free provider that is distinct from primary
     const fallback = sorted.find((p) => p.id !== primary.id) || sorted[0];
-    const fallbackModel = fallback.best_free_models[0] || 'deepseek/deepseek-r1:free';
+    const fallbackModel = fallback.best_free_models[0] || 'kilo-auto/free';
 
     return { primary, fallback, primaryModel, fallbackModel };
   }

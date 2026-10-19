@@ -48,8 +48,10 @@ export class FCCServerManager {
   private health: 'healthy' | 'degraded' | 'stopped' = 'stopped';
   private restartCount = 0;
   private startTime = 0;
-  private freeTokensUsed = 12_450_000;
-  private readonly freeTokensAllocated = 1_350_000_000; // 1.35 Billion free tokens/mo
+  private freeTokensUsed = 0;
+  private readonly freeTokensAllocated = 1_350_000_000; // 1.35 Billion free tokens/mo (declared FCC allocation)
+  private installedDetected = false;
+  private detectedVersion: string | null = null;
   private consecutiveFailures = 0;
   private autoRestartEnabled = true;
   private maxRestarts = 5;
@@ -64,7 +66,7 @@ export class FCCServerManager {
     const report = fccIntegrityChecker.getLastReport();
 
     return {
-      installed: true,
+      installed: this.installedDetected,
       enabled: fccIntegrityChecker.isFccEnabled(),
       running: this.running,
       port: this.port,
@@ -72,9 +74,9 @@ export class FCCServerManager {
       health: this.health,
       restartCount: this.restartCount,
       uptimeSeconds,
-      version: '0.9.4-fcc',
+      version: this.detectedVersion || 'unknown',
       mode: this.mode,
-      providersCount: providerRegistry.getFccProviders().length || 61,
+      providersCount: providerRegistry.getFccProviders().length,
       freeTokensAllocated: this.freeTokensAllocated,
       freeTokensUsed: this.freeTokensUsed,
       lastPingTimestamp: this.lastPingTime,
@@ -377,6 +379,19 @@ export class FCCServerManager {
 
   public recordTokenUsage(tokens: number): void {
     this.freeTokensUsed += tokens;
+  }
+
+  /**
+   * Certification hook: the service manager reports whether a genuine FCC
+   * binary was actually discovered, so status flags reflect reality
+   * instead of a hardcoded `installed: true`.
+   */
+  public setInstallDetection(installed: boolean, version?: string | null): void {
+    this.installedDetected = installed;
+    if (version) {
+      this.detectedVersion = version;
+    }
+    this.notifyStatus();
   }
 }
 

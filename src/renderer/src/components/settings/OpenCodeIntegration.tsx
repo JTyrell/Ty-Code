@@ -35,6 +35,7 @@ import type {
   OpenCodeFreeTierSummary,
   AgentFramework
 } from '../../../../shared/types/opencode-sync';
+import type { OpenCodeServiceStatusData } from '../../../../preload/types';
 
 export interface OpenCodeIntegrationProps {
   onSyncComplete?: () => Promise<void>;
@@ -45,6 +46,8 @@ export const OpenCodeIntegration: React.FC<OpenCodeIntegrationProps> = ({
 }) => {
   const [detection, setDetection] = useState<OpenCodeDetectionResult | null>(null);
   const [freeSummary, setFreeSummary] = useState<OpenCodeFreeTierSummary | null>(null);
+  const [serviceStatus, setServiceStatus] = useState<OpenCodeServiceStatusData | null>(null);
+  const [isRefreshingSupply, setIsRefreshingSupply] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [agentFramework, setAgentFramework] = useState<AgentFramework>(() => {
@@ -61,6 +64,10 @@ export const OpenCodeIntegration: React.FC<OpenCodeIntegrationProps> = ({
     setIsScanning(true);
     setErrorNotice(null);
     try {
+      if (window.electronAPI?.opencodeGetServiceStatus) {
+        const statusRes = await window.electronAPI.opencodeGetServiceStatus();
+        if (statusRes.success && statusRes.data) setServiceStatus(statusRes.data);
+      }
       if (window.electronAPI?.opencodeDetect) {
         const res = await window.electronAPI.opencodeDetect();
         if (res.success && res.data) {
@@ -77,6 +84,31 @@ export const OpenCodeIntegration: React.FC<OpenCodeIntegrationProps> = ({
       setErrorNotice(err instanceof Error ? err.message : String(err));
     } finally {
       setIsScanning(false);
+    }
+  };
+
+  const handleRefreshStandardSupply = async () => {
+    setIsRefreshingSupply(true);
+    setErrorNotice(null);
+    try {
+      if (window.electronAPI?.opencodeRefreshStandardSupply) {
+        const res = await window.electronAPI.opencodeRefreshStandardSupply();
+        if (res.success && res.data) {
+          setServiceStatus(res.data);
+          setActionNotice(
+            res.data.hostedReachable
+              ? 'OpenCode standard supply verified live.'
+              : 'OpenCode standard supply host unreachable right now — retry shortly.'
+          );
+          setTimeout(() => setActionNotice(null), 4000);
+        } else {
+          setErrorNotice(res.error || 'Failed to refresh OpenCode standard supply.');
+        }
+      }
+    } catch (err: unknown) {
+      setErrorNotice(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsRefreshingSupply(false);
     }
   };
 
@@ -252,6 +284,98 @@ export const OpenCodeIntegration: React.FC<OpenCodeIntegrationProps> = ({
             {isImporting ? 'Importing...' : 'Import OpenCode Providers'}
           </button>
         </div>
+      </div>
+
+      {/* Standard Supply (baked-in hosted free models) */}
+      <div
+        id="opencode-standard-supply"
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '12px',
+          padding: '14px 16px',
+          borderRadius: '10px',
+          background: 'rgba(16, 185, 129, 0.08)',
+          border: '1px solid rgba(16, 185, 129, 0.25)'
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
+          <Server size={20} color="#34d399" style={{ flexShrink: 0 }} />
+          <div style={{ minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '13px', fontWeight: 600 }}>Standard Supply — Active</span>
+              <span
+                id="badge-opencode-supply-live"
+                style={{
+                  padding: '2px 8px',
+                  borderRadius: '12px',
+                  background: (serviceStatus?.hostedReachable ?? false)
+                    ? 'rgba(16, 185, 129, 0.2)'
+                    : 'rgba(255, 255, 255, 0.06)',
+                  color: (serviceStatus?.hostedReachable ?? false) ? '#34d399' : '#94a3b8',
+                  border: `1px solid ${(serviceStatus?.hostedReachable ?? false) ? 'rgba(16, 185, 129, 0.4)' : 'rgba(255, 255, 255, 0.1)'}`,
+                  fontSize: '11px',
+                  fontWeight: 600
+                }}
+              >
+                {(serviceStatus?.hostedReachable ?? false)
+                  ? `Zen endpoint live • ${serviceStatus?.hostedLatencyMs ?? '–'}ms`
+                  : 'Zen endpoint unverified'}
+              </span>
+              <span
+                id="badge-openkilo-supply-live"
+                style={{
+                  padding: '2px 8px',
+                  borderRadius: '12px',
+                  background: (serviceStatus?.kiloReachable ?? false)
+                    ? 'rgba(16, 185, 129, 0.2)'
+                    : 'rgba(255, 255, 255, 0.06)',
+                  color: (serviceStatus?.kiloReachable ?? false) ? '#34d399' : '#94a3b8',
+                  border: `1px solid ${(serviceStatus?.kiloReachable ?? false) ? 'rgba(16, 185, 129, 0.4)' : 'rgba(255, 255, 255, 0.1)'}`,
+                  fontSize: '11px',
+                  fontWeight: 600
+                }}
+              >
+                {(serviceStatus?.kiloReachable ?? false)
+                  ? `Kilo gateway live • ${serviceStatus?.kiloLatencyMs ?? '–'}ms`
+                  : 'Kilo gateway unverified'}
+              </span>
+              <span style={{ fontSize: '11px', color: '#94a3b8' }}>
+                Always included • not optional
+              </span>
+            </div>
+            <p style={{ margin: '3px 0 0 0', fontSize: '11.5px', color: '#94a3b8' }}>
+              {serviceStatus
+                ? `${serviceStatus.zenModelIds.join(', ')} + OpenKilo gateway routed through the FCC orchestration backend • models in supply: ${serviceStatus.modelsInSupply}${serviceStatus.cliInstalled ? ` • local CLI adopted (${serviceStatus.cliPath})` : ''}`
+                : 'Loading standard supply status…'}
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          id="opencode-supply-refresh-btn"
+          disabled={isRefreshingSupply}
+          onClick={() => void handleRefreshStandardSupply()}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '7px 12px',
+            borderRadius: '6px',
+            background: 'rgba(16, 185, 129, 0.12)',
+            border: '1px solid rgba(16, 185, 129, 0.35)',
+            color: '#34d399',
+            fontSize: '12px',
+            fontWeight: 600,
+            cursor: isRefreshingSupply ? 'wait' : 'pointer',
+            flexShrink: 0
+          }}
+        >
+          <RotateCw size={13} className={isRefreshingSupply ? 'spinning' : ''} />
+          {isRefreshingSupply ? 'Checking…' : 'Verify Supply'}
+        </button>
       </div>
 
       {/* Notices */}

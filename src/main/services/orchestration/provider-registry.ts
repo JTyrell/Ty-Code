@@ -161,8 +161,8 @@ export class ProviderRegistry {
           primaryTask: 'reasoning'
         },
         {
-          id: 'meta-llama/llama-3.3-70b-instruct:free',
-          name: 'Llama 3.3 70B (Free OpenRouter)',
+          id: 'dots-studio/dots-3-note-preview:free',
+          name: 'Dots 3 Note Preview (Free OpenRouter)',
           contextWindow: 131_072,
           maxOutputTokens: 4096,
           capabilities: { reasoning: false, tools: true, vision: false, codingScore: 88, speedTokensPerSec: 50, isFree: true },
@@ -170,13 +170,13 @@ export class ProviderRegistry {
           primaryTask: 'general'
         },
         {
-          id: 'google/gemini-2.0-flash-exp:free',
-          name: 'Long-Context Multimodal (Free OpenRouter)',
+          id: 'nvidia/nemotron-3.5-super-vl:free',
+          name: 'Nemotron 3.5 Super VL (Free OpenRouter)',
           contextWindow: 1_048_576,
           maxOutputTokens: 8192,
-          capabilities: { reasoning: false, tools: true, vision: true, codingScore: 90, speedTokensPerSec: 120, isFree: true },
+          capabilities: { reasoning: true, tools: true, vision: true, codingScore: 90, speedTokensPerSec: 120, isFree: true },
           costTier: 'free',
-          primaryTask: 'coding'
+          primaryTask: 'reasoning'
         },
         {
           id: 'qwen/qwen-2.5-coder-32b-instruct',
@@ -794,49 +794,49 @@ export class ProviderRegistry {
   private populateExtendedEcosystem(): void {
     // API Providers Database (260+ specific providers)
     const apiProvidersList: Array<{ id: string; name: string; free: boolean; task: TaskType; coding: number }> = [
-      { id: 'cohere', name: 'Cohere', free: true, task: 'general', coding: 87 },
-      { id: 'fireworks', name: 'Fireworks AI', free: true, task: 'coding', coding: 92 },
+      { id: 'cohere', name: 'Cohere', free: false, task: 'general', coding: 87 },
+      { id: 'fireworks', name: 'Fireworks AI', free: false, task: 'coding', coding: 92 },
       { id: 'perplexity', name: 'Perplexity AI', free: false, task: 'general', coding: 89 },
       { id: 'xai', name: 'xAI (Grok)', free: false, task: 'reasoning', coding: 93 },
-      { id: 'ai21', name: 'AI21 Labs', free: true, task: 'general', coding: 84 },
+      { id: 'ai21', name: 'AI21 Labs', free: false, task: 'general', coding: 84 },
       { id: 'replicate', name: 'Replicate', free: false, task: 'general', coding: 88 },
       { id: 'anyscale', name: 'Anyscale Endpoints', free: false, task: 'fast-edit', coding: 88 },
-      { id: 'lepton', name: 'Lepton AI', free: true, task: 'coding', coding: 90 },
-      { id: 'hyperbolic', name: 'Hyperbolic', free: true, task: 'fast-edit', coding: 89 },
-      { id: 'novita', name: 'Novita AI', free: true, task: 'coding', coding: 90 },
-      { id: 'nebius', name: 'Nebius AI Studio', free: true, task: 'coding', coding: 91 },
+      { id: 'lepton', name: 'Lepton AI', free: false, task: 'coding', coding: 90 },
+      { id: 'hyperbolic', name: 'Hyperbolic', free: false, task: 'fast-edit', coding: 89 },
+      { id: 'novita', name: 'Novita AI', free: false, task: 'coding', coding: 90 },
+      { id: 'nebius', name: 'Nebius AI Studio', free: false, task: 'coding', coding: 91 },
       { id: 'baseten', name: 'Baseten', free: false, task: 'coding', coding: 89 },
-      { id: 'deepinfra', name: 'DeepInfra', free: true, task: 'fast-edit', coding: 90 },
-      { id: 'cloudflare-ai', name: 'Cloudflare Workers AI', free: true, task: 'fast-edit', coding: 85 },
+      { id: 'deepinfra', name: 'DeepInfra', free: false, task: 'fast-edit', coding: 90 },
+      { id: 'cloudflare-ai', name: 'Cloudflare Workers AI', free: false, task: 'fast-edit', coding: 85 },
       { id: 'aws-bedrock', name: 'AWS Bedrock', free: false, task: 'coding', coding: 95 },
       { id: 'azure-openai', name: 'Azure OpenAI Service', free: false, task: 'coding', coding: 94 },
-      { id: 'upstage', name: 'Upstage Solar', free: true, task: 'general', coding: 86 },
+      { id: 'upstage', name: 'Upstage Solar', free: false, task: 'general', coding: 86 },
       { id: 'friendli', name: 'FriendliAI', free: false, task: 'fast-edit', coding: 89 },
-      { id: 'scaleway', name: 'Scaleway Generative APIs', free: true, task: 'general', coding: 87 },
+      { id: 'scaleway', name: 'Scaleway Generative APIs', free: false, task: 'general', coding: 87 },
       { id: 'modal-ai', name: 'Modal AI Inference', free: false, task: 'coding', coding: 90 },
-      { id: 'yi-01', name: '01.AI (Yi)', free: true, task: 'coding', coding: 91 },
-      { id: 'siliconflow', name: 'SiliconFlow', free: true, task: 'coding', coding: 93 },
-      { id: 'moonshot', name: 'Moonshot AI (Kimi)', free: true, task: 'reasoning', coding: 92 },
-      { id: 'minimax', name: 'MiniMax Hailuo', free: true, task: 'general', coding: 88 },
-      { id: 'baichuan', name: 'Baichuan AI', free: true, task: 'general', coding: 87 },
-      { id: 'zhipu-glm', name: 'Zhipu AI (GLM-4)', free: true, task: 'coding', coding: 92 },
-      { id: 'stepfun', name: 'StepFun', free: true, task: 'reasoning', coding: 90 },
-      { id: 'volcengine', name: 'ByteDance Volcengine (Doubao)', free: true, task: 'fast-edit', coding: 89 },
-      { id: 'tencent-hunyuan', name: 'Tencent Hunyuan', free: true, task: 'coding', coding: 90 },
-      { id: 'alibaba-dashscope', name: 'Alibaba Cloud DashScope (Qwen)', free: true, task: 'coding', coding: 94 },
-      { id: 'baidu-qianfan', name: 'Baidu Qianfan (ERNIE)', free: true, task: 'general', coding: 88 },
+      { id: 'yi-01', name: '01.AI (Yi)', free: false, task: 'coding', coding: 91 },
+      { id: 'siliconflow', name: 'SiliconFlow', free: false, task: 'coding', coding: 93 },
+      { id: 'moonshot', name: 'Moonshot AI (Kimi)', free: false, task: 'reasoning', coding: 92 },
+      { id: 'minimax', name: 'MiniMax Hailuo', free: false, task: 'general', coding: 88 },
+      { id: 'baichuan', name: 'Baichuan AI', free: false, task: 'general', coding: 87 },
+      { id: 'zhipu-glm', name: 'Zhipu AI (GLM-4)', free: false, task: 'coding', coding: 92 },
+      { id: 'stepfun', name: 'StepFun', free: false, task: 'reasoning', coding: 90 },
+      { id: 'volcengine', name: 'ByteDance Volcengine (Doubao)', free: false, task: 'fast-edit', coding: 89 },
+      { id: 'tencent-hunyuan', name: 'Tencent Hunyuan', free: false, task: 'coding', coding: 90 },
+      { id: 'alibaba-dashscope', name: 'Alibaba Cloud DashScope (Qwen)', free: false, task: 'coding', coding: 94 },
+      { id: 'baidu-qianfan', name: 'Baidu Qianfan (ERNIE)', free: false, task: 'general', coding: 88 },
       { id: 'databricks-mosaic', name: 'Databricks Mosaic AI', free: false, task: 'coding', coding: 91 },
-      { id: 'monster-api', name: 'MonsterAPI', free: true, task: 'fast-edit', coding: 87 },
+      { id: 'monster-api', name: 'MonsterAPI', free: false, task: 'fast-edit', coding: 87 },
       { id: 'runpod-serverless', name: 'RunPod Serverless LLM', free: false, task: 'coding', coding: 90 },
       { id: 'lambda-labs', name: 'Lambda Cloud Inference', free: false, task: 'fast-edit', coding: 89 },
-      { id: 'predibase', name: 'Predibase Solar/Llama', free: true, task: 'coding', coding: 88 },
+      { id: 'predibase', name: 'Predibase Solar/Llama', free: false, task: 'coding', coding: 88 },
       { id: 'writer-palmyra', name: 'Writer Palmyra', free: false, task: 'general', coding: 85 },
       { id: 'aleph-alpha', name: 'Aleph Alpha Luminous', free: false, task: 'general', coding: 84 },
-      { id: 'voyage-ai', name: 'Voyage AI', free: true, task: 'general', coding: 80 },
-      { id: 'jina-ai', name: 'Jina AI', free: true, task: 'coding', coding: 86 },
+      { id: 'voyage-ai', name: 'Voyage AI', free: false, task: 'general', coding: 80 },
+      { id: 'jina-ai', name: 'Jina AI', free: false, task: 'coding', coding: 86 },
       { id: 'crusoe-cloud', name: 'Crusoe Cloud Inference', free: false, task: 'coding', coding: 89 },
-      { id: 'prime-intellect', name: 'Prime Intellect Distributed', free: true, task: 'reasoning', coding: 91 },
-      { id: 'fal-ai', name: 'fal.ai Fast Inference', free: true, task: 'fast-edit', coding: 88 },
+      { id: 'prime-intellect', name: 'Prime Intellect Distributed', free: false, task: 'reasoning', coding: 91 },
+      { id: 'fal-ai', name: 'fal.ai Fast Inference', free: false, task: 'fast-edit', coding: 88 },
       { id: 'octoai', name: 'OctoAI Compute Service', free: false, task: 'fast-edit', coding: 89 }
     ];
 
@@ -864,41 +864,9 @@ export class ProviderRegistry {
       });
     }
 
-    // Systematic registration of 220 additional API providers across domain niches
-    const domainPrefixes = [
-      'infra', 'cloud', 'compute', 'regional', 'security', 'enterprise', 'telecom',
-      'fintech', 'biotech', 'robotics', 'vision', 'audio', 'edge', 'research'
-    ];
-    let counter = 1;
-    for (const prefix of domainPrefixes) {
-      for (let i = 1; i <= 16; i++) {
-        const id = `provider-${prefix}-${i}`;
-        const name = `${prefix.toUpperCase()} AI Provider ${i}`;
-        const isFree = counter % 3 === 0;
-        this.registerProvider({
-          id,
-          name,
-          category: 'api_key',
-          authMethod: 'api_key',
-          defaultEndpoint: `https://api.${id}.internal/v1`,
-          isFreeTierAvailable: isFree,
-          freeTierTokenLimit: isFree ? 25_000 : undefined,
-          rateLimitPattern: { requestsPerMinute: 45, tokensPerMinute: 80_000, cooldownBaseMs: 5000, maxCooldownMs: 60_000 },
-          supportedModels: [
-            {
-              id: `${id}-model`,
-              name: `${name} Engine`,
-              contextWindow: 32_768,
-              maxOutputTokens: 4096,
-              capabilities: { reasoning: i % 4 === 0, tools: true, vision: false, codingScore: 82 + (i % 12), speedTokensPerSec: 60 + (i % 40), isFree },
-              costTier: isFree ? 'free' : 'ultra-low',
-              primaryTask: i % 2 === 0 ? 'coding' : 'general'
-            }
-          ]
-        });
-        counter++;
-      }
-    }
+    // Fabricated placeholder providers (infra/cloud/... ×16) were removed:
+    // they registered non-existent endpoints and joined the chat failover
+    // chain as fake free tiers, causing dead handoffs.
 
     // Extended OAuth Providers (35+ total)
     const oauthProviders: Array<{ id: string; name: string }> = [

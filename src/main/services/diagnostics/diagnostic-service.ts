@@ -176,7 +176,7 @@ export class DiagnosticService {
     const apiKey = await this.resolveApiKey(provider.id, storedKeys);
     const requiresKey = provider.auth_type !== 'anonymous' && provider.auth_type !== 'opencode_integration';
     const baseUrl = provider.base_url === 'auto' ? 'https://openrouter.ai/api/v1' : provider.base_url.replace(/\/+$/, '');
-    const modelToTest = provider.best_free_models[0] || 'deepseek/deepseek-r1:free';
+    const modelToTest = provider.best_free_models[0] || 'kilo-auto/free';
 
     // 0. Pre-check: CONFIG_MISSING
     if (requiresKey && !apiKey) {

@@ -301,7 +301,7 @@ export class SmartModelSelectorService {
   ): SmartModelSelection {
     const defaultSettings: ProviderSettings = {
       activeProvider: 'openkilo',
-      activeModel: 'deepseek/deepseek-r1-0528:free',
+      activeModel: 'kilo-auto/free',
       temperature: 0.2,
       maxTokens: 4096,
       freeMode: true,

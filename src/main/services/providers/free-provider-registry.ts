@@ -22,20 +22,20 @@ export const PERMANENT_FREE_PROVIDERS: FreeProvider[] = [
     base_url: 'https://openrouter.ai/api/v1',
     auth_type: 'api_key_optional',
     best_free_models: [
-      'deepseek/deepseek-r1:free',
-      'deepseek/deepseek-chat:free',
+      'nvidia/nemotron-3-ultra-550b-a55b:free',
       'qwen/qwen-2.5-coder-32b-instruct:free',
-      'google/gemini-2.0-flash-exp:free',
-      'meta-llama/llama-3.3-70b-instruct:free',
-      'mistralai/mistral-7b-instruct:free',
-      'nvidia/llama-3.1-nemotron-70b-instruct:free'
+      'dots-studio/dots-3-note-preview:free',
+      'poolside/laguna-s-2.1:free',
+      'cohere/north-mini-code:free',
+      'google/gemma-4-31b-it:free',
+      'nvidia/nemotron-3.5-lightning:free'
     ],
     setup_instructions: 'Get free API key at openrouter.ai/keys',
     model_capabilities: {
-      reasoning: ['deepseek-r1:free'],
-      coding: ['qwen-2.5-coder-32b-instruct:free', 'deepseek-chat:free'],
-      fast: ['gemini-2.0-flash-exp:free', 'mistral-7b-instruct:free'],
-      general: ['llama-3.3-70b-instruct:free']
+      reasoning: ['nemotron-3-ultra-550b-a55b:free'],
+      coding: ['qwen-2.5-coder-32b-instruct:free', 'north-mini-code:free'],
+      fast: ['nemotron-3.5-lightning:free', 'lfm-2.5-2.6b:free'],
+      general: ['dots-3-note-preview:free', 'gemma-4-31b-it:free']
     },
     signup_url: 'https://openrouter.ai/keys'
   },
@@ -46,16 +46,13 @@ export const PERMANENT_FREE_PROVIDERS: FreeProvider[] = [
     auth_type: 'api_key_optional',
     best_free_models: [
       'llama-3.3-70b-versatile',
-      'llama-3.1-70b-versatile',
-      'llama-3.1-8b-instant',
-      'mixtral-8x7b-32768',
-      'gemma2-9b-it'
+      'llama-3.1-8b-instant'
     ],
     setup_instructions: 'Get free API key at console.groq.com',
     model_capabilities: {
       ultra_fast: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'],
       coding: ['llama-3.3-70b-versatile'],
-      general: ['mixtral-8x7b-32768', 'gemma2-9b-it']
+      general: ['llama-3.1-8b-instant']
     },
     signup_url: 'https://console.groq.com/keys'
   },
@@ -65,19 +62,19 @@ export const PERMANENT_FREE_PROVIDERS: FreeProvider[] = [
     base_url: 'https://api.kilo.ai/api/gateway',
     auth_type: 'anonymous',
     best_free_models: [
-      'deepseek/deepseek-r1-0528:free',
-      'qwen/qwen3-coder:free',
-      'meta-llama/llama-3.3-70b-instruct:free',
-      'google/gemma-3-27b-it:free',
-      'mistralai/mistral-small-3.1-24b-instruct:free',
-      'z-ai/glm-5:free'
+      'kilo-auto/free',
+      'poolside/laguna-s-2.1:free',
+      'nvidia/nemotron-3.5-super-vl:free',
+      'cohere/north-mini-code:free',
+      'openrouter/free',
+      'thinkingmachines/inkling-small:free'
     ],
     setup_instructions: 'No API key required - works instantly',
     model_capabilities: {
-      reasoning: ['deepseek-r1-0528:free'],
-      coding: ['qwen3-coder:free'],
-      large_context: ['glm-5:free', 'qwen3-coder:free'],
-      efficient: ['gemma-3-27b-it:free']
+      reasoning: ['nemotron-3.5-super-vl', 'inkling-small'],
+      coding: ['laguna-s-2.1', 'north-mini-code'],
+      large_context: ['kilo-auto/free', 'nemotron-3.5-lightning'],
+      efficient: ['north-mini-code']
     },
     signup_url: 'https://openkilo.com'
   },
@@ -247,7 +244,7 @@ export class FreeProviderRegistry {
       }
       for (const m of provider.best_free_models) {
         if (m === modelId || m.toLowerCase() === lowerModel) return true;
-        // Strip provider prefix for comparison (e.g. "deepseek/deepseek-r1:free" vs "deepseek-r1:free")
+        // Strip provider prefix for comparison (e.g. "nvidia/nemotron-3-ultra-550b-a55b:free" vs "deepseek-r1:free")
         const strippedM = m.split('/').pop() || m;
         const strippedCandidate = modelId.split('/').pop() || modelId;
         if (strippedM.toLowerCase() === strippedCandidate.toLowerCase()) return true;
@@ -256,7 +253,7 @@ export class FreeProviderRegistry {
 
     // 4. Provider-specific heuristics
     if (providerId === 'groq' || providerId === 'groq-free') {
-      const groqFree = ['llama-3.3-70b-versatile', 'llama-3.1-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768', 'gemma2-9b-it'];
+      const groqFree = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'];
       if (groqFree.some((gm) => lowerModel.includes(gm.toLowerCase()))) return true;
     }
 
@@ -327,7 +324,7 @@ export class FreeProviderRegistry {
         return {
           providerId: 'openrouter-free',
           providerName: 'OpenRouter (Free Tier)',
-          modelId: 'deepseek/deepseek-r1:free'
+          modelId: 'nvidia/nemotron-3-ultra-550b-a55b:free'
         };
       case 'coding':
         return {

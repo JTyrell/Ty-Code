@@ -26,6 +26,7 @@ export interface RunAgentParams {
   onChunk: (chunk: AgentStreamChunk) => void;
   requestApproval: (approval: AgentToolApproval) => Promise<boolean>;
   abortSignal?: AbortSignal;
+  onProviderHandoff?: (info: { fromProvider: string; toProvider: string; toModel: string }) => void;
 }
 
 export class AgentEngine {
@@ -102,9 +103,9 @@ export class AgentEngine {
         console.log('[AGENT] Calling gateway...');
         const activeProvider = currentSettings.activeProvider || 'openrouter';
         let activeModel = currentSettings.activeModel;
-        if (!activeModel || (activeProvider === 'openkilo' && !activeModel.includes('openkilo') && !activeModel.includes('deepseek-r1-0528'))) {
+        if (!activeModel || (activeProvider === 'openkilo' && !activeModel.endsWith(':free') && !activeModel.endsWith('/free'))) {
           if (activeProvider === 'openkilo') {
-            activeModel = 'deepseek/deepseek-r1-0528:free';
+            activeModel = 'kilo-auto/free';
           } else if (activeProvider === 'groq') {
             activeModel = 'llama-3.3-70b-versatile';
           } else {
@@ -119,9 +120,12 @@ export class AgentEngine {
           messages,
           true,
           undefined,
-          (content) => {
-            onChunk({ type: 'token', content });
-          }
+          (chunk: string) => {
+            onChunk({ type: 'token', content: chunk });
+          },
+          0,
+          abortSignal,
+          params.onProviderHandoff
         );
 
         const parsedResponse = harness.parseResponse(streamText, []);

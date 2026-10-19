@@ -243,7 +243,17 @@ export async function startAgentTask(
           traceId: params.traceId,
           abortSignal: abortController.signal,
           requestApproval: (approval) => requestTaskApproval(taskId, approval, abortController.signal),
-          onChunk: emit
+          onChunk: emit,
+          onProviderHandoff: (info) => {
+            if (mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) return;
+            mainWindow.webContents.send('agent:provider-handoff', {
+              taskId,
+              fromProvider: info.fromProvider,
+              toProvider: info.toProvider,
+              toModel: info.toModel,
+              newModel: info.toModel
+            });
+          }
         });
       }
     } catch (err: unknown) {

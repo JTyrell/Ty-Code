@@ -245,36 +245,12 @@ export class HarnessDriverService {
       });
 
       child.on('error', (err: Error) => {
-        // In environments where CLI binary is not installed locally, generate structured simulated harness output for review
-        session.status = 'completed';
-        session.logs.push(`[Notice] ${def.cliName} command not found directly on PATH. Rendered in-app preview session with shared credentials.`);
-
-        // Populate realistic structured diff and tool cards for Ty-Code's review UI
-        const sampleDiff = [
-          '--- a/src/example.ts',
-          '+++ b/src/example.ts',
-          '@@ -1,5 +1,6 @@',
-          ' export function calculateTotal(items: number[]) {',
-          '-  return items.reduce((a, b) => a + b, 0);',
-          '+  // Optimized via FCC model supply',
-          '+  return items.reduce((sum, n) => sum + n, 0);',
-          ' }'
-        ].join('\n');
-
-        session.parsedDiffs.push({
-          filePath: 'src/example.ts',
-          diff: sampleDiff,
-          additions: 2,
-          deletions: 1
-        });
-
-        session.parsedToolEvents.push({
-          toolName: 'read_file',
-          arguments: { path: 'src/example.ts' },
-          status: 'completed',
-          result: 'Calculated items array total.'
-        });
-
+        // Never fabricate session output. If the harness CLI is missing, the
+        // session fails with an actionable message instead of synthetic diffs.
+        session.status = 'error';
+        session.logs.push(
+          `[Error] Harness CLI "${def.cliName}" could not start: ${err.message}. Install the CLI (it must be on PATH) and rerun the session.`
+        );
         this.notifyListeners(session);
       });
     } catch (err: unknown) {

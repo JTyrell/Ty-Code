@@ -84,6 +84,28 @@ const SCENARIO_ICONS: Record<string, React.ReactNode> = {
   reasoning: <Brain size={16} className="text-purple-400" />
 };
 
+// Clipboard write with execCommand fallback (navigator.clipboard can reject in some Electron contexts)
+const copyToClipboard = async (text: string): Promise<boolean> => {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    try {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      const ok = document.execCommand('copy');
+      document.body.removeChild(textarea);
+      return ok;
+    } catch {
+      return false;
+    }
+  }
+};
+
 export const DiagnosticsPanel: React.FC = () => {
   const [subTab, setSubTab] = useState<'connection' | 'capabilities' | 'remediation' | 'trace'>('connection');
 
@@ -329,9 +351,10 @@ export const DiagnosticsPanel: React.FC = () => {
     try {
       const res = await window.electronAPI.getDiagnosticReport(connSummary || undefined);
       if (res.success && res.data) {
-        await navigator.clipboard.writeText(res.data);
+        const copied = await copyToClipboard(res.data);
+        if (!copied) throw new Error('Clipboard unavailable');
         setConnCopied(true);
-        toast.success('Connection report copied to clipboard!');
+        toast.success('Report copied to clipboard!');
         setTimeout(() => setConnCopied(false), 2500);
       } else {
         toast.error(res.error || 'Failed to generate markdown report');
@@ -347,14 +370,16 @@ export const DiagnosticsPanel: React.FC = () => {
     try {
       const res = await window.electronAPI.getCapabilityReport();
       if (res.success && res.data) {
-        await navigator.clipboard.writeText(res.data);
+        const copied = await copyToClipboard(res.data);
+        if (!copied) throw new Error('Clipboard unavailable');
         setCapCopied(true);
-        toast.success('Capability report copied to clipboard!');
+        toast.success('Report copied to clipboard!');
         setTimeout(() => setCapCopied(false), 2500);
       } else if (capSummary?.markdownReport) {
-        await navigator.clipboard.writeText(capSummary.markdownReport);
+        const copied = await copyToClipboard(capSummary.markdownReport);
+        if (!copied) throw new Error('Clipboard unavailable');
         setCapCopied(true);
-        toast.success('Capability report copied to clipboard!');
+        toast.success('Report copied to clipboard!');
         setTimeout(() => setCapCopied(false), 2500);
       } else {
         toast.error(res.error || 'Failed to generate capability report');
@@ -713,15 +738,56 @@ export const DiagnosticsPanel: React.FC = () => {
                             </div>
 
                             {res.actionUrl && (
-                              <a
-                                href={res.actionUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1 rounded bg-rose-600/30 hover:bg-rose-600/50 text-rose-100 border border-rose-500/30 text-[11px] font-medium transition-colors cursor-pointer"
-                              >
-                                <span>{res.actionLabel || 'Fix Issue'}</span>
-                                <ExternalLink size={10} />
-                              </a>
+                              res.actionUrl.startsWith('ty-code://settings/') || res.actionUrl.startsWith('settings:') ? (
+                                <button
+                                  onClick={() =>
+                                    handleRemediationAction({
+                                      actionType: 'open_settings',
+                                      actionTarget: res.actionUrl!.includes('apikeys') ? 'apikeys' : 'providers'
+                                    })
+                                  }
+                                  className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1 rounded bg-rose-600/30 hover:bg-rose-600/50 text-rose-100 border border-rose-500/30 text-[11px] font-medium transition-colors cursor-pointer"
+                                >
+                                  <span>{res.actionLabel || 'Fix Issue'}</span>
+                                  <ArrowRight size={10} />
+                                </button>
+                              ) : res.actionUrl.startsWith('ty-code://dashboard/quota') || res.actionUrl.startsWith('dashboard:') ? (
+                                <button
+                                  onClick={() => {
+                                    useChatStore.getState().openSettings('analytics');
+                                    toast.info('Opened Usage & Limits dashboard.');
+                                  }}
+                                  className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1 rounded bg-rose-600/30 hover:bg-rose-600/50 text-rose-100 border border-rose-500/30 text-[11px] font-medium transition-colors cursor-pointer"
+                                >
+                                  <span>{res.actionLabel || 'Check Quota'}</span>
+                                  <ArrowRight size={10} />
+                                </button>
+                              ) : res.actionUrl.startsWith('ty-code://action/retry') ? (
+                                <button
+                                  onClick={() => {
+                                    toast.info('Re-running diagnostics...');
+                                    void runDiagnostics();
+                                  }}
+                                  className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1 rounded bg-rose-600/30 hover:bg-rose-600/50 text-rose-100 border border-rose-500/30 text-[11px] font-medium transition-colors cursor-pointer"
+                                >
+                                  <span>{res.actionLabel || 'Retry'}</span>
+                                  <RotateCw size={10} />
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => {
+                                    if (window.electronAPI?.openExternal) {
+                                      void window.electronAPI.openExternal(res.actionUrl!);
+                                    } else {
+                                      window.open(res.actionUrl!, '_blank');
+                                    }
+                                  }}
+                                  className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1 rounded bg-rose-600/30 hover:bg-rose-600/50 text-rose-100 border border-rose-500/30 text-[11px] font-medium transition-colors cursor-pointer"
+                                >
+                                  <span>{res.actionLabel || 'Fix Issue'}</span>
+                                  <ExternalLink size={10} />
+                                </button>
+                              )
                             )}
                           </div>
 

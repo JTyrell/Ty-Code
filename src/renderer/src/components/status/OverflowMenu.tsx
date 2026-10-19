@@ -75,7 +75,7 @@ export const OverflowMenu: React.FC<OverflowMenuProps> = ({ className, isTelemet
   const warnings = diagnosticsList.filter((d) => d.severity === 2).length;
   const server = servers.find((s) => s.languageId === language || (language === 'typescript' && s.languageId === 'javascript'));
 
-  const activeModel = settings?.activeModel || 'qwen/qwen3-coder:free';
+  const activeModel = settings?.activeModel || 'kilo-auto/free';
   const activeProvider = settings?.activeProvider || 'openkilo';
   const modelShortName = activeModel.split('/').pop() || activeModel;
 

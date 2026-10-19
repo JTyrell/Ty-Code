@@ -48,8 +48,8 @@ for (const h of ['openrouter.ai', 'api.kilo.ai', 'api.openkilo.com']) dnsResults
 
 const orKey = process.env.OPENROUTER_API_KEY;
 if (orKey) await call('openrouter', 'https://openrouter.ai/api/v1/chat/completions', 'meta-llama/llama-3.3-70b-instruct:free', orKey);
-await call('kilo-anon', 'https://api.kilo.ai/v1/chat/completions', 'deepseek/deepseek-r1-0528:free', process.env.KILO_API_KEY);
-await call('openkilo.com (current registry URL)', 'https://api.openkilo.com/v1/chat/completions', 'deepseek/deepseek-r1-0528:free', process.env.KILO_API_KEY);
+await call('kilo-anon', 'https://api.kilo.ai/v1/chat/completions', 'deepseek/deepseek-r1-0528', process.env.KILO_API_KEY);
+await call('openkilo.com (current registry URL)', 'https://api.openkilo.com/v1/chat/completions', 'deepseek/deepseek-r1-0528', process.env.KILO_API_KEY);
 
 fs.mkdirSync('docs/traces', { recursive: true });
 fs.writeFileSync('docs/traces/network-proof.json', JSON.stringify({ at: new Date().toISOString(), dns: dnsResults, attempts }, null, 2));

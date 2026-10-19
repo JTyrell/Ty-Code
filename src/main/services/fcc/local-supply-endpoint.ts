@@ -317,7 +317,7 @@ export class LocalSupplyEndpoint {
       return;
     }
 
-    const model = payload.model || 'deepseek/deepseek-r1:free';
+    const model = payload.model || 'kilo-auto/free';
     const isStream = Boolean(payload.stream);
     const messages = payload.messages || [];
     const tools = payload.tools || [];

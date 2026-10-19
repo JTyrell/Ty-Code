@@ -440,6 +440,7 @@ export interface PtySpawnOptions {
   cwd?: string;
   cols?: number;
   rows?: number;
+  autoRunCommand?: string;
 }
 
 export interface PtySessionInfo {
@@ -908,6 +909,13 @@ export interface ElectronAPI {
   fccSetSessionCacheOptOut: (sessionId: string, optOut: boolean) => Promise<IpcResponse<boolean>>;
   fccGetQuotaMeters: () => Promise<IpcResponse<FccQuotaMetersSummary>>;
 
+  // FCC Service Manager (installer, service lifecycle, terminal bridge)
+  fccInstall: () => Promise<IpcResponse<{ binaryPath: string | null; alreadyInstalled: boolean }>>;
+  fccGetServiceStatus: () => Promise<IpcResponse<FCCServiceStatus>>;
+  fccRetryService: () => Promise<IpcResponse<FCCServiceStatus>>;
+  onFccInstallProgress: (callback: (progress: FCCInstallProgress) => void) => () => void;
+  onFccServiceState: (callback: (status: FCCServiceStatus) => void) => () => void;
+
   // Phase FCC-5: External Clients, Connectors, SessionBridge, and Background Supervisor
   fccExportEditorConfig: (editor: 'vscode' | 'jetbrains' | 'neovim', variant?: string, customPath?: string) => Promise<IpcResponse<{ success: boolean; snippet: EditorConfigSnippet; savedToPath?: string }>>;
   fccGetEditorConfigs: () => Promise<IpcResponse<Record<string, EditorConfigSnippet>>>;
@@ -962,6 +970,24 @@ export interface ElectronAPI {
   // Phase 3.5: Visual UI Sketcher (M3E Canvas)
   sketcherSendPrompt?: (prompt: string) => Promise<IpcResponse<boolean>>;
   onSketcherPrompt?: (callback: (prompt: string) => void) => () => void;
+  sketcherOpenWindow?: () => Promise<IpcResponse<boolean>>;
+
+  // M3E Canvas overhaul: shared context & chat sync bridge
+  canvasUpdateState?: (payload: {
+    activePlatform?: 'react' | 'flutter' | 'swiftui' | 'web' | 'other';
+    canvasComponents?: CanvasComponentNodeData[];
+    reason?: string;
+  }) => Promise<IpcResponse<CanvasSnapshotData>>;
+  canvasRequestState?: () => Promise<IpcResponse<CanvasSnapshotData>>;
+  canvasSyncMessage?: (payload: { message: CanvasMessageData }) => Promise<IpcResponse<CanvasMessageData>>;
+  canvasAgentGenerate?: (prompt: string) => Promise<IpcResponse<CanvasAgentGenerationResultData>>;
+  canvasChatSend?: (payload: CanvasChatSendData) => Promise<IpcResponse<CanvasAgentGenerationResultData & { runId: string }>>;
+  notifyMainChatOfCanvasUpdate?: (payload: CanvasUpdateNotificationData) => Promise<IpcResponse<boolean>>;
+  focusCanvasWindow?: () => Promise<IpcResponse<boolean>>;
+  onCanvasStateSynced?: (callback: (state: CanvasSnapshotData) => void) => () => void;
+  onCanvasMessageSynced?: (callback: (message: CanvasMessageData) => void) => () => void;
+  onCanvasAgentEvent?: (callback: (event: CanvasAgentEventPayloadData) => void) => () => void;
+  onCanvasUpdate?: (callback: (update: CanvasUpdateNotificationData) => void) => () => void;
 
   // Phase 3.6: Open SEO & GEO MCP Skills
   mcpGetSeoConfig?: (workspacePath?: string) => Promise<IpcResponse<McpSeoConfigStatus>>;
@@ -991,6 +1017,10 @@ export interface ElectronAPI {
   opencodeSetFramework?: (framework: AgentFramework) => Promise<IpcResponse<AgentFramework>>;
   opencodeGetFramework?: () => Promise<IpcResponse<AgentFramework>>;
   opencodeGetMergedProviders?: () => Promise<IpcResponse<PreConfiguredProvider[]>>;
+
+  // OpenCode Standard Supply (baked-in hosted free models)
+  opencodeGetServiceStatus?: () => Promise<IpcResponse<OpenCodeServiceStatusData>>;
+  opencodeRefreshStandardSupply?: () => Promise<IpcResponse<OpenCodeServiceStatusData>>;
 
   // Phase 6.4: Intelligent Model Router
   modelRouterClassifyTask?: (prompt: string) => Promise<IpcResponse<TaskClassificationResult>>;
@@ -1182,6 +1212,66 @@ export interface HistoryExportProgress {
   currentSource?: string;
 }
 
+// M3E Canvas overhaul: shared context & chat sync bridge types
+export interface CanvasComponentNodeData {
+  id: string;
+  type: string;
+  name?: string;
+  props?: Record<string, unknown>;
+  children?: CanvasComponentNodeData[];
+}
+
+export interface CanvasMessageData {
+  id: string;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  timestamp: number;
+  origin: 'canvas' | 'main';
+}
+
+// Canvas agent engine generation result (M3E Canvas)
+export interface CanvasAgentGenerationResultData {
+  ok: boolean;
+  platform: 'react' | 'flutter' | 'swiftui' | 'web' | 'other';
+  code?: string;
+  language?: string;
+  nodesPushed?: number;
+  replaced?: boolean;
+  summary?: string;
+  error?: string;
+}
+
+// Streaming agent event pushed to the Canvas chat UI ('canvas:agent-event')
+export interface CanvasAgentEventPayloadData {
+  runId: string;
+  type: 'token' | 'status' | 'done' | 'error';
+  content?: string;
+}
+
+// Canvas-update notification for the main IDE chat ('canvas:main-chat-update')
+export interface CanvasUpdateNotificationData {
+  action: string;
+  codeSnippet?: string;
+  platform?: string;
+  updatedAt?: number;
+}
+
+// Payload accepted by sendCanvasChatMessage
+export interface CanvasChatSendData {
+  prompt: string;
+  currentCanvasState?: {
+    activePlatform?: 'react' | 'flutter' | 'swiftui' | 'web' | 'other';
+    canvasComponents?: CanvasComponentNodeData[];
+  };
+}
+
+export interface CanvasSnapshotData {
+  activePlatform: 'react' | 'flutter' | 'swiftui' | 'web' | 'other';
+  canvasComponents: CanvasComponentNodeData[];
+  sharedConversationHistory: CanvasMessageData[];
+  updatedAt: number;
+}
+
 export interface HistoryExportResult {
   success: boolean;
   exportPath: string;
@@ -1192,6 +1282,24 @@ export interface HistoryExportResult {
   outputPath: string;
   filesGenerated: string[];
   error?: string;
+}
+
+// OpenCode Standard Supply (baked-in hosted free models, incl. OpenKilo gateway)
+export interface OpenCodeServiceStatusData {
+  standardSupplyEnabled: boolean;
+  hostedEndpoint: string;
+  hostedReachable: boolean | null;
+  hostedLatencyMs: number | null;
+  kiloHostedEndpoint: string;
+  kiloReachable: boolean | null;
+  kiloLatencyMs: number | null;
+  cliInstalled: boolean;
+  cliPath: string | null;
+  modelsInSupply: number;
+  zenModelIds: string[];
+  catalogEnabled: boolean;
+  lastError: string | null;
+  lastCheckedAt: number | null;
 }
 
 export type ModuleLlmCompatibility = 'hosted' | 'local' | 'both';
@@ -1300,7 +1408,7 @@ export interface ProviderQuotaInfo {
   lastResetTimestamp: number;
   estimatedCostUsd: number;
   costSavedUsd: number;
-  healthStatus: 'healthy' | 'degraded' | 'cooling_down' | 'exhausted';
+  healthStatus: 'healthy' | 'degraded' | 'cooling_down' | 'exhausted' | 'untested';
 }
 
 export interface QuotaSnapshot {
@@ -1354,6 +1462,21 @@ export interface FCCServerStatus {
   integrityError?: string;
 }
 
+export interface FCCInstallProgress {
+  stage: 'checking' | 'downloading' | 'installing' | 'verifying' | 'done' | 'failed';
+  percent: number;
+  message: string;
+}
+
+export interface FCCServiceStatus {
+  installed: boolean;
+  binaryPath: string | null;
+  wrapperCommandsAvailable: string[];
+  installing: boolean;
+  installProgress: FCCInstallProgress | null;
+  lastError: string | null;
+}
+
 export interface FCCAutoSetupResult {
   providerId: string;
   providerName: string;
@@ -1392,10 +1515,11 @@ export interface FCCProviderHealthInfo {
   name: string;
   category: 'api_key' | 'oauth' | 'web_cookie' | 'local';
   authMethod: 'api_key' | 'oauth' | 'web_cookie' | 'none';
-  health: 'healthy' | 'degraded' | 'stopped';
+  health: 'healthy' | 'degraded' | 'stopped' | 'untested';
   latencyMs: number;
   successRate: number;
   quotaRemainingPercent: number;
+  probedAt?: number;
   monthlyFreeTokens: number;
   isFreeTierAvailable: boolean;
   tosStatus: FCCToSStatus;

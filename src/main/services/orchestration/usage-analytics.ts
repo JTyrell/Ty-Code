@@ -18,7 +18,7 @@ import type {
 } from '../../../shared/types/quota-dashboard';
 import { quotaTracker } from './quota-tracker';
 import { healthMonitor } from '../providers/health-monitor';
-import { PERMANENT_FREE_PROVIDERS } from '../providers/free-provider-registry';
+import { PERMANENT_FREE_PROVIDERS, freeProviderRegistry } from '../providers/free-provider-registry';
 import { usageLedger } from '../usage/ledger';
 
 export class UsageAnalyticsService {
@@ -264,7 +264,7 @@ export class UsageAnalyticsService {
         actionLabel: 'Configure DeepSeek R1',
         actionKey: 'open_settings_providers',
         targetProviderId: 'openrouter-free',
-        targetModelId: 'deepseek/deepseek-r1:free',
+        targetModelId: 'kilo-auto/free',
         dismissed: this.dismissedRecommendations.has('rec_reasoning_deepseek')
       });
     }
@@ -330,77 +330,83 @@ export class UsageAnalyticsService {
   }
 
   /**
-   * Returns side-by-side provider comparison matrix
+   * Returns side-by-side provider comparison matrix.
+   * Values are derived from real sources: curated registries (model counts)
+   * and the quota tracker (real recorded usage). Latency and success rate
+   * report 0 = "not measured" — no fabricated telemetry is served.
    */
   public getProviderComparisons(): ProviderComparisonMetric[] {
-    return [
+    const snapshotProviders = quotaTracker.getSnapshot().providers;
+
+    const descriptors: Array<{
+      providerId: string;
+      providerName: string;
+      bestFor: string;
+      ratingTier: ProviderComparisonMetric['ratingTier'];
+      strengths: string[];
+    }> = [
       {
         providerId: 'openrouter-free',
         providerName: 'OpenRouter Free',
-        freeModelCount: 7,
-        totalTokensAvailable: 200_000_000,
-        averageLatencyMs: 380,
-        successRate: 99.4,
         bestFor: 'Reasoning & Specialized Coding',
         ratingTier: 'S',
-        strengths: ['DeepSeek R1 S-Tier Reasoning', 'Qwen 2.5 Coder 32B', 'No credit card required']
+        strengths: ['DeepSeek R1 :free access', 'Qwen 2.5 Coder :free', 'No credit card required']
       },
       {
         providerId: 'groq-free',
         providerName: 'Groq Ultra-Fast',
-        freeModelCount: 5,
-        totalTokensAvailable: 50_000_000,
-        averageLatencyMs: 110,
-        successRate: 99.8,
         bestFor: 'Sub-100ms Ultra-Fast Responses',
         ratingTier: 'A',
-        strengths: ['LPU Hardware Acceleration', 'Llama 3.3 70B at 300+ t/s', 'Zero latency overhead']
+        strengths: ['LPU hardware acceleration', 'Llama 3.3 70B at 300+ t/s', 'Zero inference overhead']
       },
       {
         providerId: 'openkilo',
         providerName: 'OpenKilo Gateway',
-        freeModelCount: 4,
-        totalTokensAvailable: 500_000_000,
-        averageLatencyMs: 360,
-        successRate: 98.9,
-        bestFor: 'Claude 3.5 & GPT-4o Gateway',
+        bestFor: 'Gateway models via single free key',
         ratingTier: 'S',
-        strengths: ['High-throughput free proxy', 'Automatic model round-robin', 'Enterprise coding models']
+        strengths: ['kilo-auto/free router', 'Large context free models', 'Single anonymous key']
       },
       {
         providerId: 'google-ai-studio-free',
         providerName: 'Google AI Studio',
-        freeModelCount: 3,
-        totalTokensAvailable: 150_000_000,
-        averageLatencyMs: 180,
-        successRate: 99.2,
-        bestFor: 'Multimodal & 1M+ Context',
+        bestFor: 'Multimodal & Large Context',
         ratingTier: 'A',
-        strengths: ['Gemini 2.0 Flash Exp', 'Huge 1M token context window', 'Native vision & audio support']
+        strengths: ['Gemini 2.0 Flash', 'Large context window', 'Native vision & audio support']
       },
       {
         providerId: 'github-models-free',
         providerName: 'GitHub Models',
-        freeModelCount: 4,
-        totalTokensAvailable: 100_000_000,
-        averageLatencyMs: 250,
-        successRate: 99.1,
-        bestFor: 'Standard GPT-4o Mini & Azure Models',
+        bestFor: 'Standard GitHub-hosted Models',
         ratingTier: 'B',
         strengths: ['Direct GitHub PAT authentication', 'High enterprise availability', 'Official Azure endpoint']
       },
       {
         providerId: 'fcc-proxy',
-        providerName: 'Free-Claude-Code Proxy',
-        freeModelCount: 3,
-        totalTokensAvailable: 1_350_000_000,
-        averageLatencyMs: 420,
-        successRate: 98.2,
-        bestFor: 'Massive Quota Code Edits',
+        providerName: 'FCC Free-Claude-Code Proxy',
+        bestFor: 'Community-subsidized Claude access',
         ratingTier: 'A',
-        strengths: ['1.35B monthly tokens pool', 'Claude 3.5 Sonnet proxy', 'Community subsidized']
+        strengths: ['Community token pool', 'Claude 3.5 Sonnet proxy', 'Local sidecar architecture']
       }
     ];
+
+    return descriptors.map((desc) => {
+      const reg = freeProviderRegistry.getProvider(desc.providerId);
+      const q = snapshotProviders[desc.providerId];
+      const realFreeModels = reg
+        ? reg.best_free_models.filter((m) => !m.startsWith('All free models'))
+        : [];
+      return {
+        providerId: desc.providerId,
+        providerName: desc.providerName,
+        freeModelCount: realFreeModels.length,
+        totalTokensAvailable: q?.monthlyFreeTokens ?? 0,
+        averageLatencyMs: 0, // not measured until FCC probe sync runs; 0 = no data
+        successRate: 0, // no fabricated telemetry; 0 = no data
+        bestFor: desc.bestFor,
+        ratingTier: desc.ratingTier,
+        strengths: desc.strengths
+      };
+    });
   }
 
   /**
@@ -414,19 +420,36 @@ export class UsageAnalyticsService {
     const recommendations = this.getRecommendations();
     const recentActivity = this.getRecentActivity(10);
 
-    // Build ConnectedProviderInfo[]
+    // Real last-activity per provider derived from the usage ledger
+    const ledgerTx = usageLedger.getSnapshot().recentTransactions || [];
+    const lastActiveByProvider = new Map<string, number>();
+    for (const tx of ledgerTx) {
+      const prev = lastActiveByProvider.get(tx.providerId);
+      if (!prev || tx.timestamp > prev) {
+        lastActiveByProvider.set(tx.providerId, tx.timestamp);
+      }
+    }
+
+    // Build ConnectedProviderInfo[] — all values derive from real sources;
+    // zero means "no data", never a fabricated figure.
     const connectedProviders = comparisons.map((comp) => {
       const q = quotaSnapshot.providers[comp.providerId] || quotaSnapshot.providers[comp.providerId.replace('-free', '')];
-      const monthlyQuotaTokens = q ? q.monthlyFreeTokens : comp.totalTokensAvailable;
-      const consumedTokens = q ? q.consumedTokens : Math.round(monthlyQuotaTokens * 0.14);
+      const reg = freeProviderRegistry.getProvider(comp.providerId);
+      const realFreeModels = reg
+        ? reg.best_free_models.filter((m) => !m.startsWith('All free models'))
+        : [];
+      const monthlyQuotaTokens = q?.monthlyFreeTokens ?? 0;
+      const consumedTokens = q?.consumedTokens ?? 0;
       const remainingTokens = Math.max(0, monthlyQuotaTokens - consumedTokens);
-      const percentUsed = Math.min(100, Math.round((consumedTokens / monthlyQuotaTokens) * 1000) / 10);
-      const isRateLimited = q ? q.isRateLimited : false;
+      const percentUsed = monthlyQuotaTokens > 0
+        ? Math.min(100, Math.round((consumedTokens / monthlyQuotaTokens) * 1000) / 10)
+        : 0;
+      const isRateLimited = q?.isRateLimited ?? false;
       const status = isRateLimited
         ? 'rate_limited'
-        : percentUsed >= 95
-          ? 'degraded'
-          : 'connected';
+        : q
+          ? 'connected'
+          : 'offline';
 
       return {
         id: comp.providerId,
@@ -435,21 +458,21 @@ export class UsageAnalyticsService {
           ? ('free_aggregator' as const)
           : ('free_direct' as const),
         status: status as any,
-        freeModelCount: comp.freeModelCount,
-        freeModels: [comp.bestFor],
+        freeModelCount: realFreeModels.length,
+        freeModels: realFreeModels.slice(0, 3),
         latencyMs: comp.averageLatencyMs,
         successRate: comp.successRate,
-        totalRequests: q ? q.requestsCount : Math.round(consumedTokens / 850),
+        totalRequests: q?.requestsCount ?? 0,
         monthlyQuotaTokens,
         dailyQuotaTokens: Math.round(monthlyQuotaTokens / 30),
         consumedTokens,
-        consumedTokensToday: Math.round(consumedTokens * 0.08),
+        consumedTokensToday: 0, // daily consumption is not tracked per-provider; 0 = no data
         remainingTokens,
         percentUsed,
         bestFor: comp.bestFor,
-        healthScore: isRateLimited ? 0.3 : 1.0,
+        healthScore: isRateLimited ? 0.3 : q ? 1.0 : 0.5,
         isRateLimited,
-        lastActiveTimestamp: Date.now() - Math.floor(Math.random() * 300_000)
+        lastActiveTimestamp: lastActiveByProvider.get(comp.providerId) ?? 0
       };
     });
 

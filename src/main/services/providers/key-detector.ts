@@ -52,6 +52,8 @@ const ENV_KEY_MAPPINGS: Array<{
   { envVar: 'HF_TOKEN', providerId: 'huggingface-free', providerName: 'Hugging Face' },
   { envVar: 'OPENKILO_API_KEY', providerId: 'openkilo', providerName: 'OpenKilo' },
   { envVar: 'KILO_API_KEY', providerId: 'openkilo', providerName: 'OpenKilo' },
+  { envVar: 'OPENCODE_API_KEY', providerId: 'opencode', providerName: 'OpenCode' },
+  { envVar: 'OPENCODE_ZEN_API_KEY', providerId: 'opencode', providerName: 'OpenCode' },
   { envVar: 'MISTRAL_API_KEY', providerId: 'mistral', providerName: 'Mistral AI' },
   { envVar: 'COHERE_API_KEY', providerId: 'cohere', providerName: 'Cohere' }
 ];

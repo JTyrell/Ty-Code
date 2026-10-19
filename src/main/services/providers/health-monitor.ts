@@ -42,9 +42,9 @@ export class ProviderHealthMonitor {
       this.statuses.set(p.id, {
         providerId: p.id,
         isHealthy: true,
-        lastChecked: Date.now(),
-        latencyMs: 120, // default warm baseline
-        successRate: 1.0,
+        lastChecked: 0,
+        latencyMs: 0, // no fabricated warm baseline; measured on first real outcome
+        successRate: 0, // 0 = no data until first probe/request
         totalRequests: 0,
         successfulRequests: 0,
         failedRequests: 0,
@@ -64,9 +64,9 @@ export class ProviderHealthMonitor {
       status = {
         providerId,
         isHealthy: true,
-        lastChecked: Date.now(),
-        latencyMs: 150,
-        successRate: 1.0,
+        lastChecked: 0,
+        latencyMs: 0, // no fabricated baseline
+        successRate: 0, // 0 = no data
         totalRequests: 0,
         successfulRequests: 0,
         failedRequests: 0,
@@ -130,8 +130,10 @@ export class ProviderHealthMonitor {
       this.consecutiveFailures.set(providerId, 0);
       status.isHealthy = true;
       status.autoDisabled = false;
-      // Exponential moving average for latency
-      status.latencyMs = Math.round(status.latencyMs * 0.7 + latencyMs * 0.3);
+      // Seed exact first measurement; exponential moving average afterwards
+      status.latencyMs = status.latencyMs === 0
+        ? Math.max(1, latencyMs)
+        : Math.round(status.latencyMs * 0.7 + latencyMs * 0.3);
     } else {
       status.failedRequests++;
       const currentFailures = (this.consecutiveFailures.get(providerId) || 0) + 1;

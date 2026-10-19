@@ -72,7 +72,7 @@ export class QuotaTrackerService {
         lastResetTimestamp: Date.now(),
         estimatedCostUsd: 0,
         costSavedUsd: 0,
-        healthStatus: 'healthy'
+        healthStatus: 'untested' // quota health is earned by real usage, not assumed
       });
     }
   }
@@ -115,7 +115,7 @@ export class QuotaTrackerService {
         lastResetTimestamp: Date.now(),
         estimatedCostUsd: 0,
         costSavedUsd: 0,
-        healthStatus: 'healthy'
+        healthStatus: 'untested' // no assumed health before first real usage
       };
       this.providers.set(providerId, info);
     }

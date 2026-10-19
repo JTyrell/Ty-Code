@@ -170,25 +170,12 @@ export class UpdateManager {
     }
 
     if (!this.updater || !this.isAppPackaged) {
-      // Simulate download for testing / dev environment
-      this.isDownloading = true;
-      let progress = 0;
-      const timer = setInterval(() => {
-        progress += 25;
-        this.sendToRenderer('update:download-progress', {
-          percent: progress,
-          bytesPerSecond: 2_500_000,
-          transferred: progress * 1_000_000,
-          total: 100_000_000
-        });
-        if (progress >= 100) {
-          clearInterval(timer);
-          this.isDownloading = false;
-          this.updateDownloaded = true;
-          this.sendToRenderer('update:downloaded', { version: '0.2.0-simulated' });
-        }
-      }, 150);
-      return { success: true };
+      // Honest behavior in dev/unpacked mode: no synthetic download progress,
+      // no fake downloaded version events.
+      return {
+        success: false,
+        error: 'Auto-update is unavailable in unpacked/development mode. Use a packaged build.'
+      };
     }
 
     try {

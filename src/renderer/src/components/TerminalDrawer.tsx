@@ -6,6 +6,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links';
 import { Terminal as TerminalIcon, Plus, X, Trash2, Maximize2, Minimize2, ChevronDown, Columns, FolderSync, Copy, ClipboardPaste, Settings2 } from 'lucide-react';
 import { useChatStore } from '../state/chat-store';
 import { useWorkspaceStore } from '../state/workspace-store';
+import { toast } from '../state/toast-store';
 import type { ShellInfo, TerminalSplitOrientation } from '../../../preload/types';
 
 interface TerminalTab { id: string; ptyId: string; shellId: string; shellName: string; profileId?: string; cwd: string; serializedHistory?: string; hasExited?: boolean; }
@@ -167,7 +168,7 @@ export const TerminalDrawer: React.FC = () => {
     if (killPty && tab) void window.electronAPI.killPty(tab.ptyId);
   }, []);
 
-  const handleSpawnTerminal = useCallback(async (request: { shellId?: string; profileId?: string; cwd?: string; serializedHistory?: string; makeSplit?: boolean } = {}) => {
+  const handleSpawnTerminal = useCallback(async (request: { shellId?: string; profileId?: string; cwd?: string; serializedHistory?: string; makeSplit?: boolean; autoRunCommand?: string } = {}) => {
     const previousActiveTabId = activeTabRef.current;
     setShowShellMenu(false);
     setTerminalError('');
@@ -177,7 +178,7 @@ export const TerminalDrawer: React.FC = () => {
     }
     let response;
     try {
-      response = await window.electronAPI.spawnPty({ shellId: request.shellId, profileId: request.profileId, cwd: request.cwd || workspacePath || undefined, cols: 80, rows: 24 });
+      response = await window.electronAPI.spawnPty({ shellId: request.shellId, profileId: request.profileId, cwd: request.cwd || workspacePath || undefined, cols: 80, rows: 24, autoRunCommand: request.autoRunCommand });
     } catch (err: unknown) {
       setTerminalError(err instanceof Error ? err.message : String(err));
       return;
@@ -199,6 +200,37 @@ export const TerminalDrawer: React.FC = () => {
     }
     queuePersist();
   }, [queuePersist, updateTabs, workspacePath]);
+  const spawnRef = useRef(handleSpawnTerminal);
+  spawnRef.current = handleSpawnTerminal;
+  const isTerminalOpenRef = useRef(isTerminalOpen);
+  isTerminalOpenRef.current = isTerminalOpen;
+  const toggleTerminalRef = useRef(toggleTerminal);
+  toggleTerminalRef.current = toggleTerminal;
+
+  // FCC agent quick-toggle (Command Palette: "Ty-Code: Open FCC Terminal Agent")
+  useEffect(() => {
+    const handler = () => {
+      void (async () => {
+        let autoRunCommand: string | undefined;
+        try {
+          const svcRes = await window.electronAPI?.fccGetServiceStatus?.();
+          const svc = svcRes?.data;
+          if (svc?.installed && Array.isArray(svc.wrapperCommandsAvailable) && svc.wrapperCommandsAvailable.length > 0) {
+            autoRunCommand = svc.wrapperCommandsAvailable.includes('fcc-claude') ? 'fcc-claude' : svc.wrapperCommandsAvailable[0];
+          }
+        } catch {
+          // Non-blocking; terminal still opens
+        }
+        if (!autoRunCommand) {
+          toast.info('FCC engine not installed — connect a provider or install free-claude-code in Settings → Ty-Code AI Settings.');
+        }
+        if (!isTerminalOpenRef.current) toggleTerminalRef.current();
+        void spawnRef.current({ autoRunCommand });
+      })();
+    };
+    window.addEventListener('tycode:fcc-agent-terminal', handler);
+    return () => window.removeEventListener('tycode:fcc-agent-terminal', handler);
+  }, []);
 
   useEffect(() => {
     if (!isTerminalOpen || availableShells.length === 0 || restoredRef.current) return;

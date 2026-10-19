@@ -19,9 +19,10 @@ export const MODEL_TIERS: Record<ModelTier, TierClassification> = {
     name: 'Tier S: Complex Reasoning & Planning',
     description: 'Best for complex reasoning, architectural design, deep debugging, and multi-step agent planning',
     models: [
-      'deepseek/deepseek-r1:free',
-      'deepseek/deepseek-r1-0528:free',
-      'o1-mini (when available free)'
+      'nvidia/nemotron-3-ultra-550b-a55b:free',
+      'deepseek/deepseek-r1-0528',
+      'nvidia/nemotron-3.5-super-vl:free',
+      'thinkingmachines/inkling-small:free'
     ],
     recommendedUseCases: [
       'Algorithmic problem solving',
@@ -35,8 +36,9 @@ export const MODEL_TIERS: Record<ModelTier, TierClassification> = {
     name: 'Tier A: Code Engineering & Editing',
     description: 'Best for code generation, surgical block edits, syntax transformations, and unit tests',
     models: [
+      'poolside/laguna-s-2.1:free',
+      'cohere/north-mini-code:free',
       'qwen/qwen-2.5-coder-32b-instruct:free',
-      'qwen/qwen3-coder:free',
       'claude-3-5-sonnet-20241022 (via FCC)',
       'codellama/CodeLlama-34b-Instruct-hf',
       'llama-3.3-70b-versatile (Groq)'
@@ -53,9 +55,10 @@ export const MODEL_TIERS: Record<ModelTier, TierClassification> = {
     name: 'Tier B: General Assistance & Conversation',
     description: 'Best for general assistance, explanations, documentation writing, and conversational flow',
     models: [
-      'llama-3.3-70b-instruct:free',
+      'kilo-auto/free',
+      'openrouter/free',
+      'dots-studio/dots-3-note-preview:free',
       'llama-3.3-70b-versatile (Groq)',
-      'mistralai/mistral-small-3.1-24b-instruct:free',
       'meta-llama/Llama-3.3-70B-Instruct-Turbo-Free'
     ],
     recommendedUseCases: [
@@ -70,10 +73,10 @@ export const MODEL_TIERS: Record<ModelTier, TierClassification> = {
     name: 'Tier C: Ultra-Fast & Efficient',
     description: 'Best for quick responses, simple queries, sub-second auto-completions, and low-latency edits',
     models: [
-      'gemini-2.0-flash-exp',
       'llama-3.1-8b-instant (Groq)',
-      'mistralai/Mistral-7B-Instruct-v0.3',
-      'google/gemma-3-27b-it:free'
+      'gemini-2.0-flash-exp',
+      'liquid/lfm-2.5-2.6b:free',
+      'mistralai/Mistral-7B-Instruct-v0.3'
     ],
     recommendedUseCases: [
       'Inline suggestions & completions',
@@ -165,8 +168,7 @@ export class ModelClassifier {
       lower.includes('3b') ||
       lower.includes('1b') ||
       lower.includes('haiku') ||
-      lower.includes('mini') ||
-      lower.includes('gemma-3-27b')
+      lower.includes('mini')
     ) {
       return 'tier_c_fast';
     }

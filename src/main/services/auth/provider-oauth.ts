@@ -536,17 +536,7 @@ export class ProviderOAuthService {
       });
 
       if (!response.ok) {
-        // Fallback for offline / simulation environments
-        const fallback: CopilotDeviceFlowState = {
-          deviceCode: `dev_${crypto.randomUUID()}`,
-          userCode: `TYCD-${crypto.randomBytes(2).toString('hex').toUpperCase()}`,
-          verificationUri: 'https://github.com/login/device',
-          expiresAt: Date.now() + 900 * 1000,
-          intervalMs: 5000,
-          status: 'pending'
-        };
-        this.activeCopilotFlow = fallback;
-        return fallback;
+        throw new Error(`GitHub device code endpoint returned HTTP ${response.status}. Check network connectivity and try again.`);
       }
 
       const data = await response.json() as CopilotDeviceCodeResponse;
@@ -562,17 +552,9 @@ export class ProviderOAuthService {
       this.activeCopilotFlow = state;
       return state;
     } catch (err: unknown) {
-      // In tests/offline, yield a valid simulation code so the UI renders seamlessly
-      const fallback: CopilotDeviceFlowState = {
-        deviceCode: `dev_${crypto.randomUUID()}`,
-        userCode: `TYCD-${crypto.randomBytes(2).toString('hex').toUpperCase()}`,
-        verificationUri: 'https://github.com/login/device',
-        expiresAt: Date.now() + 900 * 1000,
-        intervalMs: 5000,
-        status: 'pending'
-      };
-      this.activeCopilotFlow = fallback;
-      return fallback;
+      // Never fabricate device codes; offline/unreachable GitHub must error visibly.
+      const message = err instanceof Error ? err.message : String(err);
+      throw new Error(`Copilot device flow could not start: ${message}`);
     }
   }
 

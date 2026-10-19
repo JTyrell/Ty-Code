@@ -180,7 +180,7 @@ interface MenuItem {
 
 export const TitleBar: React.FC = () => {
   const { workspacePath, setWorkspacePath, setFileTree } = useWorkspaceStore();
-  const { toggleSettings, toggleTerminal, isTerminalOpen } = useChatStore();
+  const { toggleSettings, openSettings, toggleTerminal, isTerminalOpen } = useChatStore();
   const openUsageDashboard = useUsageDashboardStore((s) => s.openDashboard);
 
   const [theme, setTheme] = useState<AppTheme>(() => {
@@ -196,6 +196,7 @@ export const TitleBar: React.FC = () => {
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState<boolean>(false);
   const [isAboutOpen, setIsAboutOpen] = useState<boolean>(false);
   const menuBarRef = useRef<HTMLDivElement>(null);
+  const profileMenuRef = useRef<HTMLDivElement>(null);
 
   // Apply theme to body
   useEffect(() => {
@@ -255,8 +256,11 @@ export const TitleBar: React.FC = () => {
   // Close menus when clicking outside or pressing Escape
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (menuBarRef.current && !menuBarRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      if (menuBarRef.current && !menuBarRef.current.contains(target)) {
         setActiveMenu(null);
+      }
+      if (profileMenuRef.current && !profileMenuRef.current.contains(target)) {
         setIsProfileMenuOpen(false);
       }
     };
@@ -757,7 +761,7 @@ export const TitleBar: React.FC = () => {
         </button>
 
         {/* Avatar Profile Dropdown */}
-        <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+        <div ref={profileMenuRef} style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
           <button
             onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
             style={{
@@ -800,6 +804,7 @@ export const TitleBar: React.FC = () => {
 
           {isProfileMenuOpen && (
             <div
+              onMouseDown={(e) => e.stopPropagation()}
               style={{
                 position: 'absolute',
                 top: '100%',
@@ -818,43 +823,47 @@ export const TitleBar: React.FC = () => {
                 <div style={{ fontSize: '12px', fontWeight: 600, color: '#ffffff' }}>Developer</div>
                 <div style={{ fontSize: '10px', color: 'var(--text-secondary, #94a3b8)' }}>Ty-Code Desktop</div>
               </div>
-              <div
-                onClick={() => { setIsProfileMenuOpen(false); toggleSettings(); }}
-                style={{ padding: '6px 12px', fontSize: '12px', color: 'var(--text-primary, #e2e8f0)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
+              <button
+                type="button"
+                onClick={() => { setIsProfileMenuOpen(false); openSettings('byok'); }}
+                style={{ width: '100%', background: 'none', border: 'none', padding: '6px 12px', fontSize: '12px', color: 'var(--text-primary, #e2e8f0)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', textAlign: 'left' }}
                 onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--accent-primary, #0284c7)'; e.currentTarget.style.color = '#ffffff'; }}
                 onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--text-primary, #e2e8f0)'; }}
               >
                 <Shield size={13} />
                 <span>API Keys & BYOK…</span>
-              </div>
-              <div
+              </button>
+              <button
+                type="button"
                 onClick={() => { setIsProfileMenuOpen(false); openUsageDashboard(); }}
-                style={{ padding: '6px 12px', fontSize: '12px', color: 'var(--text-primary, #e2e8f0)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
+                style={{ width: '100%', background: 'none', border: 'none', padding: '6px 12px', fontSize: '12px', color: 'var(--text-primary, #e2e8f0)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', textAlign: 'left' }}
                 onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--accent-primary, #0284c7)'; e.currentTarget.style.color = '#ffffff'; }}
                 onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--text-primary, #e2e8f0)'; }}
               >
                 <FolderOpen size={13} />
                 <span>Quota & Analytics</span>
-              </div>
-              <div
+              </button>
+              <button
+                type="button"
                 onClick={() => { cycleTheme(); }}
-                style={{ padding: '6px 12px', fontSize: '12px', color: 'var(--text-primary, #e2e8f0)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
+                style={{ width: '100%', background: 'none', border: 'none', padding: '6px 12px', fontSize: '12px', color: 'var(--text-primary, #e2e8f0)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', textAlign: 'left' }}
                 onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--accent-primary, #0284c7)'; e.currentTarget.style.color = '#ffffff'; }}
                 onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--text-primary, #e2e8f0)'; }}
               >
                 <Palette size={13} />
                 <span>Theme: {theme}</span>
-              </div>
+              </button>
               <div style={{ height: '1px', backgroundColor: 'var(--border-subtle, rgba(255, 255, 255, 0.08))', margin: '4px 0' }} />
-              <div
+              <button
+                type="button"
                 onClick={() => { setIsProfileMenuOpen(false); void handleCheckUpdate(); }}
-                style={{ padding: '6px 12px', fontSize: '12px', color: 'var(--text-primary, #e2e8f0)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
+                style={{ width: '100%', background: 'none', border: 'none', padding: '6px 12px', fontSize: '12px', color: 'var(--text-primary, #e2e8f0)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', textAlign: 'left' }}
                 onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--accent-primary, #0284c7)'; e.currentTarget.style.color = '#ffffff'; }}
                 onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--text-primary, #e2e8f0)'; }}
               >
                 <RefreshCw size={13} />
                 <span>Check for Updates…</span>
-              </div>
+              </button>
             </div>
           )}
         </div>

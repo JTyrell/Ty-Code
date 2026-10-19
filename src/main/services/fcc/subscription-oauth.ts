@@ -237,7 +237,7 @@ export class SubscriptionOAuthService {
       });
 
       if (!response.ok) {
-        return this.createFallbackDeviceFlow();
+        throw new Error(`GitHub device code endpoint returned HTTP ${response.status}. Check network connectivity and try again.`);
       }
 
       const data = (await response.json()) as {
@@ -259,22 +259,12 @@ export class SubscriptionOAuthService {
 
       this.activeDeviceFlow = state;
       return state;
-    } catch {
-      return this.createFallbackDeviceFlow();
+    } catch (err: unknown) {
+      // Never fabricate device codes: offline/unreachable GitHub must surface
+      // as a real error the user can act on.
+      const message = err instanceof Error ? err.message : String(err);
+      throw new Error(`Copilot device flow could not start: ${message}`);
     }
-  }
-
-  private createFallbackDeviceFlow(): CopilotDeviceCodeState {
-    const fallback: CopilotDeviceCodeState = {
-      deviceCode: `tycd_dev_${crypto.randomUUID()}`,
-      userCode: `TYCD-${crypto.randomBytes(2).toString('hex').toUpperCase()}`,
-      verificationUri: 'https://github.com/login/device',
-      expiresAt: Date.now() + 900 * 1000,
-      intervalMs: 3000,
-      status: 'pending'
-    };
-    this.activeDeviceFlow = fallback;
-    return fallback;
   }
 
   /**
@@ -445,7 +435,7 @@ export class SubscriptionOAuthService {
     // Reset settings if user was pointing at this subscription
     await saveSettings({
       activeProvider: 'openkilo' as any,
-      activeModel: 'deepseek/deepseek-r1-0528:free'
+      activeModel: 'kilo-auto/free'
     });
 
     // Revoke ledger allocation attribution

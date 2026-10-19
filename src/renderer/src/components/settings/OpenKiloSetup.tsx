@@ -27,44 +27,44 @@ interface PriorityModelInfo {
 
 const PRIORITY_MODELS: PriorityModelInfo[] = [
   {
-    id: 'deepseek/deepseek-r1-0528:free',
-    name: 'DeepSeek R1 (0528)',
-    context: '164K context',
-    task: 'Reasoning & Planning',
-    score: 97,
-    desc: 'Frontier reasoning model for complex architectural problems with zero cost.'
+    id: 'kilo-auto/free',
+    name: 'Kilo Auto Router',
+    context: '256K context',
+    task: 'Smart Auto-Routing',
+    score: 92,
+    desc: 'Zero-cost router that picks the best live free model for every request.'
   },
   {
-    id: 'qwen/qwen3-coder:free',
-    name: 'Qwen 3 Coder',
+    id: 'poolside/laguna-s-2.1:free',
+    name: 'Poolside Laguna S 2.1',
     context: '262K context',
     task: 'Autonomous Coding',
-    score: 96,
-    desc: 'Massive context coding specialist excelling at full-repository refactoring.'
+    score: 95,
+    desc: 'Frontier code model excelling at full-repository refactoring.'
   },
   {
-    id: 'meta-llama/llama-3.3-70b-instruct:free',
-    name: 'Llama 3.3 70B Instruct',
-    context: '128K context',
+    id: 'nvidia/nemotron-3.5-super-vl:free',
+    name: 'NVIDIA Nemotron 3.5 Super VL',
+    context: '1M context',
+    task: 'Complex Reasoning',
+    score: 94,
+    desc: 'Million-token context for architectural reasoning and planning.'
+  },
+  {
+    id: 'cohere/north-mini-code:free',
+    name: 'Cohere North Mini Code',
+    context: '256K context',
     task: 'Fast Development',
     score: 93,
     desc: 'Rapid instruction-following model for multi-turn pair programming.'
   },
   {
-    id: 'google/gemma-3-27b-it:free',
-    name: 'Gemma 3 27B IT',
-    context: '131K context',
-    task: 'Efficient Instruction',
-    score: 91,
-    desc: 'Lightweight and highly responsive instruction model.'
-  },
-  {
-    id: 'mistralai/mistral-small-3.1-24b-instruct:free',
-    name: 'Mistral Small 3.1 24B',
-    context: '128K context',
-    task: 'Surgical Edits',
-    score: 90,
-    desc: 'Optimized for high-speed file patches and unified diff generation.'
+    id: 'thinkingmachines/inkling-small:free',
+    name: 'Inkling Small',
+    context: '1M context',
+    task: 'Deep Planning',
+    score: 92,
+    desc: 'Compact thinker for careful multi-step analysis.'
   }
 ];
 
@@ -113,10 +113,10 @@ export const OpenKiloSetup: React.FC = () => {
       }
       await saveSettings({
         activeProvider: 'openkilo',
-        activeModel: 'deepseek/deepseek-r1-0528:free',
+        activeModel: 'kilo-auto/free',
         apiKeys: { ...settings?.apiKeys, openkilo: 'anonymous' }
       });
-      setActionMessage('OpenKilo Anonymous Free Tier activated! You have immediate access to 40+ free models.');
+      setActionMessage('OpenKilo Anonymous Free Tier activated! You have immediate access to 15+ live free models.');
     } catch (err: unknown) {
       setActionMessage(`Error enabling anonymous mode: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
@@ -126,14 +126,12 @@ export const OpenKiloSetup: React.FC = () => {
 
   const handleStartOAuth = async () => {
     try {
-      if (window.electronAPI?.openkiloStartOAuth) {
-        const res = await window.electronAPI.openkiloStartOAuth();
-        if (res.success) {
-          setActionMessage('Browser OAuth opened. After signing in, paste your authorization code below.');
-        }
+      if (window.electronAPI?.openExternal) {
+        void window.electronAPI.openExternal('https://openkilo.com');
       }
+      setActionMessage('Opened openkilo.com. Sign in, create an API key, then use the "Or paste your API key" field below (the legacy OAuth code flow is deprecated).');
     } catch (err: unknown) {
-      setActionMessage(`Failed to initiate OAuth: ${err instanceof Error ? err.message : String(err)}`);
+      setActionMessage(`Failed to open browser: ${err instanceof Error ? err.message : String(err)}`);
     }
   };
 
@@ -201,7 +199,7 @@ export const OpenKiloSetup: React.FC = () => {
         const res = await window.electronAPI.providerTestConnection({
           providerId: 'openkilo',
           apiKey: settings?.apiKeys?.openkilo || 'anonymous',
-          modelId: settings?.activeModel || 'deepseek/deepseek-r1-0528:free'
+          modelId: settings?.activeModel || 'kilo-auto/free'
         });
         if (res.success && res.data) {
           setTestResult(res.data);

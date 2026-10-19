@@ -50,13 +50,13 @@ const FREE_CLOUD_PROVIDERS: ProviderOption[] = [
   {
     id: 'openrouter',
     name: 'OpenRouter Free',
-    tagline: 'Access DeepSeek R1, Qwen 2.5 Coder, Llama 3.3 for free',
-    defaultModel: 'deepseek/deepseek-r1:free',
+    tagline: 'Access NVIDIA Nemotron, Qwen 2.5 Coder, Laguna for free',
+    defaultModel: 'nvidia/nemotron-3-ultra-550b-a55b:free',
     recommendedModels: [
-      'deepseek/deepseek-r1:free',
+      'nvidia/nemotron-3-ultra-550b-a55b:free',
       'qwen/qwen-2.5-coder-32b-instruct:free',
-      'meta-llama/llama-3.3-70b-instruct:free',
-      'google/gemini-2.0-flash-exp:free'
+      'dots-studio/dots-3-note-preview:free',
+      'google/gemma-4-31b-it:free'
     ],
     keyUrl: 'https://openrouter.ai/keys',
     keyPlaceholder: 'sk-or-v1-...'
@@ -68,8 +68,7 @@ const FREE_CLOUD_PROVIDERS: ProviderOption[] = [
     defaultModel: 'llama-3.3-70b-versatile',
     recommendedModels: [
       'llama-3.3-70b-versatile',
-      'llama-3.1-8b-instant',
-      'mixtral-8x7b-32768'
+      'llama-3.1-8b-instant'
     ],
     keyUrl: 'https://console.groq.com/keys',
     keyPlaceholder: 'gsk_...'
@@ -271,7 +270,7 @@ export const FirstRunOnboardingModal: React.FC = () => {
       // 2. Set active provider & model
       const providerList = selectedTier === 'free_cloud' ? FREE_CLOUD_PROVIDERS : BYOK_PRO_PROVIDERS;
       const providerConfig = providerList.find((p) => p.id === selectedProviderId);
-      const defaultModel = providerConfig?.defaultModel || (selectedTier === 'local_private' ? 'qwen2.5-coder' : 'deepseek/deepseek-r1:free');
+      const defaultModel = providerConfig?.defaultModel || (selectedTier === 'local_private' ? 'qwen2.5-coder' : 'nvidia/nemotron-3-ultra-550b-a55b:free');
 
       await saveSettings({
         activeProvider: selectedProviderId as any,

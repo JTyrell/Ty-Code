@@ -7,6 +7,7 @@ import os from 'os';
 import fsSync from 'fs';
 import { ProviderGateway } from './providers/provider-gateway';
 import { PRECONFIGURED_PROVIDERS } from './config/provider-registry';
+import type { PreConfiguredProvider } from '../preload/types';
 import { historyExtractor } from './services/history-extractor';
 import {
   selectWorkspaceFolder, getWorkspaceTree, getWorkspaceTreeChunked, setupWorkspaceWatcher, readFile, writeFile, createFile,
@@ -68,6 +69,7 @@ import { fccManager } from './services/orchestration/fcc-manager';
 import { checkFCCHealth } from './services/fcc-manager';
 import { fccIntegrityChecker } from './services/orchestration/fcc-integrity';
 import { fccEmbeddedCore } from './services/fcc/embedded-core';
+import { fccServiceManager } from './fcc-integration';
 import { fccCatalogSync } from './services/fcc/catalog-sync';
 import { harnessImporter } from './services/fcc/harness-importer';
 import { subscriptionOAuthService } from './services/fcc/subscription-oauth';
@@ -89,6 +91,8 @@ import { moduleManager } from './services/module-manager';
 import { moduleRegistry } from './services/module-registry';
 import { mcpManager } from './services/mcp-manager';
 import { freeProviderRegistry } from './services/providers/free-provider-registry';
+import { getVerifiedModels, type VerifiedModelConfig } from './services/verified-models';
+import type { FreeProvider, FreeProviderId, FreeAuthType, FreeProviderCapabilities } from '../shared/types/free-providers';
 import { modelClassifier } from './services/providers/model-classifier';
 import { providerHealthMonitor } from './services/providers/health-monitor';
 import { keyDetector, maskKey } from './services/providers/key-detector';
@@ -114,9 +118,13 @@ import { diagnosticsHealthMonitor } from './services/diagnostics/health-monitor'
 import { connectivityTracer } from './services/diagnostics/connectivity-tracer';
 import { providerOAuth } from './services/auth/provider-oauth';
 import { usageLedger } from './services/usage/ledger';
-import { getVerifiedModels } from './services/verified-models';
 import { saveKey, getKey, testKey } from './services/credential-vault';
 import { initiateCopilotDeviceFlow, pollCopilotToken } from './services/auth/subscription-auth';
+import { canvasSyncManager } from './services/canvas-sync-manager';
+import { canvasAgentEngine, type CanvasAgentGenerationResult } from './agent/canvas-agent-engine';
+import { getCanvasWindow } from './windows/canvas-window';
+import { openCanvasWindow } from './windows/canvas-window';
+import { opencodeServiceManager } from './opencode-integration';
 
 function isAppOrSystemDir(dirPath: string): boolean {
   if (!dirPath) return true;
@@ -204,17 +212,209 @@ function isTrustedExtensionFrame(event: IpcMainInvokeEvent): boolean {
   }
 }
 
+async function buildMergedFreeProviderList(): Promise<FreeProvider[]> {
+  const fccCatalog = fccCatalogSync.getCatalog() || [];
+  const verified = await getVerifiedModels().catch(() => [] as VerifiedModelConfig[]);
+  const staticRegistry = freeProviderRegistry.getAllProviders();
+
+  const byId = new Map<string, FreeProvider>();
+
+  // Map FCC provider id -> FreeProviderId
+  function toFreeProviderId(id: string): FreeProviderId {
+    const map: Record<string, FreeProviderId> = {
+      openrouter: 'openrouter-free',
+      groq: 'groq-free',
+      openkilo: 'openkilo-free',
+      huggingface: 'huggingface-free',
+      'together-ai': 'together-ai-free',
+      'fireworks-ai': 'fireworks-ai-free',
+      'google-ai-studio': 'google-ai-studio-free',
+      anthropic: 'anthropic-claude-free',
+      opencode: 'opencode-built-in',
+      ollama: 'groq-free' // fallback
+    };
+    return map[id] || (id.endsWith('-free') ? (id as FreeProviderId) : `${id}-free` as FreeProviderId);
+  }
+
+  // Map FCC authMethod -> FreeAuthType
+  function toFreeAuthType(auth: string): FreeAuthType {
+    if (auth === 'none') return 'anonymous';
+    if (auth === 'api_key') return 'api_key_optional';
+    if (auth === 'oauth' || auth === 'web_cookie') return 'fcc_proxy';
+    return 'api_key_optional';
+  }
+
+  // 1. FCC catalog (primary, live health/latency)
+  for (const p of fccCatalog) {
+    if (!p.enabled) continue;
+    const freeModels = (p.models || []).filter(m => m.isFree);
+    const caps: FreeProviderCapabilities = {};
+    for (const m of freeModels) {
+      for (const [k, v] of Object.entries(m.capabilities)) {
+        if (v) {
+          const cat = k as keyof FreeProviderCapabilities;
+          const current = caps[cat];
+          if (!current) caps[cat] = [m.id];
+          else if (Array.isArray(current)) current.push(m.id);
+          else caps[cat] = [current, m.id];
+        }
+      }
+    }
+    byId.set(p.id, {
+      id: toFreeProviderId(p.id),
+      name: p.name,
+      base_url: p.defaultEndpoint,
+      auth_type: toFreeAuthType(p.authMethod),
+      best_free_models: freeModels.map(m => m.id),
+      setup_instructions: p.signupUrl ? `Get API key at ${p.signupUrl}` : 'No API key required',
+      model_capabilities: caps,
+      signup_url: p.signupUrl
+    });
+  }
+
+  // 2. Verified supplemental (OpenCode Zen, OpenKilo curated, preconfigured, Ollama)
+  const fccModelIds = new Set(fccCatalog.flatMap(p => (p.models || []).map(m => m.id)));
+  const verifiedByProvider = new Map<string, VerifiedModelConfig[]>();
+  for (const vm of verified) {
+    if (fccModelIds.has(vm.modelId)) continue;
+    const list = verifiedByProvider.get(vm.providerId) || [];
+    list.push(vm);
+    verifiedByProvider.set(vm.providerId, list);
+  }
+  for (const [providerId, models] of verifiedByProvider) {
+    if (byId.has(providerId)) continue;
+    const first = models[0];
+    byId.set(providerId, {
+      id: toFreeProviderId(providerId),
+      name: first.name || providerId,
+      base_url: first.url.replace('/chat/completions', ''),
+      auth_type: first.requiresKey ? 'api_key_optional' : 'anonymous',
+      best_free_models: models.map(m => m.modelId),
+      setup_instructions: first.requiresKey ? `Requires API key for ${providerId}` : 'No API key required',
+      model_capabilities: {},
+      signup_url: undefined
+    });
+  }
+
+  // 3. Static registry fallback for any remaining providers
+  for (const p of staticRegistry) {
+    if (!byId.has(p.id)) byId.set(p.id, p);
+  }
+
+  return [...byId.values()];
+}
+
 function registerIpcHandlers(): void {
   if (ipcRegistered) return;
   ipcRegistered = true;
 
-  ipcMain.on('window:minimize', () => mainWindow?.minimize());
-  ipcMain.on('window:maximize', () => {
-    if (mainWindow?.isMaximized()) mainWindow.unmaximize();
-    else mainWindow?.maximize();
+  // M3E Canvas overhaul: shared context & chat sync bridge (canvas window <-> main window)
+  canvasSyncManager.setTrustedSenderCheck(isTrustedExtensionFrame);
+  canvasSyncManager.attachWindowResolver(() =>
+    BrowserWindow.getAllWindows()
+      .filter((win) => {
+        try {
+          if (win.webContents.isDestroyed()) return false;
+          const url = win.webContents.getURL();
+          if (!url) return false;
+          const devServerUrl = process.env.VITE_DEV_SERVER_URL;
+          if (devServerUrl) return url.startsWith(devServerUrl.split('#')[0]);
+          return url.toLowerCase().includes('/index.html');
+        } catch {
+          return false;
+        }
+      })
+      .map((win) => win.webContents)
+  );
+  canvasSyncManager.registerIpcHandlers(ipcMain, { isTrustedSender: isTrustedExtensionFrame });
+
+  // Canvas agent engine: UI generation prompts coming from the Canvas chat.
+  ipcMain.handle(
+    'canvas:agent-generate',
+    async (event, rawPrompt: unknown): Promise<{ ok: boolean; data?: CanvasAgentGenerationResult; error?: string }> => {
+      if (!isTrustedExtensionFrame(event)) return { ok: false, error: 'Untrusted renderer frame.' };
+      if (typeof rawPrompt !== 'string') return { ok: false, error: 'Prompt must be a string.' };
+      try {
+        const result: CanvasAgentGenerationResult = await canvasAgentEngine.generate(rawPrompt, undefined);
+        return { ok: result.ok, data: result, ...(result.error ? { error: result.error } : {}) };
+      } catch (err: unknown) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    }
+  );
+
+  // Canvas chat sidecar: streaming UI generation ('canvas:chat-send').
+  ipcMain.handle(
+    'canvas:chat-send',
+    async (event, rawPayload: unknown): Promise<{ ok: boolean; data?: CanvasAgentGenerationResult & { runId: string }; error?: string }> => {
+      if (!isTrustedExtensionFrame(event)) return { ok: false, error: 'Untrusted renderer frame.' };
+      const payload = (typeof rawPayload === 'object' && rawPayload !== null ? rawPayload : {}) as { prompt?: unknown };
+      if (typeof payload.prompt !== 'string' || !payload.prompt.trim()) {
+        return { ok: false, error: 'Prompt must be a non-empty string.' };
+      }
+      const runId = `run_${globalThis.crypto.randomUUID()}`;
+      try {
+        canvasSyncManager.pushAgentEvent({ runId, type: 'status', content: 'Generating UI…' });
+        const result = await canvasAgentEngine.generate(payload.prompt, {
+          runId,
+          onToken: (content) => canvasSyncManager.pushAgentEvent({ runId, type: 'token', content })
+        });
+        canvasSyncManager.pushAgentEvent({ runId, type: result.ok ? 'done' : 'error', content: result.error || result.summary });
+        return { ok: result.ok, data: { ...result, runId }, ...(result.error ? { error: result.error } : {}) };
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        canvasSyncManager.pushAgentEvent({ runId, type: 'error', content: message });
+        return { ok: false, error: message };
+      }
+    }
+  );
+
+  // Renderer-initiated canvas-update notification mirror (same channel the engine uses).
+  ipcMain.handle(
+    'canvas:notify-main-chat-update',
+    async (event, rawPayload: unknown): Promise<{ ok: boolean; data?: boolean; error?: string }> => {
+      if (!isTrustedExtensionFrame(event)) return { ok: false, error: 'Untrusted renderer frame.' };
+      const payload = (typeof rawPayload === 'object' && rawPayload !== null ? rawPayload : {}) as Record<string, unknown>;
+      if (typeof payload.action !== 'string' || !payload.action.trim()) {
+        return { ok: false, error: 'Action must be a non-empty string.' };
+      }
+      canvasSyncManager.pushMainChatUpdate({
+        action: payload.action,
+        ...(typeof payload.codeSnippet === 'string' ? { codeSnippet: payload.codeSnippet.slice(0, 20_000) } : {}),
+        ...(typeof payload.platform === 'string' ? { platform: payload.platform } : {}),
+        updatedAt: Date.now()
+      });
+      return { ok: true, data: true };
+    }
+  );
+
+  // Focus the Canvas window ("View in Canvas" from the main chat).
+  ipcMain.handle('canvas:focus-window', async (): Promise<{ ok: boolean; data?: boolean }> => {
+    const win = getCanvasWindow();
+    if (!win || win.isDestroyed()) return { ok: true, data: false };
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+    return { ok: true, data: true };
   });
-  ipcMain.on('window:close', () => mainWindow?.close());
-  ipcMain.handle('window:is-maximized', () => mainWindow?.isMaximized() ?? false);
+
+  ipcMain.on('window:minimize', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender) || mainWindow;
+    win?.minimize();
+  });
+  ipcMain.on('window:maximize', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender) || mainWindow;
+    if (win?.isMaximized()) win.unmaximize();
+    else win?.maximize();
+  });
+  ipcMain.on('window:close', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender) || mainWindow;
+    win?.close();
+  });
+  ipcMain.handle('window:is-maximized', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender) || mainWindow;
+    return win?.isMaximized() ?? false;
+  });
 
   // UI-Polish 2: Platform Inset Metrics (caption buttons, titlebar, status bar, resize handle hit area)
   ipcMain.handle('platform:get-insets', () => {
@@ -604,7 +804,7 @@ function registerIpcHandlers(): void {
       openKiloProvider.enableAnonymousMode();
       await saveSettings({
         activeProvider: 'openkilo',
-        activeModel: 'deepseek/deepseek-r1-0528:free',
+        activeModel: 'kilo-auto/free',
         apiKeys: { openkilo: 'anonymous' }
       });
       return { success: true, data: openKiloProvider.getStatus() };
@@ -899,7 +1099,18 @@ function registerIpcHandlers(): void {
     try {
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('sketcher:prompt-received', prompt);
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.focus();
       }
+      return { success: true, data: true };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('sketcher:open-window', () => {
+    try {
+      openSketcherWindow();
       return { success: true, data: true };
     } catch (err: unknown) {
       return { success: false, error: err instanceof Error ? err.message : String(err) };
@@ -947,7 +1158,11 @@ function registerIpcHandlers(): void {
   // Phase 6.1: Permanent Free Provider Registry & Health Monitoring
   ipcMain.handle('free-providers:get-list', async (event) => {
     if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
-    return { success: true, data: freeProviderRegistry.getAllProviders() };
+    try {
+      return { success: true, data: await buildMergedFreeProviderList() };
+    } catch (err: unknown) {
+      return { success: true, data: freeProviderRegistry.getAllProviders() };
+    }
   });
 
   ipcMain.handle('free-providers:get-tiers', async (event) => {
@@ -1219,6 +1434,26 @@ function registerIpcHandlers(): void {
     }
   });
 
+  // OpenCode Standard Supply (baked-in hosted free models)
+  ipcMain.handle('opencode:get-service-status', async (event) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      return { success: true, data: opencodeServiceManager.getStatus() };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('opencode:refresh-standard-supply', async (event) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      const status = await opencodeServiceManager.refresh();
+      return { success: true, data: status };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
   // Phase 6.4: Intelligent Model Router
   ipcMain.handle('model-router:classify-task', async (event, prompt: string) => {
     if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
@@ -1263,7 +1498,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle('model-router:get-available-models', async (event) => {
     if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
     try {
-      const grouped = modelRouter.getCatalogGroupedByTier();
+      const grouped = await modelRouter.getCatalogGroupedByTier();
       return { success: true, data: grouped };
     } catch (err: unknown) {
       return { success: false, error: err instanceof Error ? err.message : String(err) };
@@ -1847,12 +2082,43 @@ function registerPerfHandlers(): void {
 }
 
 function registerProviderHandlers(): void {
-  ipcMain.handle('provider:get-registry', async () => {
+  ipcMain.handle('provider:get-registry', async (event) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
     try {
       const merged = await opencodeIntegration.getMergedProviders();
-      return { success: true, data: merged };
+      const freeProviders = await buildMergedFreeProviderList();
+
+      const toPreConfigured = (p: PreConfiguredProvider | FreeProvider): PreConfiguredProvider => {
+        if ('baseUrl' in p) return p as PreConfiguredProvider;
+        return {
+          id: p.id,
+          name: p.name,
+          baseUrl: p.base_url,
+          setupType: p.auth_type === 'anonymous' ? 'zero_config' : 'api_key',
+          notes: p.setup_instructions,
+          signupUrl: p.signup_url,
+          defaultModel: p.best_free_models[0],
+          icon: undefined
+        };
+      };
+
+      const byId = new Map<string, PreConfiguredProvider>();
+      for (const p of merged) byId.set(p.id, toPreConfigured(p));
+      for (const fp of freeProviders) if (!byId.has(fp.id)) byId.set(fp.id, toPreConfigured(fp));
+      return { success: true, data: [...byId.values()] };
     } catch {
-      return { success: true, data: PRECONFIGURED_PROVIDERS };
+      const freeProviders = await buildMergedFreeProviderList().catch(() => freeProviderRegistry.getAllProviders());
+      const toPreConfigured = (p: FreeProvider): PreConfiguredProvider => ({
+        id: p.id,
+        name: p.name,
+        baseUrl: p.base_url,
+        setupType: p.auth_type === 'anonymous' ? 'zero_config' : 'api_key',
+        notes: p.setup_instructions,
+        signupUrl: p.signup_url,
+        defaultModel: p.best_free_models[0],
+        icon: undefined
+      });
+      return { success: true, data: freeProviders.map(toPreConfigured) };
     }
   });
 
@@ -2155,6 +2421,44 @@ function registerFccHandlers(): void {
     };
   });
 
+  // FCC Service Manager (installer, service lifecycle, terminal bridge)
+  ipcMain.handle('fcc:install', async () => {
+    try {
+      const res = await fccServiceManager.install((progress) => {
+        for (const win of BrowserWindow.getAllWindows()) {
+          if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
+            win.webContents.send('fcc:install-progress', progress);
+          }
+        }
+      });
+      if (!res.success) {
+        return { success: false, error: res.error || 'FCC installation failed.' };
+      }
+      return { success: true, data: { binaryPath: res.binaryPath || null, alreadyInstalled: Boolean(res.alreadyInstalled) } };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('fcc:get-service-status', async () => ({ success: true, data: fccServiceManager.getStatus() }));
+
+  ipcMain.handle('fcc:retry-service', async () => {
+    try {
+      const status = await fccServiceManager.retry();
+      return { success: true, data: status };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  fccServiceManager.onServiceState((serviceState) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
+        win.webContents.send('fcc:service-state', serviceState);
+      }
+    }
+  });
+
   // Phase FCC-5: Reach (External Clients, Connectors, SessionBridge, Background Tasks)
   ipcMain.handle('fcc:export-editor-config', async (_event, payload: { editor: 'vscode' | 'jetbrains' | 'neovim'; variant?: string; customPath?: string }) => {
     try {
@@ -2400,6 +2704,16 @@ function registerFccHandlers(): void {
 function cleanupAllResources(): void {
   cleanupAllPtys();
   try {
+    void fccEmbeddedCore.stop();
+  } catch {
+    // Ignore FCC cleanup error
+  }
+  try {
+    void localSupplyEndpoint.stop();
+  } catch {
+    // Ignore supply endpoint cleanup error
+  }
+  try {
     getLspManager().cleanupAll();
   } catch {
     // Ignore cleanup error
@@ -2505,6 +2819,13 @@ function createWindow(): void {
 
   // Initialize tray presence
   trayManager.initialize(window);
+}
+
+function openSketcherWindow(): BrowserWindow {
+  // M3E Canvas overhaul: the canvas lives in its own dedicated, isolated window
+  // (src/main/windows/canvas-window.ts) and stays in sync with the main IDE
+  // window through canvasSyncManager/'main:sync-message'.
+  return openCanvasWindow();
 }
 
 app.whenReady().then(async () => {
@@ -2651,10 +2972,22 @@ app.whenReady().then(async () => {
   // -------------------------------------------------------------
   bootScheduler.register(
     'providers_registry',
-    'Provider Registry (Disk Cache)',
+    'Provider Registry (Disk Cache) + Auto-Connect Bootstrap',
     2,
     'providers',
-    () => {
+    async () => {
+      // Once-and-for-all provider bootstrap: ensure OpenKilo anonymous free tier is
+      // always configured, and self-heal stale/dead model IDs to the live free router.
+      try {
+        const current = await settingsManager.getEffectiveSettings();
+        const autoRes = openKiloProvider.autoEnable(current as any);
+        if (autoRes.updatedSettings && Object.keys(autoRes.updatedSettings).length > 0) {
+          await saveSettings(autoRes.updatedSettings);
+          console.log('[BOOT] OpenKilo anonymous auto-connect ensured:', autoRes.updatedSettings);
+        }
+      } catch (err) {
+        console.warn('[Tier 2] Provider auto-connect bootstrap non-blocking failure:', err);
+      }
       const cachedProviders = bootScheduler.getWarmCache('providers');
       if (!cachedProviders) {
         bootScheduler.setWarmCache('providers', PRECONFIGURED_PROVIDERS.map((p) => p.id));
@@ -2669,6 +3002,28 @@ app.whenReady().then(async () => {
     'fcc',
     async () => {
       await fccEmbeddedCore.initBootTier2();
+    }
+  );
+
+  bootScheduler.register(
+    'fcc_service_manager',
+    'FCC Service Manager (binary detection & terminal bridge)',
+    3,
+    'fcc',
+    async () => {
+      await fccServiceManager.ensureRunning();
+    }
+  );
+
+  bootScheduler.register(
+    'opencode_standard_supply',
+    'Standard Supply (OpenCode Zen + OpenKilo gateway, baked-in)',
+    3,
+    'fcc',
+    async () => {
+      // Standard, not optional: OpenCode Zen free models + OpenKilo gateway are
+      // always part of the baked-in supply, routed & managed by the FCC backend.
+      await opencodeServiceManager.ensureStandardSupply();
     }
   );
 

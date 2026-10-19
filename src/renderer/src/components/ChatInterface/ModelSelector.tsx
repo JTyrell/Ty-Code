@@ -66,26 +66,26 @@ export const TIER_LABELS: Record<ModelTier, { name: string; color: string; bg: s
 export const FALLBACK_CATALOG: Record<ModelTier, RankedModelCandidate[]> = {
   tier_s_reasoning: [
     {
-      modelId: 'deepseek/deepseek-r1:free',
-      modelName: 'DeepSeek R1 (Free)',
+      modelId: 'nvidia/nemotron-3-ultra-550b-a55b:free',
+      modelName: 'NVIDIA Nemotron 3 Ultra (Free)',
       providerId: 'openrouter-free',
       providerName: 'OpenRouter',
       tier: 'tier_s_reasoning',
       isFree: true,
-      latencyMs: 850,
+      latencyMs: 0,
       healthScore: 1.0,
       isRateLimited: false,
       compositeRankScore: 180,
       selectionReason: 'Deep architectural and multi-step reasoning'
     },
     {
-      modelId: 'deepseek/deepseek-r1-0528:free',
-      modelName: 'DeepSeek R1 0528 (Kilo Gateway)',
+      modelId: 'nvidia/nemotron-3.5-super-vl:free',
+      modelName: 'Nemotron 3.5 Super (Kilo Gateway)',
       providerId: 'openkilo-free',
       providerName: 'OpenKilo',
       tier: 'tier_s_reasoning',
       isFree: true,
-      latencyMs: 650,
+      latencyMs: 0,
       healthScore: 1.0,
       isRateLimited: false,
       compositeRankScore: 185,
@@ -100,20 +100,20 @@ export const FALLBACK_CATALOG: Record<ModelTier, RankedModelCandidate[]> = {
       providerName: 'OpenRouter',
       tier: 'tier_a_coding',
       isFree: true,
-      latencyMs: 420,
+      latencyMs: 0,
       healthScore: 1.0,
       isRateLimited: false,
       compositeRankScore: 175,
       selectionReason: 'Exceptional code generation and component authoring'
     },
     {
-      modelId: 'qwen/qwen3-coder:free',
-      modelName: 'Qwen 3 Coder (Kilo Gateway)',
+      modelId: 'poolside/laguna-s-2.1:free',
+      modelName: 'Poolside Laguna S (Kilo Gateway)',
       providerId: 'openkilo-free',
       providerName: 'OpenKilo',
       tier: 'tier_a_coding',
       isFree: true,
-      latencyMs: 380,
+      latencyMs: 0,
       healthScore: 1.0,
       isRateLimited: false,
       compositeRankScore: 180,
@@ -126,7 +126,7 @@ export const FALLBACK_CATALOG: Record<ModelTier, RankedModelCandidate[]> = {
       providerName: 'Groq',
       tier: 'tier_a_coding',
       isFree: true,
-      latencyMs: 140,
+      latencyMs: 0,
       healthScore: 1.0,
       isRateLimited: false,
       compositeRankScore: 190,
@@ -135,13 +135,13 @@ export const FALLBACK_CATALOG: Record<ModelTier, RankedModelCandidate[]> = {
   ],
   tier_b_general: [
     {
-      modelId: 'meta-llama/llama-3.3-70b-instruct:free',
-      modelName: 'Llama 3.3 70B Instruct',
+      modelId: 'dots-studio/dots-3-note-preview:free',
+      modelName: 'Dots 3 Note Preview (Free)',
       providerId: 'openrouter-free',
       providerName: 'OpenRouter',
       tier: 'tier_b_general',
       isFree: true,
-      latencyMs: 350,
+      latencyMs: 0,
       healthScore: 1.0,
       isRateLimited: false,
       compositeRankScore: 160,
@@ -154,7 +154,7 @@ export const FALLBACK_CATALOG: Record<ModelTier, RankedModelCandidate[]> = {
       providerName: 'Google AI Studio',
       tier: 'tier_b_general',
       isFree: true,
-      latencyMs: 260,
+      latencyMs: 0,
       healthScore: 1.0,
       isRateLimited: false,
       compositeRankScore: 165,
@@ -169,7 +169,7 @@ export const FALLBACK_CATALOG: Record<ModelTier, RankedModelCandidate[]> = {
       providerName: 'Groq',
       tier: 'tier_c_fast',
       isFree: true,
-      latencyMs: 80,
+      latencyMs: 0,
       healthScore: 1.0,
       isRateLimited: false,
       compositeRankScore: 200,
@@ -182,7 +182,7 @@ export const FALLBACK_CATALOG: Record<ModelTier, RankedModelCandidate[]> = {
       providerName: 'Google AI Studio',
       tier: 'tier_c_fast',
       isFree: true,
-      latencyMs: 110,
+      latencyMs: 0,
       healthScore: 1.0,
       isRateLimited: false,
       compositeRankScore: 195,
@@ -203,12 +203,13 @@ export const ModelSelector: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [routingMode, setRoutingMode] = useState<RoutingPreferenceMode>('auto');
   const [catalog, setCatalog] = useState<Record<ModelTier, RankedModelCandidate[]>>(FALLBACK_CATALOG);
+  const [catalogLoading, setCatalogLoading] = useState(false);
   const [dropdownPosition, setDropdownPosition] = useState<DropdownPosition | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const dropdownMenuRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
 
-  const activeModelId = settings?.activeModel || 'qwen/qwen-2.5-coder-32b-instruct:free';
+  const activeModelId = settings?.activeModel || 'kilo-auto/free';
   const activeProvider = settings?.activeProvider || 'openrouter';
 
   // Determine active tier based on active model
@@ -274,6 +275,7 @@ export const ModelSelector: React.FC = () => {
       if (next) {
         const pos = calculateDropdownPosition();
         if (pos) setDropdownPosition(pos);
+        void loadCatalog();
       }
       return next;
     });
@@ -337,6 +339,7 @@ export const ModelSelector: React.FC = () => {
   };
 
   const loadCatalog = async () => {
+    setCatalogLoading(true);
     try {
       if (window.electronAPI?.modelRouterGetAvailableModels) {
         const res = await window.electronAPI.modelRouterGetAvailableModels();
@@ -346,6 +349,8 @@ export const ModelSelector: React.FC = () => {
       }
     } catch {
       // Keep fallback
+    } finally {
+      setCatalogLoading(false);
     }
   };
 
@@ -566,6 +571,13 @@ export const ModelSelector: React.FC = () => {
             </span>
           </div>
 
+          {/* Honest sync indicator */}
+          {catalogLoading ? (
+            <div style={{ fontSize: '9.5px', color: 'var(--text-muted)', padding: '0 4px' }}>
+              Syncing live model catalog (FCC supply layer)…
+            </div>
+          ) : null}
+
           {/* Grouped Models List */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {(Object.keys(catalog) as ModelTier[]).map((tierKey) => {
@@ -694,7 +706,7 @@ export const ModelSelector: React.FC = () => {
                           <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
                             {(candidate.provenance === 'subscription' || candidate.providerId?.includes('copilot'))
                               ? 'via your Copilot — no extra cost'
-                              : `via ${candidate.providerName} • ~${candidate.latencyMs}ms`}
+                              : `via ${candidate.providerName}`}
                           </span>
                         </div>
 

@@ -105,7 +105,7 @@ export const AIBadge: React.FC<AIBadgeProps> = ({
   model: propModel,
   provider: propProvider,
   state: propState,
-  latency: propLatency = '42ms',
+  latency: propLatency,
   isStatusBarVisible = true,
   windowWidth: propWindowWidth,
   rightOffset = 0,
@@ -156,11 +156,11 @@ export const AIBadge: React.FC<AIBadgeProps> = ({
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  const activeModel = propModel || settings?.activeModel || 'qwen/qwen3-coder:free';
+  const activeModel = propModel || settings?.activeModel || 'kilo-auto/free';
   const activeProvider = propProvider || settings?.activeProvider || 'openkilo';
   const modelShortName = activeModel.split('/').pop() || activeModel;
   const providerQuota = quotaSnapshot?.providers?.[activeProvider];
-  const providerHealth = providerQuota?.healthStatus || 'healthy';
+  const providerHealth = providerQuota?.healthStatus || 'untested';
   const providerHealthLabel = providerHealth.replace('_', ' ');
   const isFreeModel =
     activeModel.includes(':free') ||
@@ -207,13 +207,15 @@ export const AIBadge: React.FC<AIBadgeProps> = ({
   const dotClass =
     activeState === 'error' || providerHealth === 'exhausted'
       ? styles.dotError
-      : providerHealth === 'cooling_down' || providerHealth === 'degraded'
-        ? styles.dotWarning
-        : activeState === 'streaming'
-          ? styles.dotStreaming
-          : styles.dotIdle;
+      : providerHealth === 'untested'
+        ? styles.dotIdle
+        : providerHealth === 'cooling_down' || providerHealth === 'degraded'
+          ? styles.dotWarning
+          : activeState === 'streaming'
+            ? styles.dotStreaming
+            : styles.dotIdle;
 
-  const tooltip = `AI Model: ${activeModel}\nProvider: ${activeProvider}\nProvider health: ${providerHealthLabel}\nLatency: ${propLatency}\nTier: ${currentTier.label} (${currentTier.name})\nFree model or mode: ${isFreeModel ? 'Yes' : 'No'}\nState: ${activeState.toUpperCase()}\nClick to open AI Orchestration Dashboard.`;
+  const tooltip = `AI Model: ${activeModel}\nProvider: ${activeProvider}\nProvider health: ${providerHealthLabel}\nLatency: ${propLatency || 'Not measured yet'}\nTier: ${currentTier.label} (${currentTier.name})\nFree model or mode: ${isFreeModel ? 'Yes' : 'No'}\nState: ${activeState.toUpperCase()}\nClick to open AI Orchestration Dashboard.`;
 
   const ariaLabel = `AI Model ${modelShortName}, ${currentTier.label}, provider ${providerHealthLabel}${isFreeModel ? ', free' : ''}, state: ${activeState}`;
 

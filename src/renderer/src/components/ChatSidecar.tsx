@@ -14,7 +14,7 @@ import powershell from 'highlight.js/lib/languages/powershell';
 import python from 'highlight.js/lib/languages/python';
 import typescript from 'highlight.js/lib/languages/typescript';
 import yaml from 'highlight.js/lib/languages/yaml';
-import { Send, Square, Sparkles, Trash2, ChevronRight, ChevronDown, Terminal, FileCode, Check, Eye, AlertCircle, Copy, RotateCcw, Loader2, ShieldCheck, X, Users, Lightbulb, Hammer, Compass, Info, Presentation, Play, ExternalLink, Settings, Activity, Key, WifiOff, Clock, RefreshCw, Zap } from 'lucide-react';
+import { Send, Square, Sparkles, Trash2, ChevronRight, ChevronDown, Terminal, FileCode, Check, Eye, AlertCircle, Copy, RotateCcw, Loader2, ShieldCheck, X, Users, Lightbulb, Hammer, Compass, Info, Palette, Presentation, Play, ExternalLink, Settings, Activity, Key, WifiOff, Clock, RefreshCw, Zap } from 'lucide-react';
 import { useChatStore } from '../state/chat-store';
 import { useWorkspaceStore } from '../state/workspace-store';
 import { usePairProgrammingStore } from '../state/pair-programming-store';
@@ -631,7 +631,7 @@ export const QuotaExhaustedCard: React.FC<{ errorCard: ChatErrorCardType; onRetr
             <button
               type="button"
               className="chat-error-alt-btn"
-              onClick={() => void handleSwitchToProvider('openrouter', 'deepseek/deepseek-r1:free')}
+              onClick={() => void handleSwitchToProvider('openrouter', 'nvidia/nemotron-3-ultra-550b-a55b:free')}
             >
               Switch to OpenRouter Free
             </button>
@@ -1129,6 +1129,96 @@ export const ChatSidecar: React.FC = () => {
         {messages.length === 0 && !streamingText && <div className="chat-empty-state"><Sparkles size={30} color="var(--border-strong)" /><strong>How can Ty-Code help you today?</strong><span>Explore your workspace, implement a feature, fix a bug, or run a test suite.</span></div>}
         {messages.map((message) => <article key={message.id} className={`chat-message is-${message.role}`}>
           {message.role === 'system' ? (
+            message.content.startsWith('🎨 M3E Canvas updated') ? (() => {
+              const action = message.content.split('🎨 M3E Canvas updated: ')[1]?.split('.')[0] || 'updated_ui';
+              const snippetMatch = message.content.match(/```\n([\s\S]*?)\n```/);
+              const snippet = snippetMatch ? snippetMatch[1] : '';
+              return (
+                <details
+                  className="canvas-update-card"
+                  style={{
+                    alignSelf: 'flex-start',
+                    maxWidth: '94%',
+                    margin: '4px 0',
+                    borderRadius: 8,
+                    background: 'rgba(168, 85, 247, 0.10)',
+                    border: '1px solid rgba(168, 85, 247, 0.3)',
+                    overflow: 'hidden'
+                  }}
+                >
+                  <summary
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      padding: '5px 10px',
+                      cursor: 'pointer',
+                      fontSize: 11,
+                      color: '#d8b4fe',
+                      listStyle: 'none',
+                      userSelect: 'none'
+                    }}
+                  >
+                    <Palette size={12} color="#c084fc" style={{ flexShrink: 0 }} />
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      M3E Canvas updated: {action}
+                    </span>
+                    <ChevronDown size={12} color="#c084fc" style={{ marginLeft: 'auto', flexShrink: 0 }} />
+                  </summary>
+                  <div
+                    style={{
+                      padding: '6px 10px 9px',
+                      borderTop: '1px solid rgba(168, 85, 247, 0.22)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 7
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void window.electronAPI?.focusCanvasWindow?.().catch(() => undefined);
+                      }}
+                      style={{
+                        alignSelf: 'flex-start',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 5,
+                        padding: '4px 10px',
+                        borderRadius: 6,
+                        background: 'rgba(168, 85, 247, 0.2)',
+                        border: '1px solid rgba(168, 85, 247, 0.45)',
+                        color: '#e9d5ff',
+                        fontSize: 10.5,
+                        fontWeight: 600,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <ExternalLink size={11} />
+                      View in Canvas
+                    </button>
+                    {snippet && (
+                      <pre
+                        style={{
+                          margin: 0,
+                          maxHeight: 150,
+                          overflow: 'auto',
+                          padding: 7,
+                          borderRadius: 6,
+                          background: 'rgba(10, 10, 14, 0.8)',
+                          border: '1px solid rgba(255, 255, 255, 0.06)',
+                          color: '#9fd6c4',
+                          fontSize: 9.5,
+                          lineHeight: 1.45
+                        }}
+                      >
+                        {snippet}
+                      </pre>
+                    )}
+                  </div>
+                </details>
+              );
+            })() : (
             <div
               className="chat-system-message-bubble"
               style={{
@@ -1146,6 +1236,7 @@ export const ChatSidecar: React.FC = () => {
             >
               <span>{message.content}</span>
             </div>
+            )
           ) : message.role === 'user' ? <div className="user-message-bubble">{message.content}</div> : <div className="assistant-message-bubble">
             {/* Start token count indicator */}
             <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '10px', color: '#94a3b8', marginBottom: '6px', padding: '2px 6px', background: 'rgba(255,255,255,0.03)', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.06)' }}>

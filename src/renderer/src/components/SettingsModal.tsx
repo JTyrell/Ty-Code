@@ -87,9 +87,9 @@ const FALLBACK_PROVIDERS: PreConfiguredProvider[] = [
     name: 'OpenRouter',
     baseUrl: 'https://openrouter.ai/api/v1',
     setupType: 'api_key',
-    notes: 'Fetch models from /models endpoint. Highlight free models (e.g., deepseek/deepseek-r1:free).',
+    notes: 'Fetch models from /models endpoint. Highlight free models (e.g., nvidia/nemotron-3-ultra-550b-a55b:free).',
     signupUrl: 'https://openrouter.ai/keys',
-    defaultModel: 'meta-llama/llama-3.3-70b-instruct:free'
+    defaultModel: 'dots-studio/dots-3-note-preview:free'
   },
   {
     id: 'openkilo',
@@ -98,7 +98,7 @@ const FALLBACK_PROVIDERS: PreConfiguredProvider[] = [
     setupType: 'api_key',
     notes: 'Standard OpenAI-compatible format.',
     signupUrl: 'https://openkilo.com',
-    defaultModel: 'kilo-1'
+    defaultModel: 'kilo-auto/free'
   },
   {
     id: 'opencode',
@@ -107,7 +107,7 @@ const FALLBACK_PROVIDERS: PreConfiguredProvider[] = [
     setupType: 'api_key',
     notes: 'Standard OpenAI-compatible format.',
     signupUrl: 'https://opencode.ai',
-    defaultModel: 'opencode-v1'
+    defaultModel: 'grok-code'
   },
   {
     id: 'groq',
@@ -253,8 +253,16 @@ export const SettingsModal: React.FC = () => {
   };
 
   const handleByokStartCoding = () => {
+    const activeProvider = settings?.activeProvider;
+    const hasKey = !!(activeProvider && settings?.apiKeysConfigured?.[activeProvider as ProviderType]);
     toggleSettings();
-    toast.success('Ready to Code', 'Your AI provider is connected and ready to assist.');
+    if (hasKey) {
+      toast.success('Ready to Code', `${activeProvider} is connected and configured.`);
+    } else if (activeProvider === 'custom' ? Boolean(settings?.customEndpoints?.custom) : !!activeProvider) {
+      toast.success('Ready to Code', `${activeProvider || 'Custom provider'} is set active.`);
+    } else {
+      toast.warning('No provider configured', 'Connect a provider in the Providers tab before starting.');
+    }
   };
 
   // Endpoints & Inference state

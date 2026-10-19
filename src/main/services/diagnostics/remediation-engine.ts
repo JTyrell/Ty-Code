@@ -20,7 +20,6 @@ import fs from 'fs/promises';
 import path from 'path';
 import { diagnosticService } from './diagnostic-service';
 import { capabilitySuite } from './capability-suite';
-import { freeProviderRegistry } from '../providers/free-provider-registry';
 import type {
   DiagnosticErrorCode,
   DiagnosticRunSummary,
@@ -162,20 +161,8 @@ export class RemediationEngine {
       }
     }
 
-    // Ensure OpenKilo or local Ollama are listed if no tests were run yet
-    if (workingNow.length === 0 && (!conn || conn.totalTested === 0)) {
-      const openkilo = freeProviderRegistry.getProvider('openkilo-free');
-      if (openkilo) {
-        workingNow.push({
-          providerId: openkilo.id,
-          providerName: openkilo.name,
-          modelId: openkilo.best_free_models[0] || 'kilo-1',
-          authType: 'anonymous',
-          readyImmediately: true,
-          notes: 'Built-in zero-config anonymous tier ready immediately without API keys'
-        });
-      }
-    }
+    // Providers only appear in workingNow when a real diagnostic test in this
+    // run proved them operational. No fabricated "ready immediately" entries.
 
     // Determine the single highest-value recommended next action
     const recommendedNextAction = this.determineRecommendedAction(

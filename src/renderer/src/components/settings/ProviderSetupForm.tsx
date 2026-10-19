@@ -303,7 +303,11 @@ export const ProviderSetupForm: React.FC<ProviderSetupFormProps> = ({
             setOauthState({ status: 'success', message: 'GitHub Copilot connected and encrypted in safeStorage!' });
             setTimeout(() => setOauthState({ status: 'idle' }), 3000);
             void handleTestConnection();
-          } else if (res.data.status === 'expired' || res.data.status === 'cancelled') {
+          } else if (
+            res.data.status === 'expired' ||
+            res.data.status === 'cancelled' ||
+            res.data.status === 'error'
+          ) {
             clearInterval(interval);
             setCopilotFlow(null);
             setOauthState({ status: 'error', message: res.data.error || 'Device authorization cancelled.' });

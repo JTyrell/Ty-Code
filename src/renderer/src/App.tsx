@@ -26,6 +26,9 @@ import { useChatStore } from './state/chat-store';
 import { useWorkspaceStore } from './state/workspace-store';
 import { useEditorNavigationStore } from './state/editor-navigation-store';
 
+import { Palette } from 'lucide-react';
+import { SketcherWindow } from './components/SketcherWindow';
+
 // Dynamic import() for Tier 2/3 heavy modules — no top-level static imports
 const TerminalDrawer = React.lazy(() => import('./components/TerminalDrawer').then((m) => ({ default: m.TerminalDrawer })));
 const ExtensionsPanel = React.lazy(() => import('./components/ExtensionsPanel').then((m) => ({ default: m.ExtensionsPanel })));
@@ -33,10 +36,9 @@ const BootTimeline = React.lazy(() => import('./components/BootTimeline').then((
 const SettingsModal = React.lazy(() => import('./components/SettingsModal').then((m) => ({ default: m.SettingsModal })));
 const UsageDashboard = React.lazy(() => import('./components/UsageDashboard').then((m) => ({ default: m.UsageDashboard })));
 const CodeReviewPanel = React.lazy(() => import('./components/CodeReviewPanel').then((m) => ({ default: m.CodeReviewPanel })));
-const CanvasWebview = React.lazy(() => import('./components/CanvasWebview').then((m) => ({ default: m.CanvasWebview })));
 const DiffViewer = React.lazy(() => import('./components/DiffViewer').then((m) => ({ default: m.DiffViewer })));
 
-export const App: React.FC = () => {
+const MainWorkbench: React.FC = () => {
   const [activityTab, setActivityTab] = useState<ActivityTab>('explorer');
   const [isQuickOpenOpen, setIsQuickOpenOpen] = useState(false);
   const [quickOpenInitialQuery, setQuickOpenInitialQuery] = useState('');
@@ -49,14 +51,6 @@ export const App: React.FC = () => {
   const [rightWidth, setRightWidth] = useState(380);
   const [isDraggingLeft, setIsDraggingLeft] = useState(false);
   const [isDraggingRight, setIsDraggingRight] = useState(false);
-  const [isSketcherExpanded, setIsSketcherExpanded] = useState(false);
-
-  // Automatically widen left sidebar when opening UI sketcher if too narrow
-  useEffect(() => {
-    if (activityTab === 'ui-sketcher' && leftWidth < 380) {
-      setLeftWidth(380);
-    }
-  }, [activityTab, leftWidth]);
 
   // Zustand selector audit: subscribe to narrow slices only
   const initSettings = useChatStore((s) => s.initSettings);
@@ -68,6 +62,31 @@ export const App: React.FC = () => {
 
   // Measure panel transitions and promote tasks on demand
   const handleTabChange = useCallback((tab: ActivityTab) => {
+    if (tab === 'ui-sketcher') {
+      if (window.electronAPI?.sketcherOpenWindow) {
+        window.electronAPI.sketcherOpenWindow().catch(console.error);
+      }
+      return;
+    }
+
+    if (tab === activityTab) {
+      setLeftWidth((lw) => {
+        if (lw > 0) {
+          lastLeftWidthRef.current = lw;
+          return 0;
+        }
+        return lastLeftWidthRef.current || 260;
+      });
+      return;
+    }
+
+    setLeftWidth((lw) => {
+      if (lw === 0) {
+        return lastLeftWidthRef.current || 260;
+      }
+      return lw;
+    });
+
     const eventName = tab === 'extensions' ? 'extensions_open' : `panel_open:${tab}`;
     const id = transitionProfiler.startTransition(eventName);
     if (tab === 'extensions') {
@@ -75,7 +94,7 @@ export const App: React.FC = () => {
     }
     setActivityTab(tab);
     void transitionProfiler.endTransition(id, `panel_visible:${tab}`);
-  }, []);
+  }, [activityTab]);
 
   const handleToggleTerminal = useCallback(() => {
     const id = transitionProfiler.startTransition('terminal_toggle');
@@ -330,7 +349,7 @@ export const App: React.FC = () => {
       {/* Main Workspace Area (3-Column Layout with Resizers) */}
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden', position: 'relative' }}>
         {/* Leftmost Activity Bar */}
-        <ActivityBar activeTab={activityTab} onTabChange={handleTabChange} />
+        <ActivityBar activeTab={activityTab} onTabChange={handleTabChange} isLeftPanelOpen={leftWidth > 0} />
 
         {/* Dynamic Primary Left Panel (Explorer / Search / Source Control / Code Review / Extensions / Skills / Outline) */}
         <div style={{ width: `${leftWidth}px`, height: '100%', flexShrink: 0, overflow: 'hidden' }}>
@@ -341,17 +360,32 @@ export const App: React.FC = () => {
             {activityTab === 'code-review' && <CodeReviewPanel />}
             {activityTab === 'extensions' && <ExtensionsPanel />}
             {activityTab === 'ui-sketcher' && (
-              <CanvasWebview
-                isExpanded={isSketcherExpanded}
-                onExpandToggle={(expanded) => {
-                  setIsSketcherExpanded(expanded);
-                  if (expanded) {
-                    setLeftWidth((w) => Math.max(w, 640));
-                  } else {
-                    setLeftWidth(380);
-                  }
-                }}
-              />
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', padding: '24px', textAlign: 'center', gap: '12px' }}>
+                <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: 'rgba(168, 85, 247, 0.15)', border: '1px solid rgba(168, 85, 247, 0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Palette size={24} color="#a855f7" />
+                </div>
+                <div style={{ fontSize: '13px', fontWeight: 600, color: '#f3f4f6' }}>M3E UI Sketcher</div>
+                <div style={{ fontSize: '11px', color: '#9ca3af', lineHeight: '1.5', maxWidth: '200px' }}>
+                  Visual sketcher runs in a dedicated resizable window.
+                </div>
+                <button
+                  type="button"
+                  onClick={() => window.electronAPI?.sketcherOpenWindow?.()}
+                  style={{
+                    backgroundColor: 'var(--accent-primary, #6366f1)',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '6px',
+                    padding: '6px 14px',
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    marginTop: '4px'
+                  }}
+                >
+                  Open Window
+                </button>
+              </div>
             )}
           </React.Suspense>
           {activityTab === 'skills' && <SkillsPanel />}
@@ -461,4 +495,12 @@ export const App: React.FC = () => {
       <ToastContainer />
     </div>
   );
+};
+
+export const App: React.FC = () => {
+  const isSketcher = typeof window !== 'undefined' && window.location.hash.includes('sketcher');
+  if (isSketcher) {
+    return <SketcherWindow />;
+  }
+  return <MainWorkbench />;
 };

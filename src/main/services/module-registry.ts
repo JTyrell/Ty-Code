@@ -322,7 +322,7 @@ Invoke when generating UI mockups, visual wireframes, or testing responsive comp
             },
             {
               name: 'check_core_web_vitals',
-              description: 'Evaluate simulated page speed, layout shift, and resource optimization metrics.'
+              description: 'Measure page speed, layout shift, and resource optimization metrics via the live PageSpeed API (credentials required).'
             }
           ]
         };

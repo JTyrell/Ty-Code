@@ -55,19 +55,19 @@ export class ConnectionPool {
     if (!existing) {
       existing = {
         providerId,
-        latencyMs: 150,
-        rollingLatencies: [150],
-        successRate: 1.0,
-        totalRequests: 1,
-        successfulRequests: 1,
+        latencyMs: 0, // no invented warm baseline; real pings update this
+        rollingLatencies: [],
+        successRate: 0, // 0 = unprobed, no measured data
+        totalRequests: 0,
+        successfulRequests: 0,
         failedRequests: 0,
         consecutiveFailures: 0,
-        lastChecked: Date.now(),
-        lastPingSuccess: true,
-        isHealthy: true,
+        lastChecked: 0,
+        lastPingSuccess: false,
+        isHealthy: true, // routing remains permitted until a real failure proves otherwise
         cooldownUntil: 0,
         isCoolingDown: false,
-        healthScore: 85
+        healthScore: 50
       };
       this.stats.set(providerId, existing);
     }

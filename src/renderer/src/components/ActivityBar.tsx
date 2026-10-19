@@ -20,9 +20,10 @@ export type ActivityTab = 'explorer' | 'search' | 'source-control' | 'code-revie
 interface ActivityBarProps {
   activeTab: ActivityTab;
   onTabChange: (tab: ActivityTab) => void;
+  isLeftPanelOpen?: boolean;
 }
 
-export const ActivityBar: React.FC<ActivityBarProps> = ({ activeTab, onTabChange }) => {
+export const ActivityBar: React.FC<ActivityBarProps> = ({ activeTab, onTabChange, isLeftPanelOpen = true }) => {
   // Zustand selector audit: subscribe to narrow slices only
   const toggleSettings = useChatStore((s) => s.toggleSettings);
   const toggleTerminal = useChatStore((s) => s.toggleTerminal);
@@ -115,7 +116,7 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({ activeTab, onTabChange
       {/* Top Main Navigation */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%', alignItems: 'center' }}>
         {navItems.map((item) => {
-          const isActive = activeTab === item.id;
+          const isActive = isLeftPanelOpen && activeTab === item.id && item.id !== 'ui-sketcher';
           return (
             <div key={item.id} style={{ position: 'relative' }}>
               <button

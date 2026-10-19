@@ -10,9 +10,9 @@ export const PRECONFIGURED_PROVIDERS: PreConfiguredProvider[] = [
     name: 'OpenRouter',
     baseUrl: 'https://openrouter.ai/api/v1',
     setupType: 'api_key',
-    notes: 'Fetch models from /models endpoint. Highlight free models (e.g., deepseek/deepseek-r1:free).',
+    notes: 'Fetch models from /models endpoint. Highlight free models (e.g., nvidia/nemotron-3-ultra-550b-a55b:free).',
     signupUrl: 'https://openrouter.ai/keys',
-    defaultModel: 'meta-llama/llama-3.3-70b-instruct:free',
+    defaultModel: 'dots-studio/dots-3-note-preview:free',
     icon: 'openrouter'
   },
   {
@@ -22,7 +22,7 @@ export const PRECONFIGURED_PROVIDERS: PreConfiguredProvider[] = [
     setupType: 'zero_config',
     notes: 'Kilo Gateway: 40+ free models without API key, plus OAuth for 350+ paid models.',
     signupUrl: 'https://openkilo.com',
-    defaultModel: 'deepseek/deepseek-r1-0528:free',
+    defaultModel: 'kilo-auto/free',
     icon: 'openkilo'
   },
   {
@@ -32,7 +32,7 @@ export const PRECONFIGURED_PROVIDERS: PreConfiguredProvider[] = [
     setupType: 'api_key',
     notes: 'Standard OpenAI-compatible format.',
     signupUrl: 'https://opencode.ai',
-    defaultModel: 'opencode-v1',
+    defaultModel: 'grok-code',
     icon: 'opencode'
   },
   {

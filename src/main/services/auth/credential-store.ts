@@ -415,7 +415,7 @@ export class CredentialStore {
           success: true,
           providerId,
           latencyMs: Date.now() - startTime,
-          modelDetected: modelId || 'qwen/qwen3-coder:free'
+          modelDetected: modelId || 'kilo-auto/free'
         };
       }
 
@@ -445,7 +445,7 @@ export class CredentialStore {
         if (!res.ok) {
           throw new Error(`OpenRouter returned HTTP ${res.status}`);
         }
-        return { success: true, providerId, latencyMs: Date.now() - startTime, modelDetected: 'deepseek/deepseek-r1:free' };
+        return { success: true, providerId, latencyMs: Date.now() - startTime, modelDetected: 'kilo-auto/free' };
       }
 
       // 3. Groq test

@@ -258,6 +258,17 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         }
       },
       {
+        id: 'workbench.terminal.fccAgent',
+        title: 'Ty-Code: Open FCC Terminal Agent',
+        category: 'Terminal',
+        icon: <Terminal size={14} color="var(--accent-cyan)" />,
+        action: () => {
+          onClose();
+          toast.info('Opening FCC agent terminal…');
+          window.dispatchEvent(new CustomEvent('tycode:fcc-agent-terminal'));
+        }
+      },
+      {
         id: 'workbench.settings',
         title: 'Open User Settings & API Keys',
         category: 'General',

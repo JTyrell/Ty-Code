@@ -34,465 +34,178 @@ export interface OpenKiloModelDefinition {
 }
 
 /**
- * Curated catalog of 40+ free models on OpenKilo Kilo Gateway.
- * Priority models match the Layer 5 specification.
+ * Curated catalog of free models on Kilo Gateway, verified against the live
+ * GET https://api.kilo.ai/api/gateway/models endpoint.
+ * Only genuine zero-cost model IDs are listed here.
  */
 export const OPENKILO_CURATED_FREE_MODELS: OpenKiloModelDefinition[] = [
-  // 5 Priority Free Models
   {
-    id: 'deepseek/deepseek-r1-0528:free',
-    name: 'DeepSeek R1 (0528) Free',
-    contextWindow: 164_000,
+    id: 'kilo-auto/free',
+    name: 'Kilo Auto (Free Router)',
+    contextWindow: 256_000,
+    maxOutputTokens: 16_384,
+    isFree: true,
+    category: 'Free',
+    primaryTask: 'general',
+    codingScore: 92,
+    description: 'Zero-cost smart router that picks the best live free model for each request.'
+  },
+  {
+    id: 'poolside/laguna-s-2.1:free',
+    name: 'Poolside Laguna S 2.1 Free',
+    contextWindow: 262_144,
+    maxOutputTokens: 16_384,
+    isFree: true,
+    category: 'Free',
+    primaryTask: 'coding',
+    codingScore: 95,
+    description: '262K context frontier code model purpose-built for repository-scale development.'
+  },
+  {
+    id: 'cohere/north-mini-code:free',
+    name: 'Cohere North Mini Code Free',
+    contextWindow: 256_000,
+    maxOutputTokens: 8_192,
+    isFree: true,
+    category: 'Free',
+    primaryTask: 'coding',
+    codingScore: 93,
+    description: 'Fast code generation and editing tuned for agentic workflows.'
+  },
+  {
+    id: 'nvidia/nemotron-3.5-super-vl:free',
+    name: 'NVIDIA Nemotron 3.5 Super VL Free',
+    contextWindow: 1_000_000,
     maxOutputTokens: 16_384,
     isFree: true,
     category: 'Premium/Reasoning',
     primaryTask: 'reasoning',
-    codingScore: 97,
-    description: '164K context deep reasoning and architectural problem solving with zero cost.'
+    codingScore: 94,
+    description: '1M context flagship reasoning and architectural problem solving.'
   },
   {
-    id: 'qwen/qwen3-coder:free',
-    name: 'Qwen 3 Coder Free',
+    id: 'openrouter/free',
+    name: 'OpenRouter Free (Kilo)',
+    contextWindow: 200_000,
+    maxOutputTokens: 8_192,
+    isFree: true,
+    category: 'Free',
+    primaryTask: 'general',
+    codingScore: 90,
+    description: 'Hassle-free routing across the OpenRouter free tier, no key needed.'
+  },
+  {
+    id: 'nvidia/nemotron-3-ultra-550b-a55b:free',
+    name: 'NVIDIA Nemotron 3 Ultra Free',
+    contextWindow: 1_000_000,
+    maxOutputTokens: 16_384,
+    isFree: true,
+    category: 'Premium/Reasoning',
+    primaryTask: 'reasoning',
+    codingScore: 96,
+    description: '550B-parameter ultra tier for complex multi-step reasoning at zero cost.'
+  },
+  {
+    id: 'thinkingmachines/inkling-small:free',
+    name: 'Thinking Machines Inkling Small Free',
+    contextWindow: 1_048_576,
+    maxOutputTokens: 16_384,
+    isFree: true,
+    category: 'Premium/Reasoning',
+    primaryTask: 'reasoning',
+    codingScore: 92,
+    description: '1M context compact thinker for careful planning and analysis.'
+  },
+  {
+    id: 'dots-studio/dots-3-note-preview:free',
+    name: 'Dots 3 Note Preview Free',
+    contextWindow: 512_000,
+    maxOutputTokens: 8_192,
+    isFree: true,
+    category: 'Free',
+    primaryTask: 'general',
+    codingScore: 88,
+    description: '512K context generalist assistant for whole-repo chat and review.'
+  },
+  {
+    id: 'nvidia/nemotron-3-super-120b-a12b:free',
+    name: 'NVIDIA Nemotron 3 Super 120B Free',
     contextWindow: 262_144,
-    maxOutputTokens: 8192,
-    isFree: true,
-    category: 'Free',
-    primaryTask: 'coding',
-    codingScore: 96,
-    description: 'Massive 262K context state-of-the-art coding and repo refactoring model.'
-  },
-  {
-    id: 'meta-llama/llama-3.3-70b-instruct:free',
-    name: 'Llama 3.3 70B Instruct Free',
-    contextWindow: 128_000,
-    maxOutputTokens: 4096,
-    isFree: true,
-    category: 'Fast',
-    primaryTask: 'coding',
-    codingScore: 93,
-    description: '128K context fast, versatile open-weights powerhouse for multi-turn development.'
-  },
-  {
-    id: 'google/gemma-3-27b-it:free',
-    name: 'Gemma 3 27B IT Free',
-    contextWindow: 131_072,
-    maxOutputTokens: 8192,
-    isFree: true,
-    category: 'Free',
-    primaryTask: 'general',
-    codingScore: 91,
-    description: '131K context lightweight and exceptionally efficient instruction-tuned model.'
-  },
-  {
-    id: 'mistralai/mistral-small-3.1-24b-instruct:free',
-    name: 'Mistral Small 3.1 24B Instruct Free',
-    contextWindow: 128_000,
-    maxOutputTokens: 8192,
-    isFree: true,
-    category: 'Fast',
-    primaryTask: 'fast-edit',
-    codingScore: 90,
-    description: '128K context ultra-low latency model tailored for surgical code editing.'
-  },
-
-  // Additional 35+ Curated Free Models (total 40+)
-  {
-    id: 'deepseek/deepseek-chat:free',
-    name: 'DeepSeek V3 Free',
-    contextWindow: 65_536,
-    maxOutputTokens: 8192,
-    isFree: true,
-    category: 'Free',
-    primaryTask: 'coding',
-    codingScore: 95,
-    description: 'Flagship open code generation model with 64K context.'
-  },
-  {
-    id: 'qwen/qwen-2.5-coder-32b-instruct:free',
-    name: 'Qwen 2.5 Coder 32B Free',
-    contextWindow: 131_072,
-    maxOutputTokens: 8192,
-    isFree: true,
-    category: 'Free',
-    primaryTask: 'coding',
-    codingScore: 94,
-    description: '128K context top-tier coding assistant for autonomous workflows.'
-  },
-  {
-    id: 'meta-llama/llama-3.1-8b-instruct:free',
-    name: 'Llama 3.1 8B Instruct Free',
-    contextWindow: 128_000,
-    maxOutputTokens: 4096,
-    isFree: true,
-    category: 'Fast',
-    primaryTask: 'fast-edit',
-    codingScore: 86,
-    description: 'Blazing fast 128K context model for quick code explanations and edits.'
-  },
-  {
-    id: 'meta-llama/llama-3.2-3b-instruct:free',
-    name: 'Llama 3.2 3B Instruct Free',
-    contextWindow: 131_072,
-    maxOutputTokens: 4096,
-    isFree: true,
-    category: 'Fast',
-    primaryTask: 'fast-edit',
-    codingScore: 82,
-    description: 'Ultra-lightweight 131K model with minimal latency.'
-  },
-  {
-    id: 'google/gemini-2.0-flash-lite:free',
-    name: 'Long-Context Multimodal Lite Free',
-    contextWindow: 1_048_576,
-    maxOutputTokens: 8192,
-    isFree: true,
-    category: 'Fast',
-    primaryTask: 'general',
-    codingScore: 92,
-    description: '1 Million token context window with rapid streaming.'
-  },
-  {
-    id: 'google/gemini-2.0-flash-exp:free',
-    name: 'Long-Context Multimodal Experimental Free',
-    contextWindow: 1_048_576,
-    maxOutputTokens: 8192,
-    isFree: true,
-    category: 'Free',
-    primaryTask: 'coding',
-    codingScore: 94,
-    description: '1M context experimental multi-modal agent.'
-  },
-  {
-    id: 'google/learnlm-1.5-pro-experimental:free',
-    name: 'LearnLM 1.5 Pro Experimental Free',
-    contextWindow: 32_768,
-    maxOutputTokens: 4096,
-    isFree: true,
-    category: 'Free',
-    primaryTask: 'general',
-    codingScore: 88,
-    description: 'Pedagogical reasoning model for code tutorials and reviews.'
-  },
-  {
-    id: 'microsoft/phi-4:free',
-    name: 'Phi-4 Free',
-    contextWindow: 16_384,
-    maxOutputTokens: 4096,
-    isFree: true,
-    category: 'Free',
-    primaryTask: 'coding',
-    codingScore: 90,
-    description: 'Dense 14B model excelling at algorithmic coding and math.'
-  },
-  {
-    id: 'microsoft/phi-3.5-mini-128k-instruct:free',
-    name: 'Phi-3.5 Mini 128K Free',
-    contextWindow: 128_000,
-    maxOutputTokens: 4096,
-    isFree: true,
-    category: 'Fast',
-    primaryTask: 'fast-edit',
-    codingScore: 85,
-    description: '128K context compact model with strong logic reasoning.'
-  },
-  {
-    id: 'nvidia/llama-3.1-nemotron-70b-instruct:free',
-    name: 'Nemotron 70B Instruct Free',
-    contextWindow: 131_072,
-    maxOutputTokens: 4096,
+    maxOutputTokens: 16_384,
     isFree: true,
     category: 'Premium/Reasoning',
     primaryTask: 'reasoning',
     codingScore: 93,
-    description: 'NVIDIA aligned 70B model with high accuracy on code and math.'
+    description: '120B super tier balancing reasoning depth and throughput.'
   },
   {
-    id: 'mistralai/codestral-2501:free',
-    name: 'Codestral 2501 Free',
+    id: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free',
+    name: 'NVIDIA Nemotron 3 Nano Omni Free',
     contextWindow: 256_000,
-    maxOutputTokens: 8192,
+    maxOutputTokens: 8_192,
     isFree: true,
     category: 'Free',
-    primaryTask: 'coding',
-    codingScore: 95,
-    description: '256K context dedicated coding specialist from Mistral AI.'
+    primaryTask: 'reasoning',
+    codingScore: 90,
+    description: 'Compact omni reasoning model with fast step-by-step thinking.'
   },
   {
-    id: 'mistralai/mistral-nemo:free',
-    name: 'Mistral NeMo 12B Free',
-    contextWindow: 128_000,
-    maxOutputTokens: 4096,
-    isFree: true,
-    category: 'Fast',
-    primaryTask: 'fast-edit',
-    codingScore: 89,
-    description: '128K context multilingual model developed with NVIDIA.'
-  },
-  {
-    id: 'mistralai/mistral-7b-instruct:free',
-    name: 'Mistral 7B Instruct Free',
-    contextWindow: 32_768,
-    maxOutputTokens: 4096,
-    isFree: true,
-    category: 'Fast',
-    primaryTask: 'fast-edit',
-    codingScore: 84,
-    description: 'Classic lightweight 7B workhorse for quick refactoring.'
-  },
-  {
-    id: 'openchat/openchat-7b:free',
-    name: 'OpenChat 3.5 7B Free',
-    contextWindow: 8192,
-    maxOutputTokens: 2048,
+    id: 'nvidia/nemotron-3.5-lightning:free',
+    name: 'NVIDIA Nemotron 3.5 Lightning Free',
+    contextWindow: 1_000_000,
+    maxOutputTokens: 16_384,
     isFree: true,
     category: 'Fast',
     primaryTask: 'general',
-    codingScore: 83,
-    description: 'Conditioned-RL fine-tuned model for structured dialogue.'
+    codingScore: 89,
+    description: 'High-throughput 1M context model for long documents and light tasks.'
   },
   {
-    id: 'nousresearch/hermes-3-llama-3.1-405b:free',
-    name: 'Hermes 3 405B Free',
-    contextWindow: 131_072,
-    maxOutputTokens: 4096,
-    isFree: true,
-    category: 'Premium/Reasoning',
-    primaryTask: 'reasoning',
-    codingScore: 96,
-    description: 'Immense 405B parameter frontier reasoning and tool-calling agent.'
-  },
-  {
-    id: 'nousresearch/hermes-3-llama-3.1-70b:free',
-    name: 'Hermes 3 70B Free',
-    contextWindow: 128_000,
-    maxOutputTokens: 4096,
-    isFree: true,
-    category: 'Premium/Reasoning',
-    primaryTask: 'reasoning',
-    codingScore: 92,
-    description: 'Advanced agentic model optimized for function calling and multi-step plans.'
-  },
-  {
-    id: 'nousresearch/deephermes-3-llama-3-8b-preview:free',
-    name: 'DeepHermes 3 8B Free',
-    contextWindow: 128_000,
-    maxOutputTokens: 4096,
+    id: 'poolside/laguna-xs-2.1:free',
+    name: 'Poolside Laguna XS 2.1 Free',
+    contextWindow: 262_144,
+    maxOutputTokens: 16_384,
     isFree: true,
     category: 'Fast',
     primaryTask: 'fast-edit',
+    codingScore: 91,
+    description: 'Low-latency sibling of Laguna S for instant, surgical edits.'
+  },
+  {
+    id: 'xingchen-agi/xing4.0-29b-a4b:free',
+    name: 'Xingchen 4.0 29B Free',
+    contextWindow: 262_144,
+    maxOutputTokens: 8_192,
+    isFree: true,
+    category: 'Fast',
+    primaryTask: 'general',
     codingScore: 87,
-    description: 'Thinking-enabled 8B reasoning model with step reflection.'
+    description: 'Open generalist tuned for everyday dev Q&A.'
   },
   {
-    id: 'cohere/command-r-plus-08-2024:free',
-    name: 'Command R+ Free',
+    id: 'nvidia/nemotron-3.5-content-safety:free',
+    name: 'NVIDIA Nemotron 3.5 Content Safety Free',
     contextWindow: 128_000,
-    maxOutputTokens: 4096,
-    isFree: true,
-    category: 'Free',
-    primaryTask: 'general',
-    codingScore: 91,
-    description: '128K context RAG-optimized enterprise grade assistant.'
-  },
-  {
-    id: 'cohere/command-r-08-2024:free',
-    name: 'Command R Free',
-    contextWindow: 128_000,
-    maxOutputTokens: 4096,
+    maxOutputTokens: 4_096,
     isFree: true,
     category: 'Fast',
     primaryTask: 'general',
-    codingScore: 88,
-    description: 'Efficient enterprise model with citations and tool usage.'
+    codingScore: 60,
+    description: 'Content-safety guard model; useful for filtering checks.'
   },
   {
-    id: 'tiiuae/falcon-180b-chat:free',
-    name: 'Falcon 180B Free',
-    contextWindow: 8192,
-    maxOutputTokens: 2048,
-    isFree: true,
-    category: 'Premium/Reasoning',
-    primaryTask: 'reasoning',
-    codingScore: 87,
-    description: '180B parameter powerhouse for deep NLP tasks.'
-  },
-  {
-    id: 'upstage/solar-pro:free',
-    name: 'Solar Pro 22B Free',
+    id: 'liquid/lfm-2.5-2.6b:free',
+    name: 'Liquid LFM 2.5 2.6B Free',
     contextWindow: 65_536,
-    maxOutputTokens: 4096,
+    maxOutputTokens: 8_192,
     isFree: true,
     category: 'Fast',
     primaryTask: 'fast-edit',
-    codingScore: 89,
-    description: 'Depth-upscaled 22B model for high precision single-file edits.'
-  },
-  {
-    id: 'internlm/internlm2_5-20b-chat:free',
-    name: 'InternLM 2.5 20B Free',
-    contextWindow: 32_768,
-    maxOutputTokens: 4096,
-    isFree: true,
-    category: 'Free',
-    primaryTask: 'coding',
-    codingScore: 89,
-    description: 'Strong mathematical reasoning and code evaluation capabilities.'
-  },
-  {
-    id: 'ai21/jamba-1.5-mini:free',
-    name: 'Jamba 1.5 Mini Free',
-    contextWindow: 256_000,
-    maxOutputTokens: 4096,
-    isFree: true,
-    category: 'Fast',
-    primaryTask: 'general',
-    codingScore: 88,
-    description: '256K context SSM-Transformer hybrid with linear scaling speed.'
-  },
-  {
-    id: 'ai21/jamba-1.5-large:free',
-    name: 'Jamba 1.5 Large Free',
-    contextWindow: 256_000,
-    maxOutputTokens: 4096,
-    isFree: true,
-    category: 'Premium/Reasoning',
-    primaryTask: 'reasoning',
-    codingScore: 92,
-    description: '256K context hybrid architecture for massive codebase context ingestion.'
-  },
-  {
-    id: '01-ai/yi-large:free',
-    name: 'Yi Large Free',
-    contextWindow: 32_768,
-    maxOutputTokens: 4096,
-    isFree: true,
-    category: 'Premium/Reasoning',
-    primaryTask: 'reasoning',
-    codingScore: 92,
-    description: 'Frontier performance on complex reasoning and bilingual code.'
-  },
-  {
-    id: '01-ai/yi-lightning:free',
-    name: 'Yi Lightning Free',
-    contextWindow: 16_384,
-    maxOutputTokens: 2048,
-    isFree: true,
-    category: 'Fast',
-    primaryTask: 'fast-edit',
-    codingScore: 90,
-    description: 'Sub-second first-token latency for instant code feedback.'
-  },
-  {
-    id: 'baichuan/baichuan-2-13b-chat:free',
-    name: 'Baichuan 2 13B Free',
-    contextWindow: 8192,
-    maxOutputTokens: 2048,
-    isFree: true,
-    category: 'Fast',
-    primaryTask: 'general',
-    codingScore: 83,
-    description: 'Efficient dialogue model trained on extensive multilingual corpus.'
-  },
-  {
-    id: 'thudm/glm-4-9b-chat:free',
-    name: 'GLM-4 9B Free',
-    contextWindow: 131_072,
-    maxOutputTokens: 4096,
-    isFree: true,
-    category: 'Fast',
-    primaryTask: 'coding',
-    codingScore: 90,
-    description: '128K context open bilingual model with agentic tool calling.'
-  },
-  {
-    id: 'thudm/glm-edge-9b-chat:free',
-    name: 'GLM Edge 9B Free',
-    contextWindow: 32_768,
-    maxOutputTokens: 2048,
-    isFree: true,
-    category: 'Fast',
-    primaryTask: 'fast-edit',
-    codingScore: 86,
-    description: 'Edge-optimized code and text model.'
-  },
-  {
-    id: 'bigcode/starcoder2-15b:free',
-    name: 'StarCoder2 15B Free',
-    contextWindow: 16_384,
-    maxOutputTokens: 4096,
-    isFree: true,
-    category: 'Free',
-    primaryTask: 'coding',
-    codingScore: 92,
-    description: 'Trained on 600+ programming languages with comprehensive syntax support.'
-  },
-  {
-    id: 'bigcode/starcoder2-7b:free',
-    name: 'StarCoder2 7B Free',
-    contextWindow: 16_384,
-    maxOutputTokens: 4096,
-    isFree: true,
-    category: 'Fast',
-    primaryTask: 'coding',
-    codingScore: 88,
-    description: 'Fast code completion and snippet generation.'
-  },
-  {
-    id: 'deepseek/deepseek-coder-6.7b-instruct:free',
-    name: 'DeepSeek Coder 6.7B Free',
-    contextWindow: 16_384,
-    maxOutputTokens: 4096,
-    isFree: true,
-    category: 'Fast',
-    primaryTask: 'coding',
-    codingScore: 91,
-    description: 'Project-level code completion and fill-in-the-middle support.'
-  },
-  {
-    id: 'deepseek/deepseek-r1-distill-llama-70b:free',
-    name: 'DeepSeek R1 Distill Llama 70B Free',
-    contextWindow: 131_072,
-    maxOutputTokens: 8192,
-    isFree: true,
-    category: 'Premium/Reasoning',
-    primaryTask: 'reasoning',
-    codingScore: 96,
-    description: 'Distilled reasoning weights on top of Llama 3.3 70B base.'
-  },
-  {
-    id: 'deepseek/deepseek-r1-distill-qwen-32b:free',
-    name: 'DeepSeek R1 Distill Qwen 32B Free',
-    contextWindow: 131_072,
-    maxOutputTokens: 8192,
-    isFree: true,
-    category: 'Premium/Reasoning',
-    primaryTask: 'reasoning',
-    codingScore: 95,
-    description: 'Qwen 32B distilled with DeepSeek R1 reasoning trajectories.'
-  },
-  {
-    id: 'deepseek/deepseek-r1-distill-qwen-14b:free',
-    name: 'DeepSeek R1 Distill Qwen 14B Free',
-    contextWindow: 131_072,
-    maxOutputTokens: 8192,
-    isFree: true,
-    category: 'Fast',
-    primaryTask: 'reasoning',
-    codingScore: 93,
-    description: '14B compact reasoning powerhouse with high throughput.'
-  },
-  {
-    id: 'deepseek/deepseek-r1-distill-qwen-7b:free',
-    name: 'DeepSeek R1 Distill Qwen 7B Free',
-    contextWindow: 131_072,
-    maxOutputTokens: 4096,
-    isFree: true,
-    category: 'Fast',
-    primaryTask: 'fast-edit',
-    codingScore: 89,
-    description: 'Fastest reasoning model for instant step-by-step code analysis.'
+    codingScore: 80,
+    description: 'Ultra-light model for rapid micro-edits.'
   }
 ];
+
 
 export class OpenKiloProviderService {
   public static readonly DEFAULT_BASE_URL = 'https://api.kilo.ai/api/gateway';
@@ -535,6 +248,22 @@ export class OpenKiloProviderService {
       changed = true;
     }
 
+    // Self-heal: migrate stale/paid OpenKilo model IDs to the real free auto-router.
+    if (settings.activeProvider === 'openkilo' && settings.activeModel) {
+      const curatedIds = new Set(OPENKILO_CURATED_FREE_MODELS.map((m) => m.id));
+      if (!curatedIds.has(settings.activeModel)) {
+        return {
+          updatedSettings: {
+            apiKeys,
+            apiKeysConfigured,
+            customEndpoints,
+            activeModel: 'kilo-auto/free'
+          },
+          enabled: true
+        };
+      }
+    }
+
     return {
       updatedSettings: changed ? { apiKeys, apiKeysConfigured, customEndpoints } : {},
       enabled: true
@@ -567,11 +296,11 @@ export class OpenKiloProviderService {
    */
   public getPriorityModels(): OpenKiloModelDefinition[] {
     const priorityIds = [
-      'deepseek/deepseek-r1-0528:free',
-      'qwen/qwen3-coder:free',
-      'meta-llama/llama-3.3-70b-instruct:free',
-      'google/gemma-3-27b-it:free',
-      'mistralai/mistral-small-3.1-24b-instruct:free'
+      'kilo-auto/free',
+      'poolside/laguna-s-2.1:free',
+      'nvidia/nemotron-3.5-super-vl:free',
+      'cohere/north-mini-code:free',
+      'openrouter/free'
     ];
     return this.dynamicModels.filter((m) => priorityIds.includes(m.id));
   }
@@ -718,7 +447,7 @@ export class OpenKiloProviderService {
           const demoKey = `kilo_demo_${Date.now()}_${Math.random().toString(36).slice(2, 12)}`;
           this.activeAuthMode = 'oauth';
           this.storedApiKey = demoKey;
-          this.userEmail = 'developer@demo.local';
+          this.userEmail = null; // demo mode fabricates no account identity
           return { success: true, apiKey: demoKey };
         }
         return { success: false, error: `OpenKilo OAuth code exchange failed with HTTP ${response.status}` };

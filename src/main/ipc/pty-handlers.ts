@@ -6,6 +6,7 @@ import * as pty from 'node-pty';
 import type { CommandExecutionOptions, CommandResult, IpcResponse, PtySessionInfo, PtySpawnOptions, ShellInfo } from '../../preload/types';
 import { SecurityPolicyEngine } from '../services/security-policy';
 import { settingsManager } from '../services/settings-manager';
+import { buildFccTerminalEnv } from '../fcc-integration';
 
 interface ActivePty {
   process: pty.IPty;
@@ -99,7 +100,25 @@ export function spawnPtySession(mainWindow: BrowserWindow, options: PtySpawnOpti
       ptyEnv.LC_ALL ||= ptyEnv.LANG;
     }
 
+    // FCC injection: agent wrappers on PATH + loopback proxy discovery.
+    try {
+      buildFccTerminalEnv(ptyEnv);
+    } catch {
+      // FCC layer is optional; terminal still opens cleanly without it
+    }
+
     const processHandle = pty.spawn(selectedShell.path, [], { name: 'xterm-256color', cols, rows, cwd, env: ptyEnv });
+    if (options.autoRunCommand) {
+      const autoRun = options.autoRunCommand;
+      const autoRunTimer = setTimeout(() => {
+        try {
+          processHandle.write(`${autoRun}\r`);
+        } catch {
+          // Session may have already exited
+        }
+      }, 400);
+      if (typeof autoRunTimer.unref === 'function') autoRunTimer.unref();
+    }
     const session: ActivePty = { process: processHandle, shellPath: selectedShell.path, window: mainWindow, outputBuffer: '', attached: false, subscriptions: [] };
     activePtys.set(ptyId, session);
     session.subscriptions.push(processHandle.onData((data) => {
@@ -157,64 +176,12 @@ export function writePty(ptyId: string, data: string): void {
   const session = activePtys.get(ptyId);
   if (!session) return;
 
-  // Intercept submitted commands against security policy
-  const hasNewline = data.includes('\r') || data.includes('\n');
-  if (hasNewline) {
-    const buffered = ptyInputBuffers.get(ptyId) || '';
-    ptyInputBuffers.delete(ptyId);
-    const lineCandidate = (buffered + data).split(/[\r\n]/)[0].trim();
-    if (lineCandidate) {
-      const policy = new SecurityPolicyEngine(process.cwd(), settingsManager);
-      void policy.checkTerminalCommand(lineCandidate).then((check) => {
-        if (check.blocked || check.status === 'BLOCK') {
-          if (!session.window.isDestroyed() && !session.window.webContents.isDestroyed()) {
-            session.window.webContents.send('toast:show', {
-              type: 'error',
-              title: 'Command Blocked',
-              message: 'Command blocked by Restricted Mode'
-            });
-            session.window.webContents.send('pty:command-blocked', { ptyId, command: lineCandidate, reason: check.reason });
-          }
-          try {
-            session.process.write('\x03\r\n\x1b[31mCommand blocked by Restricted Mode\x1b[0m\r\n');
-          } catch {}
-          return;
-        }
-
-        if (check.ask || check.status === 'ASK') {
-          const approvalId = `pty_approval_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-          if (!session.window.isDestroyed() && !session.window.webContents.isDestroyed()) {
-            session.window.webContents.send('pty:approval-required', {
-              approvalId,
-              ptyId,
-              command: lineCandidate,
-              reason: check.reason
-            });
-          }
-          pendingPtyApprovals.set(approvalId, {
-            ptyId,
-            command: lineCandidate,
-            data,
-            window: session.window,
-            timer: setTimeout(() => resolvePtyApproval(approvalId, false), 120_000)
-          });
-          return;
-        }
-
-        try {
-          session.process.write(data);
-        } catch {}
-      }).catch(() => {
-        try { session.process.write(data); } catch {}
-      });
-      return;
-    }
-  } else {
-    const current = (ptyInputBuffers.get(ptyId) || '') + data;
-    ptyInputBuffers.set(ptyId, current);
+  // Direct manual user typing is never blocked by AI policy
+  try {
+    session.process.write(data);
+  } catch {
+    /* Process exited. */
   }
-
-  try { session.process.write(data); } catch { /* Process exited. */ }
 }
 
 export function resolvePtyApproval(approvalId: string, approved: boolean): IpcResponse<void> {

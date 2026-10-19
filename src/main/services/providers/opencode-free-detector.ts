@@ -13,20 +13,17 @@ import type { DiscoveredModel } from '../../../preload/types';
 
 export const OPENCODE_CURATED_FREE_MODELS: Record<string, string[]> = {
   openrouter: [
-    'deepseek/deepseek-r1:free',
-    'deepseek/deepseek-chat:free',
+    'nvidia/nemotron-3-ultra-550b-a55b:free',
+    'google/gemma-4-31b-it:free',
     'qwen/qwen-2.5-coder-32b-instruct:free',
-    'google/gemini-2.0-flash-exp:free',
-    'meta-llama/llama-3.3-70b-instruct:free',
-    'mistralai/mistral-7b-instruct:free',
-    'nvidia/llama-3.1-nemotron-70b-instruct:free'
+    'thinkingmachines/inkling-small:free',
+    'dots-studio/dots-3-note-preview:free',
+    'cohere/north-mini-code:free',
+    'nvidia/nemotron-3.5-lightning:free'
   ],
   groq: [
     'llama-3.3-70b-versatile',
-    'llama-3.1-70b-versatile',
-    'llama-3.1-8b-instant',
-    'mixtral-8x7b-32768',
-    'gemma2-9b-it'
+    'llama-3.1-8b-instant'
   ],
   gemini: [
     'gemini-2.0-flash-exp',

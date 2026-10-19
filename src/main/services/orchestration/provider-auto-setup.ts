@@ -63,7 +63,7 @@ export class ProviderAutoSetupService {
       success: true,
       message: 'OpenRouter Free Tier enabled with access to a coding model and a long-context multimodal model.',
       endpoint: 'https://openrouter.ai/api/v1',
-      modelsFound: ['meta-llama/llama-3.3-70b-instruct:free', 'google/gemini-2.0-flash-exp:free'],
+      modelsFound: ['dots-studio/dots-3-note-preview:free', 'nvidia/nemotron-3.5-super-vl:free'],
       freeMonthlyTokens: 200_000_000
     };
   }

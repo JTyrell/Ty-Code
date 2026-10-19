@@ -51,7 +51,16 @@ import {
 } from 'lucide-react';
 import { useOnboardingStore, type OnboardingStepId } from '../state/onboarding-store';
 import { useChatStore } from '../state/chat-store';
-import type { DetectedHarnessConfig, HarnessMetadata } from '../../../preload/types';
+import { toast } from '../state/toast-store';
+import type { DetectedHarnessConfig, HarnessMetadata, FCCServiceStatus, FCCInstallProgress } from '../../../preload/types';
+
+const FCC_ONBOARD_PROVIDERS: Array<{ id: string; name: string; signupUrl: string; defaultModel: string; needsKey: boolean }> = [
+  { id: 'openrouter', name: 'OpenRouter', signupUrl: 'https://openrouter.ai/keys', defaultModel: 'nvidia/nemotron-3-ultra-550b-a55b:free', needsKey: true },
+  { id: 'groq', name: 'Groq', signupUrl: 'https://console.groq.com/keys', defaultModel: 'llama-3.3-70b-versatile', needsKey: true },
+  { id: 'google-ai-studio', name: 'Google AI Studio', signupUrl: 'https://aistudio.google.com/app/apikey', defaultModel: 'gemini-2.0-flash', needsKey: true },
+  { id: 'openkilo', name: 'OpenKilo (Anonymous)', signupUrl: 'https://openkilo.com', defaultModel: 'kilo-auto/free', needsKey: false },
+  { id: 'ollama', name: 'Ollama (Local)', signupUrl: 'https://ollama.com/download', defaultModel: 'qwen2.5-coder', needsKey: false }
+];
 
 const STEP_SEQUENCE: { id: OnboardingStepId; label: string; number: number }[] = [
   { id: 'welcome', label: 'Welcome', number: 1 },
@@ -95,10 +104,18 @@ export const OnboardingWizard: React.FC = () => {
     completeWizard,
     startAutoSetup,
     connectSubscription,
-    importHarness
+    importHarness,
+    markProviderConnected
   } = useOnboardingStore();
 
-  const { settings } = useChatStore();
+  const { settings, saveSettings } = useChatStore();
+
+  // FCC AI Provider Setup state (auto_setup step)
+  const [fccProviderId, setFccProviderId] = useState('openrouter');
+  const [fccApiKey, setFccApiKey] = useState('');
+  const [fccSaving, setFccSaving] = useState(false);
+  const [fccService, setFccService] = useState<FCCServiceStatus | null>(null);
+  const [installProgress, setInstallProgress] = useState<FCCInstallProgress | null>(null);
 
   // Local state for harness detection & subscription connection
   const [detectedConfigs, setDetectedConfigs] = useState<DetectedHarnessConfig[]>([]);
@@ -166,6 +183,57 @@ export const OnboardingWizard: React.FC = () => {
         });
     }
   }, [isOpen, currentStep]);
+
+  // FCC service status + live install progress while on the auto_setup step
+  useEffect(() => {
+    if (!isOpen || currentStep !== 'auto_setup') return;
+    let mounted = true;
+    const unsubInstall = window.electronAPI?.onFccInstallProgress?.((progress) => {
+      if (mounted) setInstallProgress(progress);
+    }) || (() => () => undefined);
+    const unsubService = window.electronAPI?.onFccServiceState?.((svc) => {
+      if (mounted) setFccService(svc);
+    }) || (() => () => undefined);
+    void window.electronAPI?.fccGetServiceStatus?.().then((res) => {
+      if (mounted && res?.success) setFccService(res.data || null);
+    }).catch(() => undefined);
+    return () => {
+      mounted = false;
+      unsubInstall();
+      unsubService();
+    };
+  }, [isOpen, currentStep]);
+
+  const selectedFccProvider = FCC_ONBOARD_PROVIDERS.find((p) => p.id === fccProviderId) || FCC_ONBOARD_PROVIDERS[0];
+
+  const handleConnectOnboardProvider = async () => {
+    const provider = selectedFccProvider;
+    setFccSaving(true);
+    try {
+      if (provider.needsKey) {
+        const key = fccApiKey.trim();
+        if (!key) throw new Error(`Enter your ${provider.name} API key first.`);
+        if (window.electronAPI?.testProviderKey) {
+          const testRes = await window.electronAPI.testProviderKey(provider.id, key);
+          if (!testRes.success) throw new Error(testRes.message || `${provider.name} rejected that key.`);
+        }
+        const saveRes = await window.electronAPI?.credentialsSave?.(provider.id, key, `${provider.name} API Key`);
+        if (saveRes && !saveRes.success) throw new Error(saveRes.error || 'Main process refused to save the key.');
+      }
+      const settingsSaved = await saveSettings({
+        activeProvider: provider.id as any,
+        activeModel: provider.defaultModel,
+        freeMode: true
+      });
+      if (!settingsSaved) throw new Error('Provider settings could not be applied.');
+      markProviderConnected(provider.id);
+      toast.success(`${provider.name} connected — ${provider.defaultModel} is live.`);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    } finally {
+      setFccSaving(false);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -754,6 +822,248 @@ export const OnboardingWizard: React.FC = () => {
                       : 'Pending'}
                   </span>
                 </div>
+              </div>
+
+              {/* FCC AI Provider Setup — optional connect with secure key storage in safeStorage */}
+              <div
+                id="fcc-onboard-provider-block"
+                key="fcc-onboard-provider-block"
+                style={{
+                  padding: '16px',
+                  borderRadius: '10px',
+                  background: 'rgba(30, 41, 59, 0.45)',
+                  border: '1px solid rgba(255, 255, 255, 0.08)'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px', gap: '12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <Key size={16} color="#818cf8" />
+                    <span style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc' }}>
+                      Connect an AI Provider
+                    </span>
+                    <span style={{ fontSize: '11px', color: '#94a3b8' }}>
+                      Optional — key sealed in the OS keychain (safeStorage)
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    id="fcc-onboard-signup-link"
+                    onClick={() => {
+                      const signupUrl = selectedFccProvider.signupUrl;
+                      void (async () => {
+                        try {
+                          if (window.electronAPI?.openExternal) {
+                            await window.electronAPI.openExternal(signupUrl);
+                          } else {
+                            window.open(signupUrl, '_blank');
+                          }
+                        } catch {
+                          // Non-blocking
+                        }
+                      })();
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      background: 'transparent',
+                      border: '1px solid rgba(99, 102, 241, 0.4)',
+                      borderRadius: '6px',
+                      color: '#818cf8',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      padding: '5px 10px'
+                    }}
+                  >
+                    <span>{selectedFccProvider.name} Sign Up</span>
+                    <ExternalLink size={12} />
+                  </button>
+                </div>
+
+                {/* Live silent install progress (only shown when an FCC install is running) */}
+                {installProgress && installProgress.stage !== 'done' && installProgress.stage !== 'failed' && (
+                  <div
+                    id="fcc-onboard-install-progress"
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '4px',
+                      marginBottom: '10px',
+                      padding: '8px 10px',
+                      borderRadius: '8px',
+                      background: 'rgba(99, 102, 241, 0.12)',
+                      border: '1px solid rgba(99, 102, 241, 0.3)'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: '#c7d2fe' }}>
+                        <Download size={12} className="animate-spin" />
+                        <span style={{ maxWidth: '520px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {installProgress.message}
+                        </span>
+                      </span>
+                      <span style={{ fontSize: '11px', fontWeight: 600, color: '#818cf8' }}>{installProgress.percent}%</span>
+                    </div>
+                    <div style={{ height: '5px', borderRadius: '3px', background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
+                      <div
+                        style={{
+                          height: '100%',
+                          width: `${installProgress.percent}%`,
+                          background: 'linear-gradient(90deg, #6366f1, #a855f7)',
+                          transition: 'width 0.25s ease'
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Provider selector + optional key + model + connect action */}
+                <div style={{ display: 'flex', alignItems: 'flex-end', gap: '8px', flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', minWidth: '170px' }}>
+                    <label id="fcc-onboard-provider-label" style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.4px', color: '#64748b' }}>
+                      Provider
+                    </label>
+                    <select
+                      id="fcc-onboard-provider-select"
+                      value={fccProviderId}
+                      onChange={(e) => setFccProviderId(e.target.value)}
+                      style={{
+                        background: '#0b1329',
+                        border: '1px solid rgba(255, 255, 255, 0.14)',
+                        borderRadius: '6px',
+                        color: '#f8fafc',
+                        fontSize: '12px',
+                        padding: '8px 10px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {FCC_ONBOARD_PROVIDERS.map((p) => (
+                        <option key={p.id} value={p.id}>{p.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {selectedFccProvider.needsKey && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1, minWidth: '210px' }}>
+                      <label id="fcc-onboard-key-label" style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.4px', color: '#64748b' }}>
+                        API Key
+                      </label>
+                      <input
+                        id="fcc-onboard-key-input"
+                        type="password"
+                        value={fccApiKey}
+                        onChange={(e) => setFccApiKey(e.target.value)}
+                        placeholder={`Paste your ${selectedFccProvider.name} key`}
+                        autoComplete="off"
+                        style={{
+                          background: '#0b1329',
+                          border: '1px solid rgba(255, 255, 255, 0.14)',
+                          borderRadius: '6px',
+                          color: '#f8fafc',
+                          fontSize: '12px',
+                          padding: '8px 10px',
+                          width: '100%'
+                        }}
+                      />
+                    </div>
+                  )}
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', minWidth: '190px' }}>
+                    <label id="fcc-onboard-model-label" style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.4px', color: '#64748b' }}>
+                      Free Model
+                    </label>
+                    <div
+                      style={{
+                        background: 'rgba(16, 185, 129, 0.1)',
+                        border: '1px solid rgba(16, 185, 129, 0.3)',
+                        borderRadius: '6px',
+                        color: '#34d399',
+                        fontSize: '12px',
+                        padding: '8px 10px',
+                        fontFamily: 'monospace'
+                      }}
+                    >
+                      {selectedFccProvider.defaultModel}
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    id="fcc-onboard-connect-btn"
+                    disabled={fccSaving}
+                    onClick={() => void handleConnectOnboardProvider()}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '9px 16px',
+                      borderRadius: '6px',
+                      border: connectedProviders.includes(selectedFccProvider.id)
+                        ? '1px solid rgba(16, 185, 129, 0.4)'
+                        : '1px solid rgba(99, 102, 241, 0.4)',
+                      background: connectedProviders.includes(selectedFccProvider.id)
+                        ? 'rgba(16, 185, 129, 0.2)'
+                        : 'var(--accent-primary, #6366f1)',
+                      color: connectedProviders.includes(selectedFccProvider.id) ? '#34d399' : '#ffffff',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      cursor: fccSaving ? 'wait' : 'pointer'
+                    }}
+                  >
+                    {fccSaving ? (
+                      <>
+                        <RefreshCw size={13} className="animate-spin" />
+                        <span>Verifying and connecting…</span>
+                      </>
+                    ) : connectedProviders.includes(selectedFccProvider.id) ? (
+                      <>
+                        <Check size={13} />
+                        <span>Reconnect</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check size={13} />
+                        <span>Connect</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {/* FCC engine install state (silent install runs in Tier-2 boot) */}
+                {fccService && !fccService.installed && !installProgress && (
+                  <div style={{ marginTop: '8px', fontSize: '11px', color: '#94a3b8' }}>
+                    free-claude-code engine binary not found — it installs silently in the background via the official script.
+                    No provider key is required to use the anonymous supply.
+                  </div>
+                )}
+                {fccService?.lastError && (
+                  <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '11px', color: '#fca5a5' }}>FCC service error: {fccService.lastError}</span>
+                    <button
+                      type="button"
+                      id="fcc-onboard-retry-service"
+                      onClick={() => void window.electronAPI?.fccRetryService?.()}
+                      style={{
+                        background: 'transparent',
+                        border: '1px solid rgba(248, 113, 113, 0.4)',
+                        borderRadius: '6px',
+                        color: '#fca5a5',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        padding: '3px 8px'
+                      }}
+                    >
+                      Retry
+                    </button>
+                  </div>
+                )}
+                {fccService?.binaryPath && (
+                  <div style={{ marginTop: '8px', fontSize: '11px', color: '#64748b', fontFamily: 'monospace' }}>
+                    FCC engine: {fccService.binaryPath}
+                  </div>
+                )}
               </div>
 
               {/* Live Bootstrap Output Logs */}

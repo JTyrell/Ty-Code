@@ -216,8 +216,8 @@ export const ProviderComparison: React.FC<ProviderComparisonProps> = ({
                     gap: '4px'
                   }}
                 >
-                  <Clock size={11} color={item.averageLatencyMs <= 150 ? '#34d399' : '#94a3b8'} />
-                  {item.averageLatencyMs} ms
+                  <Clock size={11} color={item.averageLatencyMs > 0 && item.averageLatencyMs <= 150 ? '#34d399' : '#94a3b8'} />
+                  {item.averageLatencyMs > 0 ? `${item.averageLatencyMs} ms` : 'Not measured'}
                 </div>
               </div>
 
@@ -236,8 +236,8 @@ export const ProviderComparison: React.FC<ProviderComparisonProps> = ({
                     gap: '4px'
                   }}
                 >
-                  <CheckCircle2 size={11} color="#34d399" />
-                  {item.successRate}%
+                  <CheckCircle2 size={11} color={item.successRate >= 99 ? '#34d399' : '#94a3b8'} />
+                  {item.successRate > 0 ? `${item.successRate}%` : 'No data'}
                 </div>
               </div>
             </div>

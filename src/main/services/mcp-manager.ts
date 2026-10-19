@@ -429,6 +429,15 @@ export class McpManager {
     const isLocal = Boolean(options.isLocal);
     const keys = await this.getSeoApiKeys(options.workspacePath);
 
+    // Guard: never return fabricated sample metrics. Without credentials these
+    // tools have no live data source, so they must fail honestly instead.
+    if (!keys.google_search_console && !keys.ahrefs && !keys.generic_search) {
+      return {
+        output: `SEO analytics is not configured. "${action}" requires at least one SEO API credential (Google Search Console, Ahrefs, or a generic search provider). Add keys in Settings > Integrations and retry. No sample or estimated data is served by policy.`,
+        isError: true
+      };
+    }
+
     try {
       let rawData: unknown = null;
 

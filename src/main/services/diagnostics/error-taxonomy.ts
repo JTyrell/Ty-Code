@@ -246,7 +246,7 @@ export function classifyDiagnosticError(
   ) {
     const freeList = context.validFreeModels && context.validFreeModels.length > 0
       ? context.validFreeModels.join(', ')
-      : 'deepseek/deepseek-r1:free, meta-llama/llama-3.3-70b-instruct:free, qwen/qwen3-coder:free';
+      : 'kilo-auto/free, poolside/laguna-s-2.1:free, nvidia/nemotron-3.5-super-vl:free';
     const provName = context.providerName || (providerId === 'openrouter' ? 'OpenRouter' : providerId ? providerId.charAt(0).toUpperCase() + providerId.slice(1) : 'Provider');
     return {
       code: 'MODEL_UNAVAILABLE',
