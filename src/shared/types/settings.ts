@@ -52,7 +52,8 @@ export const ProviderSettingsSchema = z.object({
 }).strip();
 
 export const ModelSettingsSchema = z.object({
-  activeModel: z.string().min(1).max(512),
+  // Empty string = the "Auto" binding: FCC picks the concrete model per request.
+  activeModel: z.string().max(512),
   activeHarness: z.enum([
     'claude-code', 'codex', 'opencode', 'pi', 'cline', 'aider', 'hermes',
     'deepseek', 'grok-build', 'muse-code', 'vscode-chat'
@@ -106,7 +107,11 @@ export const IntegrationsSettingsSchema = z.object({
 export const GeneralSettingsSchema = z.object({
   runInBackground: z.boolean().optional(),
   notifyOnBackgroundCompletion: z.boolean().optional(),
-  notifyOnAttentionNeeded: z.boolean().optional()
+  notifyOnAttentionNeeded: z.boolean().optional(),
+  // OmniRoute orchestration preferences surfaced in the settings UI
+  freeMode: z.boolean().optional(),
+  quotaAlertThreshold: z.number().int().min(5).max(100).optional(),
+  autoRotateProviders: z.boolean().optional()
 }).strip();
 
 export const SettingsSchema = ProviderSettingsSchema

@@ -6,6 +6,7 @@ import { ToolExecutor } from './tool-executor';
 import { getHarness } from '../services/orchestration/harnesses';
 import { SecurityPolicyEngine } from '../services/security-policy';
 import { settingsManager, type SettingsManager } from '../services/settings-manager';
+import { modelRouter } from '../services/orchestration/model-router';
 import { moduleRegistry } from '../services/module-registry';
 import { mcpManager } from '../services/mcp-manager';
 import { diagnosticsHealthMonitor } from '../services/diagnostics/health-monitor';
@@ -101,19 +102,46 @@ export class AgentEngine {
       }
       try {
         console.log('[AGENT] Calling gateway...');
-        const activeProvider = currentSettings.activeProvider || 'openrouter';
-        let activeModel = currentSettings.activeModel;
-        if (!activeModel || (activeProvider === 'openkilo' && !activeModel.endsWith(':free') && !activeModel.endsWith('/free'))) {
-          if (activeProvider === 'openkilo') {
+        // "Auto" binding: FCC decides. When no explicit provider is configured
+        // (unset or literally 'auto'), the FCC router picks the best FREE model
+        // for this task across the entire managed free pool — never a paid
+        // provider without its own stored credentials.
+        const rawActiveProvider = currentSettings.activeProvider || '';
+        const isAutoBinding = !rawActiveProvider || rawActiveProvider === 'auto';
+        let activeProvider: string;
+        let activeModel: string;
+
+        if (isAutoBinding) {
+          const lastUserMessage = [...messages].reverse().find((m: any) => m.role === 'user');
+          const promptSample = String(lastUserMessage?.content || '').slice(0, 2000) || 'general assistance';
+          try {
+            const decision = await modelRouter.selectModel(promptSample);
+            activeProvider = decision.selectedModel.providerId;
+            activeModel = decision.selectedModel.modelId;
+          } catch (autoErr: unknown) {
+            console.warn('[AGENT] FCC Auto routing unavailable, using free default:', autoErr instanceof Error ? autoErr.message : autoErr);
+            activeProvider = 'openkilo';
             activeModel = 'kilo-auto/free';
-          } else if (activeProvider === 'groq') {
-            activeModel = 'llama-3.3-70b-versatile';
-          } else {
-            activeModel = 'qwen/qwen-2.5-coder-32b-instruct:free';
+          }
+        } else {
+          activeProvider = rawActiveProvider;
+          activeModel = currentSettings.activeModel || '';
+          if (!activeModel || (activeProvider === 'openkilo' && !activeModel.endsWith(':free') && !activeModel.endsWith('/free'))) {
+            if (activeProvider === 'openkilo') {
+              activeModel = 'kilo-auto/free';
+            } else if (activeProvider === 'groq') {
+              activeModel = 'llama-3.3-70b-versatile';
+            } else {
+              activeModel = 'qwen/qwen-2.5-coder-32b-instruct:free';
+            }
           }
         }
         console.log(`[AGENT] Provider: ${activeProvider}, Model: ${activeModel}`);
 
+        // Reasoning models (Kilo Auto / DeepSeek R1) return chain-of-thought in
+        // a dedicated stream field; it must be echoed on the assistant turn for
+        // every follow-up request of this task.
+        let streamThought = '';
         const streamText = await ProviderGateway.sendChatRequest(
           activeProvider,
           activeModel,
@@ -125,7 +153,10 @@ export class AgentEngine {
           },
           0,
           abortSignal,
-          params.onProviderHandoff
+          params.onProviderHandoff,
+          (thought: string) => {
+            streamThought += thought;
+          }
         );
 
         const parsedResponse = harness.parseResponse(streamText, []);
@@ -155,6 +186,7 @@ export class AgentEngine {
         messages.push({
           role: 'assistant',
           content: parsedResponse.text || streamText || '',
+          ...(streamThought ? { reasoning_content: streamThought } : {}),
           tool_calls: toolCallsToExecute.map((toolCall) => ({
             id: toolCall.id,
             type: 'function',

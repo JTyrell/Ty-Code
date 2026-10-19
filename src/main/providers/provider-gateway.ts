@@ -42,7 +42,8 @@ export async function sendChatRequest(
   onToken?: (chunk: string) => void,
   handoffCount: number = 0,
   abortSignal?: AbortSignal,
-  onHandoff?: (info: { fromProvider: string; toProvider: string; toModel: string }) => void
+  onHandoff?: (info: { fromProvider: string; toProvider: string; toModel: string }) => void,
+  onReasoning?: (thought: string) => void
 ): Promise<string> {
   const provider = providerId;
   const norm = (providerId || '').toLowerCase().trim().replace(/-free$/, '');
@@ -196,6 +197,11 @@ export async function sendChatRequest(
         content: `[Tool Result for ${m.name || 'tool'}]: ${m.content}`
       };
     }
+    // Reasoning models (e.g. Kilo Auto / DeepSeek R1) require the reasoning
+    // captured alongside each earlier assistant turn to be echoed back.
+    if (m.role === 'assistant' && typeof m.reasoning_content === 'string' && m.reasoning_content) {
+      return { role: 'assistant', content: m.content || '', reasoning_content: m.reasoning_content };
+    }
     return { role: m.role || 'user', content: m.content || '' };
   });
 
@@ -224,15 +230,24 @@ export async function sendChatRequest(
   } else {
     payload = {
       model: isCopilot ? requestModel : modelId,
-      messages: formattedMessages.map((m: any) => ({ role: m.role, content: m.content })),
+      // Reasoning models (Kilo Auto / DeepSeek R1-style) require every earlier
+      // assistant turn to carry the reasoning returned with it.
+      messages: formattedMessages.map((m: any) => {
+        if (m.role === 'assistant' && typeof m.reasoning_content === 'string' && m.reasoning_content) {
+          return { role: m.role, content: m.content, reasoning_content: m.reasoning_content };
+        }
+        return { role: m.role, content: m.content };
+      }),
       stream
     };
   }
 
   let fullText = '';
+  let fullThought = '';
 
   try {
     // 4. Make the fetch request with the key in the headers
+    const requestStartMs = Date.now();
     const response = await fetch(config.url, {
       method: 'POST',
       headers,
@@ -242,20 +257,16 @@ export async function sendChatRequest(
 
     console.log(`[GATEWAY] Response status: ${response.status}`);
 
-    const shouldHandoff = response.status === 429 || response.status >= 500 || (response.status === 404 && /:free|\/free/.test(requestModel || modelId));
+    // Auth rejections (401/403) are treated as provider-level failures: FCC
+    // fails over to the next eligible free provider instead of hard-failing,
+    // so a revoked/expired key never blocks a free conversation.
+    const shouldHandoff = response.status === 429 || response.status >= 500 || response.status === 401 || response.status === 403 || (response.status === 404 && /:free|\/free/.test(requestModel || modelId));
     if (shouldHandoff) {
       if (handoffCount < 2) {
         console.log(`[GATEWAY] Provider failed (${response.status}). Handing off to next provider (Attempt ${handoffCount + 1}/2).`);
-        // Find the next available model from a DIFFERENT provider
+        // FCC-managed handoff: only providers that are keyless or own their key.
         const requestedModel = requestModel || modelId;
-        // Prefer a different provider hosting the SAME model, so the user keeps
-        // the model they picked when one provider's quota/limit runs dry.
-        const sameModelAlt = allModels.find(
-          (m) =>
-            (m.modelId === requestedModel || m.modelId.toLowerCase() === requestedModel.toLowerCase()) &&
-            m.providerId !== (config?.providerId || providerId)
-        );
-        const nextModel = sameModelAlt || allModels.find((m) => m.providerId !== (config?.providerId || providerId));
+        const nextModel = pickHandoffCandidate(allModels, config?.providerId || providerId, requestedModel);
         if (nextModel) {
           console.log(`[GATEWAY] Handing off to ${nextModel.providerId} (${nextModel.modelId})`);
           try {
@@ -267,13 +278,16 @@ export async function sendChatRequest(
           } catch {
             // Notification callback must never break the request chain
           }
+          // Only carry the original key when the target is the same provider
+          // family — never forward one provider's key to another provider.
+          const nextApiKey = (nextModel.providerId || '') === (providerId || '') ? apiKey : undefined;
           // Recursively call sendChatRequest with the new provider and incremented handoffCount
           return await sendChatRequest(
             nextModel.providerId,
             nextModel.modelId,
             messages,
             stream,
-            apiKey,
+            nextApiKey,
             onToken,
             handoffCount + 1,
             abortSignal,
@@ -296,6 +310,22 @@ export async function sendChatRequest(
         const errJson = JSON.parse(errText);
         parsedMsg = errJson.error?.message || errJson.message || errText;
       } catch {}
+      providerHealthMonitor.recordRequestOutcome(config.providerId || providerId, false, Math.max(1, Date.now() - requestStartMs), `${response.status}: ${parsedMsg}`);
+      // Self-heal: reasoning models demand 'reasoning_content' on every earlier
+      // assistant turn. Legacy history (or handoff copies) may lack it — convert
+      // those turns into summarized user notes and retry once.
+      if (response.status === 400 && parsedMsg.includes('reasoning_content') && Array.isArray(messages) && !(messages as any).__reasoningSanitized) {
+        (messages as any).__reasoningSanitized = true;
+        const sanitized = messages.map((m: any) => {
+          if (m && m.role === 'assistant' && !(typeof m.reasoning_content === 'string' && m.reasoning_content)) {
+            const summary = typeof m.content === 'string' ? m.content.slice(0, 200) : '';
+            return { role: 'user', content: `[assistant turn summary] ${summary}` };
+          }
+          return m;
+        });
+        console.log('[GATEWAY] Reasoning content required: sanitizing history and retrying once.');
+        return await sendChatRequest(providerId, modelId, sanitized, stream, apiKey, onToken, handoffCount, abortSignal, onHandoff, onReasoning);
+      }
       throw new Error(`[GATEWAY] ${providerDisplay} API error (${response.status}): ${parsedMsg}`);
     }
 
@@ -304,12 +334,18 @@ export async function sendChatRequest(
       throw new Error(`[GATEWAY] Response body is empty from ${providerId}`);
     }
 
-    if (!stream) {
-      const data: any = await response.json();
-      const text = data.choices?.[0]?.message?.content || data.content?.[0]?.text || '';
-      if (onToken) onToken(text);
-      return text;
+  if (!stream) {
+    const data: any = await response.json();
+    const text = data.choices?.[0]?.message?.content || data.content?.[0]?.text || '';
+    const embeddedReasoning = data.choices?.[0]?.message?.reasoning_content;
+    if (typeof embeddedReasoning === 'string' && embeddedReasoning) {
+      fullThought += embeddedReasoning;
+      if (onReasoning) onReasoning(embeddedReasoning);
     }
+    if (onToken) onToken(text);
+    providerHealthMonitor.recordRequestOutcome(config.providerId || providerId, true, Math.max(1, Date.now() - requestStartMs));
+    return text;
+  }
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder('utf-8');
@@ -333,13 +369,19 @@ export async function sendChatRequest(
 
           try {
             const json = JSON.parse(dataStr);
+            // Reasoning models stream their chain-of-thought in a dedicated
+            // delta field. Capture it for the reasoning_content echo but never
+            // mix it into the assistant content stream.
+            const reasoningToken: unknown =
+              json.choices?.[0]?.delta?.reasoning_content ??
+              json.choices?.[0]?.delta?.reasoning;
+            if (typeof reasoningToken === 'string' && reasoningToken) {
+              fullThought += reasoningToken;
+              if (onReasoning) onReasoning(reasoningToken);
+            }
             let token = json.choices?.[0]?.delta?.content;
-            if (token === undefined || token === null) {
-              if (json.delta?.text) {
-                token = json.delta.text;
-              } else if (json.choices?.[0]?.delta?.reasoning) {
-                token = json.choices[0].delta.reasoning;
-              }
+            if ((token === undefined || token === null) && json.delta?.text) {
+              token = json.delta.text;
             }
 
             if (token) {
@@ -362,7 +404,12 @@ export async function sendChatRequest(
         if (dataStr !== '[DONE]') {
           try {
             const json = JSON.parse(dataStr);
-            const token = json.choices?.[0]?.delta?.content ?? json.delta?.text ?? json.choices?.[0]?.delta?.reasoning;
+            const trailingReasoning = json.choices?.[0]?.delta?.reasoning_content ?? json.choices?.[0]?.delta?.reasoning;
+            if (typeof trailingReasoning === 'string' && trailingReasoning) {
+              fullThought += trailingReasoning;
+              if (onReasoning) onReasoning(trailingReasoning);
+            }
+            const token = json.choices?.[0]?.delta?.content ?? json.delta?.text;
             if (token) {
               fullText += token;
               if (onToken) onToken(token);
@@ -372,6 +419,7 @@ export async function sendChatRequest(
       }
     }
 
+    providerHealthMonitor.recordRequestOutcome(config.providerId || providerId, true, Math.max(1, Date.now() - requestStartMs));
     return fullText;
   } catch (err: any) {
     console.error('[GATEWAY] Exact Node.js fetch error:', err);
@@ -390,14 +438,9 @@ export async function sendChatRequest(
         err?.message?.includes('network'))
     ) {
       console.log(`[GATEWAY] Provider failed mid-stream. Handing off to next provider (Attempt ${handoffCount + 1}/2).`);
-      // Prefer a different provider hosting the SAME model, then any other provider.
+      // FCC-managed handoff: eligibility + priority in one selector.
       const requestedModel = requestModel || modelId;
-      const sameModelAlt = allModels.find(
-        (m) =>
-          (m.modelId === requestedModel || m.modelId.toLowerCase() === requestedModel.toLowerCase()) &&
-          m.providerId !== (config?.providerId || providerId)
-      );
-      const nextModel = sameModelAlt || allModels.find((m) => m.providerId !== (config?.providerId || providerId));
+      const nextModel = pickHandoffCandidate(allModels, config?.providerId || providerId, requestedModel);
       if (nextModel) {
         console.log(`[GATEWAY] Handing off to ${nextModel.providerId} (${nextModel.modelId})`);
         try {
@@ -409,13 +452,14 @@ export async function sendChatRequest(
         } catch {
           // Notification callback must never break the request chain
         }
+        const nextApiKey = (nextModel.providerId || '') === (providerId || '') ? apiKey : undefined;
         // Recursively call sendChatRequest with the new provider and incremented handoffCount
         return await sendChatRequest(
           nextModel.providerId,
           nextModel.modelId,
           messages,
           stream,
-          apiKey,
+          nextApiKey,
           onToken,
           handoffCount + 1,
           abortSignal,
@@ -432,12 +476,78 @@ export async function sendChatRequest(
 export function isFreeModel(modelId: string, providerId: string): boolean {
   if (freeProviderRegistry.isFreeModel(modelId, providerId)) return true;
   if (providerId === 'ollama' || providerId === 'fcc-proxy' || providerId === 'anthropic-claude-free') return true;
+  if (providerId === 'openkilo' || providerId === 'kilo' || providerId === 'opencode') return true;
   if (/:free($|:|\/)/i.test(modelId) || modelId.toLowerCase().includes(':free')) return true;
   if (providerId === 'groq' || providerId === 'groq-free') {
     const groqFree = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'];
     if (groqFree.includes(modelId)) return true;
   }
   return false;
+}
+
+const HANDOFF_ENV_HINTS: Record<string, string[]> = {
+  openrouter: ['OPENROUTER_API_KEY'],
+  groq: ['GROQ_API_KEY'],
+  anthropic: ['ANTHROPIC_API_KEY'],
+  claude: ['ANTHROPIC_API_KEY'],
+  openai: ['OPENAI_API_KEY'],
+  'google-ai-studio': ['GEMINI_API_KEY', 'GOOGLE_API_KEY'],
+  gemini: ['GEMINI_API_KEY', 'GOOGLE_API_KEY'],
+  deepseek: ['DEEPSEEK_API_KEY'],
+  copilot: ['GITHUB_COPILOT_TOKEN', 'COPILOT_TOKEN'],
+  opencode: ['OPENCODE_API_KEY', 'OPENCODE_ZEN_API_KEY']
+};
+
+/** True only when THIS provider has credentials of its own (or is keyless). */
+export function providerHasOwnKey(providerId: string): boolean {
+  const norm = (providerId || '').toLowerCase().trim().replace(/-free$/, '');
+  const candidates = Array.from(new Set([providerId, norm, `${norm}-free`]));
+  for (const candidate of candidates) {
+    try {
+      const stored = credentialStore.getDecryptedKey(candidate);
+      if (stored && stored.trim()) return true;
+    } catch {
+      // Vault read failure — treat as no key
+    }
+  }
+  for (const candidate of candidates) {
+    for (const envVar of HANDOFF_ENV_HINTS[candidate] || HANDOFF_ENV_HINTS[norm] || []) {
+      const envValue = process.env[envVar];
+      if (envValue && envValue.trim().length > 4) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * FCC-managed failover selection: a handoff target is eligible only if it
+ * (a) is keyless/anonymous (OpenKilo gateway, Ollama), or
+ * (b) is a free-tier model of the provider we already hold a key for, or
+ * (c) has its OWN stored key — never a borrowed key from another provider.
+ * Priority: same model elsewhere > free pool > keyed-with-own-key.
+ */
+export function pickHandoffCandidate(
+  allModels: VerifiedModelConfig[],
+  currentProviderId: string,
+  requestedModel: string
+): VerifiedModelConfig | undefined {
+  const isFreeCandidate = (m: VerifiedModelConfig) =>
+    isFreeModel(m.modelId, m.providerId) || !m.requiresKey;
+
+  const eligible = allModels.filter((m) => {
+    if ((m.providerId || '').toLowerCase() === (currentProviderId || '').toLowerCase()) return false;
+    return !m.requiresKey || providerHasOwnKey(m.providerId);
+  });
+  if (eligible.length === 0) return undefined;
+
+  const sameModelAlt = eligible.find(
+    (m) => m.modelId === requestedModel || m.modelId.toLowerCase() === requestedModel.toLowerCase()
+  );
+  if (sameModelAlt) return sameModelAlt;
+
+  const freePool = eligible.filter(isFreeCandidate);
+  const pool = freePool.length > 0 ? freePool : eligible;
+  return pool[0];
 }
 
 export function categorizeModel(modelId: string, isFree: boolean, providerId: string): 'Free' | 'Fast' | 'Premium/Reasoning' {
@@ -509,8 +619,7 @@ export class ProviderGateway {
     apiKey?: string,
     customEndpoint?: string
   ): Promise<DiscoveredModel[]> {
-    if (providerId === 'ollama') {
-      const allVerified = await getVerifiedModels();
+    if (providerId === 'ollama') {      const allVerified = await getVerifiedModels();
       const localModels = allVerified.filter((m) => m.providerId === 'ollama');
       return localModels.map((m) => ({
         id: m.modelId,
@@ -655,6 +764,11 @@ export class ProviderGateway {
       }
       this.validatedModelsCache.add(cacheKey);
     }
+  }
+
+  /** True only when this provider has its own stored/env credentials (or is keyless). */
+  static providerHasStoredKey(providerId: string): boolean {
+    return providerHasOwnKey(providerId);
   }
 
   /**

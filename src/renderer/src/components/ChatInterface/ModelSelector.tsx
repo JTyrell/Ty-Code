@@ -210,23 +210,28 @@ export const ModelSelector: React.FC = () => {
   const triggerRef = useRef<HTMLButtonElement>(null);
 
   const activeModelId = settings?.activeModel || 'kilo-auto/free';
-  const activeProvider = settings?.activeProvider || 'openrouter';
+  const isAutoBinding = !settings?.activeProvider || settings.activeProvider === 'auto';
+  const activeProvider = isAutoBinding ? 'auto' : settings.activeProvider;
 
   // Determine active tier based on active model
-  const activeTier: ModelTier = (() => {
-    for (const [tier, models] of Object.entries(catalog) as [ModelTier, RankedModelCandidate[]][]) {
-      if (models.some((m) => m.modelId === activeModelId || activeModelId.includes(m.modelId))) {
-        return tier;
-      }
-    }
-    if (activeModelId.includes('r1') || activeModelId.includes('o1')) return 'tier_s_reasoning';
-    if (activeModelId.includes('coder') || activeModelId.includes('code') || activeModelId.includes('sonnet')) return 'tier_a_coding';
-    if (activeModelId.includes('8b') || activeModelId.includes('flash')) return 'tier_c_fast';
-    return 'tier_b_general';
-  })();
+  const activeTier: ModelTier = isAutoBinding
+    ? 'tier_b_general'
+    : (() => {
+        for (const [tier, models] of Object.entries(catalog) as [ModelTier, RankedModelCandidate[]][]) {
+          if (models.some((m) => m.modelId === activeModelId || activeModelId.includes(m.modelId))) {
+            return tier;
+          }
+        }
+        if (activeModelId.includes('r1') || activeModelId.includes('o1')) return 'tier_s_reasoning';
+        if (activeModelId.includes('coder') || activeModelId.includes('code') || activeModelId.includes('sonnet')) return 'tier_a_coding';
+        if (activeModelId.includes('8b') || activeModelId.includes('flash')) return 'tier_c_fast';
+        return 'tier_b_general';
+      })();
 
   const currentTierInfo = TIER_LABELS[activeTier] || TIER_LABELS.tier_a_coding;
-  const modelShortName = activeModelId.split('/').pop()?.replace(':free', '') || activeModelId;
+  const modelShortName = isAutoBinding
+    ? 'Auto'
+    : activeModelId.split('/').pop()?.replace(':free', '') || activeModelId;
 
   // Load preferences and available models from main process
   useEffect(() => {
@@ -377,7 +382,8 @@ export const ModelSelector: React.FC = () => {
 
   const handleSelectModel = async (candidate: RankedModelCandidate) => {
     // Preserve conversation context: DO NOT clear messages, simply switch active model in settings
-    const targetProvider = (candidate.providerId.replace('-free', '') as ProviderType) || 'openrouter';
+    const stripped = candidate.providerId.replace(/-free$/, '');
+    const targetProvider = ((stripped === 'opencode-built-in' ? 'opencode' : stripped) || 'openkilo') as ProviderType;
 
     await saveSettings({
       activeModel: candidate.modelId,
@@ -397,6 +403,18 @@ export const ModelSelector: React.FC = () => {
 
     setIsOpen(false);
     toast.success('Model Switched', `Now chatting with ${candidate.modelName} (${TIER_LABELS[candidate.tier].name})`);
+  };
+
+  const handleSelectAuto = async () => {
+    // Return to the "Auto" binding: FCC decides the concrete free provider/model
+    // per request (free-first, key-safe handoff). No manual override left behind.
+    await saveSettings({ activeModel: '', activeProvider: 'auto' });
+    if (window.electronAPI?.modelRouterSetPreferences) {
+      await window.electronAPI.modelRouterSetPreferences({ mode: 'auto' });
+    }
+    setRoutingMode('auto');
+    setIsOpen(false);
+    toast.success('Auto Enabled', 'FCC will route each message to the best managed free model');
   };
 
   return (
@@ -577,6 +595,38 @@ export const ModelSelector: React.FC = () => {
               Syncing live model catalog (FCC supply layer)…
             </div>
           ) : null}
+
+          {/* Auto (FCC decides) — the managed free-supply binding */}
+          {(() => {
+            const isAutoSelected = isAutoBinding && routingMode === 'auto';
+            return (
+              <div
+                id="model-option-auto"
+                onClick={() => void handleSelectAuto()}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '6px 8px',
+                  borderRadius: '5px',
+                  background: isAutoSelected ? 'rgba(56, 189, 248, 0.12)' : 'rgba(56, 189, 248, 0.04)',
+                  border: isAutoSelected ? '1px solid rgba(56, 189, 248, 0.3)' : '1px solid rgba(56, 189, 248, 0.15)',
+                  cursor: 'pointer',
+                  transition: 'background 0.12s ease'
+                }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = isAutoSelected ? 'rgba(56, 189, 248, 0.12)' : 'rgba(56, 189, 248, 0.1)'; }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = isAutoSelected ? 'rgba(56, 189, 248, 0.12)' : 'rgba(56, 189, 248, 0.04)'; }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+                  <Sparkles size={11} color="#38bdf8" style={{ flexShrink: 0 }} />
+                  <span style={{ fontSize: '11px', fontWeight: 600, color: '#ffffff' }}>Auto (FCC decides)</span>
+                </div>
+                <span style={{ fontSize: '9px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                  Best free model per message
+                </span>
+              </div>
+            );
+          })()}
 
           {/* Grouped Models List */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>

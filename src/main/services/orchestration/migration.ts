@@ -7,8 +7,8 @@
 import type { ProviderSettings, ProviderType, RoutingStrategyType } from '../../../preload/types';
 
 export const DEFAULT_OMNIROUTE_SETTINGS: ProviderSettings = {
-  activeProvider: 'openrouter',
-  activeModel: 'deepseek/deepseek-chat',
+  activeProvider: 'auto',
+  activeModel: '',
   apiKeys: {},
   apiKeysConfigured: {},
   customEndpoints: {
@@ -18,6 +18,9 @@ export const DEFAULT_OMNIROUTE_SETTINGS: ProviderSettings = {
   },
   temperature: 0.2,
   maxTokens: 4096,
+  freeMode: true,
+  quotaAlertThreshold: 80,
+  autoRotateProviders: true,
   routingStrategy: 'manual',
   enableFailover: true,
   maxFailoverRetries: 3,

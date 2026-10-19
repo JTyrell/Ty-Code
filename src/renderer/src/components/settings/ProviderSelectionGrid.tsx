@@ -205,6 +205,26 @@ export const ProviderSelectionGrid: React.FC<ProviderSelectionGridProps> = ({
               >
                 {p.notes || p.baseUrl}
               </p>
+
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  width: '100%',
+                  marginTop: '10px',
+                  paddingTop: '6px',
+                  borderTop: '1px solid rgba(255, 255, 255, 0.05)',
+                  fontSize: '10px'
+                }}
+              >
+                <span style={{ color: 'var(--text-muted)' }}>
+                  {statusInfo.status === 'connected' ? 'Configured' : 'Setup needed'}
+                </span>
+                <span style={{ color: 'var(--accent-primary)', fontWeight: 600 }}>
+                  Configure ↗
+                </span>
+              </div>
             </button>
           );
         })}
@@ -252,6 +272,20 @@ export const ProviderSelectionGrid: React.FC<ProviderSelectionGridProps> = ({
           <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
             LM Studio, vLLM, LocalAI, or custom /v1 proxy
           </span>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'flex-end',
+              width: '100%',
+              marginTop: '8px',
+              fontSize: '10px',
+              color: 'var(--accent-primary)',
+              fontWeight: 600
+            }}
+          >
+            Configure ↗
+          </div>
         </button>
       </div>
     </div>

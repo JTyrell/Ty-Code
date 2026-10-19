@@ -277,6 +277,15 @@ async function buildMergedFreeProviderList(): Promise<FreeProvider[]> {
   const verifiedByProvider = new Map<string, VerifiedModelConfig[]>();
   for (const vm of verified) {
     if (fccModelIds.has(vm.modelId)) continue;
+    // FCC policy: default listing = free supply only (keyless gateways, :free
+    // pools, baked OpenCode Zen, local Ollama). Paid defaults (e.g. gpt-4o)
+    // stay unlocked through BYOK key entry instead of being listed by default.
+    const isFreeEntry =
+      !vm.requiresKey ||
+      vm.modelId.includes(':free') ||
+      vm.modelId.endsWith('/free') ||
+      (vm.providerId || '').toLowerCase().includes('opencode');
+    if (!isFreeEntry) continue;
     const list = verifiedByProvider.get(vm.providerId) || [];
     list.push(vm);
     verifiedByProvider.set(vm.providerId, list);
@@ -2105,7 +2114,22 @@ function registerProviderHandlers(): void {
       const byId = new Map<string, PreConfiguredProvider>();
       for (const p of merged) byId.set(p.id, toPreConfigured(p));
       for (const fp of freeProviders) if (!byId.has(fp.id)) byId.set(fp.id, toPreConfigured(fp));
-      return { success: true, data: [...byId.values()] };
+      // The "Auto (FCC decides)" binding — one logical provider backed by the
+      // entire FCC-managed free pool. Listed first so it is the obvious default.
+      const autoList: PreConfiguredProvider[] = [
+        {
+          id: 'auto',
+          name: 'Auto (FCC decides)',
+          baseUrl: 'auto',
+          setupType: 'zero_config',
+          notes: 'FCC routes each message to the best free model across all managed supply (free-first, key-safe handoff). No configuration needed.',
+          signupUrl: undefined,
+          defaultModel: 'kilo-auto/free',
+          icon: undefined
+        }
+      ];
+      for (const p of byId.values()) autoList.push(p);
+      return { success: true, data: autoList };
     } catch {
       const freeProviders = await buildMergedFreeProviderList().catch(() => freeProviderRegistry.getAllProviders());
       const toPreConfigured = (p: FreeProvider): PreConfiguredProvider => ({
@@ -2118,14 +2142,34 @@ function registerProviderHandlers(): void {
         defaultModel: p.best_free_models[0],
         icon: undefined
       });
-      return { success: true, data: freeProviders.map(toPreConfigured) };
+      return {
+        success: true,
+        data: [
+          {
+            id: 'auto',
+            name: 'Auto (FCC decides)',
+            baseUrl: 'auto',
+            setupType: 'zero_config' as const,
+            notes: 'FCC routes each message to the best free model across all managed supply. No configuration needed.',
+            defaultModel: 'kilo-auto/free',
+            icon: undefined
+          },
+          ...freeProviders.map(toPreConfigured)
+        ]
+      };
     }
   });
 
   ipcMain.handle('provider:get-models', async (event, payload: { providerId: string; apiKey?: string; customEndpoint?: string }) => {
     if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
     try {
-      const models = await ProviderGateway.getAvailableModels(payload.providerId, payload.apiKey, payload.customEndpoint);
+      let models = await ProviderGateway.getAvailableModels(payload.providerId, payload.apiKey, payload.customEndpoint);
+      // FCC policy: default discovery lists FREE models only. BYOK (a stored or
+      // explicitly passed key) unlocks the full catalog incl. paid models.
+      const hasOwnCredentials = Boolean(payload.apiKey?.trim()) || ProviderGateway.providerHasStoredKey(payload.providerId);
+      if (!hasOwnCredentials) {
+        models = models.filter((m) => m.isFree);
+      }
       return { success: true, data: models };
     } catch (err: unknown) {
       return { success: false, error: err instanceof Error ? err.message : String(err) };

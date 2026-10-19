@@ -154,6 +154,7 @@ export const SettingsModal: React.FC = () => {
   const [registryProviders, setRegistryProviders] = useState<PreConfiguredProvider[]>(FALLBACK_PROVIDERS);
   const [selectedGridProviderId, setSelectedGridProviderId] = useState<string>('openrouter');
   const [isCustomSelected, setIsCustomSelected] = useState<boolean>(false);
+  const [isProviderModalOpen, setIsProviderModalOpen] = useState<boolean>(false);
   const [providerStatuses, setProviderStatuses] = useState<Record<string, ProviderStatusInfo>>({});
   const [discoveredModels, setDiscoveredModels] = useState<Record<string, DiscoveredModel[]>>({});
   const [loadingModels, setLoadingModels] = useState(false);
@@ -393,12 +394,16 @@ export const SettingsModal: React.FC = () => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
-        toggleSettings();
+        if (isProviderModalOpen) {
+          setIsProviderModalOpen(false);
+        } else {
+          toggleSettings();
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isSettingsOpen, toggleSettings]);
+  }, [isSettingsOpen, toggleSettings, isProviderModalOpen]);
 
   useEffect(() => {
     if (!isSettingsOpen) {
@@ -1002,43 +1007,268 @@ export const SettingsModal: React.FC = () => {
                 onSelectProvider={(id) => {
                   setSelectedGridProviderId(id);
                   setIsCustomSelected(false);
+                  setIsProviderModalOpen(true);
                 }}
                 providerStatuses={providerStatuses}
-                onSelectCustom={() => setIsCustomSelected(true)}
+                onSelectCustom={() => {
+                  setIsCustomSelected(true);
+                  setIsProviderModalOpen(true);
+                }}
                 isCustomSelected={isCustomSelected}
               />
 
-              {/* Provider Setup / Custom Form */}
-              {isCustomSelected ? (
-                <CustomProviderForm
-                  onSaveCustom={handleSaveCustom}
-                  initialBaseUrl={settings?.customEndpoints?.custom || 'http://localhost:1234/v1'}
-                  onCancel={() => setIsCustomSelected(false)}
-                />
-              ) : currentProvider ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                  <ProviderSetupForm
-                    key={currentProvider.id}
-                    provider={currentProvider}
-                    isConfigured={Boolean(settings?.apiKeysConfigured?.[currentProvider.id as ProviderType])}
-                    customEndpoint={settings?.customEndpoints?.[currentProvider.id as ProviderType]}
-                    onSave={handleSaveProviderKey}
-                    onConnectionTested={handleProviderTested}
-                    onSelectModel={handleSelectModel}
-                    activeModelId={settings?.activeModel}
-                  />
-
-                  {/* Dynamic Model Discovery Dropdown */}
-                  <ModelSelectorDropdown
-                    models={currentModels}
-                    selectedModelId={settings?.activeModel || currentProvider.defaultModel || ''}
-                    onSelectModel={handleSelectModel}
-                    isLoading={loadingModels}
-                    onRefreshModels={() => void fetchModelsForProvider(currentProvider.id)}
-                    providerName={currentProvider.name}
-                  />
+              {/* Active Provider Quick Banner & Quick Launch */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '12px 16px',
+                  borderRadius: '8px',
+                  background: 'rgba(30, 41, 59, 0.4)',
+                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                  marginTop: '4px'
+                }}
+                id="active-provider-summary-banner"
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Selected Provider:</span>
+                  <strong style={{ fontSize: '13px', color: 'var(--text-primary)' }}>
+                    {isCustomSelected ? 'Custom OpenAI-Compatible' : currentProvider?.name}
+                  </strong>
+                  {settings?.activeModel && !isCustomSelected && (
+                    <span
+                      style={{
+                        fontSize: '11px',
+                        color: 'var(--accent-primary)',
+                        background: 'rgba(99, 102, 241, 0.12)',
+                        padding: '2px 8px',
+                        borderRadius: '4px',
+                        fontFamily: 'monospace'
+                      }}
+                    >
+                      {settings.activeModel}
+                    </span>
+                  )}
+                  {providerStatuses[selectedGridProviderId]?.status === 'connected' && (
+                    <span
+                      style={{
+                        fontSize: '10px',
+                        color: '#34d399',
+                        background: 'rgba(16, 185, 129, 0.12)',
+                        padding: '2px 6px',
+                        borderRadius: '4px',
+                        fontWeight: 600
+                      }}
+                    >
+                      CONNECTED
+                    </span>
+                  )}
                 </div>
-              ) : null}
+
+                <button
+                  type="button"
+                  id="btn-open-provider-config-modal"
+                  onClick={() => setIsProviderModalOpen(true)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '7px 14px',
+                    borderRadius: '6px',
+                    background: 'var(--accent-primary)',
+                    color: '#ffffff',
+                    border: 'none',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    boxShadow: '0 2px 8px rgba(99, 102, 241, 0.3)'
+                  }}
+                >
+                  <Sliders size={13} />
+                  Configure &amp; Test Provider
+                </button>
+              </div>
+
+              {/* Floating Window for Provider Setup / Custom Form */}
+              {isProviderModalOpen && (
+                <div
+                  className="provider-config-floating-overlay"
+                  id="provider-config-floating-overlay"
+                  onClick={() => setIsProviderModalOpen(false)}
+                  style={{
+                    position: 'fixed',
+                    inset: 0,
+                    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+                    backdropFilter: 'blur(8px)',
+                    WebkitBackdropFilter: 'blur(8px)',
+                    zIndex: 10050,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '24px'
+                  }}
+                >
+                  <div
+                    className="provider-config-floating-dialog"
+                    id="provider-config-floating-dialog"
+                    onClick={(e) => e.stopPropagation()}
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="provider-modal-title"
+                    style={{
+                      width: '100%',
+                      maxWidth: '680px',
+                      maxHeight: '88vh',
+                      backgroundColor: '#0f172a',
+                      border: '1px solid rgba(255, 255, 255, 0.15)',
+                      borderRadius: '12px',
+                      boxShadow: '0 25px 60px -15px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.1)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      overflow: 'hidden'
+                    }}
+                  >
+                    {/* Floating Modal Header */}
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '16px 20px',
+                        borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+                        background: 'rgba(30, 41, 59, 0.7)'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            width: '32px',
+                            height: '32px',
+                            borderRadius: '8px',
+                            background: 'rgba(99, 102, 241, 0.15)',
+                            border: '1px solid rgba(99, 102, 241, 0.3)'
+                          }}
+                        >
+                          <Key size={16} color="#818cf8" />
+                        </div>
+                        <div>
+                          <h3 id="provider-modal-title" style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: '#f8fafc' }}>
+                            {isCustomSelected ? 'Configure Custom OpenAI Provider' : `Configure & Test: ${currentProvider.name}`}
+                          </h3>
+                          <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: '#94a3b8' }}>
+                            {isCustomSelected
+                              ? 'Enter endpoint URL and test connectivity for your local/remote server'
+                              : (currentProvider.notes || `Set up API key and verify connection for ${currentProvider.name}`)}
+                          </p>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        id="btn-close-provider-floating-modal"
+                        onClick={() => setIsProviderModalOpen(false)}
+                        aria-label="Close configuration window"
+                        style={{
+                          background: 'rgba(255, 255, 255, 0.05)',
+                          border: 'none',
+                          borderRadius: '6px',
+                          color: '#94a3b8',
+                          cursor: 'pointer',
+                          padding: '6px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}
+                      >
+                        <X size={16} />
+                      </button>
+                    </div>
+
+                    {/* Floating Modal Scrollable Body */}
+                    <div
+                      style={{
+                        padding: '20px',
+                        overflowY: 'auto',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '16px'
+                      }}
+                    >
+                      {isCustomSelected ? (
+                        <CustomProviderForm
+                          onSaveCustom={async (data) => {
+                            const ok = await handleSaveCustom(data);
+                            if (ok) {
+                              setIsProviderModalOpen(false);
+                            }
+                            return ok;
+                          }}
+                          initialBaseUrl={settings?.customEndpoints?.custom || 'http://localhost:1234/v1'}
+                          onCancel={() => setIsProviderModalOpen(false)}
+                        />
+                      ) : currentProvider ? (
+                        <>
+                          <ProviderSetupForm
+                            key={currentProvider.id}
+                            provider={currentProvider}
+                            isConfigured={Boolean(settings?.apiKeysConfigured?.[currentProvider.id as ProviderType])}
+                            customEndpoint={settings?.customEndpoints?.[currentProvider.id as ProviderType]}
+                            onSave={handleSaveProviderKey}
+                            onConnectionTested={handleProviderTested}
+                            onSelectModel={handleSelectModel}
+                            activeModelId={settings?.activeModel}
+                          />
+
+                          {/* Dynamic Model Discovery Dropdown */}
+                          <ModelSelectorDropdown
+                            models={currentModels}
+                            selectedModelId={settings?.activeModel || currentProvider.defaultModel || ''}
+                            onSelectModel={handleSelectModel}
+                            isLoading={loadingModels}
+                            onRefreshModels={() => void fetchModelsForProvider(currentProvider.id)}
+                            providerName={currentProvider.name}
+                          />
+                        </>
+                      ) : null}
+                    </div>
+
+                    {/* Floating Modal Footer */}
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'flex-end',
+                        padding: '12px 20px',
+                        borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+                        background: 'rgba(15, 23, 42, 0.8)',
+                        gap: '10px'
+                      }}
+                    >
+                      <button
+                        type="button"
+                        id="btn-done-provider-floating-modal"
+                        onClick={() => setIsProviderModalOpen(false)}
+                        style={{
+                          padding: '8px 18px',
+                          borderRadius: '6px',
+                          background: 'var(--accent-primary)',
+                          color: '#ffffff',
+                          border: 'none',
+                          fontSize: '12px',
+                          fontWeight: 600,
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Done
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

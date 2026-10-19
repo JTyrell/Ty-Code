@@ -11,7 +11,7 @@
  * Brand: Ty-Code
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Check,
   ChevronRight,
@@ -28,7 +28,10 @@ import {
   Server,
   Layers,
   ArrowRight,
-  Code2
+  Code2,
+  Search,
+  X,
+  Filter
 } from 'lucide-react';
 import type { FreeProvider } from '../../../../shared/types/free-providers';
 import type { DiscoveredModel, TestConnectionResult } from '../../../../preload/types';
@@ -57,6 +60,8 @@ export const BYOKWizard: React.FC<BYOKWizardProps> = ({
   const [discoveredModels, setDiscoveredModels] = useState<DiscoveredModel[]>([]);
   const [selectedModel, setSelectedModel] = useState<string>('');
   const [selectedModelsList, setSelectedModelsList] = useState<string[]>([]);
+  const [modelFilterQuery, setModelFilterQuery] = useState('');
+  const [modelFilterCategory, setModelFilterCategory] = useState<'all' | 'free' | 'coding' | 'reasoning' | 'selected'>('all');
   const [copiedUrl, setCopiedUrl] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -180,6 +185,69 @@ export const BYOKWizard: React.FC<BYOKWizardProps> = ({
     } else {
       setSelectedModelsList([...selectedModelsList, modelId]);
     }
+  };
+
+  const allModels: DiscoveredModel[] = useMemo(() => {
+    if (discoveredModels.length > 0) return discoveredModels;
+    return (selectedProvider.best_free_models || []).map((m) => ({
+      id: m,
+      name: m,
+      provider: selectedProvider.id,
+      isFree: true,
+      category: 'Free' as const
+    }));
+  }, [discoveredModels, selectedProvider]);
+
+  const filteredModels = useMemo(() => {
+    return allModels.filter((model) => {
+      const q = modelFilterQuery.trim().toLowerCase();
+      const matchesSearch = !q || model.name.toLowerCase().includes(q) || model.id.toLowerCase().includes(q);
+      if (!matchesSearch) return false;
+
+      if (modelFilterCategory === 'free') {
+        return Boolean(model.isFree || model.category === 'Free' || model.id.toLowerCase().includes(':free'));
+      }
+      if (modelFilterCategory === 'coding') {
+        const idLower = (model.id + ' ' + model.name).toLowerCase();
+        return (
+          idLower.includes('code') ||
+          idLower.includes('coder') ||
+          idLower.includes('qwen') ||
+          idLower.includes('deepseek') ||
+          idLower.includes('claude') ||
+          idLower.includes('gpt') ||
+          idLower.includes('dev')
+        );
+      }
+      if (modelFilterCategory === 'reasoning') {
+        const idLower = (model.id + ' ' + model.name).toLowerCase();
+        return (
+          idLower.includes('reason') ||
+          idLower.includes('r1') ||
+          idLower.includes('think') ||
+          idLower.includes('o1') ||
+          idLower.includes('o3') ||
+          idLower.includes('qwq')
+        );
+      }
+      if (modelFilterCategory === 'selected') {
+        return selectedModelsList.includes(model.id) || selectedModel === model.id;
+      }
+      return true;
+    });
+  }, [allModels, modelFilterQuery, modelFilterCategory, selectedModelsList, selectedModel]);
+
+  const handleSelectAllFiltered = () => {
+    const toAdd = filteredModels.map((m) => m.id);
+    const updated = Array.from(new Set([...selectedModelsList, ...toAdd]));
+    setSelectedModelsList(updated);
+    if (!selectedModel && toAdd.length > 0) {
+      setSelectedModel(toAdd[0]);
+    }
+  };
+
+  const handleDeselectAll = () => {
+    setSelectedModelsList([]);
   };
 
   return (
@@ -683,6 +751,149 @@ export const BYOKWizard: React.FC<BYOKWizardProps> = ({
             </p>
           </div>
 
+          {/* Search & Filter Toolbar */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {/* Search Input with Clear Button */}
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+              <Search
+                size={14}
+                style={{
+                  position: 'absolute',
+                  left: '12px',
+                  color: '#94a3b8',
+                  pointerEvents: 'none'
+                }}
+              />
+              <input
+                id="wizard-model-search-input"
+                type="text"
+                placeholder="Search models by name or ID (e.g., qwen, deepseek, coder, sonnet)..."
+                value={modelFilterQuery}
+                onChange={(e) => setModelFilterQuery(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '8px 34px 8px 34px',
+                  borderRadius: '6px',
+                  border: '1px solid rgba(255, 255, 255, 0.15)',
+                  background: 'rgba(15, 23, 42, 0.7)',
+                  color: '#f8fafc',
+                  fontSize: '12px'
+                }}
+              />
+              {modelFilterQuery && (
+                <button
+                  type="button"
+                  id="wizard-btn-clear-search"
+                  onClick={() => setModelFilterQuery('')}
+                  title="Clear search"
+                  style={{
+                    position: 'absolute',
+                    right: '10px',
+                    background: 'none',
+                    border: 'none',
+                    color: '#94a3b8',
+                    cursor: 'pointer',
+                    padding: '2px',
+                    display: 'flex',
+                    alignItems: 'center'
+                  }}
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+
+            {/* Category Filter Pills & Selection Controls */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '8px'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '11px', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                  <Filter size={11} /> Filter:
+                </span>
+                {[
+                  { id: 'all', label: 'All' },
+                  { id: 'free', label: 'Free Tier' },
+                  { id: 'coding', label: 'Coding' },
+                  { id: 'reasoning', label: 'Reasoning' },
+                  { id: 'selected', label: `Selected (${selectedModelsList.length})` }
+                ].map((chip) => {
+                  const isActive = modelFilterCategory === chip.id;
+                  return (
+                    <button
+                      key={chip.id}
+                      type="button"
+                      id={`wizard-filter-chip-${chip.id}`}
+                      onClick={() => setModelFilterCategory(chip.id as any)}
+                      style={{
+                        padding: '3px 10px',
+                        borderRadius: '12px',
+                        fontSize: '11px',
+                        fontWeight: 500,
+                        border: isActive ? '1px solid var(--accent-primary)' : '1px solid rgba(255, 255, 255, 0.12)',
+                        background: isActive ? 'rgba(99, 102, 241, 0.25)' : 'rgba(255, 255, 255, 0.04)',
+                        color: isActive ? '#ffffff' : '#cbd5e1',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      {chip.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '11px', color: '#94a3b8' }}>
+                  {filteredModels.length} of {allModels.length} models
+                </span>
+                <button
+                  type="button"
+                  id="wizard-btn-select-all-filtered"
+                  onClick={handleSelectAllFiltered}
+                  disabled={filteredModels.length === 0}
+                  style={{
+                    padding: '2px 8px',
+                    borderRadius: '4px',
+                    fontSize: '11px',
+                    fontWeight: 500,
+                    background: 'rgba(255, 255, 255, 0.06)',
+                    border: '1px solid rgba(255, 255, 255, 0.15)',
+                    color: '#e2e8f0',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Select All
+                </button>
+                {selectedModelsList.length > 0 && (
+                  <button
+                    type="button"
+                    id="wizard-btn-deselect-all"
+                    onClick={handleDeselectAll}
+                    style={{
+                      padding: '2px 8px',
+                      borderRadius: '4px',
+                      fontSize: '11px',
+                      fontWeight: 500,
+                      background: 'transparent',
+                      border: '1px solid rgba(239, 68, 68, 0.3)',
+                      color: '#f87171',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Clear All
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+
           <div
             style={{
               maxHeight: '260px',
@@ -693,78 +904,113 @@ export const BYOKWizard: React.FC<BYOKWizardProps> = ({
               paddingRight: '4px'
             }}
           >
-            {(discoveredModels.length > 0 ? discoveredModels : (selectedProvider.best_free_models || []).map((m) => ({
-              id: m,
-              name: m,
-              provider: selectedProvider.id,
-              isFree: true,
-              category: 'Free' as const
-            }))).map((model) => {
-              const isChecked = selectedModelsList.includes(model.id) || selectedModel === model.id;
-              const isDefault = selectedModel === model.id;
-
-              return (
-                <div
-                  key={model.id}
-                  id={`wizard-model-row-${model.id}`}
+            {filteredModels.length === 0 ? (
+              <div
+                style={{
+                  padding: '24px 16px',
+                  textAlign: 'center',
+                  background: 'rgba(30, 41, 59, 0.3)',
+                  borderRadius: '6px',
+                  border: '1px dashed rgba(255, 255, 255, 0.1)'
+                }}
+              >
+                <p style={{ margin: 0, fontSize: '13px', color: '#94a3b8' }}>
+                  No models match your current search or category filter.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setModelFilterQuery('');
+                    setModelFilterCategory('all');
+                  }}
                   style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '10px 14px',
-                    borderRadius: '6px',
-                    border: isDefault ? '1px solid var(--accent-primary)' : '1px solid rgba(255, 255, 255, 0.08)',
-                    background: isDefault ? 'rgba(99, 102, 241, 0.12)' : 'rgba(30, 41, 59, 0.4)'
+                    marginTop: '8px',
+                    padding: '4px 12px',
+                    borderRadius: '4px',
+                    background: 'rgba(99, 102, 241, 0.2)',
+                    border: '1px solid rgba(99, 102, 241, 0.4)',
+                    color: '#c7d2fe',
+                    fontSize: '11px',
+                    cursor: 'pointer',
+                    fontWeight: 500
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <input
-                      type="checkbox"
-                      id={`chk-model-${model.id}`}
-                      checked={isChecked}
-                      onChange={() => toggleModelSelection(model.id)}
-                      style={{ cursor: 'pointer' }}
-                    />
-                    <div>
-                      <span style={{ fontSize: '13px', fontWeight: 500, color: '#f8fafc' }}>
-                        {model.name}
-                      </span>
-                      <div style={{ display: 'flex', gap: '6px', marginTop: '2px' }}>
-                        {model.isFree && (
-                          <span style={{ fontSize: '10px', color: '#34d399', fontWeight: 600 }}>Free</span>
-                        )}
-                        {model.category && (
-                          <span style={{ fontSize: '10px', color: '#94a3b8' }}>({model.category})</span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
+                  Reset Filter
+                </button>
+              </div>
+            ) : (
+              filteredModels.map((model) => {
+                const isChecked = selectedModelsList.includes(model.id) || selectedModel === model.id;
+                const isDefault = selectedModel === model.id;
 
-                  <button
-                    type="button"
-                    id={`btn-set-default-${model.id}`}
-                    onClick={() => {
-                      setSelectedModel(model.id);
-                      if (!selectedModelsList.includes(model.id)) {
-                        setSelectedModelsList([...selectedModelsList, model.id]);
-                      }
-                    }}
+                return (
+                  <div
+                    key={model.id}
+                    id={`wizard-model-row-${model.id}`}
                     style={{
-                      padding: '4px 8px',
-                      borderRadius: '4px',
-                      background: isDefault ? 'var(--accent-primary)' : 'rgba(255, 255, 255, 0.05)',
-                      border: 'none',
-                      color: isDefault ? '#ffffff' : '#94a3b8',
-                      fontSize: '11px',
-                      cursor: 'pointer',
-                      fontWeight: 600
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '10px 14px',
+                      borderRadius: '6px',
+                      border: isDefault ? '1px solid var(--accent-primary)' : '1px solid rgba(255, 255, 255, 0.08)',
+                      background: isDefault ? 'rgba(99, 102, 241, 0.12)' : 'rgba(30, 41, 59, 0.4)'
                     }}
                   >
-                    {isDefault ? 'Active Default' : 'Set as Default'}
-                  </button>
-                </div>
-              );
-            })}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <input
+                        type="checkbox"
+                        id={`chk-model-${model.id}`}
+                        checked={isChecked}
+                        onChange={() => toggleModelSelection(model.id)}
+                        style={{ cursor: 'pointer' }}
+                      />
+                      <div>
+                        <span style={{ fontSize: '13px', fontWeight: 500, color: '#f8fafc' }}>
+                          {model.name}
+                        </span>
+                        {model.name !== model.id && (
+                          <span style={{ fontSize: '11px', color: '#64748b', marginLeft: '6px', fontFamily: 'monospace' }}>
+                            {model.id}
+                          </span>
+                        )}
+                        <div style={{ display: 'flex', gap: '6px', marginTop: '2px' }}>
+                          {model.isFree && (
+                            <span style={{ fontSize: '10px', color: '#34d399', fontWeight: 600 }}>Free</span>
+                          )}
+                          {model.category && (
+                            <span style={{ fontSize: '10px', color: '#94a3b8' }}>({model.category})</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      id={`btn-set-default-${model.id}`}
+                      onClick={() => {
+                        setSelectedModel(model.id);
+                        if (!selectedModelsList.includes(model.id)) {
+                          setSelectedModelsList([...selectedModelsList, model.id]);
+                        }
+                      }}
+                      style={{
+                        padding: '4px 8px',
+                        borderRadius: '4px',
+                        background: isDefault ? 'var(--accent-primary)' : 'rgba(255, 255, 255, 0.05)',
+                        border: 'none',
+                        color: isDefault ? '#ffffff' : '#94a3b8',
+                        fontSize: '11px',
+                        cursor: 'pointer',
+                        fontWeight: 600
+                      }}
+                    >
+                      {isDefault ? 'Active Default' : 'Set as Default'}
+                    </button>
+                  </div>
+                );
+              })
+            )}
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '10px' }}>

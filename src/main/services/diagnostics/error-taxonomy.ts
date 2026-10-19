@@ -72,7 +72,10 @@ export function classifyDiagnosticError(
 ): ClassifiedError {
   const errMsg = (error instanceof Error ? error.message : typeof error === 'string' ? error : context.errorMessage || '').trim();
   const lowerMsg = errMsg.toLowerCase();
-  const status = context.statusCode;
+  // Gateway messages embed the HTTP status inline, e.g. "[GATEWAY] ... API error
+  // (401): User not found." — honor it when no explicit statusCode was passed.
+  const inlineStatus = parseInt((errMsg.match(/\((\d{3})\)/) || [])[1] || '', 10);
+  const status = Number.isFinite(inlineStatus) ? inlineStatus : context.statusCode;
   const rawBody = context.responseBody || context.rawEvidenceChunk || '';
   const lowerBody = rawBody.toLowerCase();
   const signupUrl = context.signupUrl || 'https://openrouter.ai/keys';
@@ -220,14 +223,17 @@ export function classifyDiagnosticError(
     lowerMsg.includes('invalid api key') ||
     lowerMsg.includes('invalid key') ||
     lowerMsg.includes('authentication') ||
+    lowerMsg.includes('user not found') ||
+    lowerMsg.includes('key rejected') ||
+    lowerMsg.includes('credentials') ||
     lowerBody.includes('invalid_api_key')
   ) {
     return {
       code: 'CONFIG_INVALID',
       humanMessage: 'Key rejected (401/403)',
-      remedy: `Key is invalid or revoked; regenerate at ${signupUrl}`,
-      actionUrl: signupUrl,
-      actionLabel: 'Regenerate API Key',
+      remedy: `The provider rejected your credentials ("${errMsg.slice(0, 160)}"). Re-save your key in Settings > Providers, or switch to Auto — FCC fails over to keyless free supply automatically.`,
+      actionUrl: 'ty-code://settings/providers',
+      actionLabel: 'Connect Provider',
       rawEvidence: rawBody || errMsg
     };
   }
@@ -305,14 +311,16 @@ export function classifyDiagnosticError(
     };
   }
 
-  // Default fallback classification
+  // Default fallback classification: an unknown failure is a provider-side
+  // problem, not proof of a blocked network. Auto-failover already tried the
+  // pool; suggest model switch instead of a misleading DNS diagnosis.
   return {
-    code: 'NETWORK_BLOCKED',
-    humanMessage: 'DNS/conn/CSP/proxy failure',
-    remedy: `Network path blocked: ${errMsg}; check proxy/firewall`,
-    suggestedAction: 'check-network',
-    actionLabel: 'Retry',
-    actionUrl: 'ty-code://action/retry',
+    code: 'PROVIDER_DOWN',
+    humanMessage: 'Unhandled provider failure',
+    remedy: `Unexpected provider error: ${errMsg.slice(0, 200)}. Retry, switch model in Settings, or run Diagnostics for the full trace.`,
+    actionUrl: 'ty-code://settings/providers',
+    actionLabel: 'Switch Model',
+    suggestedFallback: fallback,
     rawEvidence: rawBody || errMsg
   };
 }

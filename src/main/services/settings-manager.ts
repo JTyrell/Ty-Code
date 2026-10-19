@@ -6,9 +6,11 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   SETTINGS_SCHEMA_VERSION,
-  EditorSettingsSchema,
-  ExtensionSettingsSchema,
-  LanguageServerSettingsSchema,
+   EditorSettingsSchema,
+   ExtensionSettingsSchema,
+   GeneralSettingsSchema,
+   IntegrationsSettingsSchema,
+   LanguageServerSettingsSchema,
   ModelSettingsSchema,
   ProviderSettingsSchema,
   RoutingSettingsSchema,
@@ -93,6 +95,18 @@ function normalizeGlobal(value: unknown): SettingsData {
     }),
     SecuritySettingsSchema.safeParse({
       security: { ...DEFAULT_SECURITY_POLICY, ...(isRecord(source.security) ? source.security : {}) }
+    }),
+    IntegrationsSettingsSchema.safeParse({
+      integrations: isRecord(source.integrations) ? source.integrations : defaults.integrations,
+      modules: isRecord(source.modules) ? source.modules : defaults.modules
+    }),
+    GeneralSettingsSchema.safeParse({
+      runInBackground: source.runInBackground ?? defaults.runInBackground,
+      notifyOnBackgroundCompletion: source.notifyOnBackgroundCompletion ?? defaults.notifyOnBackgroundCompletion,
+      notifyOnAttentionNeeded: source.notifyOnAttentionNeeded ?? defaults.notifyOnAttentionNeeded,
+      freeMode: source.freeMode ?? defaults.freeMode,
+      quotaAlertThreshold: source.quotaAlertThreshold ?? defaults.quotaAlertThreshold,
+      autoRotateProviders: source.autoRotateProviders ?? defaults.autoRotateProviders
     }),
     TelemetrySettingsSchema.safeParse({
       telemetry: { ...defaults.telemetry, ...(isRecord(source.telemetry) ? source.telemetry : {}) }

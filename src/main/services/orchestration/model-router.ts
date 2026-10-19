@@ -37,6 +37,7 @@ import { quotaTracker } from './quota-tracker';
 import { fccCatalogSync } from '../fcc/catalog-sync';
 import { fccIntegrityChecker } from './fcc-integrity';
 import { getVerifiedModels, type VerifiedModelConfig } from '../verified-models';
+import { providerHasOwnKey } from '../../providers/provider-gateway';
 
 export interface ModelCatalogEntry {
   modelId: string;
@@ -234,7 +235,7 @@ export class ModelRouter {
         providerId: vm.providerId,
         providerName: ModelRouter.providerDisplayName(vm.providerId),
         tier: ModelRouter.classifyTierFromId(vm.modelId, vm.name || ''),
-        isFree: !vm.requiresKey,
+        isFree: !vm.requiresKey || (vm.providerId || '').toLowerCase().includes('opencode'),
         baseLatencyMs: ModelRouter.baseLatencyFor(vm.providerId),
         provenance: vm.requiresKey ? 'your key' : 'anonymous'
       });
@@ -289,8 +290,13 @@ export class ModelRouter {
 
     const candidatePool = availableCandidates.length > 0 ? availableCandidates : allModels;
 
-    // 4. Rank candidates according to multi-factor criteria
-    const ranked = candidatePool.map((entry) => {
+    // FCC policy: default ranking is FREE-first. Paid models become routable
+    // only when the user supplies their own key for that provider (BYOK).
+    const freePool = prefs.preferFreeModels === false
+      ? candidatePool
+      : filterRoutableFreeFirst(candidatePool);
+
+    const ranked = (freePool.length > 0 ? freePool : candidatePool).map((entry) => {
       return this.scoreCandidate(entry, targetTier, prefs);
     });
 
@@ -537,3 +543,12 @@ export class ModelRouter {
 }
 
 export const modelRouter = ModelRouter.getInstance();
+
+/**
+ * FCC free-default policy: a model is routable by default only when it is free
+ * (anonymous gateway / :free pool / baked supply) or the provider holds its own
+ * credentials (BYOK). Borrowed credentials from another provider never qualify.
+ */
+function filterRoutableFreeFirst(pool: ModelCatalogEntry[]): ModelCatalogEntry[] {
+  return pool.filter((entry) => entry.isFree || providerHasOwnKey(entry.providerId));
+}
