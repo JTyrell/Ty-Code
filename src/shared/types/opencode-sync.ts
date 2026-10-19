@@ -61,7 +61,12 @@ export interface OpenCodeFreeTierSummary {
   totalFreeModels: number;
 }
 
-export type AgentFramework = 'native' | 'opencode';
+/**
+ * Ty-Code framework selector values.
+ * 'collaborative' = Ty-Code Collaborative (native pair-programming engine)
+ * 'autonomous'    = Ty-Code Autonomous (3-agent multi-harness engine)
+ */
+export type AgentFramework = 'collaborative' | 'autonomous';
 
 export interface OpenCodeImportResult {
   success: boolean;

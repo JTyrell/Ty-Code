@@ -33,6 +33,11 @@ export { DEFAULT_PRESET_MODELS, getVerifiedModels, type VerifiedModelConfig };
  * Direct Multi-Provider Gateway with Vault Integration (KeyHarvest-3)
  * Reads credentials dynamically from credential-vault via safeStorage at request time.
  */
+function isGoogleProviderId(providerId: string): boolean {
+  const p = (providerId || '').toLowerCase();
+  return p === 'gemini' || p.startsWith('gemini') || p.includes('google');
+}
+
 export async function sendChatRequest(
   providerId: string,
   modelId: string,
@@ -65,14 +70,16 @@ export async function sendChatRequest(
   }
 
   // Gracefully fallback to standard endpoints if model is not directly listed
-  if (!config) {
-    if (norm === 'openrouter') {
-      config = { modelId, name: modelId, url: 'https://openrouter.ai/api/v1/chat/completions', requiresKey: true, providerId: 'openrouter' };
-    } else if (norm === 'groq') {
-      config = { modelId, name: modelId, url: 'https://api.groq.com/openai/v1/chat/completions', requiresKey: true, providerId: 'groq' };
-    } else if (norm === 'anthropic' || norm === 'claude') {
-      config = { modelId, name: modelId, url: 'https://api.anthropic.com/v1/messages', requiresKey: true, providerId: 'anthropic' };
-    } else if (isKilo) {
+    if (!config) {
+      if (norm === 'openrouter') {
+        config = { modelId, name: modelId, url: 'https://openrouter.ai/api/v1/chat/completions', requiresKey: true, providerId: 'openrouter' };
+      } else if (norm === 'groq') {
+        config = { modelId, name: modelId, url: 'https://api.groq.com/openai/v1/chat/completions', requiresKey: true, providerId: 'groq' };
+      } else if (norm === 'anthropic' || norm === 'claude') {
+        config = { modelId, name: modelId, url: 'https://api.anthropic.com/v1/messages', requiresKey: true, providerId: 'anthropic' };
+      } else if (isGoogleProviderId(providerId)) {
+        config = { modelId, name: modelId, url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', requiresKey: true, providerId: 'google-ai-studio' };
+      } else if (isKilo) {
       config = { modelId, name: modelId, url: 'https://api.kilo.ai/api/gateway/chat/completions', requiresKey: false, providerId: 'openkilo' };
     } else if (isCopilot) {
       config = { modelId, name: modelId, url: 'https://api.githubcopilot.com/chat/completions', requiresKey: true, providerId: 'copilot' };
@@ -590,8 +597,34 @@ export class ProviderGateway {
   public static modelClassifier = modelClassifier;
   public static healthMonitor = providerHealthMonitor;
 
-  static getEndpoint(provider: ProviderType, customEndpoints: Partial<Record<ProviderType, string>> = {}): string {
-    if (customEndpoints && customEndpoints[provider]) return customEndpoints[provider]!;
+  /**
+   * Google AI Studio / Gemini detection. Accepts the FCC id, the free-registry
+   * id, and the generic 'gemini' alias.
+   */
+  private static isGoogleProvider(providerId: string): boolean {
+    const p = (providerId || '').toLowerCase();
+    return p === 'gemini' || p.startsWith('gemini') || p.includes('google');
+  }
+
+  /**
+   * Normalize a generativelanguage.googleapis.com base URL to the API root
+   * (no /v1beta, no /openai suffix) so the correct route can be built.
+   */
+  private static googleApiRoot(baseUrl: string): string {
+    return baseUrl
+      .replace(/\/openai\/?$/, '')
+      .replace(/\/v1beta\/?$/, '')
+      .replace(/\/+$/, '');
+  }
+
+  private static googleChatUrl(baseUrl: string, configuredUrl?: string): string | undefined {
+    if (!configuredUrl || configuredUrl.includes('generativelanguage.googleapis.com')) {
+      return `${this.googleApiRoot(baseUrl)}/v1beta/openai/chat/completions`;
+    }
+    return configuredUrl;
+  }
+
+  static getEndpoint(provider: ProviderType, customEndpoints: Partial<Record<ProviderType, string>> = {}): string {    if (customEndpoints && customEndpoints[provider]) return customEndpoints[provider]!;
     const freeProvider = freeProviderRegistry.getProvider(provider);
     if (freeProvider?.base_url && freeProvider.base_url !== 'auto') return freeProvider.base_url;
     const preconfigured = getPreconfiguredProvider(provider);
@@ -633,6 +666,54 @@ export class ProviderGateway {
 
     const preconfigured = getPreconfiguredProvider(providerId);
     const baseUrl = (customEndpoint || preconfigured?.baseUrl || this.getEndpoint(providerId as ProviderType, {})).replace(/\/+$/, '');
+
+    // Google AI Studio / Gemini: the native list endpoint accepts the key only
+    // through the x-goog-api-key header (covers both classic AIza... keys and
+    // the new AQ.Ab8... Cloud keys). Bearer auth is rejected here.
+    if (this.isGoogleProvider(providerId)) {
+      const rootUrl = this.googleApiRoot(baseUrl);
+      const listUrl = `${rootUrl}/v1beta/models`;
+      const listHeaders: Record<string, string> = { 'Accept': 'application/json' };
+      if (apiKey?.trim()) listHeaders['x-goog-api-key'] = apiKey.trim();
+      const listRes = await fetch(listUrl, {
+        method: 'GET',
+        headers: listHeaders,
+        signal: AbortSignal.timeout(10_000)
+      });
+      if (!listRes.ok) {
+        const errText = await listRes.text().catch(() => '');
+        if (listRes.status === 401 || listRes.status === 403 || (listRes.status === 400 && /api key not valid|permission/i.test(errText))) {
+          throw new Error('Invalid API Key');
+        }
+        throw new Error(`Failed to fetch Gemini models (${listRes.status}): ${errText.slice(0, 150)}`);
+      }
+      const listData = await listRes.json() as { models?: Array<{ name?: string; displayName?: string; description?: string; inputTokenLimit?: number }> };
+      const gList = Array.isArray(listData.models) ? listData.models : [];
+      const gModels = gList
+        .map((m) => {
+          const id = String(m.name || '').replace(/^models\//, '');
+          return {
+            id,
+            name: m.displayName || id,
+            description: m.description,
+            context_length: m.inputTokenLimit
+          };
+        })
+        .filter((m) => m.id && !m.id.includes('embedding') && !m.id.includes('aqa') && !m.id.includes('imagen') && !m.id.includes('veo'));
+      return gModels.map((m) => {
+        const free = isFreeModel(m.id, providerId) || m.id.startsWith('gemini');
+        const category = categorizeModel(m.id, free, providerId);
+        return {
+          id: m.id,
+          name: m.name || m.id,
+          provider: providerId,
+          isFree: free,
+          category,
+          contextLength: m.context_length,
+          description: m.description
+        };
+      });
+    }
 
     const headers: Record<string, string> = {
       'Accept': 'application/json',
@@ -828,7 +909,8 @@ export class ProviderGateway {
       };
     }
 
-    const testModel = modelId || preconfigured?.defaultModel || (providerId === 'groq' ? 'llama-3.3-70b-versatile' : providerId.includes('openkilo') ? 'kilo-auto/free' : 'dots-studio/dots-3-note-preview:free');
+    const isGoogle = this.isGoogleProvider(providerId);
+    const testModel = modelId || (isGoogle ? 'gemini-2.0-flash' : preconfigured?.defaultModel || (providerId === 'groq' ? 'llama-3.3-70b-versatile' : providerId.includes('openkilo') ? 'kilo-auto/free' : 'dots-studio/dots-3-note-preview:free'));
 
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -839,8 +921,12 @@ export class ProviderGateway {
       headers['X-Title'] = 'Ty-Code Desktop';
     }
 
+    // Google's OpenAI-compatible surface lives at /v1beta/openai/chat/completions
+    // (Bearer accepted); the bare /v1beta/chat/completions path 404s.
+    const chatUrl = isGoogle ? this.googleChatUrl(baseUrl)! : `${baseUrl}/chat/completions`;
+
     try {
-      const response = await fetch(`${baseUrl}/chat/completions`, {
+      const response = await fetch(chatUrl, {
         method: 'POST',
         headers,
         body: JSON.stringify({
@@ -854,20 +940,25 @@ export class ProviderGateway {
       const latencyMs = Math.max(1, Math.round(performance.now() - startTime));
 
       if (!response.ok) {
-        if (response.status === 401 || response.status === 403) {
+        const probeBody = await response.text().catch(() => '');
+        const invalidKey = response.status === 401 || response.status === 403
+          || (response.status === 400 && /api key not valid|permission/i.test(probeBody));
+        if (invalidKey) {
+          const hint = isGoogle && /AQ\./i.test(apiKey || '')
+            ? 'Invalid API Key (new-format Google Cloud key detected — make sure the Generative Language API is enabled for that key\'s project at aistudio.google.com/app/apikey, or create a classic AI Studio key)'
+            : 'Invalid API Key';
           return {
             success: false,
             latencyMs,
-            error: 'Invalid API Key'
+            error: hint
           };
         }
         let parsedError = `HTTP ${response.status}`;
         try {
-          const errJson = await response.json() as { error?: { message?: string }; message?: string };
+          const errJson = JSON.parse(probeBody) as { error?: { message?: string }; message?: string };
           parsedError = errJson.error?.message || errJson.message || parsedError;
         } catch {
-          const errText = await response.text();
-          if (errText) parsedError = errText.slice(0, 150);
+          if (probeBody) parsedError = probeBody.slice(0, 150);
         }
         providerHealthMonitor.recordRequestOutcome(providerId, false, latencyMs, parsedError);
         return {

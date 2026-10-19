@@ -1411,10 +1411,12 @@ function registerIpcHandlers(): void {
     }
   });
 
-  ipcMain.handle('opencode:set-framework', async (event, framework: AgentFramework) => {
+  ipcMain.handle('agent-framework:set', async (event, framework: AgentFramework) => {
     if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
     try {
-      const activeHarness = framework === 'opencode' ? 'opencode' : 'claude-code';
+      // 'autonomous' keeps the 3-agent multi-harness engine (Build, Plan,
+      // General); 'collaborative' keeps the native pair-programming engine.
+      const activeHarness = framework === 'autonomous' ? 'opencode' : 'claude-code';
       await settingsManager.saveLayer('global', { activeHarness } as any);
       return { success: true, data: framework };
     } catch (err: unknown) {
@@ -1422,11 +1424,11 @@ function registerIpcHandlers(): void {
     }
   });
 
-  ipcMain.handle('opencode:get-framework', async (event) => {
+  ipcMain.handle('agent-framework:get', async (event) => {
     if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
     try {
       const settings = await settingsManager.getEffectiveSettings();
-      const framework: AgentFramework = settings.activeHarness === 'opencode' ? 'opencode' : 'native';
+      const framework: AgentFramework = settings.activeHarness === 'opencode' ? 'autonomous' : 'collaborative';
       return { success: true, data: framework };
     } catch (err: unknown) {
       return { success: false, error: err instanceof Error ? err.message : String(err) };
@@ -2091,6 +2093,61 @@ function registerPerfHandlers(): void {
 }
 
 function registerProviderHandlers(): void {
+  ipcMain.handle('provider:get-connection-status', async (event) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      const health = providerHealthMonitor.getAllHealthStatuses();
+      const supply = opencodeServiceManager.getStatus();
+      const statuses: Record<string, {
+        connected: boolean;
+        latencyMs: number;
+        successfulRequests: number;
+        failedRequests: number;
+        isRateLimited: boolean;
+        autoDisabled: boolean;
+      }> = {};
+
+      for (const [providerId, h] of Object.entries(health)) {
+        statuses[providerId] = {
+          connected:
+            h.successfulRequests > 0 ||
+            (providerId === 'opencode' && supply.hostedReachable === true) ||
+            (providerId === 'openkilo' && supply.kiloReachable === true),
+          latencyMs: h.latencyMs,
+          successfulRequests: h.successfulRequests,
+          failedRequests: h.failedRequests,
+          isRateLimited: h.isRateLimited,
+          autoDisabled: h.autoDisabled
+        };
+      }
+      // The always-on hosted supply anchors stay connected even before the FCC
+      // layer records its first request outcome.
+      if (!statuses.opencode) {
+        statuses.opencode = {
+          connected: supply.hostedReachable === true,
+          latencyMs: supply.hostedLatencyMs ?? 0,
+          successfulRequests: 0,
+          failedRequests: 0,
+          isRateLimited: false,
+          autoDisabled: false
+        };
+      }
+      if (!statuses.openkilo) {
+        statuses.openkilo = {
+          connected: supply.kiloReachable === true,
+          latencyMs: supply.kiloLatencyMs ?? 0,
+          successfulRequests: 0,
+          failedRequests: 0,
+          isRateLimited: false,
+          autoDisabled: false
+        };
+      }
+      return { success: true, data: statuses };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
   ipcMain.handle('provider:get-registry', async (event) => {
     if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
     try {

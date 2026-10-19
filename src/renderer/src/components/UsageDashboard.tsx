@@ -46,6 +46,7 @@ export const UsageDashboard: React.FC = () => {
   } = useUsageDashboardStore();
 
   const openSettings = useChatStore((s) => s.openSettings);
+  const settings = useChatStore((s) => s.settings);
   const openWizard = useOnboardingStore((s) => s.openWizard);
 
   const [activeTab, setActiveTab] = useState<'unified' | 'quotas' | 'ledger' | 'rules' | 'logs'>('unified');
@@ -114,6 +115,23 @@ export const UsageDashboard: React.FC = () => {
   const engineRunning = fccEngine?.running ?? false;
   const engineHealthColor = fccEngine?.health === 'healthy' ? '#34d399' : fccEngine?.health === 'degraded' ? '#fbbf24' : '#64748b';
 
+  // Active binding sync (mirrors the ModelSelector state in the chat toolbar)
+  const isAutoBinding = !settings?.activeProvider || settings.activeProvider === 'auto';
+  const rawActiveProvider = (settings?.activeProvider || 'auto') as string;
+  const normalizedActiveProvider = rawActiveProvider === 'auto'
+    ? 'openkilo'
+    : (rawActiveProvider.replace(/-free$/, '') || 'openkilo');
+  const activeModelShort = isAutoBinding
+    ? 'Auto (FCC decides)'
+    : (settings?.activeModel || 'kilo-auto/free').split('/').pop()?.replace(':free', '') || (settings?.activeModel || 'kilo-auto/free');
+  const activeQuota = (quotaMeters?.providers || []).find((p) => {
+    const pid = (p.providerId || '').replace(/-free$/, '');
+    return pid === normalizedActiveProvider || (p.providerId || '').includes(normalizedActiveProvider);
+  });
+  const activePercentUsed = activeQuota?.percentUsed ?? 0;
+  const activeRemainingTokens = activeQuota?.remainingTokens;
+  const activeLimitTokens = activeQuota?.limitTokens;
+
   const formatTokens = (tokens: number): string => {
     if (tokens >= 1_000_000_000) return `${(tokens / 1_000_000_000).toFixed(2)}B`;
     if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`;
@@ -140,7 +158,8 @@ export const UsageDashboard: React.FC = () => {
         style={{
           width: '920px',
           maxWidth: '95vw',
-          maxHeight: '88vh',
+          height: '94vh',
+          maxHeight: '94vh',
           backgroundColor: '#0f172a',
           borderRadius: '14px',
           border: '1px solid rgba(56, 189, 248, 0.25)',
@@ -263,6 +282,16 @@ export const UsageDashboard: React.FC = () => {
           </div>
         </div>
 
+        {/* Scroll Zone — hero metrics, savings meter and engine banner scroll with the card */}
+        <div
+          id="usage-dash-scroll-zone"
+          style={{
+            flex: '1 1 auto',
+            minHeight: 0,
+            overflowY: 'auto',
+            overscrollBehavior: 'contain'
+          }}
+        >
         {/* Hero Metrics Grid */}
         <div
           style={{
@@ -488,13 +517,91 @@ export const UsageDashboard: React.FC = () => {
           </div>
         </div>
 
+        </div> {/* /usage-dash-scroll-zone */}
+
+        {/* Active Binding strip — pinned; mirrors ModelSelector & live quotas even when the upper card area is scrolled away */}
+        <div
+          id="fcc-active-binding-strip"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '12px',
+            margin: '0 24px 8px 24px',
+            padding: '10px 16px',
+            borderRadius: '8px',
+            backgroundColor: 'rgba(30, 41, 59, 0.7)',
+            border: '1px solid rgba(56, 189, 248, 0.3)'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+            <Sparkles size={15} color="#38bdf8" style={{ flexShrink: 0 }} />
+            <div style={{ minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                <span style={{ fontSize: '12px', fontWeight: 600, color: '#f1f5f9', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {activeModelShort}
+                </span>
+                <span
+                  style={{
+                    fontSize: '10px',
+                    fontWeight: 600,
+                    padding: '1px 8px',
+                    borderRadius: '10px',
+                    backgroundColor: isAutoBinding ? 'rgba(16, 185, 129, 0.2)' : 'rgba(56, 189, 248, 0.2)',
+                    color: isAutoBinding ? '#34d399' : '#38bdf8',
+                    border: `1px solid ${isAutoBinding ? 'rgba(16, 185, 129, 0.4)' : 'rgba(56, 189, 248, 0.4)'}`
+                  }}
+                >
+                  {isAutoBinding ? 'Auto' : 'Manual'}
+                </span>
+              </div>
+              <div style={{ fontSize: '10px', color: '#94a3b8', marginTop: '2px', whiteSpace: 'nowrap' }}>
+                via {isAutoBinding ? 'OpenKilo (FCC free pool)' : activeQuota?.providerName || normalizedActiveProvider}
+                {isAutoBinding ? '' : ' — active in Model Selector'}
+              </div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0 }}>
+            <span style={{ fontSize: '12px', fontWeight: 700, color: '#38bdf8' }}>
+              {activeRemainingTokens !== undefined
+                ? `${formatTokens(Math.max(0, activeRemainingTokens))} tok left`
+                : 'No metered quota'}
+            </span>
+            <span style={{ fontSize: '10px', color: '#94a3b8' }}>
+              {activeLimitTokens !== undefined
+                ? `of ${formatTokens(activeLimitTokens)} • ${activePercentUsed.toFixed(1)}% used`
+                : activeQuota
+                ? `${activePercentUsed.toFixed(1)}% used`
+                : '\u2014'}
+            </span>
+            {activeQuota?.isExhausted && (
+              <span
+                style={{
+                  fontSize: '10px',
+                  padding: '2px 8px',
+                  borderRadius: '10px',
+                  backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                  color: '#ef4444',
+                  border: '1px solid rgba(239, 68, 68, 0.3)'
+                }}
+              >
+                Exhausted — failover ready
+              </span>
+            )}
+          </div>
+        </div>
+
         {/* Tab Navigation */}
         <div
+          id="usage-dash-tab-nav"
           style={{
             display: 'flex',
             gap: '8px',
             padding: '8px 24px',
-            borderBottom: '1px solid rgba(51, 65, 85, 0.4)'
+            borderBottom: '1px solid rgba(51, 65, 85, 0.4)',
+            flexShrink: 0,
+            overflowX: 'auto',
+            overflowY: 'hidden'
           }}
         >
           <button
@@ -613,10 +720,21 @@ export const UsageDashboard: React.FC = () => {
           </button>
         </div>
 
-        {/* Body Content */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: activeTab === 'unified' ? '0' : '16px 24px' }}>
+        {/* Body Content — lower two-thirds of the card; internal scrolling preserved */}
+        <div
+          id="usage-dash-tab-body"
+          style={{
+            flex: '0 0 auto',
+            height: '64vh',
+            maxHeight: '64vh',
+            overflowY: 'auto',
+            overscrollBehavior: 'contain',
+            boxSizing: 'border-box',
+            padding: activeTab === 'unified' ? '0' : '16px 24px'
+          }}
+        >
           {activeTab === 'unified' && (
-            <div style={{ height: '620px', overflow: 'hidden' }}>
+            <div style={{ height: '100%', minHeight: '64vh', overflow: 'hidden' }}>
               <ProviderDashboard onClose={closeDashboard} />
             </div>
           )}

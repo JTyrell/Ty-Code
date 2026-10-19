@@ -34,7 +34,7 @@ import type {
   RoutingPreferenceMode,
   RouterUserPreferences
 } from '../../../../shared/types/model-router';
-import type { ProviderType } from '../../../../preload/types';
+import type { ProviderType, ProviderConnectivitySnapshot } from '../../../../preload/types';
 
 export const TIER_LABELS: Record<ModelTier, { name: string; color: string; bg: string; border: string }> = {
   tier_s_reasoning: {
@@ -204,6 +204,7 @@ export const ModelSelector: React.FC = () => {
   const [routingMode, setRoutingMode] = useState<RoutingPreferenceMode>('auto');
   const [catalog, setCatalog] = useState<Record<ModelTier, RankedModelCandidate[]>>(FALLBACK_CATALOG);
   const [catalogLoading, setCatalogLoading] = useState(false);
+  const [connStatus, setConnStatus] = useState<Record<string, ProviderConnectivitySnapshot>>({});
   const [dropdownPosition, setDropdownPosition] = useState<DropdownPosition | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const dropdownMenuRef = useRef<HTMLDivElement>(null);
@@ -347,9 +348,26 @@ export const ModelSelector: React.FC = () => {
     setCatalogLoading(true);
     try {
       if (window.electronAPI?.modelRouterGetAvailableModels) {
-        const res = await window.electronAPI.modelRouterGetAvailableModels();
-        if (res.success && res.data) {
-          setCatalog(res.data);
+        const fetchConnStatus = async () => {
+          try {
+            if (window.electronAPI?.providerGetConnectionStatus) {
+              return await window.electronAPI.providerGetConnectionStatus();
+            }
+          } catch {
+            // Connectivity snapshot is best-effort
+          }
+          return null;
+        };
+
+        const [catalogRes, statusRes] = await Promise.all([
+          window.electronAPI.modelRouterGetAvailableModels(),
+          fetchConnStatus()
+        ]);
+        if (catalogRes.success && catalogRes.data) {
+          setCatalog(catalogRes.data);
+        }
+        if (statusRes?.success && statusRes.data) {
+          setConnStatus(statusRes.data);
         }
       }
     } catch {
@@ -357,6 +375,15 @@ export const ModelSelector: React.FC = () => {
     } finally {
       setCatalogLoading(false);
     }
+  };
+
+  // A provider counts as connected only when real traffic has succeeded there
+  // (measured request outcomes or a live hosted-supply probe).
+  const isProviderConnected = (providerId?: string): boolean => {
+    if (!providerId) return false;
+    const normalized = providerId.replace(/-free$/, '');
+    const status = connStatus[normalized] || connStatus[providerId];
+    return Boolean(status?.connected);
   };
 
   const handleModeChange = async (mode: RoutingPreferenceMode) => {
@@ -384,6 +411,15 @@ export const ModelSelector: React.FC = () => {
     // Preserve conversation context: DO NOT clear messages, simply switch active model in settings
     const stripped = candidate.providerId.replace(/-free$/, '');
     const targetProvider = ((stripped === 'opencode-built-in' ? 'opencode' : stripped) || 'openkilo') as ProviderType;
+
+    // Keyed providers that never completed a verified request will fail with
+    // CONFIG_MISSING on send — surface the connect requirement up front.
+    if (candidate.provenance === 'your key' && !isProviderConnected(candidate.providerId)) {
+      toast.warning(
+        'Connect required',
+        `${candidate.providerName} needs its own API key — add it in Settings → Providers. The model stays selected for when the key is active.`
+      );
+    }
 
     await saveSettings({
       activeModel: candidate.modelId,
@@ -628,15 +664,21 @@ export const ModelSelector: React.FC = () => {
             );
           })()}
 
-          {/* Grouped Models List */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {(Object.keys(catalog) as ModelTier[]).map((tierKey) => {
-              const tierInfo = TIER_LABELS[tierKey];
-              const modelsInTier = catalog[tierKey] || [];
-              if (modelsInTier.length === 0) return null;
+          {/* Grouped Models List — first by connection state, then by tier */}
+          {(() => {
+            const tiers = Object.keys(catalog) as ModelTier[];
+            const connectedModels = (models: RankedModelCandidate[]) =>
+              models.filter((m) => isProviderConnected(m.providerId));
+            const pendingModels = (models: RankedModelCandidate[]) =>
+              models.filter((m) => !isProviderConnected(m.providerId));
+            const connectedTotal = tiers.reduce((n, t) => n + connectedModels(catalog[t] || []).length, 0);
+            const pendingTotal = tiers.reduce((n, t) => n + pendingModels(catalog[t] || []).length, 0);
 
+            const renderTierGroup = (tierKey: ModelTier, models: RankedModelCandidate[], groupKey: string) => {
+              if (models.length === 0) return null;
+              const tierInfo = TIER_LABELS[tierKey];
               return (
-                <div key={tierKey} style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                <div key={groupKey} style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
                   <div
                     style={{
                       display: 'flex',
@@ -652,7 +694,7 @@ export const ModelSelector: React.FC = () => {
                     <span>{tierInfo.name}</span>
                   </div>
 
-                  {modelsInTier.map((candidate) => {
+                  {models.map((candidate) => {
                     const isSelected = activeModelId === candidate.modelId || activeModelId.includes(candidate.modelId);
 
                     return (
@@ -766,8 +808,69 @@ export const ModelSelector: React.FC = () => {
                   })}
                 </div>
               );
-            })}
-          </div>
+            };
+
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {/* Connected / Active — providers with at least one verified success */}
+                {connectedTotal > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div
+                      id="models-group-connected"
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '3px 4px',
+                        borderRadius: '4px',
+                        background: 'rgba(16, 185, 129, 0.08)',
+                        border: '1px solid rgba(16, 185, 129, 0.22)'
+                      }}
+                    >
+                      <ShieldCheck size={11} color="#34d399" style={{ flexShrink: 0 }} />
+                      <span style={{ fontSize: '10px', fontWeight: 700, color: '#34d399', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        Connected / Active
+                      </span>
+                      <span style={{ marginLeft: 'auto', fontSize: '9px', color: 'rgba(52, 211, 153, 0.75)' }}>
+                        {connectedTotal}
+                      </span>
+                    </div>
+                    {tiers.map((tierKey) => renderTierGroup(tierKey, connectedModels(catalog[tierKey] || []), `conn-${tierKey}`))}
+                  </div>
+                )}
+
+                {/* Disconnected / Inactive — providers that have not completed a verified success yet */}
+                {pendingTotal > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div
+                      id="models-group-inactive"
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '3px 4px',
+                        borderRadius: '4px',
+                        background: 'rgba(148, 163, 184, 0.08)',
+                        border: '1px solid rgba(148, 163, 184, 0.22)'
+                      }}
+                    >
+                      <Clock size={11} color="#94a3b8" style={{ flexShrink: 0 }} />
+                      <span style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        Disconnected / Inactive
+                      </span>
+                      <span style={{ marginLeft: 'auto', fontSize: '9px', color: 'rgba(148, 163, 184, 0.8)' }}>
+                        {pendingTotal}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: '9px', color: 'var(--text-muted)', padding: '0 4px' }}>
+                      Connect the provider (Settings → Providers) to activate these models.
+                    </div>
+                    {tiers.map((tierKey) => renderTierGroup(tierKey, pendingModels(catalog[tierKey] || []), `pend-${tierKey}`))}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </div>,
         document.body
       )}

@@ -495,19 +495,24 @@ export class ModelRouter {
           else if (model.capabilities.coding) tier = 'tier_a_coding';
           else if (model.capabilities.fast) tier = 'tier_c_fast';
 
+          // FCC-managed free supply is the anonymous hosted gateway. Providers
+          // whose API requires a key (Zhipu, Baichuan, …) must be presented as
+          // BYOK ('your key'), never as FCC free — otherwise selecting their
+          // models without a key immediately produces CONFIG_MISSING.
+          const keylessProvider = provider.authMethod !== 'api_key';
           grouped[tier].push({
             modelId: model.id,
             modelName: model.name,
             providerId: provider.id,
             providerName: provider.name,
             tier,
-            isFree: model.isFree,
+            isFree: keylessProvider ? model.isFree : false,
             latencyMs: provider.latencyMs || 250,
             healthScore: provider.health === 'healthy' ? 1.0 : 0.7,
             isRateLimited: false,
-            compositeRankScore: 180 + (model.isFree ? 20 : 0),
+            compositeRankScore: 180 + (keylessProvider && model.isFree ? 20 : 0),
             selectionReason: model.description || `Powered by free-claude-code (${provider.name})`,
-            provenance: model.provenance || 'FCC'
+            provenance: keylessProvider ? (model.provenance || 'FCC') : 'your key'
           });
         }
       }

@@ -373,6 +373,7 @@ const api: ElectronAPI = {
 
   // Phase 2.1: Provider Onboarding & Dynamic Discovery
   providerGetRegistry: () => ipcRenderer.invoke('provider:get-registry'),
+  providerGetConnectionStatus: () => ipcRenderer.invoke('provider:get-connection-status'),
   providerGetModels: (params) => ipcRenderer.invoke('provider:get-models', params),
   providerTestConnection: (params) => ipcRenderer.invoke('provider:test-connection', params),
   openExternal: (url: string) => ipcRenderer.invoke('app:open-external', url),
@@ -481,8 +482,8 @@ const api: ElectronAPI = {
   opencodeDetect: () => ipcRenderer.invoke('opencode:detect'),
   opencodeGetFreeSummary: () => ipcRenderer.invoke('opencode:get-free-summary'),
   opencodeImportProviders: () => ipcRenderer.invoke('opencode:import-providers'),
-  opencodeSetFramework: (framework: string) => ipcRenderer.invoke('opencode:set-framework', framework),
-  opencodeGetFramework: () => ipcRenderer.invoke('opencode:get-framework'),
+  agentFrameworkSet: (framework: string) => ipcRenderer.invoke('agent-framework:set', framework),
+  agentFrameworkGet: () => ipcRenderer.invoke('agent-framework:get'),
   opencodeGetMergedProviders: () => ipcRenderer.invoke('opencode:get-merged-providers'),
   opencodeGetServiceStatus: () => ipcRenderer.invoke('opencode:get-service-status'),
   opencodeRefreshStandardSupply: () => ipcRenderer.invoke('opencode:refresh-standard-supply'),

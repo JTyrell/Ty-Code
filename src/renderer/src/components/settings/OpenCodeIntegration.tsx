@@ -51,7 +51,11 @@ export const OpenCodeIntegration: React.FC<OpenCodeIntegrationProps> = ({
   const [isScanning, setIsScanning] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [agentFramework, setAgentFramework] = useState<AgentFramework>(() => {
-    return (localStorage.getItem('ty_code_agent_framework') as AgentFramework) || 'native';
+    const stored = localStorage.getItem('ty_code_agent_framework');
+    // Pre-rebrand values ('native'/'opencode') map to the Ty-Code names
+    const legacy: Record<string, AgentFramework> = { native: 'collaborative', opencode: 'autonomous' };
+    if (stored && stored in legacy) return legacy[stored];
+    return (stored as AgentFramework) || 'collaborative';
   });
   const [actionNotice, setActionNotice] = useState<string | null>(null);
   const [errorNotice, setErrorNotice] = useState<string | null>(null);
@@ -140,13 +144,13 @@ export const OpenCodeIntegration: React.FC<OpenCodeIntegrationProps> = ({
   const handleFrameworkChange = async (framework: AgentFramework) => {
     setAgentFramework(framework);
     localStorage.setItem('ty_code_agent_framework', framework);
-    if (window.electronAPI?.opencodeSetFramework) {
-      await window.electronAPI.opencodeSetFramework(framework);
+    if (window.electronAPI?.agentFrameworkSet) {
+      await window.electronAPI.agentFrameworkSet(framework);
     }
     setActionNotice(
-      framework === 'opencode'
-        ? 'Switched to OpenCode Autonomous Framework (Build, Plan, General agents active).'
-        : 'Switched to Ty-Code Native Pair-Programming Assistant.'
+      framework === 'autonomous'
+        ? 'Switched to Ty-Code Autonomous (Build, Plan, General agents active).'
+        : 'Switched to Ty-Code Collaborative pair-programming assistant.'
     );
     setTimeout(() => setActionNotice(null), 3500);
   };
@@ -440,20 +444,20 @@ export const OpenCodeIntegration: React.FC<OpenCodeIntegrationProps> = ({
             Default Coding Agent Framework
           </h4>
           <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: '#94a3b8' }}>
-            Choose whether Ty-Code operates using native pair-programming orchestration or OpenCode's autonomous harnesses.
+            Choose whether Ty-Code operates using the Collaborative pair-programming engine or the Autonomous multi-agent harness.
           </p>
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-          {/* Framework Option 1: Native */}
+          {/* Framework Option 1: Ty-Code Collaborative */}
           <div
-            id="framework-option-native"
-            onClick={() => void handleFrameworkChange('native')}
+            id="framework-option-collaborative"
+            onClick={() => void handleFrameworkChange('collaborative')}
             style={{
               padding: '14px',
               borderRadius: '8px',
-              border: agentFramework === 'native' ? '2px solid var(--accent-primary)' : '1px solid rgba(255, 255, 255, 0.08)',
-              background: agentFramework === 'native' ? 'rgba(99, 102, 241, 0.15)' : 'rgba(15, 23, 42, 0.5)',
+              border: agentFramework === 'collaborative' ? '2px solid var(--accent-primary)' : '1px solid rgba(255, 255, 255, 0.08)',
+              background: agentFramework === 'collaborative' ? 'rgba(99, 102, 241, 0.15)' : 'rgba(15, 23, 42, 0.5)',
               cursor: 'pointer',
               display: 'flex',
               flexDirection: 'column',
@@ -461,23 +465,23 @@ export const OpenCodeIntegration: React.FC<OpenCodeIntegrationProps> = ({
             }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc' }}>Ty-Code Native Framework</span>
-              {agentFramework === 'native' && <CheckCircle2 size={16} color="var(--accent-primary)" />}
+              <span style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc' }}>Ty-Code Collaborative</span>
+              {agentFramework === 'collaborative' && <CheckCircle2 size={16} color="var(--accent-primary)" />}
             </div>
             <p style={{ margin: 0, fontSize: '11px', color: '#94a3b8', lineHeight: '1.5' }}>
-              Standard pair-programming experience with direct file edits, terminal integration, and Monaco smart diff reviews.
+              Standard pair-programming experience with direct file edits, terminal integration, and Monaco smart diff reviews. You drive, Ty-Code assists.
             </p>
           </div>
 
-          {/* Framework Option 2: OpenCode */}
+          {/* Framework Option 2: Ty-Code Autonomous */}
           <div
-            id="framework-option-opencode"
-            onClick={() => void handleFrameworkChange('opencode')}
+            id="framework-option-autonomous"
+            onClick={() => void handleFrameworkChange('autonomous')}
             style={{
               padding: '14px',
               borderRadius: '8px',
-              border: agentFramework === 'opencode' ? '2px solid #06b6d4' : '1px solid rgba(255, 255, 255, 0.08)',
-              background: agentFramework === 'opencode' ? 'rgba(6, 182, 212, 0.15)' : 'rgba(15, 23, 42, 0.5)',
+              border: agentFramework === 'autonomous' ? '2px solid #06b6d4' : '1px solid rgba(255, 255, 255, 0.08)',
+              background: agentFramework === 'autonomous' ? 'rgba(6, 182, 212, 0.15)' : 'rgba(15, 23, 42, 0.5)',
               cursor: 'pointer',
               display: 'flex',
               flexDirection: 'column',
@@ -485,11 +489,11 @@ export const OpenCodeIntegration: React.FC<OpenCodeIntegrationProps> = ({
             }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc' }}>OpenCode Autonomous Framework</span>
-              {agentFramework === 'opencode' && <CheckCircle2 size={16} color="#06b6d4" />}
+              <span style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc' }}>Ty-Code Autonomous</span>
+              {agentFramework === 'autonomous' && <CheckCircle2 size={16} color="#06b6d4" />}
             </div>
             <p style={{ margin: 0, fontSize: '11px', color: '#94a3b8', lineHeight: '1.5' }}>
-              Autonomous 3-agent harness (Build Agent, Plan Agent, General Subagent) equipped with 10 tools and auto-compacting context.
+              Autonomous 3-agent harness (Build, Plan, and General agents) equipped with 10 tools and auto-compacting context. Ty-Code drives, you review.
             </p>
           </div>
         </div>

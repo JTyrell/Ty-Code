@@ -27,6 +27,103 @@ export interface FlatFileNode {
 const ITEM_HEIGHT = 24;
 const OVERSCAN = 6;
 
+interface TreeRowProps {
+  path: string;
+  name: string;
+  depth: number;
+  isDirectory: boolean;
+  isOpen: boolean;
+  isSelected: boolean;
+  extension?: string;
+  relativePath: string;
+  onNodeClick: (node: FileNode) => void;
+  onNodeContextMenu: (e: React.MouseEvent, node: FileNode) => void;
+}
+
+/**
+ * Memoized tree row: virtualization re-renders on every range shift, so each
+ * row must be skip-able unless its own primitives change.
+ */
+const TreeRow = React.memo<TreeRowProps>(({
+  path,
+  name,
+  depth,
+  isDirectory,
+  isOpen,
+  isSelected,
+  extension,
+  relativePath,
+  onNodeClick,
+  onNodeContextMenu
+}) => {
+  const node: FileNode = {
+    name,
+    path,
+    relativePath,
+    isDirectory,
+    extension
+  };
+  return (
+    <div
+      className="virtual-tree-row"
+      onClick={() => onNodeClick(node)}
+      onContextMenu={(e) => onNodeContextMenu(e, node)}
+      title={`${name} (${relativePath})`}
+      style={{
+        height: `${ITEM_HEIGHT}px`,
+        display: 'flex',
+        alignItems: 'center',
+        gap: '5px',
+        paddingLeft: `${depth * 14 + 8}px`,
+        paddingRight: '8px',
+        cursor: 'pointer',
+        fontSize: '12px',
+        backgroundColor: isSelected ? 'var(--bg-active)' : undefined,
+        color: isSelected ? 'var(--text-primary)' : 'var(--text-secondary)',
+        userSelect: 'none',
+        whiteSpace: 'nowrap',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis'
+      }}
+    >
+      {isDirectory ? (
+        <>
+          <span style={{ width: 14, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+            {isOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+          </span>
+          {isOpen ? (
+            <FolderOpen size={13} color="var(--accent-primary)" style={{ flexShrink: 0 }} />
+          ) : (
+            <Folder size={13} color="var(--accent-primary)" style={{ flexShrink: 0 }} />
+          )}
+        </>
+      ) : (
+        <>
+          <span style={{ width: 14 }} />
+          <TreeFileIcon extension={extension} />
+        </>
+      )}
+      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{name}</span>
+    </div>
+  );
+});
+
+const TreeFileIcon = React.memo<{ extension?: string }>(({ extension }) => {
+  switch (extension) {
+    case '.ts':
+    case '.tsx':
+    case '.js':
+    case '.jsx':
+    case '.py':
+    case '.html':
+    case '.css':
+    case '.json':
+      return <FileCode size={13} color="var(--accent-cyan)" style={{ flexShrink: 0 }} />;
+    default:
+      return <FileText size={13} color="var(--text-secondary)" style={{ flexShrink: 0 }} />;
+  }
+});
+
 interface VirtualFileTreeProps {
   rootNode?: FileNode | null;
   flatEntries?: FlatFileNodeEntry[] | null;
@@ -42,10 +139,34 @@ export const VirtualFileTree: React.FC<VirtualFileTreeProps> = ({ rootNode, flat
   const [editName, setEditName] = useState('');
 
   const containerRef = useRef<HTMLDivElement>(null);
+  const scrollRafRef = useRef<number | null>(null);
+  const scrollTopRef = useRef(0);
   const openFile = useWorkspaceStore((s) => s.openFile);
   const activeTabPath = useWorkspaceStore((s) => s.activeTabPath);
   const storeFlatTree = useWorkspaceStore((s) => s.flatTree);
   const activeFlat = flatEntries || storeFlatTree;
+
+  /**
+   * Scroll updates are rAF-coalesced and only trigger a re-render when the
+   * visible range would actually shift — continuous wheel events no longer
+   * re-render the whole tree 60 times per second.
+   */
+  const handleScroll = useCallback(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    scrollTopRef.current = el.scrollTop;
+    if (scrollRafRef.current !== null) return;
+    scrollRafRef.current = window.requestAnimationFrame(() => {
+      scrollRafRef.current = null;
+      const top = scrollTopRef.current;
+      const nextStart = Math.max(0, Math.floor(top / ITEM_HEIGHT) - OVERSCAN);
+      setScrollTop((prev) => {
+        const prevStart = Math.max(0, Math.floor(prev / ITEM_HEIGHT) - OVERSCAN);
+        if (prev === top && prevStart === nextStart) return prev;
+        return top;
+      });
+    });
+  }, []);
 
   // Initialize with root expanded
   useEffect(() => {
@@ -179,11 +300,11 @@ export const VirtualFileTree: React.FC<VirtualFileTreeProps> = ({ rootNode, flat
     });
   }, []);
 
-  const handleNodeClick = (flatNode: FlatFileNode) => {
-    if (flatNode.node.isDirectory) {
-      toggleFolder(flatNode.node.path);
+  const handleNodeClick = (node: FileNode) => {
+    if (node.isDirectory) {
+      toggleFolder(node.path);
     } else {
-      openFile(flatNode.node.path, flatNode.node.name);
+      openFile(node.path, node.name);
     }
   };
 
@@ -268,7 +389,7 @@ export const VirtualFileTree: React.FC<VirtualFileTreeProps> = ({ rootNode, flat
   return (
     <div
       ref={containerRef}
-      onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
+      onScroll={handleScroll}
       onDragOver={handleDragOver}
       onDrop={handleDrop}
       style={{
@@ -278,71 +399,43 @@ export const VirtualFileTree: React.FC<VirtualFileTreeProps> = ({ rootNode, flat
         overflowX: 'hidden',
         position: 'relative',
         backgroundColor: 'var(--bg-secondary)',
-        scrollbarWidth: 'thin'
+        scrollbarWidth: 'thin',
+        overscrollBehavior: 'contain'
       }}
     >
-      <div style={{ height: `${totalHeight}px`, position: 'relative', width: '100%' }}>
+      <div
+        style={{
+          height: `${totalHeight}px`,
+          position: 'relative',
+          width: '100%',
+          contain: 'layout paint'
+        }}
+      >
         <div
           style={{
             transform: `translateY(${startIndex * ITEM_HEIGHT}px)`,
             position: 'absolute',
             top: 0,
             left: 0,
-            right: 0
+            right: 0,
+            willChange: 'transform'
           }}
         >
-          {visibleNodes.map((item) => {
-            const isSelected = activeTabPath === item.node.path;
-            return (
-              <div
-                key={item.node.path}
-                onClick={() => handleNodeClick(item)}
-                onContextMenu={(e) => handleContextMenu(e, item.node)}
-                title={`${item.node.name} (${item.node.relativePath})`}
-                style={{
-                  height: `${ITEM_HEIGHT}px`,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '5px',
-                  paddingLeft: `${item.depth * 14 + 8}px`,
-                  paddingRight: '8px',
-                  cursor: 'pointer',
-                  fontSize: '12px',
-                  backgroundColor: isSelected ? 'var(--bg-active)' : 'transparent',
-                  color: isSelected ? 'var(--text-primary)' : 'var(--text-secondary)',
-                  userSelect: 'none',
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis'
-                }}
-                onMouseEnter={(e) => {
-                  if (!isSelected) e.currentTarget.style.backgroundColor = 'var(--bg-hover)';
-                }}
-                onMouseLeave={(e) => {
-                  if (!isSelected) e.currentTarget.style.backgroundColor = 'transparent';
-                }}
-              >
-                {item.node.isDirectory ? (
-                  <>
-                    <span style={{ width: 14, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-                      {item.isOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-                    </span>
-                    {item.isOpen ? (
-                      <FolderOpen size={13} color="var(--accent-primary)" style={{ flexShrink: 0 }} />
-                    ) : (
-                      <Folder size={13} color="var(--accent-primary)" style={{ flexShrink: 0 }} />
-                    )}
-                  </>
-                ) : (
-                  <>
-                    <span style={{ width: 14 }} />
-                    {getFileIcon(item.node.extension)}
-                  </>
-                )}
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.node.name}</span>
-              </div>
-            );
-          })}
+          {visibleNodes.map((item) => (
+            <TreeRow
+              key={item.node.path}
+              path={item.node.path}
+              name={item.node.name}
+              depth={item.depth}
+              isDirectory={item.node.isDirectory ?? false}
+              isOpen={item.isOpen}
+              isSelected={activeTabPath === item.node.path}
+              extension={item.node.extension}
+              relativePath={item.node.relativePath || ''}
+              onNodeClick={handleNodeClick}
+              onNodeContextMenu={handleContextMenu}
+            />
+          ))}
         </div>
       </div>
 

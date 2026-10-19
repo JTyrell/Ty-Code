@@ -208,6 +208,16 @@ export type RoutingStrategyType = 'auto' | 'free-first' | 'fastest' | 'balanced'
 
 export type ProviderSetupType = 'api_key' | 'zero_config';
 
+/** Live provider connectivity snapshot for the model picker grouping. */
+export interface ProviderConnectivitySnapshot {
+  connected: boolean;
+  latencyMs: number;
+  successfulRequests: number;
+  failedRequests: number;
+  isRateLimited: boolean;
+  autoDisabled: boolean;
+}
+
 export interface PreConfiguredProvider {
   id: string;
   name: string;
@@ -938,6 +948,7 @@ export interface ElectronAPI {
 
   // Phase 2.1: Provider Onboarding & Dynamic Discovery
   providerGetRegistry: () => Promise<IpcResponse<PreConfiguredProvider[]>>;
+  providerGetConnectionStatus: () => Promise<IpcResponse<Record<string, ProviderConnectivitySnapshot>>>;
   providerGetModels: (params: { providerId: string; apiKey?: string; customEndpoint?: string }) => Promise<IpcResponse<DiscoveredModel[]>>;
   providerTestConnection: (params: { providerId: string; apiKey?: string; modelId?: string; customEndpoint?: string }) => Promise<IpcResponse<TestConnectionResult>>;
   openExternal: (url: string) => Promise<IpcResponse<void>>;
@@ -1014,8 +1025,8 @@ export interface ElectronAPI {
   opencodeDetect?: () => Promise<IpcResponse<OpenCodeDetectionResult>>;
   opencodeGetFreeSummary?: () => Promise<IpcResponse<OpenCodeFreeTierSummary>>;
   opencodeImportProviders?: () => Promise<IpcResponse<OpenCodeImportResult>>;
-  opencodeSetFramework?: (framework: AgentFramework) => Promise<IpcResponse<AgentFramework>>;
-  opencodeGetFramework?: () => Promise<IpcResponse<AgentFramework>>;
+  agentFrameworkSet?: (framework: AgentFramework) => Promise<IpcResponse<AgentFramework>>;
+  agentFrameworkGet?: () => Promise<IpcResponse<AgentFramework>>;
   opencodeGetMergedProviders?: () => Promise<IpcResponse<PreConfiguredProvider[]>>;
 
   // OpenCode Standard Supply (baked-in hosted free models)
