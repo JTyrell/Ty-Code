@@ -78,14 +78,14 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     models: [
       {
         id: 'nvidia/nemotron-3-ultra-550b-a55b:free',
-        name: 'DeepSeek R1 (Free OpenRouter)',
+        name: 'NVIDIA Nemotron 3 Ultra 550B (Free)',
         contextWindow: 64_000,
         maxOutputTokens: 16_384,
         isFree: true,
         capabilities: { reasoning: true, coding: true, tools: true, speedTokensPerSec: 42 },
         provenance: 'FCC',
         costTier: 'free',
-        description: 'Multi-step chain-of-thought mathematical reasoning'
+        description: '550B MoE reasoning model with multi-step chain-of-thought'
       },
       {
         id: 'qwen/qwen-2.5-coder-32b-instruct:free',
@@ -100,14 +100,14 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
       },
       {
         id: 'dots-studio/dots-3-note-preview:free',
-        name: 'Llama 3.3 70B Instruct',
+        name: 'Dots 3 Note Preview (Free)',
         contextWindow: 131_072,
         maxOutputTokens: 4096,
         isFree: true,
         capabilities: { coding: true, tools: true, largeContext: true, speedTokensPerSec: 55 },
         provenance: 'FCC',
         costTier: 'free',
-        description: 'Large-scale instruction-tuned general model'
+        description: 'Large-context preview model from Dots Studio'
       }
     ]
   },
