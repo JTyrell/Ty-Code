@@ -41,7 +41,8 @@ interface ChatState {
     activeFilePath?: string,
     activeFileContent?: string,
     appendUserMessage?: boolean,
-    traceOptions?: { traceId?: string; providerOverride?: string; modelOverride?: string }
+    traceOptions?: { traceId?: string; providerOverride?: string; modelOverride?: string },
+    images?: string[]
   ) => Promise<void>;
   stopTask: () => Promise<void>;
   respondToApproval: (approved: boolean) => Promise<void>;
@@ -365,8 +366,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
     } catch (err) { console.error('Failed to save settings:', err); return false; }
   },
 
-  sendMessage: async (prompt, workspacePath, activeFilePath, activeFileContent, appendUserMessage = true, traceOptions) => {
-    if (get().isRunning || !prompt.trim()) return;
+  sendMessage: async (prompt, workspacePath, activeFilePath, activeFileContent, appendUserMessage = true, traceOptions, images) => {
+    if (get().isRunning || (!prompt.trim() && !(images && images.length > 0))) return;
     activeStreamUnsubscribe?.();
     activeStreamUnsubscribe = null;
     const currentMessages = get().messages;
@@ -377,7 +378,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const requestHistory = !appendUserMessage && lastUserIndex >= 0
       ? currentMessages.slice(0, lastUserIndex)
       : currentMessages;
-    const userMessage: ChatMessage = { id: createId('user'), role: 'user', content: prompt, timestamp: Date.now() };
+    const userMessage: ChatMessage = {
+      id: createId('user'),
+      role: 'user',
+      content: prompt,
+      ...(images && images.length > 0 ? { images } : {}),
+      timestamp: Date.now()
+    };
     const regeneratedMessages = !appendUserMessage && lastUserIndex >= 0
       ? currentMessages.slice(0, lastUserIndex + 1)
       : currentMessages;
@@ -583,9 +590,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
     activeStreamDisposables.push(window.electronAPI.onAgentStream((chunk: AgentStreamChunk) => {
       if (chunk.taskId !== taskId || get().currentTaskId !== taskId) return;
       if (chunk.type === 'status') {
+        let statusText = chunk.content || '';
+        if (/thinking/i.test(statusText)) {
+          statusText = 'Thinking…';
+        }
         set((state) => ({
-          currentStatus: chunk.content || '',
-          contextTokens: chunk.content?.includes('compacting')
+          currentStatus: statusText,
+          contextTokens: statusText.includes('compacting')
             ? Math.floor(state.contextLimit * 0.35)
             : state.contextTokens
         }));
@@ -600,6 +611,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         providerOverride: traceOptions?.providerOverride,
         modelOverride: traceOptions?.modelOverride,
         prompt,
+        ...(images && images.length > 0 ? { images } : {}),
         workspacePath,
         history: requestHistory,
         agentMode: get().agentMode,

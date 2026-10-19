@@ -7,6 +7,7 @@
 import type { AgentHarness, HarnessMetadata } from './types';
 import type { ChatCompletionMessage } from '../../../providers/provider-gateway';
 import type { ToolCall } from '../../../../preload/types';
+import { TEXTUAL_TOOL_PROTOCOL } from './tool-protocol';
 
 export class CodexHarness implements AgentHarness {
   public readonly metadata: HarnessMetadata = {
@@ -25,6 +26,7 @@ export class CodexHarness implements AgentHarness {
     return [
       `You are Codex, an AI coding specialist operating inside the repository at "${workspacePath}".`,
       'Produce production-grade code, unit tests, and minimal diffs. Avoid explanatory fluff; provide immediate, correct code solutions.',
+      TEXTUAL_TOOL_PROTOCOL,
       activeFilePath ? `Target file: "${activeFilePath}".` : '',
       activeFileContent ? `Target file context:\n\`\`\`\n${activeFileContent.slice(0, 4000)}\n\`\`\`` : ''
     ].filter(Boolean).join('\n\n');
@@ -42,6 +44,17 @@ export class CodexHarness implements AgentHarness {
     fullText: string,
     toolCalls: ToolCall[]
   ): { text: string; toolCalls: ToolCall[] } {
-    return { text: fullText, toolCalls };
+    const finalCalls = [...toolCalls];
+    const xmlRegex = /<tool_call>\s*<name>([\s\S]+?)<\/name>\s*<arguments>([\s\S]*?)<\/arguments>\s*<\/tool_call>/g;
+    let match: RegExpExecArray | null;
+    while ((match = xmlRegex.exec(fullText)) !== null) {
+      try {
+        finalCalls.push({ id: `call_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`, name: match[1].trim(), arguments: JSON.parse(match[2].trim()) as Record<string, unknown> });
+      } catch {
+        // Skip malformed XML tool call
+      }
+    }
+    const cleanText = finalCalls.length ? fullText.replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '').trim() : fullText;
+    return { text: cleanText || fullText, toolCalls: finalCalls };
   }
 }

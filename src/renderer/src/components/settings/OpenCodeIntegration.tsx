@@ -5,7 +5,7 @@
  * 1. "OpenCode Detected" status badge with path and version
  * 2. One-click "Import OpenCode Providers" button
  * 3. Free-tier model catalog discovery breakdown
- * 4. Agent framework selector (Ty-Code Native vs OpenCode Autonomous Framework)
+ * 4. Agent framework selector (Ty-Code Collaborative vs Ty-Code Autonomous)
  * 5. Synced provider catalog view with live status
  *
  * Brand: Ty-Code

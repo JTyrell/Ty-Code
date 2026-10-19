@@ -31,7 +31,9 @@ import {
   Code2,
   Search,
   X,
-  Filter
+  Filter,
+  Loader2,
+  Share2
 } from 'lucide-react';
 import type { FreeProvider } from '../../../../shared/types/free-providers';
 import type { DiscoveredModel, TestConnectionResult } from '../../../../preload/types';
@@ -65,8 +67,88 @@ export const BYOKWizard: React.FC<BYOKWizardProps> = ({
   const [copiedUrl, setCopiedUrl] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [oauthState, setOauthState] = useState<{ launching: boolean; authorized: boolean; message: string | null }>({
+    launching: false,
+    authorized: false,
+    message: null
+  });
+  const [copilotUserCode, setCopilotUserCode] = useState<string | null>(null);
 
   const selectedProvider = freeProviders.find((p) => p.id === selectedProviderId) || freeProviders[0];
+  const oauthProviderId = selectedProvider ? selectedProvider.id.replace('-free', '') : '';
+  const oauthFlowKind: 'pkce' | 'kilo' | 'device' | null =
+    oauthProviderId === 'openrouter' ? 'pkce'
+    : oauthProviderId === 'openkilo' ? 'kilo'
+    : oauthProviderId === 'github-copilot' || oauthProviderId === 'github-models' ? 'device'
+    : null;
+  const oauthFlowLabel = oauthProviderId === 'openrouter' ? 'OpenRouter'
+    : oauthProviderId === 'openkilo' ? 'OpenKilo'
+    : oauthProviderId === 'github-copilot' || oauthProviderId === 'github-models' ? 'GitHub' : '';
+
+  // Auto-advance the wizard when the main process confirms a browser sign-in
+  useEffect(() => {
+    const unsub = window.electronAPI?.onOAuthStatusChanged?.((statusMap: Record<string, any>) => {
+      if (!oauthFlowKind) return;
+      const pStatus = statusMap[oauthProviderId] || statusMap[oauthFlowLabel === 'OpenRouter' ? 'openrouter' : oauthProviderId];
+      if (!pStatus?.connected) return;
+      setOauthState({ launching: false, authorized: true, message: 'Connected via browser OAuth (key stored in safeStorage).' });
+    });
+    return () => {
+      unsub?.();
+    };
+  }, [oauthFlowKind, oauthProviderId]);
+
+  useEffect(() => {
+    setOauthState({ launching: false, authorized: false, message: null });
+    setCopilotUserCode(null);
+  }, [selectedProviderId]);
+
+  const handleStartOAuthFlow = async () => {
+    if (!oauthFlowKind) return;
+    setOauthState({ launching: true, authorized: false, message: 'Waiting for browser sign-in…' });
+    setCopilotUserCode(null);
+    try {
+      if (oauthFlowKind === 'pkce') {
+        const startPkce = window.electronAPI?.oauthStartOpenRouterPKCE;
+        if (!startPkce) throw new Error('OpenRouter OAuth channel is not available in this build.');
+        const res = await startPkce();
+        if (!res.success) throw new Error(res.error || 'OAuth could not start.');
+      } else if (oauthFlowKind === 'kilo') {
+        const startKilo = window.electronAPI?.oauthStartOpenKilo;
+        if (!startKilo) throw new Error('OpenKilo OAuth channel is not available in this build.');
+        const res = await startKilo();
+        if (!res.success) throw new Error(res.error || 'OAuth could not start.');
+      } else {
+        const startDevice = window.electronAPI?.oauthStartCopilotDevice;
+        const pollDevice = window.electronAPI?.oauthPollCopilotDevice;
+        if (!startDevice || !pollDevice) throw new Error('Device flow channel is not available in this build.');
+        const res = await startDevice();
+        if (!res.success || !res.data) throw new Error(res.error || 'Device flow could not start.');
+        const payload = res.data as { user_code?: string; verification_uri?: string; device_code?: string };
+        setCopilotUserCode(typeof payload?.user_code === 'string' ? payload.user_code : null);
+        try {
+          await window.electronAPI.openExternal(payload?.verification_uri || 'https://github.com/login/device');
+        } catch {}
+        // Poll until authorized / expired (matches provider device flow interval cap)
+        for (let i = 0; i < 40; i++) {
+          await new Promise((r) => setTimeout(r, 5000));
+          const pollRes = await pollDevice(payload?.device_code);
+          const status = pollRes.success ? pollRes.data?.status : 'pending';
+          if (status === 'authorized') {
+            setOauthState({ launching: false, authorized: true, message: 'Connected via device code (token stored in safeStorage).' });
+            return;
+          }
+          if (status === 'expired' || status === 'cancelled' || status === 'error') {
+            throw new Error(pollRes.data?.error || 'Device authorization did not complete.');
+          }
+        }
+        throw new Error('Device authorization timed out. Request a new code and try again.');
+      }
+    } catch (err: unknown) {
+      setOauthState({ launching: false, authorized: false, message: null });
+      setErrorMsg(err instanceof Error ? err.message : String(err));
+    }
+  };
 
   useEffect(() => {
     if (initialProviderId) {
@@ -76,8 +158,8 @@ export const BYOKWizard: React.FC<BYOKWizardProps> = ({
 
   // Handle Testing Connection in Step 3
   const handleTestConnection = async () => {
-    if (!apiKey.trim() && selectedProvider.auth_type !== 'anonymous') {
-      setErrorMsg('Please enter an API key to test.');
+    if (!apiKey.trim() && selectedProvider.auth_type !== 'anonymous' && !oauthState.authorized) {
+      setErrorMsg('Please enter an API key to test (or connect via browser OAuth).');
       return;
     }
     setErrorMsg('');
@@ -89,7 +171,7 @@ export const BYOKWizard: React.FC<BYOKWizardProps> = ({
       const endpoint = selectedProvider.base_url !== 'auto' ? selectedProvider.base_url : undefined;
       const testResponse = await window.electronAPI.providerTestConnection({
         providerId: cleanId,
-        apiKey: apiKey.trim(),
+        apiKey: apiKey.trim() || undefined,
         customEndpoint: endpoint
       });
       if (!testResponse.success || !testResponse.data) throw new Error(testResponse.error || 'Connection verification failed.');
@@ -489,7 +571,57 @@ export const BYOKWizard: React.FC<BYOKWizardProps> = ({
             </p>
 
             {selectedProvider.signup_url && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '6px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '6px', flexWrap: 'wrap' }}>
+                {oauthFlowKind && (
+                  <button
+                    type="button"
+                    id="wizard-btn-oauth-connect"
+                    onClick={() => void handleStartOAuthFlow()}
+                    disabled={oauthState.launching}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '8px 14px',
+                      borderRadius: '6px',
+                      background: oauthState.authorized ? 'rgba(16, 185, 129, 0.2)' : 'rgba(16, 185, 129, 0.08)',
+                      border: '1px solid rgba(16, 185, 129, 0.45)',
+                      color: oauthState.authorized ? '#34d399' : '#4ade80',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      cursor: oauthState.launching ? 'wait' : 'pointer'
+                    }}
+                    title={`One-click ${oauthFlowLabel} browser sign-in — Ty-Code captures the OAuth callback and stores the key in OS safeStorage`}
+                  >
+                    {oauthState.authorized ? <Check size={13} /> : oauthState.launching ? <Loader2 size={13} className="spin" /> : <Share2 size={13} />}
+                    {oauthState.authorized
+                      ? `Connected to ${oauthFlowLabel}`
+                      : oauthFlowKind === 'device'
+                      ? `Connect ${oauthFlowLabel} (device code)`
+                      : `Connect ${oauthFlowLabel} (1-Click OAuth)`}
+                  </button>
+                )}
+
+                {copilotUserCode && (
+                  <span
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      padding: '6px 10px',
+                      borderRadius: 6,
+                      background: 'rgba(255, 255, 255, 0.06)',
+                      border: '1px solid rgba(255, 255, 255, 0.12)',
+                      fontFamily: 'monospace',
+                      fontSize: 12,
+                      color: '#f1f5f9'
+                    }}
+                    title="Enter this code at github.com/login/device"
+                  >
+                    <Key size={13} /> Code: {copilotUserCode}
+                  </span>
+                )}
+
                 <button
                   type="button"
                   id="wizard-btn-open-browser"
@@ -530,13 +662,19 @@ export const BYOKWizard: React.FC<BYOKWizardProps> = ({
                   }}
                 >
                   {copiedUrl ? <Check size={13} color="#34d399" /> : <Copy size={13} />}
-                  {copiedUrl ? 'Copied URL!' : 'Copy Portal URL'}
-                </button>
-              </div>
-            )}
-          </div>
+                   {copiedUrl ? 'Copied URL!' : 'Copy Portal URL'}
+                 </button>
+               </div>
+             )}
+           </div>
 
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '10px' }}>
+           {oauthState.message && (
+             <div style={{ fontSize: '12px', color: oauthState.authorized ? '#34d399' : '#94a3b8' }}>
+               {oauthState.message}
+             </div>
+           )}
+
+           <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '10px' }}>
             <button
               type="button"
               id="wizard-btn-back-2"
@@ -647,7 +785,7 @@ export const BYOKWizard: React.FC<BYOKWizardProps> = ({
             <button
               type="button"
               id="wizard-btn-test-connection"
-              disabled={isTesting || (!apiKey.trim() && selectedProvider.auth_type !== 'anonymous')}
+              disabled={isTesting || (!apiKey.trim() && selectedProvider.auth_type !== 'anonymous' && !oauthState.authorized)}
               onClick={handleTestConnection}
               style={{
                 display: 'flex',
@@ -700,7 +838,7 @@ export const BYOKWizard: React.FC<BYOKWizardProps> = ({
             <button
               type="button"
               id="wizard-btn-next-3"
-              disabled={!apiKey.trim() && selectedProvider.auth_type !== 'anonymous'}
+              disabled={!apiKey.trim() && selectedProvider.auth_type !== 'anonymous' && !oauthState.authorized}
               onClick={() => {
                 setErrorMsg('');
                 // If not tested yet, automatically trigger test or advance to model picker

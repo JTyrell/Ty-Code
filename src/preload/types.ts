@@ -382,6 +382,7 @@ export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant' | 'system' | 'tool';
   content: string;
+  images?: string[];
   toolCall?: ToolCall;
   toolStatus?: ToolExecutionStatus;
   toolCalls?: ToolCall[];
@@ -708,12 +709,14 @@ export interface ElectronAPI {
     taskId?: string;
     traceId?: string;
     prompt: string;
+    images?: string[];
     workspacePath: string;
     history: ChatMessage[];
     agentMode?: AgentMode;
     sessionId?: string;
     activeFilePath?: string;
     activeFileContent?: string;
+    openFilePaths?: string[];
     providerOverride?: ProviderType;
     modelOverride?: string;
     skills?: SkillDefinition[];

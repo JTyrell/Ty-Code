@@ -38,6 +38,26 @@ function isGoogleProviderId(providerId: string): boolean {
   return p === 'gemini' || p.startsWith('gemini') || p.includes('google');
 }
 
+/** Tool schema accepted by sendChatRequest (OpenAI function shape). */
+export interface GatewayToolSchema {
+  name: string;
+  description: string;
+  /** JSON schema of accepted arguments (OpenAI `parameters`). */
+  parameters?: unknown;
+  /** Anthropic alias for `parameters`. */
+  input_schema?: unknown;
+}
+
+/** A tool invocation parsed from a provider response. */
+export interface GatewayToolCall {
+  id: string;
+  name: string;
+  arguments: string;
+}
+
+const FCC_SIDECAR_URL = 'http://localhost:8082/v1/chat/completions';
+const KILO_URL = 'https://api.kilo.ai/api/gateway/chat/completions';
+
 export async function sendChatRequest(
   providerId: string,
   modelId: string,
@@ -48,12 +68,18 @@ export async function sendChatRequest(
   handoffCount: number = 0,
   abortSignal?: AbortSignal,
   onHandoff?: (info: { fromProvider: string; toProvider: string; toModel: string }) => void,
-  onReasoning?: (thought: string) => void
+  onReasoning?: (thought: string) => void,
+  tools?: GatewayToolSchema[],
+  onToolCalls?: (calls: GatewayToolCall[]) => void
 ): Promise<string> {
   const provider = providerId;
   const norm = (providerId || '').toLowerCase().trim().replace(/-free$/, '');
   const isKilo = norm === 'kilo' || norm === 'openkilo';
   const isCopilot = norm === 'copilot' || norm === 'github-copilot' || norm === 'copilot-subscription';
+  // FCC Free Tier: the 'anthropic-claude-free' binding normalizes to
+  // 'anthropic-claude' (single -free suffix strip), and the provider registry
+  // also exposes the raw 'fcc-proxy' id. Both route through the local sidecar.
+  const isFccProxy = norm === 'anthropic-claude' || norm === 'fcc-proxy' || norm === 'fccproxy' || providerId === 'fcc-proxy';
 
   // 1. Fetch verified models catalog and find requested model configuration
   const allModels = await getVerifiedModels();
@@ -71,7 +97,33 @@ export async function sendChatRequest(
 
   // Gracefully fallback to standard endpoints if model is not directly listed
     if (!config) {
-      if (norm === 'openrouter') {
+      if (isFccProxy) {
+        // FCC Auto routing, tier 1: real FCC sidecar when the genuine binary is
+        // up. Otherwise gracefully degrade: tier 2 = any provider that owns its
+        // key (never borrowed), tier 3 = the anonymous OpenKilo pool.
+        const sidecarRunning = (() => {
+          try {
+            const status = fccManager.getStatus();
+            return Boolean(status.running) || fccManager.isGenuineBinaryRunning();
+          } catch {
+            return false;
+          }
+        })();
+        console.log(`[FCC][AUTO] provider=${providerId} model=${modelId} sidecar=${sidecarRunning ? 'running' : 'down'}`);
+        if (sidecarRunning) {
+          console.log(`[FCC][AUTO] Tier 1 — routing through FCC sidecar at ${FCC_SIDECAR_URL}`);
+          config = { modelId, name: 'FCC Free Tier', url: FCC_SIDECAR_URL, requiresKey: false, providerId: 'anthropic-claude-free' };
+        } else {
+          const nativeFallback = pickHandoffCandidate(allModels, 'fcc-proxy', modelId);
+          if (nativeFallback) {
+            console.log(`[FCC][AUTO] Tier 2 — sidecar down, using keyed provider ${nativeFallback.providerId} (${nativeFallback.modelId})`);
+            config = nativeFallback;
+          } else {
+            console.log('[FCC][AUTO] Tier 3 — sidecar down, no keyed provider found; using anonymous OpenKilo pool');
+            config = { modelId, name: modelId, url: KILO_URL, requiresKey: false, providerId: 'openkilo' };
+          }
+        }
+      } else if (norm === 'openrouter') {
         config = { modelId, name: modelId, url: 'https://openrouter.ai/api/v1/chat/completions', requiresKey: true, providerId: 'openrouter' };
       } else if (norm === 'groq') {
         config = { modelId, name: modelId, url: 'https://api.groq.com/openai/v1/chat/completions', requiresKey: true, providerId: 'groq' };
@@ -196,12 +248,24 @@ export async function sendChatRequest(
   console.log(`[GATEWAY] Provider: ${providerId}, Model: ${modelId}`);
 
   // Construct payload
+  // Vision support: user messages carrying pasted images (data URLs) are sent
+  // as OpenAI-style multimodal content parts; Anthropic payloads get their own
+  // base64 source format via toAnthropicContent below.
   const formattedMessages = messages.map((m: any) => {
     if (typeof m === 'string') return { role: 'user', content: m };
     if (m.role === 'tool') {
       return {
         role: 'user',
         content: `[Tool Result for ${m.name || 'tool'}]: ${m.content}`
+      };
+    }
+    if ((m.role === 'user' || !m.role) && Array.isArray(m.images) && m.images.length > 0) {
+      return {
+        role: m.role || 'user',
+        content: [
+          { type: 'text', text: m.content || '' },
+          ...m.images.map((url: string) => ({ type: 'image_url', image_url: { url } }))
+        ]
       };
     }
     // Reasoning models (e.g. Kilo Auto / DeepSeek R1) require the reasoning
@@ -211,6 +275,21 @@ export async function sendChatRequest(
     }
     return { role: m.role || 'user', content: m.content || '' };
   });
+
+  const parseDataImageSource = (url: string): { type: 'base64'; media_type: string; data: string } => {
+    const match = /^data:([^;]+);base64,(.+)$/s.exec(url);
+    if (match) return { type: 'base64', media_type: match[1], data: match[2] };
+    return { type: 'base64', media_type: 'image/png', data: '' };
+  };
+  const toAnthropicContent = (c: any): any => {
+    if (!Array.isArray(c)) return c;
+    return c.map((part: any) => {
+      if (part?.type === 'image_url' && part?.image_url?.url) {
+        return { type: 'image', source: parseDataImageSource(part.image_url.url) };
+      }
+      return { type: 'text', text: part?.text || '' };
+    });
+  };
 
   let requestModel = modelId;
   if (isCopilot) {
@@ -227,12 +306,19 @@ export async function sendChatRequest(
     const userAndAssistantMsgs = formattedMessages.filter((m: any) => m.role !== 'system');
     payload = {
       model: modelId,
-      messages: userAndAssistantMsgs.map((m: any) => ({ role: m.role, content: m.content })),
+      messages: userAndAssistantMsgs.map((m: any) => ({ role: m.role, content: toAnthropicContent(m.content) })),
       max_tokens: 4096,
       stream
     };
     if (systemMsg && systemMsg.content) {
       payload.system = systemMsg.content;
+    }
+    if (Array.isArray(tools) && tools.length > 0) {
+      payload.tools = tools.map((t) => ({
+        name: t.name,
+        description: t.description,
+        input_schema: t.input_schema || t.parameters || { type: 'object', properties: {} }
+      }));
     }
   } else {
     payload = {
@@ -247,10 +333,44 @@ export async function sendChatRequest(
       }),
       stream
     };
+    if (Array.isArray(tools) && tools.length > 0) {
+      payload.tools = tools.map((t) => ({
+        type: 'function',
+        function: {
+          name: t.name,
+          description: t.description,
+          parameters: t.parameters || t.input_schema || { type: 'object', properties: {} }
+        }
+      }));
+      payload.tool_choice = 'auto';
+    }
   }
 
   let fullText = '';
   let fullThought = '';
+
+  // Structured tool_calls accumulator (OpenAI delta.tool_calls fragments and
+  // Anthropic tool_use content blocks both land here).
+  const streamedToolCalls = new Map<number, { id: string; name: string; arguments: string }>();
+  const flushToolCalls = () => {
+    if (!onToolCalls || streamedToolCalls.size === 0) return;
+    const calls = [...streamedToolCalls.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([, call], i) => ({
+        id: call.id || `call_gw_${Date.now().toString(36)}_${i}`,
+        name: call.name,
+        arguments: call.arguments || '{}'
+      }))
+      .filter((call) => call.name);
+    if (calls.length > 0) {
+      console.log(`[GATEWAY] ${calls.length} tool call(s) captured from provider response: ${calls.map((c) => c.name).join(', ')}`);
+      try {
+        onToolCalls(calls);
+      } catch (callbackErr) {
+        console.warn('[GATEWAY] onToolCalls callback failed:', callbackErr instanceof Error ? callbackErr.message : callbackErr);
+      }
+    }
+  };
 
   try {
     // 4. Make the fetch request with the key in the headers
@@ -298,7 +418,10 @@ export async function sendChatRequest(
             onToken,
             handoffCount + 1,
             abortSignal,
-            onHandoff
+            onHandoff,
+            onReasoning,
+            tools,
+            onToolCalls
           );
         } else {
           throw new Error(`[GATEWAY] All providers failed. Maximum handoffs reached.`);
@@ -331,7 +454,7 @@ export async function sendChatRequest(
           return m;
         });
         console.log('[GATEWAY] Reasoning content required: sanitizing history and retrying once.');
-        return await sendChatRequest(providerId, modelId, sanitized, stream, apiKey, onToken, handoffCount, abortSignal, onHandoff, onReasoning);
+        return await sendChatRequest(providerId, modelId, sanitized, stream, apiKey, onToken, handoffCount, abortSignal, onHandoff, onReasoning, tools, onToolCalls);
       }
       throw new Error(`[GATEWAY] ${providerDisplay} API error (${response.status}): ${parsedMsg}`);
     }
@@ -344,6 +467,30 @@ export async function sendChatRequest(
   if (!stream) {
     const data: any = await response.json();
     const text = data.choices?.[0]?.message?.content || data.content?.[0]?.text || '';
+    // Non-stream structured tool calls (OpenAI shape + Anthropic tool_use blocks)
+    const messageToolCalls = data.choices?.[0]?.message?.tool_calls;
+    if (Array.isArray(messageToolCalls)) {
+      messageToolCalls.forEach((tc: any, idx: number) => {
+        if (tc?.function?.name) {
+          streamedToolCalls.set(idx, {
+            id: tc.id || `call_gw_ns_${idx}`,
+            name: tc.function.name,
+            arguments: typeof tc.function.arguments === 'string' ? tc.function.arguments : JSON.stringify(tc.function.arguments ?? {})
+          });
+        }
+      });
+    }
+    if (Array.isArray(data.content)) {
+      data.content.forEach((block: any, idx: number) => {
+        if (block?.type === 'tool_use' && block?.name) {
+          streamedToolCalls.set(idx, {
+            id: block.id || `call_gw_ns_${idx}`,
+            name: block.name,
+            arguments: JSON.stringify(block.input ?? {})
+          });
+        }
+      });
+    }
     const embeddedReasoning = data.choices?.[0]?.message?.reasoning_content;
     if (typeof embeddedReasoning === 'string' && embeddedReasoning) {
       fullThought += embeddedReasoning;
@@ -351,6 +498,7 @@ export async function sendChatRequest(
     }
     if (onToken) onToken(text);
     providerHealthMonitor.recordRequestOutcome(config.providerId || providerId, true, Math.max(1, Date.now() - requestStartMs));
+    flushToolCalls();
     return text;
   }
 
@@ -385,6 +533,34 @@ export async function sendChatRequest(
             if (typeof reasoningToken === 'string' && reasoningToken) {
               fullThought += reasoningToken;
               if (onReasoning) onReasoning(reasoningToken);
+            }
+            // OpenAI-style streamed tool calls arrive as fragments:
+            // { index, id?, function?: { name?, arguments? } }
+            const deltaToolCalls: unknown = json.choices?.[0]?.delta?.tool_calls;
+            if (Array.isArray(deltaToolCalls)) {
+              for (const fragment of deltaToolCalls as any[]) {
+                if (!fragment) continue;
+                const idx = typeof fragment.index === 'number' ? fragment.index : streamedToolCalls.size;
+                const slot = streamedToolCalls.get(idx) || { id: '', name: '', arguments: '' };
+                if (fragment.id) slot.id = fragment.id;
+                if (fragment.function?.name) slot.name = fragment.function.name;
+                if (typeof fragment.function?.arguments === 'string') slot.arguments += fragment.function.arguments;
+                streamedToolCalls.set(idx, slot);
+              }
+            }
+            // Anthropic SSE: content_block_start announces a tool_use block,
+            // input_json_delta streams partial JSON, content_block_stop closes it.
+            if (json.type === 'content_block_start' && json.content_block?.type === 'tool_use') {
+              const idx = typeof json.index === 'number' ? json.index : streamedToolCalls.size;
+              streamedToolCalls.set(idx, {
+                id: json.content_block.id || `call_gw_an_${idx}`,
+                name: json.content_block.name,
+                arguments: ''
+              });
+            } else if (json.type === 'input_json_delta' && typeof json.partial_json === 'string') {
+              const idx = typeof json.index === 'number' ? json.index : Math.max(0, streamedToolCalls.size - 1);
+              const slot = streamedToolCalls.get(idx);
+              if (slot) slot.arguments += json.partial_json;
             }
             let token = json.choices?.[0]?.delta?.content;
             if ((token === undefined || token === null) && json.delta?.text) {
@@ -427,6 +603,7 @@ export async function sendChatRequest(
     }
 
     providerHealthMonitor.recordRequestOutcome(config.providerId || providerId, true, Math.max(1, Date.now() - requestStartMs));
+    flushToolCalls();
     return fullText;
   } catch (err: any) {
     console.error('[GATEWAY] Exact Node.js fetch error:', err);
@@ -470,7 +647,10 @@ export async function sendChatRequest(
           onToken,
           handoffCount + 1,
           abortSignal,
-          onHandoff
+          onHandoff,
+          onReasoning,
+          tools,
+          onToolCalls
         );
       } else {
         throw new Error(`[GATEWAY] All providers failed. Maximum handoffs reached.`);
@@ -569,6 +749,7 @@ export function categorizeModel(modelId: string, isFree: boolean, providerId: st
 export interface ChatCompletionMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
   content: string;
+  images?: string[];
   name?: string;
   tool_call_id?: string;
   tool_calls?: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }>;

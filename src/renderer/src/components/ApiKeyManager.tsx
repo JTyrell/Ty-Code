@@ -13,6 +13,7 @@ interface ProviderConfig {
   name: string;
   placeholder: string;
   signupUrl: string;
+  oauth?: 'pkce' | 'kilo' | 'device';
 }
 
 const PROVIDERS: ProviderConfig[] = [
@@ -20,7 +21,8 @@ const PROVIDERS: ProviderConfig[] = [
     id: 'openrouter',
     name: 'OpenRouter',
     placeholder: 'sk-or-v1-...',
-    signupUrl: 'https://openrouter.ai/keys'
+    signupUrl: 'https://openrouter.ai/keys',
+    oauth: 'pkce'
   },
   {
     id: 'groq',
@@ -64,6 +66,52 @@ export const ApiKeyManager: React.FC = () => {
   const [copilotLoading, setCopilotLoading] = useState<boolean>(false);
   const [copilotPolling, setCopilotPolling] = useState<boolean>(false);
   const [copilotMessage, setCopilotMessage] = useState<string>('');
+
+  // OAuth (OpenRouter PKCE) in-flight status, per provider
+  const [oauthStatus, setOauthStatus] = useState<Record<string, { waiting: boolean; message?: string; error?: string }>>({});
+
+  // Load keys after a browser-OAuth sign-in completes (main pushes status changes)
+  useEffect(() => {
+    const unsub = window.electronAPI?.onOAuthStatusChanged?.((statusMap: Record<string, any>) => {
+      PROVIDERS.forEach(async (provider) => {
+        if (!provider.oauth) return;
+        const pStatus = statusMap[provider.id] || statusMap[provider.id.replace('-free', '')];
+        if (!pStatus?.connected) return;
+        setOauthStatus((prev) => ({ ...prev, [provider.id]: { waiting: false, message: 'Connected via browser OAuth' } }));
+        try {
+          if (window.electronAPI?.getProviderKey) {
+            const saved = await window.electronAPI.getProviderKey(provider.id);
+            if (saved) {
+              setKeys((prev) => ({ ...prev, [provider.id]: saved }));
+              setStatuses((prev) => ({ ...prev, [provider.id]: 'Valid' }));
+              setMessages((prev) => ({ ...prev, [provider.id]: `Connected via ${pStatus.authMethod || 'oauth'} — key stored in safeStorage` }));
+            }
+          }
+        } catch {}
+      });
+    });
+    return () => {
+      unsub?.();
+    };
+  }, []);
+
+  const handleStartOauth = async (provider: ProviderConfig) => {
+    if (provider.oauth !== 'pkce') return;
+    if (!window.electronAPI?.oauthStartOpenRouterPKCE) {
+      setStatuses((prev) => ({ ...prev, [provider.id]: 'Invalid' }));
+      setMessages((prev) => ({ ...prev, [provider.id]: 'OAuth channel is not available in this build.' }));
+      return;
+    }
+    setOauthStatus((prev) => ({ ...prev, [provider.id]: { waiting: true, message: 'Waiting for browser… complete sign-in in the opened tab.' } }));
+    try {
+      const res = await window.electronAPI.oauthStartOpenRouterPKCE();
+      if (!res.success) {
+        setOauthStatus((prev) => ({ ...prev, [provider.id]: { waiting: false, error: res.error || 'OAuth could not start.' } }));
+      }
+    } catch (err: any) {
+      setOauthStatus((prev) => ({ ...prev, [provider.id]: { waiting: false, error: err?.message || String(err) } }));
+    }
+  };
 
   useEffect(() => {
     PROVIDERS.forEach(async (provider) => {
@@ -245,22 +293,59 @@ export const ApiKeyManager: React.FC = () => {
                 <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-primary)' }}>
                   {provider.name}
                 </span>
-                <a
-                  href={provider.signupUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 3,
-                    fontSize: 11,
-                    color: 'var(--accent-primary)',
-                    textDecoration: 'none'
-                  }}
-                >
-                  <span>Get Key</span>
-                  <ExternalLink size={10} />
-                </a>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                {provider.oauth === 'pkce' ? (
+                  <button
+                    type="button"
+                    onClick={() => void handleStartOauth(provider)}
+                    disabled={Boolean(oauthStatus[provider.id]?.waiting)}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      fontSize: 11,
+                      fontWeight: 600,
+                      color: '#ffffff',
+                      backgroundColor: oauthStatus[provider.id]?.waiting ? '#818cf8' : 'var(--accent-primary)',
+                      border: 'none',
+                      padding: '4px 10px',
+                      borderRadius: 12,
+                      cursor: oauthStatus[provider.id]?.waiting ? 'wait' : 'pointer'
+                    }}
+                    title={`One-click ${provider.name} connect via browser OAuth — no key copying needed`}
+                  >
+                    {oauthStatus[provider.id]?.waiting ? (
+                      <>
+                        <Loader2 size={11} className="animate-spin" />
+                        <span>Waiting for browser…</span>
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles size={11} />
+                        <span>Get Key (1-Click OAuth)</span>
+                      </>
+                    )}
+                  </button>
+                ) : null}
+                {provider.oauth !== 'pkce' && (
+                  <a
+                    href={provider.signupUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 3,
+                      fontSize: 11,
+                      color: 'var(--accent-primary)',
+                      textDecoration: 'none'
+                    }}
+                  >
+                    <span>Get Key</span>
+                    <ExternalLink size={10} />
+                  </a>
+                )}
               </div>
 
               {/* Status Badge */}
@@ -389,6 +474,11 @@ export const ApiKeyManager: React.FC = () => {
                 }}
               >
                 {messages[provider.id]}
+              </div>
+            ) : null}
+            {provider.oauth === 'pkce' && oauthStatus[provider.id]?.error ? (
+              <div style={{ fontSize: 11, color: '#ef4444', wordBreak: 'break-word' }}>
+                OAuth failed: {oauthStatus[provider.id].error}
               </div>
             ) : null}
           </div>

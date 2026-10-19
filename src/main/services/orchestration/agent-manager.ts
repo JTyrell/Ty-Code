@@ -16,6 +16,7 @@ import { moduleRegistry } from '../module-registry';
 
 export interface RunOpenCodeAgentParams {
   prompt: string;
+  images?: string[];
   workspacePath: string;
   history: ChatMessage[];
   settings: ProviderSettings;
@@ -176,6 +177,7 @@ export class OpenCodeAgentManager {
   public async run(params: RunOpenCodeAgentParams): Promise<void> {
     const {
       prompt,
+      images,
       workspacePath,
       history,
       settings,
@@ -219,7 +221,7 @@ export class OpenCodeAgentManager {
       content: `Ty-Code ${agentInfo.name} active (${agentInfo.readOnly ? 'Read-Only' : 'Full Access'})…`
     });
 
-    const maxSteps = 15;
+    const maxSteps = 40;
     const tools = OPENCODE_TOOL_DEFINITIONS;
 
     // H4: Agent Engine Setup

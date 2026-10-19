@@ -299,9 +299,9 @@ export class ProviderOAuthService {
           throw new Error('No API key received from OpenRouter authorization exchange.');
         }
 
-        // Store securely via safeStorage
+        // Store ONLY the credential — OAuth sign-in must not silently reorder the
+        // user's active provider selection.
         await saveSettings({
-          activeProvider: 'openrouter',
           apiKeys: { openrouter: apiKey }
         });
 
@@ -318,7 +318,6 @@ export class ProviderOAuthService {
         }
 
         await saveSettings({
-          activeProvider: 'openkilo',
           apiKeys: { openkilo: apiKey }
         });
 
@@ -371,8 +370,9 @@ export class ProviderOAuthService {
    * Exchanges authorization code for OpenKilo token
    */
   private async exchangeOpenKiloCode(code: string): Promise<string> {
+    let response: Response;
     try {
-      const response = await fetch(OPENKILO_TOKEN_URL, {
+      response = await fetch(OPENKILO_TOKEN_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -382,17 +382,20 @@ export class ProviderOAuthService {
         }),
         signal: AbortSignal.timeout(10000)
       });
-
-      if (response.ok) {
-        const json = await response.json() as { access_token?: string };
-        if (json.access_token) return json.access_token;
-      }
-    } catch {
-      // Fallback for offline testing
+    } catch (err: unknown) {
+      throw new Error(`Kilo token exchange request failed: ${err instanceof Error ? err.message : String(err)}`);
     }
 
-    // Return authenticated demo/verified token if gateway is in local/test mode
-    return `kilo_oauth_verified_${Date.now()}`;
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      throw new Error(`Kilo token exchange failed (HTTP ${response.status}): ${text.slice(0, 160)}`);
+    }
+
+    const json = await response.json().catch(() => null) as { access_token?: string } | null;
+    if (!json?.access_token) {
+      throw new Error('Kilo token response did not contain an access token.');
+    }
+    return json.access_token;
   }
 
   // =========================================================================
@@ -482,7 +485,6 @@ export class ProviderOAuthService {
         }
         if (apiKey) {
           await saveSettings({
-            activeProvider: 'openrouter',
             apiKeys: { openrouter: apiKey }
           });
           this.stopLoopbackServer();
@@ -496,7 +498,6 @@ export class ProviderOAuthService {
         }
         if (apiKey) {
           await saveSettings({
-            activeProvider: 'openkilo',
             apiKeys: { openkilo: apiKey }
           });
           this.stopLoopbackServer();

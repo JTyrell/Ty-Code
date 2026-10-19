@@ -165,6 +165,7 @@ export const SettingsModal: React.FC = () => {
   const [storedKeysSummary, setStoredKeysSummary] = useState<StoredKeySummary[]>([]);
   const [byokWizardProviderId, setByokWizardProviderId] = useState<string>('openrouter-free');
   const [byokTesting, setByokTesting] = useState<Record<string, boolean>>({});
+  const [isByokWizardFloating, setIsByokWizardFloating] = useState(false);
   const [byokConnStatus, setByokConnStatus] = useState<Record<string, { status: 'connected' | 'error' | 'disconnected'; latencyMs?: number; error?: string }>>({});
 
   const refreshByokData = useCallback(async () => {
@@ -181,6 +182,9 @@ export const SettingsModal: React.FC = () => {
   const handleByokAddKey = (providerId: string) => {
     setByokWizardProviderId(providerId);
     setByokSubTab('wizard');
+    // Pop the wizard up as a floating window over the settings modal instead of
+    // replacing the inner tab content (long lists no longer bury the form).
+    setIsByokWizardFloating(true);
   };
 
   const handleByokTestConnection = async (providerId: string) => {
@@ -1327,7 +1331,9 @@ export const SettingsModal: React.FC = () => {
                   onRemoveKey={handleByokRemoveKey}
                   onOpenSettings={(providerId) => {
                     setSelectedGridProviderId(providerId.replace('-free', ''));
+                    setIsCustomSelected(false);
                     setActiveTab('providers');
+                    setIsProviderModalOpen(true);
                   }}
                   onLaunchWizard={() => setByokSubTab('wizard')}
                   onOpenAdvanced={() => setByokSubTab('advanced')}
@@ -1336,8 +1342,8 @@ export const SettingsModal: React.FC = () => {
                 />
               )}
 
-              {/* View 2: BYOK Setup Wizard */}
-              {byokSubTab === 'wizard' && (
+              {/* View 2: BYOK Setup Wizard (inline when not opened as floating window) */}
+              {byokSubTab === 'wizard' && !isByokWizardFloating && (
                 <BYOKWizard
                   freeProviders={freeProviders}
                   initialProviderId={byokWizardProviderId}
@@ -2263,6 +2269,104 @@ export const SettingsModal: React.FC = () => {
 
           {error && <div className="settings-error" role="alert">{error}</div>}
         </div>
+
+        {/* Floating BYOK Wizard window — opens over the settings modal whenever a
+            provider card / vault entry is clicked (Add Key), so the form is always
+            reachable without scrolling under long provider lists. */}
+        {isByokWizardFloating && (
+          <div
+            className="provider-config-floating-overlay"
+            id="byok-wizard-floating-overlay"
+            onClick={() => {
+              setIsByokWizardFloating(false);
+              setByokSubTab('cards');
+            }}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              backgroundColor: 'rgba(0, 0, 0, 0.75)',
+              backdropFilter: 'blur(8px)',
+              WebkitBackdropFilter: 'blur(8px)',
+              zIndex: 10050,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '24px'
+            }}
+          >
+            <div
+              className="provider-config-floating-dialog"
+              id="byok-wizard-floating-dialog"
+              onClick={(e) => e.stopPropagation()}
+              role="dialog"
+              aria-modal="true"
+              aria-label="Bring your own key setup wizard"
+              style={{
+                width: '100%',
+                maxWidth: '680px',
+                maxHeight: '88vh',
+                backgroundColor: '#0f172a',
+                border: '1px solid rgba(255, 255, 255, 0.15)',
+                borderRadius: '12px',
+                boxShadow: '0 25px 60px -15px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.1)',
+                display: 'flex',
+                flexDirection: 'column',
+                overflow: 'hidden'
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '12px 16px',
+                  borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+                  background: 'rgba(30, 41, 59, 0.7)',
+                  flexShrink: 0
+                }}
+              >
+                <span style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc' }}>
+                  Connect a Provider — API Key Wizard
+                </span>
+                <button
+                  type="button"
+                  id="byok-wizard-floating-close"
+                  onClick={() => {
+                    setIsByokWizardFloating(false);
+                    setByokSubTab('cards');
+                  }}
+                  aria-label="Close wizard window"
+                  style={{
+                    background: 'rgba(255, 255, 255, 0.05)',
+                    border: 'none',
+                    borderRadius: '6px',
+                    color: '#94a3b8',
+                    cursor: 'pointer',
+                    padding: '6px',
+                    display: 'flex'
+                  }}
+                >
+                  <X size={16} />
+                </button>
+              </div>
+              <div style={{ overflowY: 'auto', padding: '14px' }}>
+                <BYOKWizard
+                  freeProviders={freeProviders}
+                  initialProviderId={byokWizardProviderId}
+                  onComplete={handleByokWizardComplete}
+                  onClose={() => {
+                    setIsByokWizardFloating(false);
+                    setByokSubTab('cards');
+                  }}
+                  onStartCoding={() => {
+                    setIsByokWizardFloating(false);
+                    handleByokStartCoding();
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        )}
 
         <footer className="settings-footer">
           <button className="settings-cancel" onClick={toggleSettings}>Cancel</button>

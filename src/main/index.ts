@@ -216,6 +216,7 @@ async function buildMergedFreeProviderList(): Promise<FreeProvider[]> {
   const fccCatalog = fccCatalogSync.getCatalog() || [];
   const verified = await getVerifiedModels().catch(() => [] as VerifiedModelConfig[]);
   const staticRegistry = freeProviderRegistry.getAllProviders();
+  console.log(`[FCC][INIT] buildMergedFreeProviderList: fccProviders=${fccCatalog.length} enabled=${fccCatalog.filter((p) => p.enabled).length}, verifiedModels=${verified.length}, staticProviders=${staticRegistry.length}`);
 
   const byId = new Map<string, FreeProvider>();
 
@@ -3102,7 +3103,13 @@ app.whenReady().then(async () => {
     2,
     'fcc',
     async () => {
-      await fccEmbeddedCore.initBootTier2();
+      console.log('[FCC][INIT] Booting FCC embedded core (integrity check + catalog sync)…');
+      try {
+        await fccEmbeddedCore.initBootTier2();
+        console.log('[FCC][INIT] FCC embedded core booted: sidecar health + fleet summary available.');
+      } catch (err) {
+        console.warn('[FCC][INIT] FCC embedded core boot failed (non-blocking, free supply stays up):', err instanceof Error ? err.message : err);
+      }
     }
   );
 
@@ -3112,7 +3119,15 @@ app.whenReady().then(async () => {
     3,
     'fcc',
     async () => {
-      await fccServiceManager.ensureRunning();
+      console.log('[FCC][INIT] FCC serviceManager health-check start (binary detection + port 8082)…');
+      try {
+        await fccServiceManager.ensureRunning();
+        const serviceStatus = fccServiceManager.getStatus();
+        const fleet = fccEmbeddedCore.getFleetSummary();
+        console.log(`[FCC][INIT] FCC serviceManager result: installed=${serviceStatus.installed}, binary=${serviceStatus.binaryPath || 'none'}, sidecar running=${fleet.running} (${fleet.health}) on port ${fleet.port}`);
+      } catch (err) {
+        console.warn('[FCC][INIT] FCC serviceManager unavailable (Auto falls back to keyed/anonymous tiers):', err instanceof Error ? err.message : err);
+      }
     }
   );
 

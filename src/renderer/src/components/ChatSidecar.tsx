@@ -851,6 +851,7 @@ export const ErrorCard: React.FC<{ errorCard: ChatErrorCardType; onRetry?: () =>
 
 export const ChatSidecar: React.FC = () => {
   const [input, setInput] = useState('');
+  const [pendingImages, setPendingImages] = useState<string[]>([]);
   const [sidecarTab, setSidecarTab] = useState<'chat' | 'pair'>('chat');
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -864,6 +865,31 @@ export const ChatSidecar: React.FC = () => {
   const lastAssistantId = [...messages].reverse().find((message) => message.role === 'assistant')?.id;
   const lastUserMessage = [...messages].reverse().find((message) => message.role === 'user');
   const firstTokenPending = isRunning && !activeErrorCard && !streamingText && !currentThought && !messages.some((message) => message.role === 'tool' && message.toolStatus === 'running');
+
+  // Up/Down prompt history (persisted across app launches)
+  const promptHistoryRef = useRef<string[]>((() => {
+    try {
+      const raw = window.localStorage.getItem('ty_code_chat_history');
+      const parsed = raw ? (JSON.parse(raw) as unknown) : [];
+      return Array.isArray(parsed) ? parsed.filter((entry): entry is string => typeof entry === 'string') : [];
+    } catch {
+      return [];
+    }
+  })());
+  const historyIndexRef = useRef<number>(-1);
+  const historyDraftRef = useRef<string>('');
+  const rememberPrompt = (value: string) => {
+    const trimmed = value.trim();
+    if (!trimmed) return;
+    const next = [trimmed, ...promptHistoryRef.current.filter((entry) => entry !== trimmed)].slice(0, 100);
+    promptHistoryRef.current = next;
+    try {
+      window.localStorage.setItem('ty_code_chat_history', JSON.stringify(next));
+    } catch {
+      // localStorage full or unavailable — history just stays in memory
+    }
+  };
+  const lastHandoffAtRef = useRef<{ model: string; at: number }>({ model: '', at: 0 });
 
   // Ground Truth Direct Bypass Test State
   const [groundTruthRunning, setGroundTruthRunning] = useState(false);
@@ -934,6 +960,12 @@ export const ChatSidecar: React.FC = () => {
   // Listen for mid-stream provider handoffs (FCC-3)
   useEffect(() => {
     const unsub = window.electronAPI?.onProviderHandoff?.((data) => {
+      // Regulatory guard: duplicate handoff emissions for the same target
+      // model inside a short window (probe/retry loops) must not spam the feed.
+      const now = Date.now();
+      const last = lastHandoffAtRef.current;
+      if (last.model && (now - last.at) < 4000) return;
+      lastHandoffAtRef.current = { model: data.newModel || data.toProvider, at: now };
       const modelName = data.newModel || data.toProvider;
       const handoffText = `⚠️ Previous provider throttled. Continuing with ${modelName}...`;
       useChatStore.setState((state) => ({
@@ -951,17 +983,22 @@ export const ChatSidecar: React.FC = () => {
     return () => unsub?.();
   }, []);
 
-  const sendPrompt = (prompt: string, appendUserMessage = true) => {
+  const sendPrompt = (prompt: string, appendUserMessage = true, images?: string[]) => {
     userAtBottomRef.current = true;
     console.log('UI: Sending prompt', prompt);
-    void sendMessage(prompt, workspacePath, activeTab?.path, activeTab?.content, appendUserMessage);
+    void sendMessage(prompt, workspacePath, activeTab?.path, activeTab?.content, appendUserMessage, undefined, images);
   };
   const handleSubmit = (event?: React.FormEvent) => {
     event?.preventDefault();
-    if (!input.trim() || isRunning) return;
+    if (isRunning) return;
+    if (!input.trim() && pendingImages.length === 0) return;
     const prompt = input.trim();
+    const images = pendingImages.length > 0 ? [...pendingImages] : undefined;
+    if (prompt) rememberPrompt(prompt);
     setInput('');
-    sendPrompt(prompt);
+    setPendingImages([]);
+    historyIndexRef.current = -1;
+    sendPrompt(prompt, true, images);
   };
   const handleRegenerate = () => {
     if (isRunning) {
@@ -969,12 +1006,74 @@ export const ChatSidecar: React.FC = () => {
     }
     const promptToRetry = lastUserMessage?.content || input.trim();
     if (promptToRetry) {
-      sendPrompt(promptToRetry, !lastUserMessage);
+      sendPrompt(promptToRetry, !lastUserMessage, Array.isArray(lastUserMessage?.images) && lastUserMessage.images.length > 0 ? [...lastUserMessage.images] : undefined);
     } else {
       inputRef.current?.focus();
     }
   };
+  const removePendingImage = (index: number) => {
+    setPendingImages((current) => current.filter((_, i) => i !== index));
+  };
+  const handlePasteIntoComposer = (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = Array.from(event.clipboardData?.items || []);
+    const imageItems = items.filter((item) => item.type.startsWith('image/'));
+    if (imageItems.length === 0) return;
+    event.preventDefault();
+    console.log(`UI: Pasted ${imageItems.length} image(s) into chat composer`);
+    setPendingImages((current) => {
+      const next = [...current];
+      for (const item of imageItems.slice(0, 4 - next.length)) {
+        const file = item.getAsFile();
+        if (!file) continue;
+        if (file.size > 6 * 1024 * 1024) continue;
+        const reader = new FileReader();
+        reader.onload = () => {
+          if (typeof reader.result === 'string') {
+            setPendingImages((latest) => (latest.includes(reader.result as string) ? latest : [...latest.slice(0, 3), reader.result as string]));
+          }
+        };
+        reader.readAsDataURL(file);
+      }
+      return next;
+    });
+  };
+  const cycleHistory = (direction: 1 | -1, event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    const history = promptHistoryRef.current;
+    if (history.length === 0) return;
+    if (historyIndexRef.current === -1) {
+      if (direction === -1) {
+        historyDraftRef.current = input;
+        historyIndexRef.current = 0;
+        setInput(history[0]);
+      }
+      return;
+    }
+    const nextIndex = historyIndexRef.current + direction;
+    if (nextIndex >= history.length) {
+      historyIndexRef.current = -1;
+      setInput(historyDraftRef.current);
+      return;
+    }
+    if (nextIndex < 0) {
+      return;
+    }
+    event.preventDefault();
+    historyIndexRef.current = nextIndex;
+    setInput(history[nextIndex]);
+  };
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === 'ArrowUp') {
+      const el = event.currentTarget;
+      const atStart = el.selectionStart === 0 && el.selectionEnd === 0;
+      if (atStart || el.value === '') cycleHistory(-1, event);
+      return;
+    }
+    if (event.key === 'ArrowDown') {
+      const el = event.currentTarget;
+      const atEnd = el.selectionStart === el.value.length && el.selectionEnd === el.value.length;
+      if (atEnd && historyIndexRef.current !== -1) cycleHistory(1, event);
+      return;
+    }
     if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); handleSubmit(); }
   };
 
@@ -1237,7 +1336,14 @@ export const ChatSidecar: React.FC = () => {
               <span>{message.content}</span>
             </div>
             )
-          ) : message.role === 'user' ? <div className="user-message-bubble">{message.content}</div> : <div className="assistant-message-bubble">
+          ) : message.role === 'user' ? <div className="user-message-bubble">
+            {Array.isArray(message.images) && message.images.length > 0 && (
+              <div className="chat-message-images" data-count={message.images.length}>
+                {message.images.map((src, imageIndex) => <img key={`${message.id}_img_${imageIndex}`} src={src} alt={`Pasted image ${imageIndex + 1}`} className="chat-message-image" />)}
+              </div>
+            )}
+            {message.content}
+          </div> : <div className="assistant-message-bubble">
             {/* Start token count indicator */}
             <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '10px', color: '#94a3b8', marginBottom: '6px', padding: '2px 6px', background: 'rgba(255,255,255,0.03)', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.06)' }}>
               <Zap size={10} color="#818cf8" />
@@ -1337,7 +1443,7 @@ export const ChatSidecar: React.FC = () => {
         {firstTokenPending && !activeErrorCard && (
           <div className="chat-typing-indicator" role="status">
             <Loader2 size={12} className="animate-spin" color="var(--accent-primary)" />
-            <span>Ty-Code is thinking…</span>
+            <span>Thinking…</span>
           </div>
         )}
         {activeErrorCard && (
@@ -1354,12 +1460,24 @@ export const ChatSidecar: React.FC = () => {
     )}
 
     <form onSubmit={handleSubmit} className="chat-composer">
+      {pendingImages.length > 0 && (
+        <div className="chat-attachments">
+          {pendingImages.map((src, index) => (
+            <div key={`attachment_${index}`} className="chat-attachment-thumb">
+              <img src={src} alt={`Attachment ${index + 1}`} />
+              <button type="button" className="chat-attachment-remove" onClick={() => removePendingImage(index)} aria-label={`Remove attachment ${index + 1}`}>
+                <X size={10} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="chat-composer-field">
-        <textarea ref={inputRef} value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={handleKeyDown} placeholder="Ask Ty-Code… (Enter to send)" aria-label="Message Ty-Code" rows={3} />
+        <textarea ref={inputRef} value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={handleKeyDown} onPaste={handlePasteIntoComposer} placeholder="Ask Ty-Code… (Enter to send)" aria-label="Message Ty-Code" rows={3} />
         {isRunning ? <button type="button" onClick={() => void stopTask()} className="chat-send-button is-stop" title="Stop agent" aria-label="Stop agent"><Square size={12} /></button>
-          : <button type="submit" disabled={!input.trim()} className="chat-send-button" title="Send message" aria-label="Send message"><Send size={13} /></button>}
+          : <button type="submit" disabled={!input.trim() && pendingImages.length === 0} className="chat-send-button" title="Send message" aria-label="Send message"><Send size={13} /></button>}
       </div>
-      <div className="chat-composer-hint">Shift+Enter for a new line</div>
+      <div className="chat-composer-hint">Shift+Enter new line · ↑/↓ history · paste images</div>
     </form>
   </aside>;
 };

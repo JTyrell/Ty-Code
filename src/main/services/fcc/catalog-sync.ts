@@ -1983,6 +1983,7 @@ export class FCCCatalogSyncService {
     this.initializeCatalog();
     this.loadProbeCache();
     this.scheduleNightlySync();
+    console.log(`[FCC][CATALOG] Catalog initialized: ${this.catalog.size} providers, probe cache loaded, nightly sync scheduled, early probe in 30s.`);
     // Opportunistic early probe shortly after boot so the dashboard reports
     // measured data without requiring a manual sync.
     const bootTimer = setTimeout(() => {
@@ -2139,6 +2140,7 @@ export class FCCCatalogSyncService {
     }
 
     let probedCount = 0;
+    let healthyCount = 0;
     const concurrency = FCCCatalogSyncService.PROBE_CONCURRENCY;
     for (let start = 0; start < probes.length; start += concurrency) {
       const batch = probes.slice(start, start + concurrency);
@@ -2150,11 +2152,14 @@ export class FCCCatalogSyncService {
             provider.latencyMs = latencyMs;
           }
           provider.probedAt = Date.now();
+          if (reachable) healthyCount++;
           probedCount++;
         })
       );
     }
     this.persistProbeCache();
+    const enabledFreeModels = Array.from(this.catalog.values()).filter((p) => p.enabled).reduce((sum, p) => sum + p.models.filter((m) => m.isFree).length, 0);
+    console.log(`[FCC][CATALOG] sync done: probed=${probedCount} healthy=${healthyCount} providers, ${enabledFreeModels} free models available from enabled providers (persisted to fcc-probe-cache.json).`);
     return {
       count: this.catalog.size,
       timestamp: this.lastSyncTimestamp,

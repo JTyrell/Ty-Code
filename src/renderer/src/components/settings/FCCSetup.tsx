@@ -33,6 +33,8 @@ export const FCCSetup: React.FC = () => {
   const [serverRunning, setServerRunning] = useState(true);
   const [serverPort, setServerPort] = useState(8082);
   const [tokensUsed, setTokensUsed] = useState(0);
+  const [fleetAllocated, setFleetAllocated] = useState(0);
+  const [fleetProviderCount, setFleetProviderCount] = useState(0);
   const [loadingAll, setLoadingAll] = useState(false);
   const [activeHarness, setActiveHarness] = useState<AgentHarnessType>(settings?.activeHarness || 'claude-code');
 
@@ -46,48 +48,7 @@ export const FCCSetup: React.FC = () => {
   const [showServiceLogs, setShowServiceLogs] = useState(false);
   const [serviceLogs, setServiceLogs] = useState<string[]>([]);
 
-  const [providers, setProviders] = useState<ProviderSetupState[]>([
-    {
-      id: 'openrouter',
-      name: 'OpenRouter Free Tier',
-      category: 'API Key',
-      status: 'active',
-      message: 'Access to a coding model and a long-context multimodal model with no usage cost.',
-      freeTokens: '200M tokens/mo'
-    },
-    {
-      id: 'github-copilot',
-      name: 'GitHub Copilot',
-      category: 'OAuth',
-      status: 'ready',
-      message: 'Auto-extracted from Git Credential Helper or GitHub CLI (`gh`).',
-      freeTokens: '50M tokens/mo'
-    },
-    {
-      id: 'google-ai-studio',
-      name: 'AI Studio',
-      category: 'OAuth',
-      status: 'ready',
-      message: 'Long-context model with a 1,000,000-token context window.',
-      freeTokens: '300M tokens/mo'
-    },
-    {
-      id: 'huggingchat',
-      name: 'HuggingChat',
-      category: 'Web Cookie',
-      status: 'ready',
-      message: 'Direct web access to Qwen 2.5 Coder 32B Instruct.',
-      freeTokens: '100M tokens/mo'
-    },
-    {
-      id: 'ollama',
-      name: 'Local Ollama',
-      category: 'Local Offline',
-      status: 'active',
-      message: 'Detected on localhost:11434 with 100% private execution.',
-      freeTokens: 'Unlimited (Local)'
-    }
-  ]);
+  const [providers, setProviders] = useState<ProviderSetupState[]>([]);
 
   const harnesses = [
     { id: 'claude-code', name: 'Claude Code CLI', description: 'Autonomous software engineering loop with bash & surgical diffs', default: true },
@@ -107,13 +68,37 @@ export const FCCSetup: React.FC = () => {
     let mounted = true;
     const fetchStatus = async () => {
       try {
+        let providersCount = 0;
         if (window.electronAPI?.fccGetStatus) {
           const res = await window.electronAPI.fccGetStatus();
           if (res.success && res.data && mounted) {
             setServerRunning(res.data.running && res.data.health === 'healthy');
             setServerPort(res.data.port);
             setTokensUsed(res.data.freeTokensUsed);
+            setFleetAllocated(res.data.freeTokensAllocated);
+            setFleetProviderCount(res.data.providersCount);
+            providersCount = res.data.providersCount;
           }
+        }
+
+        // Real per-provider rows from the FCC catalog supply (no static placeholders).
+        if (window.electronAPI?.fccGetCatalog) {
+          const res = await window.electronAPI.fccGetCatalog();
+          if (res.success && Array.isArray(res.data) && mounted) {
+            const rows = res.data.map((p) => ({
+              id: p.id,
+              name: p.name,
+              category: p.category,
+              status: (p.health === 'healthy' ? 'active' : p.enabled ? 'ready' : 'detecting') as ProviderSetupState['status'],
+              message: `${p.models.length} free model${p.models.length === 1 ? '' : 's'} · ${p.latencyMs}ms · ${Math.round(p.successRate)}% success`,
+              freeTokens: p.monthlyFreeTokens > 0
+                ? `${Math.round(p.monthlyFreeTokens / 1_000_000)}M tokens/mo`
+                : `${p.models.length} models`
+            }));
+            setProviders(rows);
+          }
+        } else if (providersCount > 0 && mounted) {
+          setProviders([]);
         }
       } catch {
         // Fallback to initial defaults
@@ -214,35 +199,28 @@ export const FCCSetup: React.FC = () => {
   const handleSetupAll = async () => {
     setLoadingAll(true);
     try {
-      if (window.electronAPI?.fccAutoSetup) {
-        const res = await window.electronAPI.fccAutoSetup();
-        if (res.success && Array.isArray(res.data)) {
-          const results = res.data;
-          setProviders((prev) =>
-            prev.map((p) => {
-              const r = results.find((item) => item.providerId === p.id);
-              if (r) {
-                return {
-                  ...p,
-                  status: r.success ? 'active' : 'ready',
-                  message: r.message
-                };
-              }
-              return { ...p, status: 'active', message: 'Configured and ready for orchestration.' };
-            })
-          );
-        }
-      } else {
-        await new Promise((r) => setTimeout(r, 600));
+      if (!window.electronAPI?.fccAutoSetup) {
+        throw new Error('FCC auto-setup channel is not available in this build.');
+      }
+      const res = await window.electronAPI.fccAutoSetup();
+      if (res.success && Array.isArray(res.data)) {
+        const results = res.data;
         setProviders((prev) =>
-          prev.map((p) => ({ ...p, status: 'active', message: 'Configured and ready for orchestration.' }))
+          prev.map((p) => {
+            const r = results.find((item) => item.providerId === p.id);
+            if (r) {
+              return {
+                ...p,
+                status: r.success ? 'active' : 'ready',
+                message: r.message
+              };
+            }
+            return p;
+          })
         );
       }
-      await saveSettings({
-        activeProvider: 'fcc-proxy',
-        activeModel: 'claude-3-5-sonnet-20241022',
-        activeHarness
-      });
+    } catch (err: unknown) {
+      setInstallError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoadingAll(false);
     }
@@ -253,8 +231,13 @@ export const FCCSetup: React.FC = () => {
     await saveSettings({ activeHarness: harnessId });
   };
 
-  const freeTotal = 1_350_000_000;
-  const progressPercent = Math.min(100, Math.max(1, (tokensUsed / freeTotal) * 100));
+  const fleetUsedPercent = fleetAllocated > 0 ? Math.min(100, Math.max(0, (tokensUsed / fleetAllocated) * 100)) : null;
+  const formatTokenCount = (n: number): string => {
+    if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(2)}B`;
+    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+    if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+    return String(n);
+  };
 
   return (
     <div className="fcc-setup-container" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -530,8 +513,8 @@ export const FCCSetup: React.FC = () => {
                   {providers.map((p) => (
                     <option key={p.id} value={p.id}>{p.name}</option>
                   ))}
-                  <option value="openkilo">OpenKilo (Anonymous)</option>
-                  <option value="ollama">Ollama (Local)</option>
+                  {!providers.some((p) => p.id === 'openkilo') && <option value="openkilo">OpenKilo (Anonymous)</option>}
+                  {!providers.some((p) => p.id === 'ollama') && <option value="ollama">Ollama (Local)</option>}
                 </select>
               </div>
               <button
@@ -628,26 +611,30 @@ export const FCCSetup: React.FC = () => {
             </button>
           </div>
           <span style={{ fontSize: '11px', color: 'var(--text-muted, #8b8b9e)' }}>
-            ToS-Compliant Proxy • 61+ Providers
+            ToS-Compliant Proxy · {fleetProviderCount > 0 ? `${fleetProviderCount} Providers` : 'Fleet syncing…'}
           </span>
         </div>
 
-        {/* Free Tokens Progress Bar */}
+        {/* Free Tokens Progress Bar (real allocated vs used from the FCC service) */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-secondary, #c7c7d4)' }}>
-            <span>Free Tokens Pool: <strong>1.35 Billion / month</strong></span>
-            <span>Used: {(tokensUsed / 1_000_000).toFixed(1)}M / 1,350M ({progressPercent.toFixed(1)}%)</span>
+            <span>
+              Free Tokens Pool: <strong>{fleetAllocated > 0 ? `${formatTokenCount(fleetAllocated)} / month (fleet)` : 'Syncing…'}</strong>
+            </span>
+            <span>{fleetAllocated > 0 ? `Used: ${formatTokenCount(tokensUsed)} (${fleetUsedPercent?.toFixed(1)}%)` : `Used: ${formatTokenCount(tokensUsed)}`}</span>
           </div>
-          <div style={{ height: '6px', width: '100%', backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: '3px', overflow: 'hidden' }}>
-            <div
-              style={{
-                height: '100%',
-                width: `${progressPercent}%`,
-                backgroundColor: 'var(--accent-primary, #6366f1)',
-                transition: 'width 0.3s ease'
-              }}
-            />
-          </div>
+          {fleetUsedPercent !== null && (
+            <div style={{ height: '6px', width: '100%', backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: '3px', overflow: 'hidden' }}>
+              <div
+                style={{
+                  height: '100%',
+                  width: `${fleetUsedPercent}%`,
+                  backgroundColor: 'var(--accent-primary, #6366f1)',
+                  transition: 'width 0.3s ease'
+                }}
+              />
+            </div>
+          )}
         </div>
       </div>
 
@@ -658,7 +645,7 @@ export const FCCSetup: React.FC = () => {
             1-Click Free Provider Setup
           </h4>
           <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'var(--text-muted, #8b8b9e)' }}>
-            Enable all 5 primary zero-cost providers with zero manual key management
+            Runs FCC zero-cost auto-configuration across every supported provider layer
           </p>
         </div>
         <button
@@ -679,12 +666,17 @@ export const FCCSetup: React.FC = () => {
           }}
         >
           {loadingAll ? <RefreshCw size={13} className="spin" /> : <Zap size={13} />}
-          Enable All 5 Free Providers
+          Enable Free Provider Supply
         </button>
       </div>
 
-      {/* Provider Cards */}
+      {/* Provider Cards (real FCC catalog supply) */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        {providers.length === 0 && (
+          <div style={{ padding: '12px', fontSize: '12px', color: 'var(--text-muted, #8b8b9e)', border: '1px dashed var(--border-subtle, #2e2e38)', borderRadius: '6px' }}>
+            FCC catalog is syncing — the complete live provider grid is under Fleet Health Dashboard.
+          </div>
+        )}
         {providers.map((p) => (
           <div
             key={p.id}

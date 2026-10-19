@@ -1,5 +1,5 @@
 import type { AgentHarnessType, AgentStreamChunk, AgentToolApproval, ChatMessage, ProposedDiff, ProviderSettings, ToolCall } from '../../preload/types';
-import { ProviderGateway, type ChatCompletionMessage } from '../providers/provider-gateway';
+import { ProviderGateway, type ChatCompletionMessage, type GatewayToolCall, type GatewayToolSchema } from '../providers/provider-gateway';
 export { ProviderGateway };
 import { buildSystemPrompt, AGENT_TOOLS_DEFINITIONS, getEccRulesPrompt, getSeoPromptGuidance, isLocalModel } from './system-prompt';
 import { ToolExecutor } from './tool-executor';
@@ -14,15 +14,18 @@ import { optimizationPipeline } from '../providers/optimization-pipeline';
 import { failoverResumeManager } from './failover-resume';
 
 import { connectivityTracer } from '../services/diagnostics/connectivity-tracer';
+import { getWorkspaceSummary, getOpenFilesContent, buildWorkspaceContextBlock } from '../services/workspace-context-manager';
 
 export interface RunAgentParams {
   prompt: string;
+  images?: string[];
   workspacePath: string;
   history: ChatMessage[];
   settings: ProviderSettings;
   harness?: AgentHarnessType;
   activeFilePath?: string;
   activeFileContent?: string;
+  openFilePaths?: string[];
   traceId?: string;
   onChunk: (chunk: AgentStreamChunk) => void;
   requestApproval: (approval: AgentToolApproval) => Promise<boolean>;
@@ -71,10 +74,18 @@ export class AgentEngine {
     const messages: ChatCompletionMessage[] = [{ role: 'system', content: systemPrompt }];
     for (const message of history.slice(-10)) {
       if (message.role === 'user' || message.role === 'assistant') {
-        messages.push({ role: message.role, content: message.content });
+        messages.push(
+          message.role === 'user' && Array.isArray((message as any).images) && (message as any).images.length > 0
+            ? ({ role: 'user', content: message.content, images: (message as any).images } as ChatCompletionMessage)
+            : { role: message.role, content: message.content }
+        );
       }
     }
-    messages.push({ role: 'user', content: prompt });
+    messages.push(
+      Array.isArray(params.images) && params.images.length > 0
+        ? ({ role: 'user', content: prompt, images: params.images } as ChatCompletionMessage)
+        : { role: 'user', content: prompt }
+    );
 
     if (params.traceId) {
       connectivityTracer.recordHop(params.traceId, 'H4', {
@@ -89,19 +100,47 @@ export class AgentEngine {
       });
     }
 
-    const maxSteps = 10;
-    onChunk({ type: 'status', content: `Agent thinking (${harness.metadata.name})…` });
+    // Universal tool schema: every model receives the same function-calling
+    // palette (the gateway converts to OpenAI `tools[].function` and Anthropic
+    // `tools[].input_schema` wire shapes). The harness textual protocol remains
+    // the fallback parser for models without native function calling.
+    const toolSchemas: GatewayToolSchema[] = AGENT_TOOLS_DEFINITIONS.map((t) => ({
+      name: t.function.name,
+      description: t.function.description,
+      parameters: t.function.parameters
+    }));
+
+    // Workspace ground-truth: every model is told the open workspace, its
+    // folder structure (as the Explorer shows it) and the open/active files.
+    const workspaceSummary = getWorkspaceSummary(workspacePath);
+    const openFilePaths = params.openFilePaths?.length ? params.openFilePaths : activeFilePath ? [activeFilePath] : [];
+    const openFiles = getOpenFilesContent(workspacePath, openFilePaths, activeFilePath);
+    const workspaceContextBlock = buildWorkspaceContextBlock({
+      rootPath: workspacePath,
+      workspaceSummary,
+      openFiles,
+      activeFilePath,
+      activeFileContent
+    });
+    if (!systemPrompt.includes('WORKSPACE GROUND TRUTH')) {
+      systemPrompt = `${systemPrompt}\n\n=== WORKSPACE GROUND TRUTH (live context) ===\n${workspaceContextBlock}\n=== END WORKSPACE GROUND TRUTH ===`;
+    }
 
     let currentSettings = { ...settings };
     const failedProviders = new Set<string>();
 
-    for (let step = 0; step < maxSteps; step++) {
+    /** Executes an agent task as a robust while-loop. */
+    const MAX_ITERATIONS = 40;
+    let iteration = 0;
+    onChunk({ type: 'status', content: 'Thinking…' });
+
+    while (iteration < MAX_ITERATIONS) {
       if (abortSignal?.aborted) {
         onChunk({ type: 'cancelled' });
         return;
       }
       try {
-        console.log('[AGENT] Calling gateway...');
+        console.log(`[AGENT] Iteration ${iteration + 1}/${MAX_ITERATIONS} — calling gateway...`);
         // "Auto" binding: FCC decides. When no explicit provider is configured
         // (unset or literally 'auto'), the FCC router picks the best FREE model
         // for this task across the entire managed free pool — never a paid
@@ -142,6 +181,9 @@ export class AgentEngine {
         // a dedicated stream field; it must be echoed on the assistant turn for
         // every follow-up request of this task.
         let streamThought = '';
+        // Structured tool calls captured from the wire (delta.tool_calls or
+        // Anthropic tool_use blocks) via the gateway callback.
+        let structuredCalls: GatewayToolCall[] = [];
         const streamText = await ProviderGateway.sendChatRequest(
           activeProvider,
           activeModel,
@@ -156,11 +198,50 @@ export class AgentEngine {
           params.onProviderHandoff,
           (thought: string) => {
             streamThought += thought;
+          },
+          toolSchemas,
+          (calls: GatewayToolCall[]) => {
+            structuredCalls.push(...calls);
           }
         );
 
-        const parsedResponse = harness.parseResponse(streamText, []);
-        const toolCallsToExecute = parsedResponse.toolCalls;
+        // Merge the two tool-call channels before executing:
+        //  1) structured tool_calls from native function calling (ground truth)
+        //  2) textual `` blocks parsed by the harness protocol (fallback
+        // for models without native function calling).
+        const harnessToolCalls = harness.parseResponse(streamText, structuredCalls.map((call) => {
+          let parsedArgs: Record<string, unknown> = {};
+          try {
+            parsedArgs = typeof call.arguments === 'string' && call.arguments.trim()
+              ? (JSON.parse(call.arguments) as Record<string, unknown>)
+              : {};
+          } catch {
+            parsedArgs = {};
+          }
+          return { id: call.id, name: call.name, arguments: parsedArgs } as ToolCall;
+        })).toolCalls;
+
+        const deduped: ToolCall[] = [];
+        const seenNames = new Set<string>();
+        for (const call of structuredCalls) {
+          if (!call.name || seenNames.has(call.name)) continue;
+          seenNames.add(call.name);
+          let parsedArgs: Record<string, unknown> = {};
+          try {
+            parsedArgs = call.arguments && String(call.arguments).trim()
+              ? (JSON.parse(call.arguments) as Record<string, unknown>)
+              : {};
+          } catch {
+            parsedArgs = { raw: call.arguments };
+          }
+          deduped.push({ id: call.id, name: call.name, arguments: parsedArgs });
+        }
+        const toolCallsToExecute: ToolCall[] = [...deduped];
+        for (const textual of harnessToolCalls) {
+          if (seenNames.has(textual.name)) continue;
+          seenNames.add(textual.name);
+          toolCallsToExecute.push(textual);
+        }
 
         if (!toolCallsToExecute.length) {
           if (params.traceId) {
@@ -185,7 +266,7 @@ export class AgentEngine {
 
         messages.push({
           role: 'assistant',
-          content: parsedResponse.text || streamText || '',
+          content: streamText || '',
           ...(streamThought ? { reasoning_content: streamThought } : {}),
           tool_calls: toolCallsToExecute.map((toolCall) => ({
             id: toolCall.id,
@@ -330,6 +411,11 @@ export class AgentEngine {
           const compressedResult = optimizationPipeline.compressToolOutput(result.output);
           messages.push({ role: 'tool', name: toolCall.name, tool_call_id: toolCall.id, content: compressedResult.compressed });
         }
+
+        // mutate the conversation and re-enter the loop: the LLM sees the
+        // original assistant turn + the tool result on the next request and
+        // can continue the task chain.
+        iteration++;
       } catch (err: unknown) {
         if (abortSignal?.aborted) {
           onChunk({ type: 'cancelled' });
@@ -340,7 +426,7 @@ export class AgentEngine {
         return;
       }
     }
-    onChunk({ type: 'status', content: 'Reached the maximum number of tool steps.' });
+    onChunk({ type: 'status', content: `Reached the tool-execution limit (${MAX_ITERATIONS} iterations).` });
     onChunk({ type: 'done' });
   }
 }

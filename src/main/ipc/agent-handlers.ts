@@ -87,12 +87,14 @@ export async function startAgentTask(
     taskId?: string;
     traceId?: string;
     prompt: string;
+    images?: string[];
     workspacePath: string;
     history: ChatMessage[];
     agentMode?: AgentMode;
     sessionId?: string;
     activeFilePath?: string;
     activeFileContent?: string;
+    openFilePaths?: string[];
     providerOverride?: string;
     modelOverride?: string;
   }
@@ -219,6 +221,7 @@ export async function startAgentTask(
         const opencode = new OpenCodeAgentManager(params.workspacePath);
         await opencode.run({
           prompt: params.prompt,
+          images: params.images,
           workspacePath: params.workspacePath,
           history: params.history,
           settings: effectiveSettings,
@@ -235,11 +238,13 @@ export async function startAgentTask(
         const engine = new AgentEngine(params.workspacePath);
         await engine.run({
           prompt: params.prompt,
+          images: params.images,
           workspacePath: params.workspacePath,
           history: params.history,
           settings: effectiveSettings,
           activeFilePath: params.activeFilePath,
           activeFileContent: params.activeFileContent,
+          openFilePaths: params.openFilePaths,
           traceId: params.traceId,
           abortSignal: abortController.signal,
           requestApproval: (approval) => requestTaskApproval(taskId, approval, abortController.signal),

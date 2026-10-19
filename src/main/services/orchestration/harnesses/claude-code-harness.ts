@@ -6,6 +6,7 @@
 import type { AgentHarness, HarnessMetadata } from './types';
 import type { ChatCompletionMessage } from '../../../providers/provider-gateway';
 import type { ToolCall } from '../../../../preload/types';
+import { TEXTUAL_TOOL_PROTOCOL } from './tool-protocol';
 
 export class ClaudeCodeHarness implements AgentHarness {
   public readonly metadata: HarnessMetadata = {
@@ -25,6 +26,7 @@ export class ClaudeCodeHarness implements AgentHarness {
       `You are Claude Code, an expert autonomous software engineer working directly in the user's workspace at "${workspacePath}".`,
       'You solve coding tasks by reading code, editing files surgically, running shell commands, and verifying tests.',
       'Always prioritize minimal, high-impact edits without gratuitous refactoring or whitespace corruption.',
+      TEXTUAL_TOOL_PROTOCOL,
       activeFilePath ? `Currently open file: "${activeFilePath}".` : '',
       activeFileContent ? `Active file contents:\n\`\`\`\n${activeFileContent.slice(0, 4000)}\n\`\`\`` : ''
     ].filter(Boolean).join('\n\n');

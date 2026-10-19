@@ -282,7 +282,7 @@ export const UsageDashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* Scroll Zone — hero metrics, savings meter and engine banner scroll with the card */}
+        {/* Scroll Canvas — the whole card body (top third included) scrolls as one surface; binding strip and tab nav pin via position:sticky */}
         <div
           id="usage-dash-scroll-zone"
           style={{
@@ -517,12 +517,13 @@ export const UsageDashboard: React.FC = () => {
           </div>
         </div>
 
-        </div> {/* /usage-dash-scroll-zone */}
-
-        {/* Active Binding strip — pinned; mirrors ModelSelector & live quotas even when the upper card area is scrolled away */}
+        {/* Active Binding strip — sticky inside the scroll canvas; pins to the top edge once scrolled past, while the upper third stays scrollable */}
         <div
           id="fcc-active-binding-strip"
           style={{
+            position: 'sticky',
+            top: 0,
+            zIndex: 6,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
@@ -530,7 +531,8 @@ export const UsageDashboard: React.FC = () => {
             margin: '0 24px 8px 24px',
             padding: '10px 16px',
             borderRadius: '8px',
-            backgroundColor: 'rgba(30, 41, 59, 0.7)',
+            backgroundColor: 'rgba(30, 41, 59, 0.85)',
+            backdropFilter: 'blur(6px)',
             border: '1px solid rgba(56, 189, 248, 0.3)'
           }}
         >
@@ -591,17 +593,22 @@ export const UsageDashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* Tab Navigation */}
+        {/* Tab Navigation — sticky directly under the binding strip */}
         <div
           id="usage-dash-tab-nav"
           style={{
+            position: 'sticky',
+            top: 57,
+            zIndex: 5,
             display: 'flex',
             gap: '8px',
             padding: '8px 24px',
             borderBottom: '1px solid rgba(51, 65, 85, 0.4)',
             flexShrink: 0,
             overflowX: 'auto',
-            overflowY: 'hidden'
+            overflowY: 'hidden',
+            backgroundColor: 'rgba(15, 23, 42, 0.92)',
+            backdropFilter: 'blur(6px)'
           }}
         >
           <button
@@ -720,21 +727,17 @@ export const UsageDashboard: React.FC = () => {
           </button>
         </div>
 
-        {/* Body Content — lower two-thirds of the card; internal scrolling preserved */}
+        {/* Body Content — flows inside the unified scroll canvas; the unified tab keeps a fixed 64vh workspace for its internal scrolling */}
         <div
           id="usage-dash-tab-body"
           style={{
             flex: '0 0 auto',
-            height: '64vh',
-            maxHeight: '64vh',
-            overflowY: 'auto',
-            overscrollBehavior: 'contain',
             boxSizing: 'border-box',
             padding: activeTab === 'unified' ? '0' : '16px 24px'
           }}
         >
           {activeTab === 'unified' && (
-            <div style={{ height: '100%', minHeight: '64vh', overflow: 'hidden' }}>
+            <div style={{ height: '64vh', overflow: 'hidden' }}>
               <ProviderDashboard onClose={closeDashboard} />
             </div>
           )}
@@ -1219,6 +1222,7 @@ export const UsageDashboard: React.FC = () => {
             </div>
           )}
         </div>
+        </div> {/* /usage-dash-scroll-zone */}
 
         {/* Footer */}
         <div
