@@ -262,7 +262,14 @@ export const SMOKE_TEST_FAILURE_PROTOCOL =
 // Phase Diagnostics 5: Background Health Monitoring and Auto-Failover Types
 export type FleetHealthState = 'all-healthy' | 'degraded' | 'no-working-provider';
 
-export type ProviderHealthState = 'HEALTHY' | 'RATE_LIMITED' | 'PROVIDER_DOWN' | 'COOLDOWN' | 'UNKNOWN';
+export type ProviderHealthState =
+  | 'HEALTHY'
+  | 'RATE_LIMITED'
+  | 'PROVIDER_DOWN'
+  | 'COOLDOWN'
+  | 'UNCONFIGURED'
+  | 'UNTESTED'
+  | 'UNKNOWN';
 
 export interface ProviderHealthDetail {
   providerId: string;
@@ -276,6 +283,7 @@ export interface ProviderHealthDetail {
   cooldownRemainingSec?: number;
   consecutiveFailures: number;
   testedModel?: string;
+  verifiedAt?: number;
 }
 
 export interface DiagnosticsFleetHealth {
@@ -283,6 +291,8 @@ export interface DiagnosticsFleetHealth {
   timestamp: number;
   healthyCount: number;
   totalCount: number;
+  testedCount: number;
+  untestedCount: number;
   degradedCount: number;
   downCount: number;
   quietModeActive: boolean;

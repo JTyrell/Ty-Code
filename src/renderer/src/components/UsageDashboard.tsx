@@ -24,6 +24,7 @@ import { useOnboardingStore } from '../state/onboarding-store';
 import type { SmartTaskType, FccOptimizationSavings, FccQuotaMetersSummary, FCCServerStatus, FCCServiceStatus } from '../../../preload/types';
 import { ProviderDashboard } from './dashboard/ProviderDashboard';
 import { UsageLedgerView } from './dashboard/UsageLedgerView';
+import { ObservabilityPanel } from './agent/ObservabilityPanel';
 
 const TASK_BADGES: Record<SmartTaskType, { label: string; color: string; bg: string }> = {
   coding: { label: 'Code Gen', color: '#38bdf8', bg: 'rgba(56, 189, 248, 0.15)' },
@@ -1222,6 +1223,7 @@ export const UsageDashboard: React.FC = () => {
             </div>
           )}
         </div>
+        <ObservabilityPanel />
         </div> {/* /usage-dash-scroll-zone */}
 
         {/* Footer */}

@@ -14,6 +14,8 @@ import {
   createDirectory, deletePath, renamePath, searchWorkspaceFiles,
   searchInWorkspaceFiles, replaceInWorkspaceFiles
 } from './ipc/fs-handlers';
+import { readFileForContext } from './ipc/chat-handlers';
+import { voiceTranscriber } from './services/voice-transcriber';
 import {
   handleGetLspServers, handleStartLspServer, handleStopLspServer,
   handleRestartLspServer, handleConfigureLspServer, handleLspDidOpen,
@@ -71,6 +73,7 @@ import { fccIntegrityChecker } from './services/orchestration/fcc-integrity';
 import { fccEmbeddedCore } from './services/fcc/embedded-core';
 import { fccServiceManager } from './fcc-integration';
 import { fccCatalogSync } from './services/fcc/catalog-sync';
+import { modelCatalogVerifier } from './services/providers/catalog-verifier';
 import { harnessImporter } from './services/fcc/harness-importer';
 import { subscriptionOAuthService } from './services/fcc/subscription-oauth';
 import { localSupplyEndpoint } from './services/fcc/local-supply-endpoint';
@@ -124,6 +127,7 @@ import { canvasSyncManager } from './services/canvas-sync-manager';
 import { canvasAgentEngine, type CanvasAgentGenerationResult } from './agent/canvas-agent-engine';
 import { getCanvasWindow } from './windows/canvas-window';
 import { openCanvasWindow } from './windows/canvas-window';
+import { debuggerSyncManager, openDebuggerWindow, closeDebuggerWindow } from './windows/debugger-window';
 import { opencodeServiceManager } from './opencode-integration';
 
 function isAppOrSystemDir(dirPath: string): boolean {
@@ -142,14 +146,10 @@ function isAppOrSystemDir(dirPath: string): boolean {
 function getInitialWorkspacePath(): string {
   const cwd = process.cwd();
   if (isAppOrSystemDir(cwd)) {
-    try {
-      const documents = app.getPath('documents');
-      if (documents && fsSync.existsSync(documents)) return documents;
-      const home = app.getPath('home');
-      if (home && fsSync.existsSync(home)) return home;
-    } catch {
-      return os.homedir();
-    }
+    // No folder is auto-selected. The user must explicitly choose a folder
+    // (Explorer empty state, TitleBar, or Welcome page). Privacy: never
+    // silently open the Documents or home directory tree.
+    return '';
   }
   return cwd;
 }
@@ -338,6 +338,26 @@ function registerIpcHandlers(): void {
   );
   canvasSyncManager.registerIpcHandlers(ipcMain, { isTrustedSender: isTrustedExtensionFrame });
 
+  // Omni-Debugger: Multi-Engine Diagnostic & Architecture Inspector synchronization
+  debuggerSyncManager.setTrustedSenderCheck(isTrustedExtensionFrame);
+  debuggerSyncManager.attachWindowResolver(() =>
+    BrowserWindow.getAllWindows()
+      .filter((win) => {
+        try {
+          if (win.webContents.isDestroyed()) return false;
+          const url = win.webContents.getURL();
+          if (!url) return false;
+          const devServerUrl = process.env.VITE_DEV_SERVER_URL;
+          if (devServerUrl) return url.startsWith(devServerUrl.split('#')[0]);
+          return url.toLowerCase().includes('/index.html');
+        } catch {
+          return false;
+        }
+      })
+      .map((win) => win.webContents)
+  );
+  debuggerSyncManager.registerIpcHandlers(ipcMain, { isTrustedSender: isTrustedExtensionFrame });
+
   // Canvas agent engine: UI generation prompts coming from the Canvas chat.
   ipcMain.handle(
     'canvas:agent-generate',
@@ -469,14 +489,67 @@ function registerIpcHandlers(): void {
     });
     return getWorkspaceTree(folderPath);
   });
-  ipcMain.handle('fs:get-tree', async () => getWorkspaceTree(currentWorkspacePath));
+  ipcMain.handle('fs:get-tree', async () => {
+    if (!currentWorkspacePath) {
+      return { success: false, error: 'No workspace folder opened. Choose a folder to explore.' };
+    }
+    return getWorkspaceTree(currentWorkspacePath);
+  });
   ipcMain.handle('fs:get-tree-chunked', async (_event, rootPath?: string) => {
     const target = rootPath || currentWorkspacePath;
+    if (!target) {
+      return { success: false, error: 'No workspace folder opened. Choose a folder to explore.' };
+    }
     return getWorkspaceTreeChunked(target, (chunk, isComplete, totalSoFar) => {
       mainWindow?.webContents.send('fs:tree-chunk', { entries: chunk, isComplete, totalSoFar });
     });
   });
   ipcMain.handle('fs:read-file', (_event, filePath: string) => readFile(filePath, currentWorkspacePath));
+  ipcMain.handle('chat:read-file-for-context', (_event, filePath: string, options?: { maxLines?: number }) => readFileForContext(filePath, currentWorkspacePath, options));
+  ipcMain.handle('voice:init', async () => {
+    try {
+      await voiceTranscriber.init();
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Voice engine failed to initialize' };
+    }
+  });
+  ipcMain.handle('voice:start-recording', async () => {
+    try {
+      await voiceTranscriber.init();
+      const sessionId = `voice_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+      if (!voiceTranscriber.startRecording(sessionId)) {
+        return { success: false, error: 'Voice engine is not ready' };
+      }
+      return { success: true, data: { sessionId, capturing: true } };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Voice engine failed to start' };
+    }
+  });
+  ipcMain.handle('voice:append-audio-chunk', (_event, sessionId: string, audioBase64: string) => {
+    try {
+      const accepted = voiceTranscriber.appendAudioChunk(String(sessionId || ''), String(audioBase64 || ''));
+      return accepted ? { success: true } : { success: false, error: 'Audio chunk rejected' };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Failed to buffer audio chunk' };
+    }
+  });
+  ipcMain.handle('voice:stop-and-transcribe', async (_event, sessionId: string) => {
+    try {
+      const result = await voiceTranscriber.stopAndTranscribe(String(sessionId || ''));
+      return { success: true, data: result };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Transcription failed' };
+    }
+  });
+  ipcMain.handle('voice:release', () => {
+    try {
+      voiceTranscriber.release();
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Failed to release voice engine' };
+    }
+  });
   ipcMain.handle('fs:write-file', (_event, filePath: string, content: string) => writeFile(filePath, content, currentWorkspacePath));
   ipcMain.handle('fs:create-file', (_event, filePath: string) => createFile(filePath, currentWorkspacePath));
   ipcMain.handle('fs:create-directory', (_event, dirPath: string) => createDirectory(dirPath, currentWorkspacePath));
@@ -575,6 +648,12 @@ function registerIpcHandlers(): void {
       keys[normId] = apiKey.trim();
       await writeStoredCredentials(keys);
       console.log('Key saved to safeStorage', { providerId, backend: credentialStore.getBackendName() });
+      // Near-instant autonomous correction: re-verify this provider's model
+      // catalog against the live /models endpoint with the new key.
+      modelCatalogVerifier.ensurePeriodic();
+      void modelCatalogVerifier
+        .verifyProvider(normId)
+        .catch((err: unknown) => console.error('[CATALOG-VERIFY] post-save verify failed', err));
       return { success: true };
     } catch (error) {
       console.error('credentials:save FAILED', providerId, error instanceof Error ? error.message : error);
@@ -765,10 +844,136 @@ function registerIpcHandlers(): void {
     return result;
   });
   ipcMain.handle('agent:stop-task', (_event, taskId: string) => stopAgentTask(taskId));
-  ipcMain.handle('agent:respond-approval', (_event, payload: { approvalId: string; approved: boolean }) => respondAgentApproval(payload.approvalId, payload.approved));
+  ipcMain.handle('agent:respond-approval', (_event, payload: { approvalId: string; approved: boolean; feedback?: string }) => respondAgentApproval(payload.approvalId, payload.approved, payload.feedback));
   ipcMain.handle('user_approve_diff', (_event, payload: { approvalId?: string; diffId?: string; approved?: boolean } | boolean) => handleUserApproveDiff(payload));
   ipcMain.handle('pty:resolve-approval', (_event, payload: { approvalId: string; approved: boolean }) => resolvePtyApproval(payload.approvalId, payload.approved));
   ipcMain.handle('agent:apply-diff', (_event, diff: ProposedDiff) => applyDiff(currentWorkspacePath, diff));
+
+  // Agent State Management
+  ipcMain.handle('agent:get-todos', () => {
+    try {
+      const { agentStateManager } = require('./agent/agent-state-manager');
+      return { success: true, data: agentStateManager?.todos || [] };
+    } catch {
+      return { success: true, data: [] };
+    }
+  });
+
+  ipcMain.handle('agent:set-mode', (_event, mode: 'plan' | 'execute' | 'hybrid') => {
+    try {
+      const { agentStateManager } = require('./agent/agent-state-manager');
+      if (agentStateManager) {
+        agentStateManager.currentMode = mode;
+        return { success: true, data: { mode } };
+      }
+      return { success: false, error: 'Agent state manager not initialized' };
+    } catch {
+      return { success: false, error: 'Failed to set agent mode' };
+    }
+  });
+
+  ipcMain.handle('agent:list-sessions', async (_event, workspacePath?: string) => {
+    try {
+      const { listAgentSessions } = require('./ipc/agent-handlers');
+      return listAgentSessions(typeof workspacePath === 'string' && workspacePath ? workspacePath : undefined);
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Failed to list sessions' };
+    }
+  });
+
+  ipcMain.handle('agent:add-approval-rule', (_event, rule: {
+    id?: string;
+    toolName?: string;
+    pattern?: string;
+    action?: 'always_ask' | 'auto_approve' | 'auto_deny';
+    scope?: 'workspace' | 'system' | 'network';
+    expiresAt?: number;
+  }) => {
+    try {
+      const { toolApprovalManager } = require('./agent/tool-approval-manager');
+      if (!rule || typeof rule.toolName !== 'string' || rule.toolName.length === 0) {
+        return { success: false, error: 'Invalid approval rule' };
+      }
+      const action = rule.action === 'auto_approve' || rule.action === 'auto_deny' || rule.action === 'always_ask' ? rule.action : 'always_ask';
+      const scope = rule.scope === 'workspace' || rule.scope === 'system' || rule.scope === 'network' ? rule.scope : 'workspace';
+      toolApprovalManager.addRule({
+        id: (typeof rule.id === 'string' && rule.id.length > 0) ? rule.id : `rule_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+        toolName: rule.toolName,
+        ...(typeof rule.pattern === 'string' && rule.pattern.length > 0 ? { pattern: rule.pattern } : {}),
+        action,
+        scope,
+        ...(typeof rule.expiresAt === 'number' ? { expiresAt: rule.expiresAt } : {})
+      });
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Failed to add approval rule' };
+    }
+  });
+
+  ipcMain.handle('agent:get-background-agents', () => {
+    try {
+      const { backgroundAgentOrchestrator } = require('./agent/background-agent-orchestrator');
+      return { success: true, data: backgroundAgentOrchestrator.getAllAgents() };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Failed to list background agents' };
+    }
+  });
+
+  ipcMain.handle('agent:get-background-agent-details', (_event, agentId: string) => {
+    try {
+      const { backgroundAgentOrchestrator } = require('./agent/background-agent-orchestrator');
+      return { success: true, data: backgroundAgentOrchestrator.getAgentDetails(String(agentId || '')) };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Failed to load background agent details' };
+    }
+  });
+
+  ipcMain.handle('agent:cancel-background-agent', (_event, agentId: string) => {
+    try {
+      const { backgroundAgentOrchestrator } = require('./agent/background-agent-orchestrator');
+      backgroundAgentOrchestrator.cancelAgent(String(agentId || ''));
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Failed to cancel background agent' };
+    }
+  });
+
+  ipcMain.handle('agent:get-telemetry-report', () => {
+    try {
+      const { agentObservability } = require('./agent/agent-observability');
+      return { success: true, data: agentObservability.generateReport() };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Failed to build telemetry report' };
+    }
+  });
+
+  ipcMain.handle('agent:get-telemetry-events', (_event, filter?: { type?: string; startTime?: number }) => {
+    try {
+      const { agentObservability } = require('./agent/agent-observability');
+      return { success: true, data: agentObservability.getEvents(filter) };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Failed to load telemetry events' };
+    }
+  });
+
+  ipcMain.handle('agent:export-telemetry', () => {
+    try {
+      const { agentObservability } = require('./agent/agent-observability');
+      return { success: true, data: agentObservability.exportToJSON() };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Failed to export telemetry' };
+    }
+  });
+
+  ipcMain.handle('agent:clear-telemetry', () => {
+    try {
+      const { agentObservability } = require('./agent/agent-observability');
+      agentObservability.clearEvents();
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Failed to clear telemetry' };
+    }
+  });
 
   // OpenKilo Gateway (Layer 5) IPC Handlers
   ipcMain.handle('openkilo:get-status', () => ({
@@ -1517,6 +1722,25 @@ function registerIpcHandlers(): void {
     }
   });
 
+  // Autonomous Provider & Model Catalog Verification
+  // Diff+correct our stored model expectations against LIVE /models endpoints.
+  ipcMain.handle('providers:verify-model-catalog', async (event) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      modelCatalogVerifier.ensurePeriodic();
+      const results = await modelCatalogVerifier.verifyAll();
+      mainWindow?.webContents.send('providers:catalog-verified', modelCatalogVerifier.getSnapshot());
+      return { success: true, data: modelCatalogVerifier.getSnapshot() };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('providers:get-model-catalog-verifications', async (event) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    return { success: true, data: modelCatalogVerifier.getSnapshot() };
+  });
+
   // Phase 6.5: Unified Provider Dashboard & Quota Management
   ipcMain.handle('dashboard:get-data', async (event) => {
     if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
@@ -1624,6 +1848,23 @@ function registerIpcHandlers(): void {
     try {
       const report = diagnosticService.generateMarkdownReport(summary);
       return { success: true, data: report };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  // Diagnostics live hydration: retained summaries from the last real runs
+  // (no fabrication — nulls until a run exists) so the panel shows live state.
+  ipcMain.handle('diagnostics:get-latest', async (event) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      return {
+        success: true,
+        data: {
+          connSummary: diagnosticService.getLatestSummary(),
+          capSummary: capabilitySuite.getLatestSummary()
+        }
+      };
     } catch (err: unknown) {
       return { success: false, error: err instanceof Error ? err.message : String(err) };
     }
@@ -2806,6 +3047,11 @@ function registerFccHandlers(): void {
 function cleanupAllResources(): void {
   cleanupAllPtys();
   try {
+    voiceTranscriber.release();
+  } catch {
+    // Ignore voice cleanup error
+  }
+  try {
     void fccEmbeddedCore.stop();
   } catch {
     // Ignore FCC cleanup error
@@ -2932,7 +3178,15 @@ function openSketcherWindow(): BrowserWindow {
 
 app.whenReady().then(async () => {
   bootProfiler.recordMark('app_ready');
-  session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+    // Voice dictation lives in the chat composer of the main IDE window; the
+    // bundled faster-whisper sidecar transcribes locally after capture.
+    if (permission === 'media' && mainWindow && !mainWindow.isDestroyed() && webContents.id === mainWindow.webContents.id) {
+      callback(true);
+      return;
+    }
+    callback(false);
+  });
 
   bootScheduler.registerIpcHandlers();
   registerIpcHandlers();
@@ -2990,16 +3244,9 @@ app.whenReady().then(async () => {
     'settings',
     async () => {
       if (isAppOrSystemDir(currentWorkspacePath)) {
-        try {
-          const documents = app.getPath('documents');
-          if (documents && fsSync.existsSync(documents)) {
-            currentWorkspacePath = documents;
-          } else {
-            currentWorkspacePath = app.getPath('home') || os.homedir();
-          }
-        } catch {
-          currentWorkspacePath = os.homedir();
-        }
+        // Leave the workspace empty until the user picks a folder. The
+        // Explorer then shows its empty state instead of the home tree.
+        currentWorkspacePath = '';
       }
       await settingsManager.setWorkspacePath(currentWorkspacePath);
     }
@@ -3033,6 +3280,13 @@ app.whenReady().then(async () => {
             );
           }
         }
+        // Autonomous catalog verification at boot: apply persisted corrections,
+        // then re-verify every connected provider against its live /models list.
+        modelCatalogVerifier.activate();
+        modelCatalogVerifier.ensurePeriodic();
+        void modelCatalogVerifier.verifyAll().catch((verifyErr: unknown) => {
+          console.warn('[CATALOG-VERIFY] boot verification non-blocking failure:', verifyErr);
+        });
       } catch (err) {
         console.warn('[Tier 1] Credential hydration non-blocking failure:', err);
       }

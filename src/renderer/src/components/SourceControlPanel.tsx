@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { useGitStore } from '../state/git-store';
 import { useWorkspaceStore } from '../state/workspace-store';
+import { NoProjectEmptyState } from './NoProjectEmptyState';
 import type { GitFileChange } from '../../../preload/types';
 import './SourceControlPanel.css';
 
@@ -41,8 +42,9 @@ export const SourceControlPanel: React.FC = () => {
     createBranch, deleteBranch, mergeBranch, fetchRemote, pullRemote, pushRemote,
     loadHistory, loadCommitDetail, loadTags, loadStashes, createTag, deleteTag,
     stashChanges, popStash, dropStash, loadConflict, closeConflict, resolveConflict, abortMerge
-  } = useGitStore();
+   } = useGitStore();
   const { workspacePath, openFile } = useWorkspaceStore();
+  const resetStatus = useGitStore((s) => s.resetStatus);
   const [view, setView] = useState<SourceControlView>('changes');
   const [branchMenuOpen, setBranchMenuOpen] = useState(false);
   const [branchInput, setBranchInput] = useState('');
@@ -60,10 +62,15 @@ export const SourceControlPanel: React.FC = () => {
   const branchTriggerRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
+    if (!workspacePath) {
+      // No project loaded: keep Git store pristine instead of probing a phantom repo
+      resetStatus();
+      return;
+    }
     void refreshStatus(true);
     const timer = window.setInterval(() => { void refreshStatus(); }, 5000);
     return () => window.clearInterval(timer);
-  }, [refreshStatus, workspacePath]);
+  }, [refreshStatus, resetStatus, workspacePath]);
 
   useEffect(() => {
     if (view !== 'history') return;
@@ -199,6 +206,15 @@ export const SourceControlPanel: React.FC = () => {
       })}>Abort merge</button>}
     </div>
   );
+
+  if (!workspacePath) {
+    return (
+      <div className="source-control-panel">
+        <div className="source-control-header"><span>Source Control</span></div>
+        <NoProjectEmptyState hint="Git reads from the currently loaded project. Open a folder to see branches, changes, and history." />
+      </div>
+    );
+  }
 
   if (status && !status.isRepo) return <div className="source-control-panel">
     <div className="source-control-header"><span>Source Control</span><button className="source-control-icon-button" aria-label="Refresh Git status" onClick={() => void refreshStatus()}><RefreshCw size={13} /></button></div>

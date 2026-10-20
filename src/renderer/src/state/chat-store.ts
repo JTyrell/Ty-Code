@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { AgentMode, AgentStreamChunk, AgentToolApproval, ChatMessage, ProviderSettings, ProviderType, ToolExecutionStatus } from '../../../preload/types';
+import type { AgentMode, AgentSessionSummary, AgentStreamChunk, AgentToolApproval, ChatMessage, ProviderSettings, ProviderType, ToolExecutionRecord, ToolExecutionStatus } from '../../../preload/types';
 import {
   AgentStreamTokenPayloadSchema,
   AgentReasoningTokenPayloadSchema,
@@ -45,7 +45,12 @@ interface ChatState {
     images?: string[]
   ) => Promise<void>;
   stopTask: () => Promise<void>;
-  respondToApproval: (approved: boolean) => Promise<void>;
+  respondToApproval: (approved: boolean, feedback?: string) => Promise<void>;
+  recentSessions: AgentSessionSummary[];
+  pendingResume: AgentSessionSummary | null;
+  loadRecentSessions: (workspacePath: string) => Promise<void>;
+  acceptSessionResume: (session: AgentSessionSummary) => void;
+  dismissSessionResume: () => void;
   clearChat: () => void;
   toggleSettings: () => void;
   openSettings: (tab?: string) => void;
@@ -237,20 +242,161 @@ function finalizePartialMessage(messages: ChatMessage[], text: string, reasoning
   return [...messages, candidateMessage];
 }
 function cancelRunningTools(messages: ChatMessage[]): ChatMessage[] {
-  return messages.map((message) => message.role === 'tool' && message.toolStatus === 'running'
-    ? { ...message, toolStatus: 'cancelled' }
-    : message);
+  return messages.map((message) => {
+    let updated = message;
+    if (message.role === 'tool' && message.toolStatus === 'running') {
+      updated = { ...updated, toolStatus: 'cancelled' };
+    }
+    if (message.toolExecutions && message.toolExecutions.some((t) => t.status === 'running')) {
+      updated = {
+        ...updated,
+        toolExecutions: message.toolExecutions.map((t) =>
+          t.status === 'running' ? { ...t, status: 'cancelled' } : t
+        )
+      };
+    }
+    return updated;
+  });
 }
+
 function updateToolStatus(messages: ChatMessage[], toolCallId: string, status: ToolExecutionStatus, output?: string, isError?: boolean): ChatMessage[] {
   return messages.map((message) => {
-    if (message.role !== 'tool' || message.toolCall?.id !== toolCallId || !message.toolCall) return message;
-    return {
-      ...message,
-      content: output ?? message.content,
-      toolStatus: status,
-      ...(output === undefined ? {} : { toolResult: { toolCallId, name: message.toolCall.name, output, isError } })
-    };
+    if (message.role === 'tool' && message.toolCall?.id === toolCallId) {
+      return {
+        ...message,
+        content: output ?? message.content,
+        toolStatus: status,
+        ...(output === undefined ? {} : { toolResult: { toolCallId, name: message.toolCall.name, output, isError } })
+      };
+    }
+    if (message.toolExecutions && message.toolExecutions.some((t) => t.id === toolCallId)) {
+      return {
+        ...message,
+        toolExecutions: message.toolExecutions.map((t) =>
+          t.id === toolCallId
+            ? { ...t, status, output: output ?? t.output, isError }
+            : t
+        )
+      };
+    }
+    return message;
   });
+}
+
+export function groupMessagesByTask(messages: ChatMessage[]): ChatMessage[] {
+  const result: ChatMessage[] = [];
+  let pendingTools: ToolExecutionRecord[] = [];
+
+  for (const message of messages) {
+    if (message.role === 'tool' && message.toolCall) {
+      const toolRecord: ToolExecutionRecord = {
+        id: message.toolCall.id,
+        name: message.toolCall.name,
+        arguments: message.toolCall.arguments,
+        status: message.toolStatus || (message.toolResult?.isError ? 'error' : 'success'),
+        output: message.toolResult?.output || message.content,
+        isError: message.toolResult?.isError
+      };
+
+      const prev = result.length > 0 ? result[result.length - 1] : null;
+      if (prev && prev.role === 'assistant' && (!message.taskId || !prev.taskId || prev.taskId === message.taskId)) {
+        prev.toolExecutions = [...(prev.toolExecutions || []), toolRecord];
+        continue;
+      }
+
+      pendingTools.push(toolRecord);
+      continue;
+    }
+
+    if (message.role === 'assistant') {
+      const prev = result.length > 0 ? result[result.length - 1] : null;
+      // If previous message is an assistant turn for the same task, merge into it
+      if (
+        prev &&
+        prev.role === 'assistant' &&
+        prev.taskId &&
+        message.taskId &&
+        prev.taskId === message.taskId
+      ) {
+        if (message.content) {
+          prev.content = prev.content ? `${prev.content}\n\n${message.content}` : message.content;
+        }
+        if (message.reasoning) {
+          prev.reasoning = prev.reasoning ? `${prev.reasoning}\n\n${message.reasoning}` : message.reasoning;
+        }
+        if (message.statusText !== undefined) {
+          prev.statusText = message.statusText;
+        }
+        const combinedTools = [
+          ...(prev.toolExecutions || []),
+          ...pendingTools,
+          ...(message.toolExecutions || [])
+        ];
+        if (combinedTools.length > 0) {
+          prev.toolExecutions = combinedTools;
+        }
+        pendingTools = [];
+        if (message.proposedDiffs && message.proposedDiffs.length > 0) {
+          prev.proposedDiffs = [...(prev.proposedDiffs || []), ...message.proposedDiffs];
+        }
+        if (message.errorCard) {
+          prev.errorCard = message.errorCard;
+        }
+        if (message.metadata) {
+          prev.metadata = { ...prev.metadata, ...message.metadata };
+        }
+        continue;
+      }
+
+      if (pendingTools.length > 0) {
+        result.push({
+          ...message,
+          toolExecutions: [...pendingTools, ...(message.toolExecutions || [])]
+        });
+        pendingTools = [];
+      } else {
+        result.push(message);
+      }
+      continue;
+    }
+
+    if (pendingTools.length > 0) {
+      result.push({
+        id: `unified_tools_${Date.now()}`,
+        role: 'assistant',
+        content: '',
+        toolExecutions: pendingTools,
+        timestamp: message.timestamp - 1,
+        metadata: {
+          source: 'provider-stream',
+          providerId: 'default',
+          modelId: 'default',
+          streamEventCount: 1
+        }
+      });
+      pendingTools = [];
+    }
+
+    result.push(message);
+  }
+
+  if (pendingTools.length > 0) {
+    result.push({
+      id: `unified_tools_${Date.now()}`,
+      role: 'assistant',
+      content: '',
+      toolExecutions: pendingTools,
+      timestamp: Date.now(),
+      metadata: {
+        source: 'provider-stream',
+        providerId: 'default',
+        modelId: 'default',
+        streamEventCount: 1
+      }
+    });
+  }
+
+  return result;
 }
 
 const CHAT_STORAGE_KEY = 'ty_code_chat_messages_v1';
@@ -262,12 +408,13 @@ export function loadPersistedChat(): ChatMessage[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed)) {
-      return parsed.filter((m) => {
+      const validated = parsed.filter((m) => {
         if (m.role === 'assistant' && !m.errorCard) {
           return validateAssistantMessage(m).valid;
         }
         return true;
       });
+      return groupMessagesByTask(validated);
     }
   } catch {
     // Graceful fallback
@@ -295,6 +442,22 @@ export const useChatStore = create<ChatState>((set, get) => ({
   setDraftPrompt: (prompt: string) => set({ draftPrompt: prompt }),
   setAgentMode: (mode: AgentMode) => set({ agentMode: mode }),
   setContextTokens: (tokens: number) => set({ contextTokens: tokens }),
+
+  recentSessions: [],
+  pendingResume: null,
+  loadRecentSessions: async (workspacePath: string) => {
+    try {
+      const response = await window.electronAPI.getRecentSessions?.(workspacePath);
+      if (response?.success && response.data) {
+        const pending = get().pendingResume;
+        set({ recentSessions: response.data, pendingResume: pending ?? response.data[0] ?? null });
+      }
+    } catch {
+      // sessions unavailable; resume offer simply stays hidden
+    }
+  },
+  acceptSessionResume: (session: AgentSessionSummary) => set({ pendingResume: session }),
+  dismissSessionResume: () => set({ pendingResume: null, recentSessions: [] }),
 
   initSettings: async () => {
     const refreshSettings = async () => {
@@ -393,12 +556,32 @@ export const useChatStore = create<ChatState>((set, get) => ({
     currentTaskProviderId = traceOptions?.providerOverride || get().settings?.activeProvider || 'default';
     currentTaskModelId = traceOptions?.modelOverride || get().settings?.activeModel || 'default';
 
+    const assistantId = createId('assistant');
+    const initialAssistantMessage: ChatMessage = {
+      id: assistantId,
+      taskId,
+      role: 'assistant',
+      content: '',
+      toolExecutions: [],
+      proposedDiffs: [],
+      statusText: 'Analyzing workspace…',
+      metadata: {
+        source: 'provider-stream',
+        providerId: currentTaskProviderId,
+        modelId: currentTaskModelId,
+        streamEventCount: 0
+      },
+      timestamp: Date.now()
+    };
+
     set({
-      messages: appendUserMessage ? [...currentMessages, userMessage] : regeneratedMessages,
+      messages: appendUserMessage
+        ? [...currentMessages, userMessage, initialAssistantMessage]
+        : [...regeneratedMessages, initialAssistantMessage],
       isRunning: true,
       currentTaskId: taskId,
       pendingApproval: null,
-      currentStatus: 'Starting task…',
+      currentStatus: 'Analyzing workspace…',
       currentThought: '',
       streamingText: '',
       activeErrorCard: null
@@ -440,7 +623,24 @@ export const useChatStore = create<ChatState>((set, get) => ({
         currentTaskStreamEvents++;
         set((state) => ({
           streamingText: state.streamingText + parsed.data.token,
-          contextTokens: state.contextTokens + Math.ceil(parsed.data.token.length / 4)
+          contextTokens: state.contextTokens + Math.ceil(parsed.data.token.length / 4),
+          messages: state.messages.map((m) =>
+            m.taskId === taskId
+              ? {
+                  ...m,
+                  content: m.content + parsed.data.token,
+                  statusText: '',
+                  metadata: m.metadata
+                    ? { ...m.metadata, streamEventCount: currentTaskStreamEvents }
+                    : {
+                        source: 'provider-stream',
+                        providerId: currentTaskProviderId,
+                        modelId: currentTaskModelId,
+                        streamEventCount: currentTaskStreamEvents
+                      }
+                }
+              : m
+          )
         }));
       }));
     }
@@ -451,7 +651,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
         const parsed = AgentReasoningTokenPayloadSchema.safeParse(raw);
         if (!parsed.success || parsed.data.taskId !== taskId || get().currentTaskId !== taskId) return;
         currentTaskStreamEvents++;
-        set((state) => ({ currentThought: state.currentThought + parsed.data.token }));
+        set((state) => ({
+          currentThought: state.currentThought + parsed.data.token,
+          messages: state.messages.map((m) =>
+            m.taskId === taskId
+              ? { ...m, reasoning: (m.reasoning || '') + parsed.data.token }
+              : m
+          )
+        }));
       }));
     }
 
@@ -461,17 +668,25 @@ export const useChatStore = create<ChatState>((set, get) => ({
         const parsed = AgentToolStartPayloadSchema.safeParse(raw);
         if (!parsed.success || parsed.data.taskId !== taskId || get().currentTaskId !== taskId) return;
         currentTaskStreamEvents++;
-        const state = get();
-        const messages = finalizePartialMessage(state.messages, state.streamingText, state.currentThought);
-        const toolMessage: ChatMessage = {
-          id: createId('tool'),
-          role: 'tool',
-          content: '',
-          toolCall: parsed.data.toolCall,
-          toolStatus: 'running',
-          timestamp: Date.now()
+        const toolCall = parsed.data.toolCall;
+        const newTool: ToolExecutionRecord = {
+          id: toolCall.id,
+          name: toolCall.name,
+          arguments: toolCall.arguments,
+          status: 'running'
         };
-        set({ messages: [...messages, toolMessage], streamingText: '', currentThought: '' });
+        set((state) => ({
+          currentStatus: `Running ${newTool.name}…`,
+          messages: state.messages.map((m) =>
+            m.taskId === taskId
+              ? {
+                  ...m,
+                  toolExecutions: [...(m.toolExecutions || []), newTool],
+                  statusText: `Running ${newTool.name}…`
+                }
+              : m
+          )
+        }));
       }));
     }
 
@@ -482,9 +697,27 @@ export const useChatStore = create<ChatState>((set, get) => ({
         if (!parsed.success || parsed.data.taskId !== taskId || get().currentTaskId !== taskId) return;
         const result = parsed.data.toolResult;
         set((state) => ({
-          messages: updateToolStatus(state.messages, result.toolCallId, result.isError ? 'error' : 'success', result.output, result.isError),
+          currentStatus: '',
           pendingApproval: state.pendingApproval?.toolCall.id === result.toolCallId ? null : state.pendingApproval,
-          contextTokens: state.contextTokens + Math.ceil(result.output.length / 4)
+          contextTokens: state.contextTokens + Math.ceil(result.output.length / 4),
+          messages: state.messages.map((m) => {
+            if (m.taskId !== taskId) return m;
+            const updatedTools = (m.toolExecutions || []).map((t) =>
+              t.id === result.toolCallId
+                ? {
+                    ...t,
+                    status: result.isError ? ('error' as const) : ('success' as const),
+                    output: result.output,
+                    isError: result.isError
+                  }
+                : t
+            );
+            return {
+              ...m,
+              toolExecutions: updatedTools,
+              statusText: ''
+            };
+          })
         }));
         if (result.name.startsWith('git_')) void useGitStore.getState().refreshStatus();
       }));
@@ -495,21 +728,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
       activeStreamDisposables.push(window.electronAPI.onAgentDiffProposed((raw) => {
         const parsed = AgentDiffProposedPayloadSchema.safeParse(raw);
         if (!parsed.success || parsed.data.taskId !== taskId || get().currentTaskId !== taskId) return;
-        set((state) => {
-          const index = state.messages.length - 1;
-          if (index < 0) {
-            return {
-              messages: [
-                ...state.messages,
-                { id: createId('diff'), role: 'assistant', content: '', proposedDiffs: [parsed.data.diff as any], timestamp: Date.now() }
-              ]
-            };
-          }
-          const messages = [...state.messages];
-          const target = messages[index];
-          messages[index] = { ...target, proposedDiffs: [...(target.proposedDiffs || []), parsed.data.diff as any] };
-          return { messages };
-        });
+        set((state) => ({
+          messages: state.messages.map((m) =>
+            m.taskId === taskId
+              ? {
+                  ...m,
+                  proposedDiffs: [...(m.proposedDiffs || []), parsed.data.diff as any]
+                }
+              : m
+          )
+        }));
       }));
     }
 
@@ -520,23 +748,39 @@ export const useChatStore = create<ChatState>((set, get) => ({
         if (!parsed.success || parsed.data.taskId !== taskId || get().currentTaskId !== taskId) return;
         const state = get();
         if (parsed.data.cancelled) {
-          const messages = cancelRunningTools(state.messages);
-          set({ messages: finalizePartialMessage(messages, state.streamingText, state.currentThought) });
+          const cancelledMessages = cancelRunningTools(state.messages);
+          set({
+            messages: cancelledMessages.map((m) =>
+              m.taskId === taskId ? { ...m, statusText: '' } : m
+            )
+          });
           finishTask('Task stopped.');
         } else {
-          const finalizedMessages = finalizePartialMessage(state.messages, state.streamingText, state.currentThought);
-          set({ messages: finalizedMessages });
-          // M3E Canvas sync: mirror the assistant's finalized response
-          const lastMessage = finalizedMessages[finalizedMessages.length - 1];
+          const streamCount = Math.max(1, currentTaskStreamEvents);
+          const messages = state.messages.map((m) => {
+            if (m.taskId !== taskId) return m;
+            return {
+              ...m,
+              statusText: '',
+              metadata: {
+                source: 'provider-stream' as const,
+                providerId: currentTaskProviderId,
+                modelId: currentTaskModelId,
+                streamEventCount: streamCount
+              }
+            };
+          });
+          set({ messages });
+          const lastMessage = messages.find((m) => m.taskId === taskId);
           if (lastMessage && lastMessage.role === 'assistant') syncMessageToCanvas(lastMessage);
           if (traceOptions?.traceId && window.electronAPI?.recordTraceHop) {
             window.electronAPI.recordTraceHop(traceOptions.traceId, 'H10', {
               status: 'PASS',
-              payloadSize: state.streamingText.length,
+              payloadSize: (lastMessage?.content || '').length,
               metadata: {
-                tokensRendered: state.streamingText.length,
-                toolCardsRendered: state.messages.filter((m) => m.role === 'tool').length,
-                diffCardRendered: state.messages.some((m) => m.proposedDiffs && m.proposedDiffs.length > 0)
+                tokensRendered: (lastMessage?.content || '').length,
+                toolCardsRendered: (lastMessage?.toolExecutions || []).length,
+                diffCardRendered: Boolean(lastMessage?.proposedDiffs && lastMessage.proposedDiffs.length > 0)
               }
             });
           }
@@ -551,7 +795,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
         const parsed = AgentErrorPayloadSchema.safeParse(raw);
         if (!parsed.success || parsed.data.taskId !== taskId || get().currentTaskId !== taskId) return;
         const state = get();
-        const partial = finalizePartialMessage(state.messages, state.streamingText, state.currentThought);
         const card = parsed.data.errorCard || {
           taxonomyCode: 'NETWORK_BLOCKED',
           message: parsed.data.error || 'Connection failed or network blocked.',
@@ -565,16 +808,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
           : `**Agent error:** ${parsed.data.error || 'The task could not be completed.'}`;
         set({
           activeErrorCard: card,
-          messages: [
-            ...partial,
-            {
-              id: createId('error'),
-              role: 'assistant',
-              content,
-              errorCard: card,
-              timestamp: Date.now()
-            }
-          ]
+          messages: state.messages.map((m) =>
+            m.taskId === taskId
+              ? {
+                  ...m,
+                  errorCard: card,
+                  content: m.content || content,
+                  statusText: ''
+                }
+              : m
+          )
         });
         if (traceOptions?.traceId && window.electronAPI?.recordTraceHop) {
           window.electronAPI.recordTraceHop(traceOptions.traceId, 'H10', {
@@ -598,13 +841,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
           currentStatus: statusText,
           contextTokens: statusText.includes('compacting')
             ? Math.floor(state.contextLimit * 0.35)
-            : state.contextTokens
+            : state.contextTokens,
+          messages: state.messages.map((m) =>
+            m.taskId === taskId ? { ...m, statusText } : m
+          )
         }));
       } else if (chunk.type === 'approval_request' && chunk.approvalRequest) {
         set({ pendingApproval: chunk.approvalRequest, currentStatus: 'Waiting for your approval…' });
       }
     }));
     try {
+      const pendingResume = get().pendingResume;
+      if (pendingResume) set({ pendingResume: null });
       const response = await window.electronAPI.startAgentTask({
         taskId,
         traceId: traceOptions?.traceId,
@@ -616,7 +864,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
         history: requestHistory,
         agentMode: get().agentMode,
         activeFilePath,
-        activeFileContent
+        activeFileContent,
+        ...(pendingResume ? { resumeSessionId: pendingResume.sessionId } : {})
       });
       if (get().currentTaskId !== taskId) return;
       if (!response.success || !response.data) {
@@ -672,12 +921,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
-  respondToApproval: async (approved) => {
+  respondToApproval: async (approved, feedback) => {
     const request = get().pendingApproval;
     if (!request) return;
-    set({ pendingApproval: null, currentStatus: approved ? 'Approval granted.' : 'Approval denied.' });
+    set({
+      pendingApproval: null,
+      currentStatus: approved ? 'Approval granted.' : feedback ? 'Plan revision feedback sent.' : 'Approval denied.'
+    });
     try {
-      const response = await window.electronAPI.respondAgentApproval(request.id, approved);
+      const response = await window.electronAPI.sendApprovalResponse(request.id, approved ? 'APPROVED' : 'REVISED', feedback);
       if (!response.success) set({ currentStatus: response.error || 'Approval request expired.' });
     } catch (err: unknown) {
       set({ currentStatus: err instanceof Error ? err.message : String(err) });

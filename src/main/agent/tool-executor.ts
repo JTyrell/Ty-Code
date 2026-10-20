@@ -10,6 +10,7 @@ import { gitService } from '../services/git-service';
 import { SecurityPolicyEngine } from '../services/security-policy';
 import { settingsManager } from '../services/settings-manager';
 import { mcpManager } from '../services/mcp-manager';
+import { SmartFileReader } from '../services/tools/smart-file-reader';
 
 export interface ToolExecutionResponse {
   output: string;
@@ -20,10 +21,12 @@ export interface ToolExecutionResponse {
 export class ToolExecutor {
   private readonly workspaceRoot: string;
   private readonly securityPolicy: SecurityPolicyEngine;
+  private readonly smartFileReader: SmartFileReader;
 
   constructor(workspaceRoot: string, securityPolicy?: SecurityPolicyEngine) {
     this.workspaceRoot = path.resolve(workspaceRoot);
     this.securityPolicy = securityPolicy || new SecurityPolicyEngine(this.workspaceRoot, settingsManager);
+    this.smartFileReader = new SmartFileReader(this.workspaceRoot);
   }
 
   private resolveSafePath(relativePath: string, allowMissing = false): Promise<string> {
@@ -79,14 +82,27 @@ export class ToolExecutor {
     if (!allowed) {
       throw new Error(`Security Exception: Access denied to path outside workspace: "${filePath}". Non-Workspace Access is disabled.`);
     }
-    const absolutePath = await this.resolveSafePath(filePath);
-    const content = await fs.readFile(absolutePath, 'utf-8');
-    const lines = content.split('\n');
+
+    const fileInfo = await this.smartFileReader.getFileInfo(filePath);
+
+    if (fileInfo.totalLines <= 500) {
+      const result = await this.smartFileReader.readFileInChunks(filePath, 1, fileInfo.totalLines);
+      return {
+        output: `File: ${filePath} (${fileInfo.totalLines} lines)\n\n${result.content}`
+      };
+    }
+
     const startLine = typeof args.startLine === 'number' && args.startLine > 0 ? args.startLine : 1;
-    const endLine = typeof args.endLine === 'number' && args.endLine >= startLine ? args.endLine : lines.length;
-    const slice = lines.slice(startLine - 1, endLine);
-    const formatted = slice.map((line, index) => `${startLine + index}: ${line}`).join('\n');
-    return { output: `File: ${filePath} (lines ${startLine}-${Math.min(endLine, lines.length)} of ${lines.length})\n\n${formatted}` };
+    const endLine = typeof args.endLine === 'number' && args.endLine >= startLine ? args.endLine : startLine + 199;
+
+    const result = await this.smartFileReader.readFileInChunks(filePath, startLine, endLine);
+    const chunkInfo = result.isComplete
+      ? `(lines ${result.startLine}-${result.endLine} of ${result.totalLines} — COMPLETE)`
+      : `(lines ${result.startLine}-${result.endLine} of ${result.totalLines} — partial, use startLine/endLine to continue)`;
+
+    return {
+      output: `File: ${filePath} ${chunkInfo}\n\n${result.content}\n\n[Hint: File has ${result.totalLines} lines. Use startLine/endLine parameters to read more. Suggested: startLine=${result.endLine + 1}, endLine=${Math.min(result.endLine + 200, result.totalLines)}]`
+    };
   }
 
   public async replaceFileContent(args: Record<string, unknown>): Promise<ToolExecutionResponse> {

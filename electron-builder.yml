@@ -18,6 +18,16 @@ files:
 extraResources:
   - from: build/icon.png
     to: icon.png
+  # Voice engine (faster-whisper sidecar): everything is bundled, zero runtime
+  # downloads. Layout is produced by `npm run prepare:voice-engine`.
+  - from: resources/voice-engine/python
+    to: voice-engine/python
+  - from: resources/voice-engine/site-packages
+    to: voice-engine/site-packages
+  - from: src/main/services/voice-engine/transcriber.py
+    to: voice-engine/transcriber.py
+  - from: resources/voice-engine/models
+    to: voice-engine/models
 
 asar: true
 asarUnpack:

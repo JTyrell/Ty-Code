@@ -6,7 +6,7 @@ import type {
 
 export async function handleGitIsRepo(workspacePath: string): Promise<IpcResponse<boolean>> {
   try {
-    const isRepo = await gitService.isRepo(workspacePath);
+    const isRepo = Boolean(workspacePath) && (await gitService.isRepo(workspacePath));
     return { success: true, data: isRepo };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -16,6 +16,7 @@ export async function handleGitIsRepo(workspacePath: string): Promise<IpcRespons
 
 export async function handleGitInit(workspacePath: string): Promise<IpcResponse<void>> {
   try {
+    if (!workspacePath) return { success: false, error: 'No workspace folder is open. Open a project before initializing Git.' };
     await gitService.init(workspacePath);
     return { success: true };
   } catch (err: unknown) {
@@ -26,6 +27,24 @@ export async function handleGitInit(workspacePath: string): Promise<IpcResponse<
 
 export async function handleGitGetStatus(workspacePath: string): Promise<IpcResponse<GitStatusResult>> {
   try {
+    // Empty workspace must never probe process.cwd(); report "no repository" honestly instead
+    if (!workspacePath) {
+      return {
+        success: true,
+        data: {
+          isRepo: false,
+          isClean: true,
+          currentBranch: '',
+          ahead: 0,
+          behind: 0,
+          stagedFiles: [],
+          unstagedFiles: [],
+          untrackedFiles: [],
+          conflictedFiles: [],
+          repositoryRoot: ''
+        }
+      };
+    }
     const status = await gitService.getStatus(workspacePath);
     return { success: true, data: status };
   } catch (err: unknown) {

@@ -27,6 +27,43 @@ export interface VerifiedModelConfig {
   providerId: string;
 }
 
+/**
+ * Autonomous catalog corrections ("provider & models database" self-healing).
+ * Produced by the catalog verifier from LIVE /models listings using the
+ * user's connected keys, then applied to the baked expectations here.
+ */
+export interface ModelCatalogCorrection {
+  added: VerifiedModelConfig[];
+  removed: string[];
+  renamed: Array<{ modelId: string; name: string }>;
+}
+
+let catalogCorrections: Record<string, ModelCatalogCorrection> = {};
+
+export function setModelCatalogCorrections(
+  next: Record<string, ModelCatalogCorrection> | null | undefined
+): void {
+  catalogCorrections = next || {};
+  clearModelCache();
+}
+
+export function getModelCatalogCorrections(): Record<string, ModelCatalogCorrection> {
+  return catalogCorrections;
+}
+
+/**
+ * Export the current baked expectations grouped by provider so the verifier
+ * can diff them against a live listing for the same provider.
+ */
+export function exportBakedExpectations(): Record<string, VerifiedModelConfig[]> {
+  const grouped: Record<string, VerifiedModelConfig[]> = {};
+  for (const m of buildBakedModels()) {
+    const pid = (m.providerId || 'unknown').toLowerCase();
+    (grouped[pid] ||= []).push(m);
+  }
+  return grouped;
+}
+
 const OPENCODE_ZEN_FREE_MODELS: VerifiedModelConfig[] = [
   {
     modelId: 'grok-code',
@@ -119,7 +156,34 @@ export async function getVerifiedModels(): Promise<VerifiedModelConfig[]> {
     merged.set(key, model);
   }
 
-  cachedModels = [...merged.values()];
+  // Apply live catalog corrections: strip models no longer offered, update
+  // names/titles to live values, and append newly offered models.
+  let entries = [...merged.values()];
+  for (const [pid, corr] of Object.entries(catalogCorrections)) {
+    const removed = new Set(corr.removed || []);
+    if (removed.size > 0) {
+      entries = entries.filter((m) => !((m.providerId || '').toLowerCase() === pid && removed.has(m.modelId)));
+    }
+    for (const ren of corr.renamed || []) {
+      const target = entries.find((m) => (m.providerId || '').toLowerCase() === pid && m.modelId === ren.modelId);
+      if (target && ren.name) target.name = ren.name;
+    }
+    for (const add of corr.added || []) {
+      if (!add?.modelId || !add?.url) continue;
+      const key = `${pid}::${add.modelId}`;
+      if (merged.has(key)) continue;
+      merged.set(key, {
+        modelId: add.modelId,
+        name: add.name || add.modelId,
+        url: add.url,
+        requiresKey: Boolean(add.requiresKey),
+        providerId: pid
+      });
+      entries.push(merged.get(key)!);
+    }
+  }
+
+  cachedModels = entries;
   cacheTimestamp = Date.now();
   return cachedModels;
 }

@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Ty-Code | Architecture & Technical Interview Master Guide</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    @page {
+      size: letter;
+      margin: 18mm 16mm 18mm 16mm;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      color: #1e293b;
+      background: #ffffff;
+      line-height: 1.6;
+      font-size: 10pt;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .header-banner {
+      border-bottom: 2px solid #4f46e5;
+      padding-bottom: 14px;
+      margin-bottom: 22px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+    }
+
+    .brand-title {
+      font-size: 20pt;
+      font-weight: 800;
+      color: #0f172a;
+      letter-spacing: -0.5px;
+    }
+
+    .brand-subtitle {
+      font-size: 10pt;
+      font-weight: 600;
+      color: #4f46e5;
+      margin-top: 3px;
+    }
+
+    .doc-meta {
+      font-size: 8pt;
+      color: #64748b;
+      text-align: right;
+      font-weight: 500;
+    }
+
+    h2.section-title {
+      font-size: 13pt;
+      font-weight: 700;
+      color: #0f172a;
+      border-bottom: 1.5px solid #e2e8f0;
+      padding-bottom: 4px;
+      margin-top: 20px;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    h2.section-title span.num {
+      background: #4f46e5;
+      color: #ffffff;
+      font-size: 9pt;
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-weight: 700;
+    }
+
+    h3.sub-title {
+      font-size: 11pt;
+      font-weight: 700;
+      color: #1e293b;
+      margin-top: 14px;
+      margin-bottom: 4px;
+    }
+
+    .qa-card {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-left: 3.5px solid #4f46e5;
+      border-radius: 6px;
+      padding: 10px 14px;
+      margin-bottom: 12px;
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }
+
+    .qa-card.accent-emerald {
+      border-left-color: #059669;
+    }
+
+    .qa-card.accent-amber {
+      border-left-color: #d97706;
+    }
+
+    .qa-question {
+      font-size: 10pt;
+      font-weight: 700;
+      color: #0f172a;
+      margin-bottom: 2px;
+    }
+
+    .qa-badge {
+      display: inline-block;
+      font-size: 7.5pt;
+      font-weight: 600;
+      color: #4f46e5;
+      background: #e0e7ff;
+      padding: 1px 6px;
+      border-radius: 3px;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      margin-bottom: 6px;
+    }
+
+    .qa-answer {
+      font-size: 9.5pt;
+      color: #334155;
+      line-height: 1.55;
+    }
+
+    .qa-answer p {
+      margin-bottom: 6px;
+    }
+
+    .qa-answer p:last-child {
+      margin-bottom: 0;
+    }
+
+    .callout-box {
+      background: #f1f5f9;
+      border-left: 4px solid #3b82f6;
+      border-radius: 4px;
+      padding: 10px 14px;
+      margin: 12px 0;
+      font-size: 9.5pt;
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }
+
+    .callout-box strong {
+      color: #1e293b;
+      display: block;
+      margin-bottom: 2px;
+      font-size: 10pt;
+    }
+
+    .code-block {
+      background: #0f172a;
+      color: #f8fafc;
+      font-family: 'JetBrains Mono', Consolas, monospace;
+      font-size: 8pt;
+      padding: 10px 12px;
+      border-radius: 6px;
+      margin: 8px 0;
+      overflow-x: auto;
+      line-height: 1.45;
+      border-left: 3px solid #38bdf8;
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }
+
+    table.data-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 12px 0;
+      font-size: 8.5pt;
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }
+
+    table.data-table th {
+      background: #1e293b;
+      color: #ffffff;
+      font-weight: 600;
+      text-align: left;
+      padding: 7px 10px;
+      border: 1px solid #1e293b;
+    }
+
+    table.data-table td {
+      padding: 7px 10px;
+      border: 1px solid #e2e8f0;
+      color: #334155;
+      vertical-align: top;
+      line-height: 1.45;
+    }
+
+    table.data-table tr:nth-child(even) td {
+      background: #f8fafc;
+    }
+
+    .cheat-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 10px;
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }
+
+    .cheat-item {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 5px;
+      padding: 8px 10px;
+    }
+
+    .cheat-item strong {
+      display: block;
+      color: #4f46e5;
+      font-size: 8.5pt;
+      margin-bottom: 2px;
+    }
+
+    .cheat-item span {
+      font-size: 8.5pt;
+      color: #334155;
+      line-height: 1.4;
+    }
+
+    .page-break {
+      page-break-before: always;
+    }
+
+    .footer {
+      margin-top: 24px;
+      padding-top: 10px;
+      border-top: 1px solid #e2e8f0;
+      font-size: 8pt;
+      color: #94a3b8;
+      display: flex;
+      justify-content: space-between;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- DOCUMENT HEADER -->
+  <div class="header-banner">
+    <div>
+      <div class="brand-title">TY-CODE</div>
+      <div class="brand-subtitle">Architecture & Technical Interview Master Guide</div>
+    </div>
+    <div class="doc-meta">
+      <div><strong>Role:</strong> Senior Developer / Software Architect</div>
+      <div><strong>Subject:</strong> System Design, Stack Rationale & Scenarios</div>
+      <div><strong>Confidential Candidate Preparation</strong></div>
+    </div>
+  </div>
+
+  <!-- SECTION 1 -->
+  <h2 class="section-title"><span class="num">1</span> Executive Pitch & Product Vision</h2>
+
+  <div class="qa-card">
+    <div class="qa-question">The 30-Second Elevator Pitch</div>
+    <div class="qa-badge">Core Identity</div>
+    <div class="qa-answer">
+      <p>"Ty-Code is a local-first, standalone AI coding desktop IDE built on Electron, React 18, and the Monaco Editor. Unlike cloud-locked AI assistants such as Cursor or GitHub Copilot, Ty-Code is architected around a zero-trust, Bring-Your-Own-Key (BYOK) paradigm. It features an intelligent multi-provider gateway connecting to proprietary APIs, local offline LLMs (via Ollama/vLLM), and decentralized free tiers (OpenKilo, FCC) with automated quota balancing, local OS-level credential encryption (safeStorage), and a secure agentic tool-execution sandbox."</p>
+    </div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-question">The 2-Minute Architectural Pitch (For Engineering Directors & Principal Architects)</div>
+    <div class="qa-badge">System Decomposition</div>
+    <div class="qa-answer">
+      <p>"I designed Ty-Code to address three fatal flaws in current commercial AI coding tooling: <strong>vendor lock-in, unbounded API costs, and cloud privacy exfiltration</strong>.</p>
+      <p>Architecturally, Ty-Code operates as a multi-process desktop platform:</p>
+      <p><strong>1. Renderer Process:</strong> React 18 with Vite and Zustand, hosting the Monaco Editor (the same editing engine that powers VS Code), an XTerm.js terminal emulator, and an interactive M3E UI Canvas sketcher running in a dedicated window.</p>
+      <p><strong>2. Preload/ContextBridge Layer:</strong> A hardened, strictly typed IPC security boundary using Zod schema validation to eliminate prototype pollution and guarantee process isolation.</p>
+      <p><strong>3. Main Process & Agent Engine:</strong> A Node.js runtime executing native PTYs (<code>node-pty</code>), background Language Server Protocol (LSP) daemons, a ReAct agentic execution loop with structured tool calling, and a unified <code>ProviderGateway</code>.</p>
+      <p>The gateway normalizes heterogeneous streaming protocols into a unified reactive stream. It features an adaptive router that dynamically inspects task complexity—routing reasoning tasks to high-capacity models and fast edits to local or ultra-low-latency models—while ensuring zero source code or credentials leave the local machine in plaintext."</p>
+    </div>
+  </div>
+
+  <div class="callout-box">
+    <strong>Key Architectural Takeaway</strong>
+    Ty-Code proves that an AI coding IDE can deliver enterprise-grade developer productivity without sending proprietary codebases to a centralized third-party cloud. Complete local data sovereignty + unified multi-model routing.
+  </div>
+
+  <!-- SECTION 2 -->
+  <h2 class="section-title"><span class="num">2</span> Technology Stack Selection & Technical Rationale</h2>
+
+  <div class="qa-card">
+    <div class="qa-question">Q: Why Electron instead of a purely Web-based IDE or a VS Code Extension?</div>
+    <div class="qa-badge">Platform Selection & Operating System Integration</div>
+    <div class="qa-answer">
+      <p>Building Ty-Code as an Electron application was a deliberate architectural choice based on three requirements:</p>
+      <p><strong>1. Direct OS-Level Privileges Without Cloud Intermediaries:</strong> A web browser cannot spawn native pseudo-terminals (<code>node-pty</code>), launch background Language Server Protocol (LSP) binaries, or access local filesystems without continuous browser security prompts.</p>
+      <p><strong>2. Data Sovereignty & Offline Air-Gapped Capabilities:</strong> Enterprise teams working on sensitive codebases cannot allow their code to transit through third-party web servers. Electron allows Ty-Code to communicate directly from localhost to local LLM instances (such as Ollama or vLLM) with zero internet dependency.</p>
+      <p><strong>3. Why Not a VS Code Extension?</strong> VS Code extensions run inside a constrained extension host sandbox. They cannot orchestrate custom multi-window workflows (such as our dedicated floating M3E Canvas window), implement custom window chrome, manage raw PTY lifecycles, or enforce custom system-level security policies without VS Code runtime interference.</p>
+    </div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-question">Q: Why Monaco Editor instead of CodeMirror or Ace Editor?</div>
+    <div class="qa-badge">Editor Architecture</div>
+    <div class="qa-answer">
+      <p><strong>1. Industry Standard Developer Ergonomics:</strong> Monaco is the editor engine extracted directly from VS Code. Developers instantly recognize its keybindings, multi-cursor editing, code folding, minimap, and bracket pair colorization without a learning curve.</p>
+      <p><strong>2. Built-in DiffEditor for Agent Code Proposals:</strong> A foundational pattern in Ty-Code is that AI modifications over 5 lines require review. Monaco provides an enterprise-grade DiffEditor that displays side-by-side and inline visual diffs with chunk acceptance.</p>
+      <p><strong>3. Native LSP Protocol Alignment:</strong> Monaco's language feature registration directly mirrors LSP data structures, simplifying the integration of language server diagnostics, completions, and hover documentation.</p>
+    </div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-question">Q: Why Zustand for state management instead of Redux Toolkit or React Context?</div>
+    <div class="qa-badge">State Management & Streaming Performance</div>
+    <div class="qa-answer">
+      <p><strong>1. Elimination of Cascading Re-renders:</strong> LLMs stream at 50 to 150 tokens per second. React Context triggers a re-render of every consuming component on every state mutation. Zustand utilizes atomic selector subscriptions (e.g., <code>useChatStore(s => s.currentStatus)</code>), ensuring only the specific status pill or token badge re-renders.</p>
+      <p><strong>2. Out-of-React State Dispatch:</strong> Zustand stores can be inspected and updated directly outside of React components via <code>getState()</code> and <code>setState()</code>. In an Electron app where IPC stream chunks arrive asynchronously from the main process, this avoids React hook stale closure bugs.</p>
+      <p><strong>3. Zero Boilerplate & Low Bundle Weight:</strong> Zustand is less than 1KB gzipped, compared to Redux Toolkit's heavier footprint.</p>
+    </div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-question">Q: Why Vite + esbuild for the build pipeline?</div>
+    <div class="qa-badge">Build Engineering & Developer Experience</div>
+    <div class="qa-answer">
+      <p>Ty-Code employs a dual-engine build architecture:</p>
+      <p><strong>• Renderer Process:</strong> Bundled with Vite 6 + React 18, utilizing native ES modules for instantaneous Hot Module Replacement (HMR) during development.</p>
+      <p><strong>• Main & Preload Processes:</strong> Bundled with esbuild targeting Node 20 (CommonJS). esbuild bundles native dependencies and TypeScript files in milliseconds, marking native Node addons (<code>node-pty</code>, <code>electron</code>) as external.</p>
+      <p>This separation guarantees sub-second build and reload cycles across both Electron processes.</p>
+    </div>
+  </div>
+
+  <div class="page-break"></div>
+
+  <!-- SECTION 3 -->
+  <h2 class="section-title"><span class="num">3</span> Deep-Dive Technical Architecture & Engineering Solutions</h2>
+
+  <div class="qa-card">
+    <div class="qa-question">Q: How does the Unified Provider Gateway normalize heterogeneous streaming APIs?</div>
+    <div class="qa-badge">API Gateway & Adapter Pattern</div>
+    <div class="qa-answer">
+      <p>Different AI providers implement conflicting streaming protocols. OpenAI and Groq emit Server-Sent Events (SSE) with <code>data: { choices: [{ delta: { content } }] }</code>. Anthropic emits typed events such as <code>content_block_delta</code> with <code>delta: { text }</code>. Ollama and local proxies emit raw NDJSON lines.</p>
+      <p>We built a <code>ProviderGateway</code> using the Adapter Pattern. Outbound requests are normalized into standard chat completion schemas. Inbound byte streams are piped through transform parsers that emit normalized TypeScript <code>AgentStreamChunk</code> events:</p>
+      <div class="code-block">// Normalized Agent Stream Event Schema
+export type AgentStreamChunk =
+  | { taskId: string; type: 'token'; content: string }
+  | { taskId: string; type: 'thought'; content: string }
+  | { taskId: string; type: 'status'; content: string }
+  | { taskId: string; type: 'tool_call'; toolCall: ToolCallDefinition }
+  | { taskId: string; type: 'approval_request'; approvalRequest: AgentApproval }
+  | { taskId: string; type: 'diff_proposed'; diff: FileDiffPayload }
+  | { taskId: string; type: 'done'; usage?: TokenUsageSnapshot }
+  | { taskId: string; type: 'error'; error: string };</div>
+      <p>If a provider fails with an HTTP 429 rate limit or network timeout, the gateway triggers automated fallback failover to the next compatible model in the configured pool without dropping the user's active session.</p>
+    </div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-question">Q: How do you prevent high-frequency streaming tokens from saturating the JavaScript event loop?</div>
+    <div class="qa-badge">Performance Engineering & Event Loop Optimization</div>
+    <div class="qa-answer">
+      <p>When models like Groq stream tokens at 300+ tokens per second, emitting a separate React state update per token saturates the main thread and causes UI frame drops.</p>
+      <p>We implemented a double-buffer flush strategy in the renderer:</p>
+      <p><strong>1. Micro-Batching:</strong> Incoming token chunks append to an in-memory string buffer.</p>
+      <p><strong>2. 24ms Throttle Window:</strong> A <code>requestAnimationFrame</code> or 24ms throttle window synchronizes buffer flushes to the display refresh rate (60Hz).</p>
+      <p><strong>3. Deferred Markdown AST Parsing:</strong> Markdown parsing (syntax highlighting via <code>highlight.js</code>) is deferred: plain text renders immediately during streaming, and full AST syntax highlighting executes once the stream completes with a <code>[DONE]</code> event.</p>
+    </div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-question">Q: Explain Ty-Code's local-first security sandbox and permission architecture.</div>
+    <div class="qa-badge">Application Security & Sandbox Engineering</div>
+    <div class="qa-answer">
+      <p>To allow autonomous agent execution without risking data loss or system compromise, Ty-Code enforces three security tiers:</p>
+      <p><strong>1. Terminal Execution Policy:</strong></p>
+      <p>• <em>Always Ask:</em> The agent halts and emits an approval request before running any shell command.</p>
+      <p>• <em>Restricted Mode:</em> Safely auto-approves read-only inspection commands (<code>ls</code>, <code>cat</code>, <code>git status</code>, <code>git log</code>), but halts for destructive or state-altering commands (<code>rm</code>, <code>npm install</code>, <code>kill</code>, <code>curl</code>).</p>
+      <p>• <em>Always Proceed:</em> Fully autonomous execution mode for sandboxed testing.</p>
+      <p><strong>2. Workspace Containment Sandbox:</strong> Agent tool invocations (<code>read_file</code>, <code>write_file</code>, <code>edit_file</code>) are strictly bounded to the open workspace root directory. Attempts to traverse directories (e.g., <code>../../../etc</code>) are blocked in the main process unless the user explicitly enables 'System Access' in Global Security Settings.</p>
+      <p><strong>3. Safe Edit Review Gate:</strong> Any proposed file edit modifying more than 5 lines triggers an interactive Monaco Diff review before disk mutation.</p>
+    </div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-question">Q: How are API keys and credentials protected at rest on the client machine?</div>
+    <div class="qa-badge">Cryptography & Credential Storage</div>
+    <div class="qa-answer">
+      <p>Storing API keys in plain text files (<code>.env</code> or JSON) exposes users to malware and rogue package exfiltration. Ty-Code integrates Electron's native <code>safeStorage</code> API:</p>
+      <p><strong>• Windows:</strong> Encrypted with Windows DPAPI (Data Protection API) tied to the OS user account.</p>
+      <p><strong>• macOS:</strong> Encrypted with the Apple Keychain Services API.</p>
+      <p><strong>• Linux:</strong> Encrypted using the Secret Service API (GNOME Keyring / KWallet).</p>
+      <p>Credentials are stored on disk as encrypted binary buffers and are decrypted only in-memory within the Main process when establishing HTTPS connections. The Renderer process receives only masked summaries (e.g., 'sk-ant-••••1234') and never touches plaintext secret keys.</p>
+    </div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-question">Q: How is Inter-Process Communication (IPC) designed to prevent memory leaks and security vulnerabilities?</div>
+    <div class="qa-badge">IPC Architecture & Process Isolation</div>
+    <div class="qa-answer">
+      <p><strong>1. Process Isolation:</strong> <code>nodeIntegration</code> is strictly set to <code>false</code>, and <code>contextIsolation</code> is set to <code>true</code>.</p>
+      <p><strong>2. Typed contextBridge:</strong> The preload script exposes an immutable <code>window.electronAPI</code> object. Renderer code cannot access raw <code>ipcRenderer</code> or Node modules.</p>
+      <p><strong>3. Disposable Subscription Pattern:</strong> Every event stream listener (e.g., <code>onAgentStream</code>) returns an explicit cleanup function (<code>() => ipcRenderer.removeListener(...)</code>). React components call this cleanup during <code>useEffect</code> unmounting, eliminating detached DOM trees and dangling IPC listener memory leaks.</p>
+      <p><strong>4. Zod Schema Validation:</strong> All parameters crossing the IPC bridge are validated with Zod schemas to reject malformed payloads.</p>
+    </div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-question">Q: How does the Multi-Window Architecture work for the dedicated M3E UI Sketcher Canvas?</div>
+    <div class="qa-badge">Multi-Window Orchestration</div>
+    <div class="qa-answer">
+      <p>The M3E UI Sketcher required an unconstrained visual canvas (React Flow) that would compromise editor real estate if rendered as a sidebar panel.</p>
+      <p>In <code>src/main/index.ts</code>, we implemented an <code>openSketcherWindow()</code> orchestrator that manages a secondary <code>BrowserWindow</code> instance loading the application bundle with a <code>#sketcher</code> hash route.</p>
+      <p>Window controls (minimize, maximize, close) are custom-rendered to preserve aesthetic consistency and dispatch IPC commands targeted to the specific BrowserWindow instance using <code>BrowserWindow.fromWebContents(event.sender)</code>.</p>
+      <p>State synchronization between the editor and canvas runs through an IPC event bus (<code>canvasSyncManager</code>), enabling live visual UI generation from chat prompts.</p>
+    </div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-question">Q: What is the Context Window Auto-Compaction strategy?</div>
+    <div class="qa-badge">Agent Loop & Token Engineering</div>
+    <div class="qa-answer">
+      <p>In complex multi-step coding workflows, token accumulation can rapidly exhaust model context windows or cause quadratic API costs.</p>
+      <p>Ty-Code monitors the token ratio against the model's limit (e.g., 32k or 128k). When the context window reaches <strong>95% capacity</strong>, the agent engine halts execution and executes an Auto-Compaction pass:</p>
+      <p>1. The root system prompt and initial project requirements are permanently pinned.</p>
+      <p>2. Verbose intermediate tool execution outputs (file reads, test outputs) are condensed into a high-density semantic summary.</p>
+      <p>3. The last 2 conversation turns are preserved verbatim for conversational context.</p>
+      <p>This frees approximately 65% of the token window while maintaining agent context integrity.</p>
+    </div>
+  </div>
+
+  <div class="page-break"></div>
+
+  <!-- SECTION 4 -->
+  <h2 class="section-title"><span class="num">4</span> System Design & Scalability Interview Questions</h2>
+
+  <div class="qa-card accent-emerald">
+    <div class="qa-question">Q: How would you scale Ty-Code to an Enterprise Engineering Organization of 1,000+ developers?</div>
+    <div class="qa-badge">Enterprise Architecture & Governance</div>
+    <div class="qa-answer">
+      <p>Scaling Ty-Code across an enterprise involves four architectural layers:</p>
+      <p><strong>1. Centralized Policy Distribution & MDM Integration:</strong> Distribute immutable global security configs (<code>.tycode/enterprise-policy.json</code>) enforcing 'Restricted Mode' or 'Always Ask' terminal policies, restricting file access strictly to workspace boundaries, and disabling telemetry.</p>
+      <p><strong>2. Private LLM Gateway / Proxy Layer:</strong> Configure enterprise instances to route through an internal corporate proxy (e.g., LiteLLM or vLLM cluster) on an internal VPC. The gateway handles enterprise billing, auditing, and logging, while Ty-Code connects via custom OpenAI-compatible endpoints.</p>
+      <p><strong>3. Air-Gapped Licensing & Local Auto-Updates:</strong> Implement enterprise update channels with air-gapped binary distribution and local registry syncing for internal extension plugins.</p>
+      <p><strong>4. Audit & Compliance Ledger:</strong> All terminal commands and file mutations are recorded to a local, tamper-evident JSON-lines ledger for SOC2/HIPAA compliance reviews.</p>
+    </div>
+  </div>
+
+  <div class="qa-card accent-emerald">
+    <div class="qa-question">Q: How do you guarantee zero telemetry leakage and client privacy?</div>
+    <div class="qa-badge">Privacy & Compliance Engineering</div>
+    <div class="qa-answer">
+      <p>Ty-Code implements an explicit Zero-Telemetry Guarantee:</p>
+      <p><strong>1. No Silent Telemetry:</strong> Outbound telemetry is disabled by default. If enabled for local diagnostics, events are strictly queued in an encrypted local SQLite/JSON storage buffer on the user's machine.</p>
+      <p><strong>2. Telemetry Inspector:</strong> Users can open the 'Privacy & Telemetry' tab to inspect every queued diagnostic payload before deciding to clear it or copy it. No destination URL is configured in the codebase, guaranteeing zero outbound transmission.</p>
+      <p><strong>3. Continuous CI Guard Rails:</strong> We built automated guard scripts (<code>no-baked-secrets.mjs</code>, <code>no-mock-agent-path.mjs</code>) that run on every pull request, asserting that zero tracking pixels, analytics SDKs (e.g., Google Analytics, Mixpanel), or unencrypted keys exist.</p>
+    </div>
+  </div>
+
+  <!-- SECTION 5 -->
+  <h2 class="section-title"><span class="num">5</span> Real-World Use Case Scenarios & Business Impact</h2>
+
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th style="width: 28%;">Enterprise Scenario</th>
+        <th style="width: 36%;">Ty-Code Architectural Capability</th>
+        <th style="width: 36%;">Tangible Business Value</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>HIPAA / Defense / Banking (Air-Gapped)</strong></td>
+        <td>Local Ollama / vLLM integration + safeStorage + Zero Telemetry Guarantee.</td>
+        <td>Enables AI-assisted software development in highly regulated environments where proprietary code cannot touch third-party cloud servers.</td>
+      </tr>
+      <tr>
+        <td><strong>Cost-Constrained Startups & Students</strong></td>
+        <td>One-Click 'Free Mode' routing through OpenKilo (40+ models) and FCC proxy layer.</td>
+        <td>Eliminates subscription barriers ($20-$40/mo per seat), providing full agentic capabilities at $0 operating cost.</td>
+      </tr>
+      <tr>
+        <td><strong>Multi-Cloud Disaster Recovery</strong></td>
+        <td>Unified ProviderGateway with dynamic fallback across OpenRouter, Groq, Anthropic, and Gemini.</td>
+        <td>Prevents developer downtime during cloud LLM outages; work seamlessly auto-routes to available alternative models.</td>
+      </tr>
+      <tr>
+        <td><strong>Rapid Visual UI Prototyping</strong></td>
+        <td>Standalone M3E Canvas Window with React Flow and bidirectional chat synchronization.</td>
+        <td>Bridges the design-to-code gap: visual layouts are synthesized into production React/Tailwind components in real-time.</td>
+      </tr>
+      <tr>
+        <td><strong>Polyglot Monorepo Engineering</strong></td>
+        <td>Native Language Server Protocol (LSP) client for TypeScript, Python, Rust, and Go.</td>
+        <td>Ensures compiler-grade typechecking and auto-completion inside Monaco without heavy external IDE dependencies.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- SECTION 6 -->
+  <h2 class="section-title"><span class="num">6</span> Engineering Gotchas & Hard Problems Solved</h2>
+
+  <div class="qa-card accent-amber">
+    <div class="qa-question">Q: What was the most challenging technical hurdle you overcame on this project?</div>
+    <div class="qa-badge">Ground-Truth Verification & Native Addons</div>
+    <div class="qa-answer">
+      <p>"The most difficult engineering hurdle was guaranteeing zero-mock, real-world execution integrity across asynchronous streaming and native terminals.</p>
+      <p>Many open-source AI boilerplates use mock timers, simulated delays, or fake streaming strings. We designed a dual-pronged solution:</p>
+      <p><strong>1. CI Guard Suite:</strong> Scripts (<code>no-mock-agent-path.mjs</code>, <code>no-fixture-replies.mjs</code>) run in CI, statically scanning AST trees to reject any hardcoded responses or fake delays in production agent paths.</p>
+      <p><strong>2. Runtime Connectivity Tracer:</strong> Built a live tracer that measures real round-trip latencies across every hop (H1: Renderer Chat -> H2: IPC Bridge -> H3: Gateway Adapter -> H4: Agent Loop -> H5: Network Provider), exposing live diagnostics and latency graphs directly to the developer.</p>
+      <p>Additionally, cross-platform terminal compilation with <code>node-pty</code> required configuring native C++ build bindings to seamlessly bridge Windows ConPTY and Unix pseudo-terminals without crashing the Electron main event loop."</p>
+    </div>
+  </div>
+
+  <!-- SECTION 7 -->
+  <h2 class="section-title"><span class="num">7</span> Interview Quick-Reference Cheat Sheet</h2>
+
+  <div class="cheat-grid">
+    <div class="cheat-item">
+      <strong>Architecture Pattern</strong>
+      <span>Multi-Process Electron Architecture (Main, Preload, Renderer) with strict Process Isolation and contextBridge.</span>
+    </div>
+    <div class="cheat-item">
+      <strong>Design Patterns Used</strong>
+      <span>Adapter Pattern (ProviderGateway), ReAct Loop (Agent Engine), Observer/Disposable Pattern (IPC Streaming), Selector Subscriptions (Zustand).</span>
+    </div>
+    <div class="cheat-item">
+      <strong>Key Protocols</strong>
+      <span>Server-Sent Events (SSE), JSON-RPC 2.0 (Language Server Protocol), ANSI escape sequences (XTerm.js / node-pty), Electron IPC.</span>
+    </div>
+    <div class="cheat-item">
+      <strong>Security Standards</strong>
+      <span>OS safeStorage (DPAPI, Keychain, libsecret), Three-Tier Terminal Sandbox (Always Ask, Restricted, Always Proceed), Workspace Path Traversal Containment.</span>
+    </div>
+  </div>
+
+  <div class="footer">
+    <span>Ty-Code Architecture & Technical Interview Master Guide</span>
+    <span>Candidate Confidential — Page 1 of 1</span>
+  </div>
+
+</body>
+</html>

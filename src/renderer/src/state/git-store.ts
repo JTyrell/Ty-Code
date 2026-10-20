@@ -44,6 +44,7 @@ interface GitStoreState {
   setHistorySearch: (search: string) => void;
   setDiffInline: (inline: boolean) => void;
   clearError: () => void;
+  resetStatus: () => void;
   refreshStatus: (loadMetadata?: boolean) => Promise<void>;
   initRepo: () => Promise<boolean>;
   stageFile: (filePath: string | string[]) => Promise<boolean>;
@@ -126,6 +127,20 @@ export const useGitStore = create<GitStoreState>((set, get) => ({
   setHistorySearch: (historySearch) => set({ historySearch }),
   setDiffInline: (diffInline) => set({ diffInline }),
   clearError: () => set({ error: null }),
+
+  resetStatus: () => set({
+    status: emptyStatus(),
+    error: null,
+    branches: null,
+    commits: [],
+    commitDetail: null,
+    tags: [],
+    stashes: [],
+    remotes: [],
+    activeConflict: null,
+    activeDiff: null,
+    activeHunks: []
+  }),
 
   refreshStatus: async (loadMetadata = false) => {
     if (!window.electronAPI?.gitGetStatus) {

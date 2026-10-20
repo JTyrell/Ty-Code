@@ -7,7 +7,8 @@ import {
   Terminal,
   Search,
   ListTree,
-  Palette
+  Palette,
+  Bug
 } from 'lucide-react';
 import { useChatStore } from '../state/chat-store';
 import { useGitStore } from '../state/git-store';
@@ -15,7 +16,7 @@ import { useGitStore } from '../state/git-store';
 import React, { useRef, useCallback } from 'react';
 import { FileCheck } from 'lucide-react';
 
-export type ActivityTab = 'explorer' | 'search' | 'source-control' | 'code-review' | 'extensions' | 'skills' | 'outline' | 'ui-sketcher';
+export type ActivityTab = 'explorer' | 'search' | 'source-control' | 'code-review' | 'debugger' | 'extensions' | 'skills' | 'outline' | 'ui-sketcher';
 
 interface ActivityBarProps {
   activeTab: ActivityTab;
@@ -92,6 +93,7 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({ activeTab, onTabChange
       badge: totalChanges > 0 ? totalChanges : undefined
     },
     { id: 'code-review', label: 'AI Code Review', icon: <FileCheck size={18} /> },
+    { id: 'debugger', label: 'Omni-Debugger (Diagnostics & Arch)', icon: <Bug size={18} /> },
     { id: 'ui-sketcher', label: 'UI Sketcher', icon: <Palette size={18} /> },
     { id: 'extensions', label: 'Extensions', icon: <Boxes size={18} /> },
     { id: 'skills', label: 'Capabilities', icon: <Sparkles size={18} /> },

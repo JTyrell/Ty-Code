@@ -1,9 +1,10 @@
 import { BrowserWindow } from 'electron';
 import fs from 'fs/promises';
 import path from 'path';
-import type { AgentMode, AgentStreamChunk, AgentToolApproval, ChatMessage, IpcResponse, ProposedDiff, ProviderSettings } from '../../preload/types';
+import type { AgentApprovalDecision, AgentMode, AgentSessionSummary, AgentStreamChunk, AgentToolApproval, ChatMessage, IpcResponse, ProposedDiff, ProviderSettings } from '../../preload/types';
 import { getProviderSettings } from './settings-handlers';
 import { AgentEngine } from '../agent/agent-engine';
+import { sessionStore } from '../agent/session-store';
 import { OpenCodeAgentManager } from '../services/orchestration/agent-manager';
 import { classifyDiagnosticError } from '../services/diagnostics/error-taxonomy';
 
@@ -16,37 +17,39 @@ interface ActiveTask {
 const activeTasks = new Map<string, ActiveTask>();
 interface PendingAgentApproval {
   taskId: string;
-  resolve: (approved: boolean) => void;
+  resolve: (decision: AgentApprovalDecision) => void;
   timer: ReturnType<typeof setTimeout>;
   signal: AbortSignal;
   abortHandler: () => void;
 }
 const pendingApprovals = new Map<string, PendingAgentApproval>();
 
-function requestTaskApproval(taskId: string, approval: AgentToolApproval, signal: AbortSignal): Promise<boolean> {
-  if (signal.aborted) return Promise.resolve(false);
+function requestTaskApproval(taskId: string, approval: AgentToolApproval, signal: AbortSignal): Promise<AgentApprovalDecision> {
+  if (signal.aborted) return Promise.resolve({ approved: false });
   return new Promise((resolve) => {
-    const finish = (approved: boolean) => {
+    const finish = (decision: AgentApprovalDecision) => {
       const pending = pendingApprovals.get(approval.id);
       if (!pending) return;
       clearTimeout(pending.timer);
       signal.removeEventListener('abort', pending.abortHandler);
       pendingApprovals.delete(approval.id);
-      pending.resolve(approved);
+      pending.resolve(decision);
     };
-    const abortHandler = () => finish(false);
-    const timer = setTimeout(() => finish(false), 120_000);
+    const abortHandler = () => finish({ approved: false });
+    const isPlanReview = approval.approvalKind === 'plan_review';
+    const timeoutMs = isPlanReview ? 600_000 : 120_000;
+    const timer = setTimeout(() => finish({ approved: false }), timeoutMs);
     pendingApprovals.set(approval.id, { taskId, resolve, timer, signal, abortHandler });
     signal.addEventListener('abort', abortHandler, { once: true });
   });
 }
 
-export function respondAgentApproval(approvalId: string, approved: boolean): IpcResponse<void> {
+export function respondAgentApproval(approvalId: string, approved: boolean, feedback?: string): IpcResponse<void> {
   const pending = pendingApprovals.get(approvalId);
   if (!pending) return { success: false, error: 'Approval request expired or is no longer active.' };
   const task = activeTasks.get(pending.taskId);
   if (!task || task.finished) return { success: false, error: 'The agent task has already finished.' };
-  pending.resolve(approved);
+  pending.resolve({ approved, feedback });
   clearTimeout(pending.timer);
   pending.signal.removeEventListener('abort', pending.abortHandler);
   pendingApprovals.delete(approvalId);
@@ -72,7 +75,7 @@ export function handleUserApproveDiff(
 function cancelTaskApprovals(taskId: string): void {
   for (const [approvalId, pending] of pendingApprovals) {
     if (pending.taskId !== taskId) continue;
-    pending.resolve(false);
+    pending.resolve({ approved: false });
     clearTimeout(pending.timer);
     pending.signal.removeEventListener('abort', pending.abortHandler);
     pendingApprovals.delete(approvalId);
@@ -97,6 +100,7 @@ export async function startAgentTask(
     openFilePaths?: string[];
     providerOverride?: string;
     modelOverride?: string;
+    resumeSessionId?: string;
   }
 ): Promise<IpcResponse<string>> {
   const taskId = params.taskId || `task_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -231,7 +235,7 @@ export async function startAgentTask(
           activeFileContent: params.activeFileContent,
           traceId: params.traceId,
           abortSignal: abortController.signal,
-          requestApproval: (approval) => requestTaskApproval(taskId, approval, abortController.signal),
+          requestApproval: async (approval) => (await requestTaskApproval(taskId, approval, abortController.signal)).approved,
           onChunk: emit
         });
       } else {
@@ -246,8 +250,10 @@ export async function startAgentTask(
           activeFileContent: params.activeFileContent,
           openFilePaths: params.openFilePaths,
           traceId: params.traceId,
+          taskId,
+          resumeSessionId: params.resumeSessionId,
           abortSignal: abortController.signal,
-          requestApproval: (approval) => requestTaskApproval(taskId, approval, abortController.signal),
+          requestApproval: async (approval) => requestTaskApproval(taskId, approval, abortController.signal),
           onChunk: emit,
           onProviderHandoff: (info) => {
             if (mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) return;
@@ -306,5 +312,24 @@ export async function applyDiff(workspacePath: string, diff: ProposedDiff): Prom
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     return { success: false, error: message };
+  }
+}
+
+export async function listAgentSessions(workspacePath?: string): Promise<IpcResponse<AgentSessionSummary[]>> {
+  try {
+    const sessions = await sessionStore.listSessions(20);
+    const summaries: AgentSessionSummary[] = sessions
+      .filter((session) => !workspacePath || session.workspacePath === workspacePath)
+      .map((session) => ({
+        sessionId: session.sessionId,
+        workspacePath: session.workspacePath,
+        mode: session.mode,
+        todoCount: session.todos.length,
+        updatedAt: session.updatedAt
+      }))
+      .slice(0, 6);
+    return { success: true, data: summaries };
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
   }
 }

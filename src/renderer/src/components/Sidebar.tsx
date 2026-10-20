@@ -1,11 +1,8 @@
 import React from 'react';
-import {
-  RefreshCw,
-  Plus,
-  FolderPlus
-} from 'lucide-react';
+import { RefreshCw, Plus, FolderPlus } from 'lucide-react';
 import { useWorkspaceStore } from '../state/workspace-store';
 import { VirtualFileTree } from './VirtualFileTree';
+import { NoProjectEmptyState } from './NoProjectEmptyState';
 import { toast } from '../state/toast-store';
 
 import { useExtensionPromptStore } from '../state/extension-prompt-store';
@@ -60,6 +57,8 @@ export const Sidebar: React.FC = () => {
     }
   };
 
+  // Open folder / recents logic now lives in NoProjectEmptyState.
+
   return (
     <div
       style={{
@@ -106,9 +105,7 @@ export const Sidebar: React.FC = () => {
       {fileTree || flatTree ? (
         <VirtualFileTree rootNode={fileTree} flatEntries={flatTree} onRefresh={refreshFileTree} />
       ) : (
-        <div style={{ padding: '24px 16px', color: 'var(--text-muted)', textAlign: 'center', fontSize: '12px' }}>
-          No workspace folder opened.
-        </div>
+        <NoProjectEmptyState hint="The Explorer stays closed until you choose a folder. Pick one to browse your files." />
       )}
     </div>
   );

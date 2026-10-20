@@ -49,6 +49,7 @@ import { DEFAULT_PRESET_MODELS } from '../../../preload/preset-models';
 import { useLspStore } from '../state/lsp-store';
 import { toast } from '../state/toast-store';
 import { FCCSetup } from './settings/FCCSetup';
+import { ModelCatalogVerifierPanel } from './settings/ModelCatalogVerifierPanel';
 import { OpenKiloSetup } from './settings/OpenKiloSetup';
 import { ProviderSelectionGrid, type ProviderStatusInfo } from './settings/ProviderSelectionGrid';
 import { ProviderSetupForm } from './settings/ProviderSetupForm';
@@ -1003,6 +1004,13 @@ export const SettingsModal: React.FC = () => {
                   Free-model supply layer powered by free-claude-code (FCC) — AGPL-3.0 / MIT — <a href="https://github.com/Alishahryar1/free-claude-code" target="_blank" rel="noopener noreferrer" style={{ color: '#c7d2fe', textDecoration: 'underline' }}>https://github.com/Alishahryar1/free-claude-code</a>
                 </span>
               </div>
+
+              {/* Autonomous Live Model Catalog Verification (corrects the provider & models DB) */}
+              <ModelCatalogVerifierPanel
+                onCorrectionsApplied={() => {
+                  void refreshByokData();
+                }}
+              />
 
               {/* Provider Selection Grid */}
               <ProviderSelectionGrid

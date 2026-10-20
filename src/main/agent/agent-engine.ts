@@ -1,8 +1,8 @@
-import type { AgentHarnessType, AgentStreamChunk, AgentToolApproval, ChatMessage, ProposedDiff, ProviderSettings, ToolCall } from '../../preload/types';
+import type { AgentApprovalDecision, AgentHarnessType, AgentStreamChunk, AgentToolApproval, ChatMessage, ProposedDiff, ProviderSettings, ToolCall } from '../../preload/types';
 import { ProviderGateway, type ChatCompletionMessage, type GatewayToolCall, type GatewayToolSchema } from '../providers/provider-gateway';
 export { ProviderGateway };
-import { buildSystemPrompt, AGENT_TOOLS_DEFINITIONS, getEccRulesPrompt, getSeoPromptGuidance, isLocalModel } from './system-prompt';
-import { ToolExecutor } from './tool-executor';
+import { buildSystemPrompt, AGENT_TOOLS_DEFINITIONS, TASK_SCOPING_PROTOCOL, getEccRulesPrompt, getSeoPromptGuidance, isLocalModel } from './system-prompt';
+import { ToolExecutor, type ToolExecutionResponse } from './tool-executor';
 import { getHarness } from '../services/orchestration/harnesses';
 import { SecurityPolicyEngine } from '../services/security-policy';
 import { settingsManager, type SettingsManager } from '../services/settings-manager';
@@ -12,6 +12,15 @@ import { mcpManager } from '../services/mcp-manager';
 import { diagnosticsHealthMonitor } from '../services/diagnostics/health-monitor';
 import { optimizationPipeline } from '../providers/optimization-pipeline';
 import { failoverResumeManager } from './failover-resume';
+import { agentStateManager, AgentMode, type TodoItem } from './agent-state-manager';
+import { compactMessages, estimateContextTokens, estimateTokenCount, generateSummary, shouldCompact, buildFallbackSummary, MODEL_CONTEXT_LIMIT } from './context-compactor';
+import { fileMemoryManager, extractKeySymbols, extractDependencies } from './file-memory';
+import { sessionStore, buildSessionSnapshot, type AgentSessionState } from './session-store';
+import { toolApprovalManager, type ApprovalRule } from './tool-approval-manager';
+import { backgroundAgentOrchestrator } from './background-agent-orchestrator';
+import { ShellSandbox } from './shell-sandbox';
+import { agentObservability } from './agent-observability';
+import { skillRegistry } from './agent-skills';
 
 import { connectivityTracer } from '../services/diagnostics/connectivity-tracer';
 import { getWorkspaceSummary, getOpenFilesContent, buildWorkspaceContextBlock } from '../services/workspace-context-manager';
@@ -28,24 +37,152 @@ export interface RunAgentParams {
   openFilePaths?: string[];
   traceId?: string;
   onChunk: (chunk: AgentStreamChunk) => void;
-  requestApproval: (approval: AgentToolApproval) => Promise<boolean>;
+  requestApproval: (approval: AgentToolApproval) => Promise<AgentApprovalDecision>;
   abortSignal?: AbortSignal;
   onProviderHandoff?: (info: { fromProvider: string; toProvider: string; toModel: string }) => void;
+  taskId?: string;
+  resumeSessionId?: string;
 }
 
 export class AgentEngine {
   private toolExecutor: ToolExecutor;
   private securityPolicy: SecurityPolicyEngine;
+  private shellSandbox: ShellSandbox;
+  private fileMemoryRefreshInFlight = new Set<string>();
 
   constructor(private workspacePath: string = process.cwd(), settingsSource: Pick<SettingsManager, 'getEffectiveSettings'> = settingsManager) {
     this.securityPolicy = new SecurityPolicyEngine(this.workspacePath, settingsSource);
     this.toolExecutor = new ToolExecutor(this.workspacePath, this.securityPolicy);
+    this.shellSandbox = new ShellSandbox(this.workspacePath);
+  }
+
+  get approvalRules(): ApprovalRule[] {
+    return toolApprovalManager.getStandingApprovals();
+  }
+
+  private async refreshFileMemory(filePath: string, content: string, provider: string, model: string): Promise<void> {
+    try {
+      if (this.fileMemoryRefreshInFlight.has(filePath)) return;
+      this.fileMemoryRefreshInFlight.add(filePath);
+      const excerpt = content.slice(0, 4_000);
+      let summary = '';
+      try {
+        const response = await ProviderGateway.sendChatRequest(provider, model, [
+          { role: 'system', content: 'Summarize the purpose of the provided source file in one concise sentence mentioning its main responsibility. Output only that sentence.' },
+          { role: 'user', content: excerpt }
+        ], false);
+        const cleaned = (response || '').trim();
+        if (cleaned.length >= 10 && cleaned.length <= 300 && !cleaned.startsWith('{')) summary = cleaned;
+      } catch {
+        summary = '';
+      }
+      const symbols = extractKeySymbols(excerpt);
+      fileMemoryManager.updateMemory(filePath, {
+        ...(summary ? { summary } : {}),
+        ...(symbols.length ? { keySymbols: symbols.slice(0, 12) } : {}),
+        dependencies: extractDependencies(excerpt)
+      });
+    } catch {
+      return;
+    } finally {
+      this.fileMemoryRefreshInFlight.delete(filePath);
+    }
+  }
+
+  private async executeWithSandbox(
+    toolCall: ToolCall,
+    approvedExecutionArgs: Record<string, unknown>,
+    abortSignal?: AbortSignal
+  ): Promise<ToolExecutionResponse> {
+    if (toolCall.name === 'run_command' || toolCall.name === 'run_terminal_command') {
+      const toolStartedAt = Date.now();
+      const command = String(approvedExecutionArgs.command ?? toolCall.arguments.command ?? '');
+      const shellResult = await this.shellSandbox.executeCommand(command, { abortSignal });
+      const sections = [
+        shellResult.stdout ? `--- stdout ---\n${shellResult.stdout}` : '',
+        shellResult.stderr ? `--- stderr ---\n${shellResult.stderr}` : ''
+      ].filter(Boolean);
+      const output = shellResult.blocked
+        ? `Sandbox: ${shellResult.blocked}`
+        : [...sections, sections.length ? `Exit code: ${shellResult.exitCode} (${shellResult.duration}ms)` : '(no output)'].join('\n');
+      agentObservability.recordEvent({
+        type: 'tool_call',
+        toolName: toolCall.name,
+        args: toolCall.arguments,
+        duration: Date.now() - toolStartedAt,
+        success: shellResult.success
+      });
+      return { output, isError: !shellResult.success };
+    }
+    const executorStartedAt = Date.now();
+    const executorResult = await this.toolExecutor.execute(toolCall.name, approvedExecutionArgs, abortSignal);
+    agentObservability.recordEvent({
+      type: 'tool_call',
+      toolName: toolCall.name,
+      args: toolCall.arguments,
+      duration: Date.now() - executorStartedAt,
+      success: !executorResult.isError
+    });
+    return executorResult;
   }
 
   async run(params: RunAgentParams): Promise<void> {
     const { prompt, workspacePath, history, settings, activeFilePath, activeFileContent, onChunk, requestApproval, abortSignal } = params;
     const harnessType = params.harness || settings.activeHarness || 'claude-code';
     const harness = getHarness(harnessType);
+
+    // Initialize Agent State Manager (shared singleton so IPC can inspect live state)
+    const stateManager = agentStateManager;
+    stateManager.resetRun();
+    stateManager.currentMode = AgentMode.Plan;
+    stateManager.maxIterations = 70;
+
+    let restoredSession: AgentSessionState | null = null;
+    if (params.resumeSessionId) {
+      try {
+        restoredSession = await sessionStore.loadSession(params.resumeSessionId);
+      } catch {
+        restoredSession = null;
+      }
+    }
+    if (restoredSession) {
+      stateManager.currentMode = restoredSession.mode === 'execute' ? AgentMode.Execute : AgentMode.Plan;
+      stateManager.restoreTodos(restoredSession.todos || []);
+    }
+
+    const sessionId = params.taskId || `session_${Date.now().toString(36)}`;
+    const sessionStartedAt = Date.now();
+    const persistSessionState = (completed = false): void => {
+      sessionStore.saveSession(buildSessionSnapshot(sessionId, workspacePath, {
+        currentMode: stateManager.currentMode,
+        todos: stateManager.todos,
+        iterationCount: stateManager.iterationCount,
+        toolCallHistory: stateManager.toolCallHistory
+      }, sessionStartedAt, completed));
+    };
+    persistSessionState();
+
+    const approvalState: { userApproved: boolean } = { userApproved: false };
+    toolApprovalManager.setUserApprovalDelegate(async (delegatedToolName, delegatedArgs) => {
+      if (approvalState.userApproved) return { approved: true };
+      const approval: AgentToolApproval = {
+        id: `approval_rule_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+        toolCall: {
+          id: `rule_tool_${Date.now().toString(36)}`,
+          name: delegatedToolName,
+          arguments: (delegatedArgs && typeof delegatedArgs === 'object') ? { ...delegatedArgs } : {}
+        },
+        reason: `Standing approval rules require confirmation for ${delegatedToolName}.`,
+        approvalKind: 'tool_permission'
+      };
+      onChunk({ type: 'status', content: 'Waiting for your approval…' });
+      const decision = (await requestApproval?.(approval)) || { approved: false };
+      if (decision.approved) approvalState.userApproved = true;
+      return decision;
+    });
+
+    // Emit initial todo state to renderer
+    onChunk({ type: 'agent_state', state: { todos: stateManager.todos, mode: stateManager.currentMode, iteration: 0, maxIterations: stateManager.maxIterations } });
 
     const isEccEnabled = Boolean(
       settings?.integrations?.['ecc-rules'] ?? moduleRegistry.getModule('ecc-rules')?.isEnabled
@@ -71,7 +208,18 @@ export class AgentEngine {
     if (isSeoEnabled && !systemPrompt.includes('OPEN SEO & ANALYTICS MCP')) {
       systemPrompt += `\n\n${getSeoPromptGuidance(isLocal)}`;
     }
-    const messages: ChatCompletionMessage[] = [{ role: 'system', content: systemPrompt }];
+    if (!systemPrompt.includes('TASK SCOPING PROTOCOL')) {
+      systemPrompt += `\n\n## TASK SCOPING PROTOCOL (MANDATORY)\n\n${TASK_SCOPING_PROTOCOL}`;
+    }
+
+    await skillRegistry.ensureSkillsLoaded(workspacePath);
+    const activeSkill = skillRegistry.detectSkill(prompt);
+    if (activeSkill) {
+      systemPrompt += skillRegistry.activateSkill(activeSkill);
+    }
+
+    // Build initial messages
+    let messages: ChatCompletionMessage[] = [{ role: 'system', content: systemPrompt }];
     for (const message of history.slice(-10)) {
       if (message.role === 'user' || message.role === 'assistant') {
         messages.push(
@@ -100,18 +248,14 @@ export class AgentEngine {
       });
     }
 
-    // Universal tool schema: every model receives the same function-calling
-    // palette (the gateway converts to OpenAI `tools[].function` and Anthropic
-    // `tools[].input_schema` wire shapes). The harness textual protocol remains
-    // the fallback parser for models without native function calling.
+    // Universal tool schema
     const toolSchemas: GatewayToolSchema[] = AGENT_TOOLS_DEFINITIONS.map((t) => ({
       name: t.function.name,
       description: t.function.description,
       parameters: t.function.parameters
     }));
 
-    // Workspace ground-truth: every model is told the open workspace, its
-    // folder structure (as the Explorer shows it) and the open/active files.
+    // Workspace ground-truth
     const workspaceSummary = getWorkspaceSummary(workspacePath);
     const openFilePaths = params.openFilePaths?.length ? params.openFilePaths : activeFilePath ? [activeFilePath] : [];
     const openFiles = getOpenFilesContent(workspacePath, openFilePaths, activeFilePath);
@@ -126,25 +270,109 @@ export class AgentEngine {
       systemPrompt = `${systemPrompt}\n\n=== WORKSPACE GROUND TRUTH (live context) ===\n${workspaceContextBlock}\n=== END WORKSPACE GROUND TRUTH ===`;
     }
 
+    const isFileMemoryEnabled = settings?.integrations?.['file-memory'] === true;
+    if (isFileMemoryEnabled) {
+      await fileMemoryManager.ensureLoaded();
+      const relevantMemories = fileMemoryManager.getRelevantFiles(prompt, 6);
+      if (relevantMemories.length > 0) {
+        const memoryLines = relevantMemories.map((memory) =>
+          `- ${memory.path}${memory.summary ? `: ${memory.summary}` : ''}${memory.keySymbols.length ? ` [${memory.keySymbols.slice(0, 6).join(', ')}]` : ''}`
+        );
+        systemPrompt += `\n\n=== FILE MEMORY (recently traversed files) ===\n${memoryLines.join('\n')}\n=== END FILE MEMORY ===`;
+      }
+    }
+
     let currentSettings = { ...settings };
     const failedProviders = new Set<string>();
 
-    /** Executes an agent task as a robust while-loop. */
-    const MAX_ITERATIONS = 40;
-    let iteration = 0;
     onChunk({ type: 'status', content: 'Thinking…' });
 
-    while (iteration < MAX_ITERATIONS) {
+    // Helper: Build messages with todo context injected
+    const buildMessagesWithTodos = (msgs: ChatCompletionMessage[], todos: TodoItem[]): ChatCompletionMessage[] => {
+      if (todos.length === 0) return msgs;
+      
+      const todoContext = `\n\n## Active Tasks\n${todos.map(t => 
+        `- [${t.status.toUpperCase()}] ${t.task} (Priority: ${t.priority})${t.context ? ` — ${t.context}` : ''}`
+      ).join('\n')}\n`;
+      
+      // Find the last system message and append todo context
+      const newMessages = [...msgs];
+      let lastSystemIdx = -1;
+      for (let i = newMessages.length - 1; i >= 0; i--) {
+        if (newMessages[i].role === 'system') { lastSystemIdx = i; break; }
+      }
+      if (lastSystemIdx >= 0) {
+        newMessages[lastSystemIdx] = {
+          ...newMessages[lastSystemIdx],
+          content: newMessages[lastSystemIdx].content + todoContext + '\n\nUpdate task status as you complete them. If all tasks are done, provide a final summary.'
+        };
+      }
+      return newMessages;
+    };
+
+    // Helper: Parse todos from LLM response (plan mode)
+    const parseTodosFromResponse = (content: string): Array<{ task: string; priority: 'high' | 'medium' | 'low' }> => {
+      const todos: Array<{ task: string; priority: 'high' | 'medium' | 'low' }> = [];
+      const lines = content.split('\n');
+      for (const line of lines) {
+        const trimmed = line.trim();
+        // Match patterns like: "- [ ] Task", "1. Task", "- Task", "TODO: Task"
+        const match = trimmed.match(/^[-*•]\s*\[?[ x]?\]?\s*(.+)$/i) ||
+                      trimmed.match(/^\d+\.\s*(.+)$/) ||
+                      trimmed.match(/^TODO[:\-]\s*(.+)$/i);
+        if (match) {
+          const task = match[1].trim();
+          if (task.length > 5 && task.length < 200) {
+            let priority: 'high' | 'medium' | 'low' = 'medium';
+            const lower = task.toLowerCase();
+            if (/\b(critical|urgent|immediate|blocker|security)\b/i.test(lower)) priority = 'high';
+            else if (/\b(low|minor|nice|later)\b/i.test(lower)) priority = 'low';
+            todos.push({ task, priority });
+          }
+        }
+      }
+      return todos;
+    };
+
+    // Helper: Find related todo for a tool call
+    const getRelatedTodo = (toolCall: ToolCall, todos: TodoItem[]): TodoItem | null => {
+      const lowerTask = toolCall.name.toLowerCase();
+      return todos.find(t => 
+        t.status === 'pending' && (
+          t.task.toLowerCase().includes(lowerTask) ||
+          (toolCall.arguments.filePath && t.task.toLowerCase().includes(String(toolCall.arguments.filePath).toLowerCase())) ||
+          (toolCall.arguments.path && t.task.toLowerCase().includes(String(toolCall.arguments.path).toLowerCase()))
+        )
+      ) || todos.find(t => t.status === 'pending') || null;
+    };
+
+    // Helper: Populate todos from the approved Execution Plan (Phased) section of the report
+    const populateTodosFromPlan = (report: string): void => {
+      const lines = report.split('\n');
+      const planIdx = lines.findIndex((line) => /Execution Plan\s*\(\s*Phased\s*\)/i.test(line));
+      if (planIdx === -1) return;
+      for (let i = planIdx + 1; i < lines.length; i++) {
+        const trimmed = lines[i].trim();
+        if (trimmed.length === 0) continue;
+        if (/^\d+\.\s*\*\*$/.test(trimmed) || (/^\d+\.\s/.test(trimmed) && !/Phase/i.test(trimmed))) break;
+        const match = trimmed.match(/^[-*•]\s*\*\*Phase\s*\d+[^*]*\*\*\s*[:\-–—]?\s*(.+)$/i) ||
+                      trimmed.match(/^[-*•]\s*\*\*(Discovery|Implementation|Verification)\*\*\s*[:\-–—]?\s*(.+)$/i);
+        if (match) {
+          const task = match[2].replace(/\*\*/g, '').trim();
+          if (task.length > 3 && task.length < 300) stateManager.addTodo(task, 'medium');
+        }
+      }
+    };
+
+    while (stateManager.iterationCount < stateManager.maxIterations) {
       if (abortSignal?.aborted) {
         onChunk({ type: 'cancelled' });
         return;
       }
       try {
-        console.log(`[AGENT] Iteration ${iteration + 1}/${MAX_ITERATIONS} — calling gateway...`);
-        // "Auto" binding: FCC decides. When no explicit provider is configured
-        // (unset or literally 'auto'), the FCC router picks the best FREE model
-        // for this task across the entire managed free pool — never a paid
-        // provider without its own stored credentials.
+        console.log(`[AGENT] Iteration ${stateManager.iterationCount + 1}/${stateManager.maxIterations} — mode: ${stateManager.currentMode}`);
+
+        // Select provider/model
         const rawActiveProvider = currentSettings.activeProvider || '';
         const isAutoBinding = !rawActiveProvider || rawActiveProvider === 'auto';
         let activeProvider: string;
@@ -177,17 +405,40 @@ export class AgentEngine {
         }
         console.log(`[AGENT] Provider: ${activeProvider}, Model: ${activeModel}`);
 
-        // Reasoning models (Kilo Auto / DeepSeek R1) return chain-of-thought in
-        // a dedicated stream field; it must be echoed on the assistant turn for
-        // every follow-up request of this task.
+        // 1. Compact context when the estimated token budget crosses the model limit
+        const preCompactTokens = estimateContextTokens(messages);
+        stateManager.updateTokenUsage(preCompactTokens);
+        if (shouldCompact(messages, MODEL_CONTEXT_LIMIT)) {
+          onChunk({ type: 'status', content: 'Compacting context…' });
+          let summary = '';
+          try {
+            summary = await generateSummary(messages, async (summaryMessages) =>
+              ProviderGateway.sendChatRequest(activeProvider, activeModel, summaryMessages, false, undefined, undefined, 0, abortSignal));
+          } catch {
+            summary = '';
+          }
+          if (!summary) summary = buildFallbackSummary(messages, stateManager.getCompactSummary());
+          messages = compactMessages(messages, summary);
+          const postCompactTokens = estimateContextTokens(messages);
+          stateManager.updateTokenUsage(postCompactTokens);
+          agentObservability.recordEvent({ type: 'context_compaction', tokensBefore: preCompactTokens, tokensAfter: postCompactTokens });
+          onChunk({ type: 'status', content: `Context compacted. Estimated ${postCompactTokens} tokens in use.` });
+        }
+
+        // Stream status
+        onChunk({ type: 'status', content: `${stateManager.currentMode === 'plan' ? 'Planning' : 'Executing'}… (iteration ${stateManager.iterationCount + 1}/${stateManager.maxIterations})` });
+
+        // 2. Send to LLM with current todos in system prompt
+        const messagesWithTodos = buildMessagesWithTodos(messages, stateManager.todos);
+
         let streamThought = '';
-        // Structured tool calls captured from the wire (delta.tool_calls or
-        // Anthropic tool_use blocks) via the gateway callback.
         let structuredCalls: GatewayToolCall[] = [];
+        const llmCallStartedAt = Date.now();
+        const llmTokensIn = estimateContextTokens(messagesWithTodos);
         const streamText = await ProviderGateway.sendChatRequest(
           activeProvider,
           activeModel,
-          messages,
+          messagesWithTodos,
           true,
           undefined,
           (chunk: string) => {
@@ -204,11 +455,16 @@ export class AgentEngine {
             structuredCalls.push(...calls);
           }
         );
+        agentObservability.recordEvent({
+          type: 'llm_call',
+          provider: activeProvider,
+          model: activeModel,
+          tokensIn: llmTokensIn,
+          tokensOut: estimateTokenCount(streamText),
+          duration: Date.now() - llmCallStartedAt
+        });
 
-        // Merge the two tool-call channels before executing:
-        //  1) structured tool_calls from native function calling (ground truth)
-        //  2) textual `` blocks parsed by the harness protocol (fallback
-        // for models without native function calling).
+        // Merge tool calls
         const harnessToolCalls = harness.parseResponse(streamText, structuredCalls.map((call) => {
           let parsedArgs: Record<string, unknown> = {};
           try {
@@ -243,27 +499,77 @@ export class AgentEngine {
           toolCallsToExecute.push(textual);
         }
 
-        if (!toolCallsToExecute.length) {
-          if (params.traceId) {
-            try {
-              // eslint-disable-next-line @typescript-eslint/no-var-requires
-              const { connectivityTracer } = require('../services/diagnostics/connectivity-tracer');
-              connectivityTracer.recordHop(params.traceId, 'H9', {
-                status: 'PASS',
-                metadata: {
-                  toolExecutorReady: true,
-                  toolCallsCount: 0,
-                  note: 'Zero tool calls required for prompt; tool executor verified intact'
-                }
-              });
-            } catch {
-              // ignore
+        // SELF-CORRECTION: Detect "intent without action"
+        const hasToolCalls = toolCallsToExecute.length > 0;
+        const looksLikeIntentWithoutAction = !hasToolCalls &&
+          (streamText || '').trim().length > 0 &&
+          /\b(let me|i'll|i will|now i need to|i need to|let's|allow me to|i'm going to|i am going to|going to)\s+(read|check|search|run|execute|inspect|view|open|look at|examine|find|grep|list)\b/i.test(streamText || '');
+
+        if (looksLikeIntentWithoutAction) {
+          const nudgeMessage = 'You stated an intent but did not call a tool. Please execute the tool call now.';
+          messages.push({ role: 'system', content: nudgeMessage });
+          onChunk({ type: 'status', content: 'Self-correction: requesting tool execution…' });
+          stateManager.iterationCount++;
+          continue;
+        }
+
+        // 4. If no tool calls, check if all todos are complete
+        if (!hasToolCalls && !looksLikeIntentWithoutAction) {
+          if (stateManager.allTodosComplete()) {
+            if (params.traceId) {
+              try {
+                const { connectivityTracer } = require('../services/diagnostics/connectivity-tracer');
+                connectivityTracer.recordHop(params.traceId, 'H9', {
+                  status: 'PASS',
+                  metadata: {
+                    toolExecutorReady: true,
+                    toolCallsCount: 0,
+                    note: 'All tasks completed; task executor verified intact'
+                  }
+                });
+              } catch {
+                // ignore
+              }
+            }
+            onChunk({ type: 'done' });
+            persistSessionState(true);
+            return;
+          }
+
+          // 5. Plan mode: route report text into the approval tool instead of auto-todos
+          if (stateManager.currentMode === AgentMode.Plan && stateManager.todos.length === 0) {
+            const looksLikeScopingReport = /Complexity & Resource Gauge|Execution Plan\s*\(\s*Phased\s*\)|Task Scoping Report/i.test(streamText || '');
+            if (looksLikeScopingReport) {
+              messages.push({ role: 'system', content: 'You generated the report but did not call the request_approval tool. Call request_approval with your Ty-Code Task Scoping Report now to pause for approval.' });
+              stateManager.iterationCount++;
+              continue;
+            }
+            const parsedTodos = parseTodosFromResponse(streamText);
+            if (parsedTodos.length > 0) {
+              stateManager.addTodos(parsedTodos);
+              onChunk({ type: 'agent_state', state: { todos: stateManager.todos, mode: stateManager.currentMode, iteration: stateManager.iterationCount, maxIterations: stateManager.maxIterations } });
+              stateManager.iterationCount++;
+              continue;
             }
           }
+
+          // Final response with no tool calls but incomplete todos — nudge
+          if (stateManager.hasPendingTodos()) {
+            const nudgeContent = stateManager.currentMode === AgentMode.Plan
+              ? 'You have pending tasks, but Plan mode locks mutating tools. Call request_approval with your Ty-Code Task Scoping Report to obtain approval and switch to Execute mode.'
+              : 'You have pending tasks. Please continue working on them by calling the appropriate tools.';
+            messages.push({ role: 'system', content: nudgeContent });
+            stateManager.iterationCount++;
+            continue;
+          }
+
+          // No todos, no tool calls — we're done
           onChunk({ type: 'done' });
+          persistSessionState(true);
           return;
         }
 
+        // Push assistant turn with tool calls into conversation
         messages.push({
           role: 'assistant',
           content: streamText || '',
@@ -275,13 +581,116 @@ export class AgentEngine {
           }))
         });
 
+        // Execute tool calls
         for (const toolCall of toolCallsToExecute) {
+          approvalState.userApproved = false;
           if (abortSignal?.aborted) {
             onChunk({ type: 'cancelled' });
             return;
           }
           const tool: ToolCall = { id: toolCall.id, name: toolCall.name, arguments: toolCall.arguments };
           onChunk({ type: 'tool_call', toolCall: tool });
+
+          // 3a. request_approval: emit the Task Scoping Report and PAUSE for IPC approval
+          if (toolCall.name === 'request_approval') {
+            const report = String(toolCall.arguments.report || '');
+            const summary = String(toolCall.arguments.summary || '').slice(0, 400);
+            const checkpoint = String(toolCall.arguments.checkpoint || '');
+            const planApproval: AgentToolApproval = {
+              id: `plan_${toolCall.id}`,
+              toolCall: tool,
+              reason: summary || 'Review the Task Scoping Report before execution.',
+              approvalKind: 'plan_review',
+              planReport: report,
+              ...(checkpoint ? { checkpoint } : {})
+            };
+            onChunk({ type: 'approval_request', approvalRequest: planApproval });
+            onChunk({ type: 'status', content: 'Waiting for plan approval…' });
+            const decision = (await requestApproval?.(planApproval)) || { approved: false };
+            if (abortSignal?.aborted) {
+              onChunk({ type: 'cancelled' });
+              return;
+            }
+            stateManager.recordToolCall(toolCall.name, toolCall.arguments, decision.approved ? 'APPROVED' : `REVISION: ${decision.feedback || 'no feedback'}`);
+            if (decision.approved) {
+              if (stateManager.currentMode === AgentMode.Plan) {
+                stateManager.currentMode = AgentMode.Execute;
+                if (stateManager.todos.length === 0) populateTodosFromPlan(report);
+                onChunk({ type: 'agent_state', state: { todos: stateManager.todos, mode: stateManager.currentMode, iteration: stateManager.iterationCount, maxIterations: stateManager.maxIterations } });
+                onChunk({ type: 'status', content: `Plan approved. Executing ${stateManager.todos.length} planned tasks.` });
+                messages.push({
+                  role: 'tool',
+                  name: 'request_approval',
+                  tool_call_id: toolCall.id,
+                  content: 'APPROVED. Plan mode is lifted: write_file, replace_file_content, run_command, and Git mutations are now allowed. Follow the approved Execution Plan phases in order. Call request_approval again at your proposed checkpoint.'
+                });
+              } else {
+                onChunk({ type: 'status', content: 'Checkpoint approved. Continuing with the Execution Plan.' });
+                messages.push({
+                  role: 'tool',
+                  name: 'request_approval',
+                  tool_call_id: toolCall.id,
+                  content: 'Checkpoint APPROVED. Continue with the Execution Plan and report progress on remaining tasks.'
+                });
+              }
+              stateManager.iterationCount++;
+              continue;
+            }
+            const revisionFeedback = decision.feedback || 'No feedback provided.';
+            messages.push({
+              role: 'tool',
+              name: 'request_approval',
+              tool_call_id: toolCall.id,
+              content: `NOT APPROVED. The user sent plan revision feedback: ${revisionFeedback}\n\nRegenerate the Ty-Code Task Scoping Report incorporating this feedback, then call request_approval again. Do not execute any mutating tools yet.`
+            });
+            onChunk({ type: 'status', content: 'Plan revision requested.' });
+            stateManager.iterationCount++;
+            continue;
+          }
+
+          // 3b. Plan mode lock: mutating tools stay disabled until the plan is approved
+          const PLAN_MUTATING_TOOLS = new Set(['write_file', 'replace_file_content', 'run_command', 'git_commit', 'git_merge', 'generate_presentation']);
+          const isPlanLockedMutation = stateManager.currentMode === AgentMode.Plan
+            && (PLAN_MUTATING_TOOLS.has(toolCall.name)
+              || (toolCall.name === 'git_branch' && ['create', 'switch'].includes(String(toolCall.arguments.action || ''))));
+          if (isPlanLockedMutation) {
+            const output = 'Plan mode lock: mutating tools are disabled until a Task Scoping Report is approved. Call the request_approval tool with your Ty-Code Task Scoping Report (four sections: Complexity & Resource Gauge, Execution Plan (Phased), Failure Risks & Mitigations, Checkpoint Proposal), then wait for APPROVED.';
+            onChunk({ type: 'tool_result', toolResult: { toolCallId: toolCall.id, name: toolCall.name, output, isError: true } });
+            messages.push({ role: 'tool', name: toolCall.name, tool_call_id: toolCall.id, content: output });
+            stateManager.recordToolCall(toolCall.name, toolCall.arguments, output);
+            stateManager.iterationCount++;
+            continue;
+          }
+
+          if (toolCall.name === 'delegate_to_background_agent') {
+            const delegateName = String(toolCall.arguments.agentName || 'Background Agent');
+            const delegateTask = String(toolCall.arguments.task || '');
+            if (!delegateTask.trim()) {
+              const delegatedOutput = 'Delegation error: the task description is required.';
+              onChunk({ type: 'tool_result', toolResult: { toolCallId: toolCall.id, name: toolCall.name, output: delegatedOutput, isError: true } });
+              messages.push({ role: 'tool', name: toolCall.name, tool_call_id: toolCall.id, content: delegatedOutput });
+              stateManager.recordToolCall(toolCall.name, toolCall.arguments, delegatedOutput);
+              stateManager.iterationCount++;
+              continue;
+            }
+            const childId = backgroundAgentOrchestrator.spawnAgent(delegateName, delegateTask, {
+              workspacePath,
+              ...(activeFilePath ? { activeFilePath } : {}),
+              ...(activeFileContent ? { activeFileContent } : {}),
+              settings
+            });
+            const delegatedOutput = `Subtask delegated to background agent "${delegateName}" (id: ${childId}). It runs in parallel with fully isolated state; continue your main flow. Its final report appears in the Background Agents panel when it completes.`;
+            onChunk({ type: 'tool_result', toolResult: { toolCallId: toolCall.id, name: toolCall.name, output: delegatedOutput, isError: false } });
+            messages.push({ role: 'tool', name: toolCall.name, tool_call_id: toolCall.id, content: delegatedOutput });
+            stateManager.recordToolCall(toolCall.name, toolCall.arguments, delegatedOutput);
+            stateManager.iterationCount++;
+            continue;
+          }
+
+          const referencedPath = String(toolCall.arguments.filePath || toolCall.arguments.path || toolCall.arguments.directoryPath || '');
+          if (isFileMemoryEnabled && referencedPath) {
+            fileMemoryManager.accessFile(referencedPath);
+          }
 
           const action = String(toolCall.arguments.action || '');
           const command = String(toolCall.arguments.command || '');
@@ -348,6 +757,7 @@ export class AgentEngine {
             const output = `Blocked by security policy: ${policyBlockReason}`;
             onChunk({ type: 'tool_result', toolResult: { toolCallId: toolCall.id, name: toolCall.name, output, isError: true } });
             messages.push({ role: 'tool', name: toolCall.name, tool_call_id: toolCall.id, content: output });
+            stateManager.recordToolCall(toolCall.name, toolCall.arguments, output);
             continue;
           }
           if (approvalReason) {
@@ -383,21 +793,55 @@ export class AgentEngine {
               } : {})
             };
             onChunk({ type: 'approval_request', approvalRequest: approval });
-            const approved = await requestApproval?.(approval);
+            const decision = (await requestApproval?.(approval)) || { approved: false };
             if (abortSignal?.aborted) {
               onChunk({ type: 'cancelled' });
               return;
             }
-            if (!approved) {
-              const output = 'The user did not approve this operation. It was not executed.';
+            if (!decision.approved) {
+              const output = decision.feedback
+                ? `The user did not approve this operation and sent feedback: ${decision.feedback}. Adjust your approach accordingly; request approval again before retrying any mutating action.`
+                : 'The user did not approve this operation. It was not executed.';
               onChunk({ type: 'tool_result', toolResult: { toolCallId: toolCall.id, name: toolCall.name, output, isError: true } });
               messages.push({ role: 'tool', name: toolCall.name, tool_call_id: toolCall.id, content: output });
+              stateManager.recordToolCall(toolCall.name, toolCall.arguments, output);
               continue;
             }
+            approvalState.userApproved = true;
+          }
+
+          const ruleApproved = await toolApprovalManager.checkApproval(toolCall.name, toolCall.arguments);
+          if (!ruleApproved) {
+            const output = `Tool ${toolCall.name} was denied by approval rules`;
+            onChunk({ type: 'tool_result', toolResult: { toolCallId: toolCall.id, name: toolCall.name, output, isError: true } });
+            messages.push({ role: 'tool', name: toolCall.name, tool_call_id: toolCall.id, content: output });
+            stateManager.recordToolCall(toolCall.name, toolCall.arguments, output);
+            stateManager.iterationCount++;
+            continue;
           }
 
           onChunk({ type: 'status', content: `Running ${toolCall.name}…` });
-          const result = await this.toolExecutor.execute(toolCall.name, approvedExecutionArgs, abortSignal);
+          const result: ToolExecutionResponse = await this.executeWithSandbox(toolCall, approvedExecutionArgs, abortSignal);
+          
+          // Record tool call in state manager
+          stateManager.recordToolCall(toolCall.name, toolCall.arguments, result.output);
+
+          if (isFileMemoryEnabled && referencedPath && !result.isError && ['read_file', 'write_file', 'replace_file_content'].includes(toolCall.name)) {
+            const memoryContent = toolCall.name === 'write_file'
+              ? String(approvedExecutionArgs.content ?? toolCall.arguments.content ?? '')
+              : toolCall.name === 'replace_file_content'
+                ? String(approvedExecutionArgs.replacementContent ?? toolCall.arguments.replacementContent ?? '')
+                : result.output;
+            void this.refreshFileMemory(referencedPath, memoryContent, activeProvider, activeModel);
+          }
+
+          // Auto-update todos based on tool results
+          const relatedTodo = getRelatedTodo(toolCall, stateManager.todos);
+          if (relatedTodo && (toolCall.name === 'write_file' || toolCall.name === 'replace_file_content' || toolCall.name === 'read_file' || toolCall.name === 'run_command')) {
+            stateManager.updateTodoStatus(relatedTodo.id, 'completed');
+            onChunk({ type: 'agent_state', state: { todos: stateManager.todos, mode: stateManager.currentMode, iteration: stateManager.iterationCount, maxIterations: stateManager.maxIterations } });
+          }
+
           onChunk({
             type: 'tool_result',
             toolResult: {
@@ -412,21 +856,40 @@ export class AgentEngine {
           messages.push({ role: 'tool', name: toolCall.name, tool_call_id: toolCall.id, content: compressedResult.compressed });
         }
 
-        // mutate the conversation and re-enter the loop: the LLM sees the
-        // original assistant turn + the tool result on the next request and
-        // can continue the task chain.
-        iteration++;
+        // Iteration complete
+        onChunk({ type: 'status', content: `Iteration ${stateManager.iterationCount + 1}/${stateManager.maxIterations} complete — continuing…` });
+        stateManager.iterationCount++;
+
+        // Emit state update to renderer
+        onChunk({ type: 'agent_state', state: { todos: stateManager.todos, mode: stateManager.currentMode, iteration: stateManager.iterationCount, maxIterations: stateManager.maxIterations } });
+
+        agentObservability.recordEvent({
+          type: 'agent_iteration',
+          iteration: stateManager.iterationCount,
+          todosCompleted: stateManager.todos.filter((todo) => todo.status === 'completed').length,
+          todosRemaining: stateManager.todos.filter((todo) => todo.status === 'pending' || todo.status === 'in_progress').length
+        });
+
+        persistSessionState();
+
       } catch (err: unknown) {
         if (abortSignal?.aborted) {
           onChunk({ type: 'cancelled' });
           return;
         }
         const message = err instanceof Error ? err.message : String(err);
+        persistSessionState(false);
+        agentObservability.recordEvent({
+          type: 'error',
+          message,
+          ...(err instanceof Error && err.stack ? { stack: err.stack.slice(0, 2000) } : {})
+        });
         onChunk({ type: 'error', error: message });
         return;
       }
     }
-    onChunk({ type: 'status', content: `Reached the tool-execution limit (${MAX_ITERATIONS} iterations).` });
+    onChunk({ type: 'status', content: `Reached the tool-execution limit (${stateManager.maxIterations} iterations).` });
     onChunk({ type: 'done' });
+    persistSessionState(true);
   }
 }

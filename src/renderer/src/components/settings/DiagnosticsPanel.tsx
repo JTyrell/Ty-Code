@@ -48,6 +48,7 @@ import type {
   DiagnosticRunSummary,
   ProviderDiagnosticResult,
   DiagnosticStep,
+  DiagnosticsFleetHealth,
   CapabilitySuiteSummary,
   ScenarioResult,
   RemediationReport,
@@ -125,6 +126,7 @@ export const DiagnosticsPanel: React.FC = () => {
   const [isRemediationLoading, setIsRemediationLoading] = useState(false);
   const [remediationReport, setRemediationReport] = useState<RemediationReport | null>(null);
   const [remediationPromptCopied, setRemediationPromptCopied] = useState(false);
+  const [remReportCopied, setRemReportCopied] = useState(false);
   const [copiedItemId, setCopiedItemId] = useState<string | null>(null);
   const [expandedRemediationEvidence, setExpandedRemediationEvidence] = useState<Record<string, boolean>>({});
   const [checkedItems, setCheckedItems] = useState<Record<string, boolean>>({});
@@ -141,6 +143,11 @@ export const DiagnosticsPanel: React.FC = () => {
   const [mockScanReport, setMockScanReport] = useState<MockScanReport | null>(null);
   const [isScanningMocks, setIsScanningMocks] = useState(false);
   const [traceCopied, setTraceCopied] = useState(false);
+
+  // Live-hydration state: retained latest results polled at intervals
+  const [isLive, setIsLive] = useState(true);
+  const [lastCheckedAt, setLastCheckedAt] = useState<number | null>(null);
+  const [fleetHealth, setFleetHealth] = useState<DiagnosticsFleetHealth | null>(null);
 
   // Load latest trace report and subscribe to live hop updates
   useEffect(() => {
@@ -174,6 +181,57 @@ export const DiagnosticsPanel: React.FC = () => {
     }
     return undefined;
   }, []);
+
+  // Live hydration: pull retained latest run results (no fabricated data,
+  // nulls until a real run exists) plus fleet health. Never auto-runs suites.
+  const refreshLatest = useCallback(async () => {
+    try {
+      if (window.electronAPI?.getDiagnosticsLatest) {
+        const res = await window.electronAPI.getDiagnosticsLatest();
+        if (res.success && res.data) {
+          if (res.data.connSummary) setConnSummary(res.data.connSummary);
+          if (res.data.capSummary) setCapSummary(res.data.capSummary);
+        }
+      }
+      if (window.electronAPI?.diagnosticsGetFleetHealth) {
+        const res = await window.electronAPI.diagnosticsGetFleetHealth();
+        if (res.success && res.data) setFleetHealth(res.data);
+      }
+      if (window.electronAPI?.getConnectivityTrace) {
+        const res = await window.electronAPI.getConnectivityTrace();
+        if (res.success && res.data) setTraceReport(res.data);
+      }
+    } catch {
+      // Silent: a failed poll must never disrupt the panel
+    } finally {
+      setLastCheckedAt(Date.now());
+    }
+  }, []);
+
+  // Hydrate once on mount (results appear even before any manual run)
+  useEffect(() => {
+    void refreshLatest();
+  }, [refreshLatest]);
+
+  // Poll every 12s while live mode is on
+  useEffect(() => {
+    if (!isLive) return undefined;
+    const intervalId = window.setInterval(() => {
+      void refreshLatest();
+    }, 12000);
+    return () => window.clearInterval(intervalId);
+  }, [isLive, refreshLatest]);
+
+  const formatRelativeTime = (ts: number | null): string => {
+    if (!ts) return 'never';
+    const diffSec = Math.round((Date.now() - ts) / 1000);
+    if (diffSec < 5) return 'just now';
+    if (diffSec < 60) return `${diffSec}s ago`;
+    const min = Math.floor(diffSec / 60);
+    if (min < 60) return `${min}m ago`;
+    const hr = Math.floor(min / 60);
+    return `${hr}h ago`;
+  };
 
   // Fetch remediation report
   const loadRemediationReport = useCallback(async () => {
@@ -221,30 +279,55 @@ export const DiagnosticsPanel: React.FC = () => {
       }
     } else if (action.actionType === 'copy_prompt') {
       if (action.actionTarget) {
-        await navigator.clipboard.writeText(action.actionTarget);
-        setRemediationPromptCopied(true);
-        toast.success('AI Coder prompt copied to clipboard!');
-        setTimeout(() => setRemediationPromptCopied(false), 2500);
+        const copied = await copyToClipboard(action.actionTarget);
+        if (copied) {
+          setRemediationPromptCopied(true);
+          toast.success('AI Coder prompt copied to clipboard!');
+          setTimeout(() => setRemediationPromptCopied(false), 2500);
+        } else {
+          toast.error('Failed to copy to clipboard');
+        }
       }
     }
   }, []);
 
-  // Copy AI coder prompt to clipboard with feedback
+  // Copy AI coder prompt to clipboard with feedback (uses execCommand fallback,
+  // because navigator.clipboard rejects when the window is not focused)
   const copyAiCoderPrompt = useCallback(async (prompt: string, itemId?: string) => {
-    try {
-      await navigator.clipboard.writeText(prompt);
-      if (itemId) {
-        setCopiedItemId(itemId);
-        setTimeout(() => setCopiedItemId(null), 2500);
-      } else {
-        setRemediationPromptCopied(true);
-        setTimeout(() => setRemediationPromptCopied(false), 2500);
-      }
-      toast.success('AI Coder prompt copied to clipboard!');
-    } catch {
-      toast.error('Failed to copy to clipboard');
+    if (!prompt) {
+      toast.error('No prompt available to copy');
+      return;
     }
+    const copied = await copyToClipboard(prompt);
+    if (!copied) {
+      toast.error('Failed to copy to clipboard');
+      return;
+    }
+    if (itemId) {
+      setCopiedItemId(itemId);
+      setTimeout(() => setCopiedItemId(null), 2500);
+    } else {
+      setRemediationPromptCopied(true);
+      setTimeout(() => setRemediationPromptCopied(false), 2500);
+    }
+    toast.success('AI Coder prompt copied to clipboard!');
   }, []);
+
+  // Copy the complete plain-language remediation report (all 5 sections, Markdown)
+  const handleCopyRemediationReport = useCallback(async () => {
+    if (!remediationReport?.markdownReport) {
+      toast.error('No remediation report available yet. Generate it first.');
+      return;
+    }
+    const copied = await copyToClipboard(remediationReport.markdownReport);
+    if (!copied) {
+      toast.error('Failed to copy the report to clipboard');
+      return;
+    }
+    setRemReportCopied(true);
+    toast.success('Full remediation report copied as Markdown!');
+    setTimeout(() => setRemReportCopied(false), 2500);
+  }, [remediationReport]);
 
   const toggleCheckItem = useCallback((id: string) => {
     setCheckedItems((prev) => ({ ...prev, [id]: !prev[id] }));
@@ -494,6 +577,79 @@ export const DiagnosticsPanel: React.FC = () => {
 
   return (
     <div className="space-y-6 text-zinc-200">
+      {/* At-a-Glance Live Status Strip */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-xl bg-gradient-to-r from-zinc-900 via-zinc-900 to-zinc-950 border border-zinc-800 shadow-lg">
+        <div className="flex items-center gap-3 flex-wrap text-xs font-medium">
+          <span className="flex items-center gap-2 text-zinc-300">
+            <span
+              className={`w-2.5 h-2.5 rounded-full shrink-0 ${
+                fleetHealth
+                  ? fleetHealth.downCount > 0
+                    ? 'bg-rose-400'
+                    : fleetHealth.degradedCount > 0 || fleetHealth.untestedCount > 0
+                      ? 'bg-amber-400'
+                      : 'bg-emerald-400'
+                  : 'bg-zinc-600'
+              }`}
+            />
+            Fleet:{' '}
+            {fleetHealth
+              ? `${fleetHealth.healthyCount}/${fleetHealth.totalCount} healthy${
+                  fleetHealth.untestedCount > 0 ? ` (${fleetHealth.untestedCount} untested)` : ''
+                }`
+              : 'unknown'}
+          </span>
+
+          <span className="w-px h-4 bg-zinc-800 hidden sm:block" />
+
+          <span className="text-zinc-400">
+            Conn:{' '}
+            <span className={connSummary ? (connSummary.failedCount > 0 ? 'text-rose-300' : 'text-emerald-300') : 'text-zinc-500'}>
+              {connSummary ? `${connSummary.passedCount} PASS / ${connSummary.failedCount} FAIL` : 'not run yet'}
+            </span>
+          </span>
+
+          <span className="text-zinc-400">
+            Cap:{' '}
+            <span className={capSummary ? (capSummary.failedCount > 0 ? 'text-rose-300' : 'text-emerald-300') : 'text-zinc-500'}>
+              {capSummary ? `${capSummary.passedCount} PASS / ${capSummary.failedCount} FAIL` : 'not run yet'}
+            </span>
+          </span>
+
+          <span className="text-zinc-400">
+            Trace:{' '}
+            <span className={traceReport ? (traceReport.overallStatus === 'PASS' ? 'text-emerald-300' : 'text-rose-300') : 'text-zinc-500'}>
+              {traceReport ? traceReport.overallStatus : 'not run yet'}
+            </span>
+          </span>
+
+          <span className="text-zinc-500">Last checked: {formatRelativeTime(lastCheckedAt)}</span>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={() => void refreshLatest()}
+            title="Fetch latest retained diagnostics results"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white border border-zinc-700/60 text-[11px] font-medium transition-colors cursor-pointer"
+          >
+            <RotateCw size={12} />
+            <span>Refresh</span>
+          </button>
+          <button
+            onClick={() => setIsLive((prev) => !prev)}
+            title="Toggle 12s live polling of latest diagnostics data"
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium border transition-colors cursor-pointer ${
+              isLive
+                ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
+                : 'bg-zinc-800 text-zinc-400 border-zinc-700/60'
+            }`}
+          >
+            <Radio size={12} className={isLive ? 'text-emerald-400' : ''} />
+            <span>{isLive ? 'Live: On' : 'Live: Off'}</span>
+          </button>
+        </div>
+      </div>
+
       {/* Sub-Tab Navigation Switcher */}
       <div className="flex items-center gap-2 p-1 rounded-xl bg-zinc-900/90 border border-zinc-800 shadow-inner">
         <button
@@ -506,7 +662,7 @@ export const DiagnosticsPanel: React.FC = () => {
           }`}
         >
           <Activity size={14} className={subTab === 'connection' ? 'text-indigo-400' : ''} />
-          <span>Provider Connections (Harness &amp; Taxonomy)</span>
+          <span>Connections</span>
         </button>
 
         <button
@@ -519,15 +675,15 @@ export const DiagnosticsPanel: React.FC = () => {
           }`}
         >
           <Brain size={14} className={subTab === 'capabilities' ? 'text-sky-400' : ''} />
-          <span>Capability Tests (Answer / Write / Edit / Tools)</span>
+          <span>Capabilities</span>
         </button>
 
         <button
           onClick={() => {
             setSubTab('remediation');
-            if (!remediationReport) {
-              void loadRemediationReport();
-            }
+            // Regenerate live every entry: reclassifies fresh from the latest
+            // retained real diagnostic run summaries (never mock data)
+            void loadRemediationReport();
           }}
           id="diag-subtab-remediation"
           className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
@@ -537,7 +693,7 @@ export const DiagnosticsPanel: React.FC = () => {
           }`}
         >
           <ListChecks size={14} className={subTab === 'remediation' ? 'text-emerald-400' : ''} />
-          <span>What&apos;s Needed Checklist</span>
+          <span>Checklist</span>
         </button>
 
         <button
@@ -550,7 +706,7 @@ export const DiagnosticsPanel: React.FC = () => {
           }`}
         >
           <Network size={14} className={subTab === 'trace' ? 'text-purple-400' : ''} />
-          <span>Connectivity Trace (H1–H10)</span>
+          <span>Trace (H1-H10)</span>
         </button>
       </div>
 
@@ -1139,6 +1295,17 @@ export const DiagnosticsPanel: React.FC = () => {
               </button>
 
               <button
+                onClick={() => void handleCopyRemediationReport()}
+                disabled={!remediationReport}
+                id="btn-copy-remediation-report"
+                className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 text-zinc-300 hover:text-white border border-zinc-700/60 font-medium text-xs transition-colors cursor-pointer"
+                title="Copy the full plain-language checklist report as Markdown"
+              >
+                {remReportCopied ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+                <span>{remReportCopied ? 'Report Copied!' : 'Copy Full Report'}</span>
+              </button>
+
+              <button
                 onClick={() => {
                   if (remediationReport?.aiCoderHandoffPrompt) {
                     void copyAiCoderPrompt(remediationReport.aiCoderHandoffPrompt);
@@ -1166,6 +1333,23 @@ export const DiagnosticsPanel: React.FC = () => {
 
           {remediationReport && (
             <div className="space-y-6">
+              {/* Live provenance notice when nothing has been tested yet */}
+              {!connSummary && !capSummary && remediationReport.workingNow.length === 0 &&
+               remediationReport.missingFromYou.length === 0 &&
+               remediationReport.missingFromCode.length === 0 &&
+               remediationReport.externalOutage.length === 0 && (
+                <div className="p-4 rounded-xl bg-zinc-900/70 border border-zinc-800 text-zinc-300 text-xs flex items-start gap-3">
+                  <Info size={16} className="text-zinc-400 shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <div className="font-semibold text-zinc-200">No diagnostic results yet</div>
+                    <div className="text-[11px] text-zinc-400">
+                      This checklist is rebuilt from measured results of the Connection Diagnostics and Capability
+                      Test Suite. Run those first and this checklist will populate with your real, live findings.
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* 1. RECOMMENDED NEXT ACTION (Single Highest-Value Step Hero Card) */}
               <div className="relative overflow-hidden rounded-xl border border-indigo-500/40 bg-gradient-to-r from-indigo-950/40 via-zinc-900 to-zinc-950 p-5 shadow-xl">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -1181,6 +1365,10 @@ export const DiagnosticsPanel: React.FC = () => {
                     </h3>
                     <p className="text-xs text-zinc-300 max-w-2xl leading-relaxed">
                       {remediationReport.recommendedNextAction.description}
+                    </p>
+                    <p className="text-[10px] text-zinc-500">
+                      Live data: generated {new Date(remediationReport.timestamp).toLocaleTimeString()} from the
+                      latest real diagnostic run. Every pass or fail comes from a measured probe, never mock data.
                     </p>
                   </div>
 

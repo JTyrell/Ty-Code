@@ -75,3 +75,28 @@ export interface ModelRoutingDecision {
   appliedPreferenceMode: RoutingPreferenceMode;
   timestamp: number;
 }
+
+export interface ModelCatalogCorrection {
+  added: Array<{ modelId: string; name: string; url: string; requiresKey: boolean; providerId?: string }>;
+  removed: string[];
+  renamed: Array<{ modelId: string; name: string }>;
+}
+
+export interface CatalogVerificationResult {
+  providerId: string;
+  providerName: string;
+  status: 'PASS' | 'FAIL' | 'NO_KEY';
+  verifiedAt: number;
+  liveCount: number;
+  expectedCount: number;
+  addedModels: Array<{ modelId: string; name: string }>;
+  removedModelIds: string[];
+  renamedModels: Array<{ modelId: string; expectedName: string; liveName: string }>;
+  corrected: boolean;
+  error?: string;
+}
+
+export interface ModelCatalogVerificationSnapshot {
+  updatedAt: number;
+  results: CatalogVerificationResult[];
+}

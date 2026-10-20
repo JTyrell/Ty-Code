@@ -29,7 +29,10 @@ import type {
   RoutingPreferenceMode,
   RouterUserPreferences,
   RankedModelCandidate,
-  ModelRoutingDecision
+  ModelRoutingDecision,
+  ModelCatalogCorrection,
+  CatalogVerificationResult,
+  ModelCatalogVerificationSnapshot
 } from '../shared/types/model-router';
 import type {
   ProviderConnectionStatus,
@@ -153,7 +156,10 @@ export type {
   RoutingPreferenceMode,
   RouterUserPreferences,
   RankedModelCandidate,
-  ModelRoutingDecision
+  ModelRoutingDecision,
+  ModelCatalogCorrection,
+  CatalogVerificationResult,
+  ModelCatalogVerificationSnapshot
 };
 export type {
   ProviderConnectionStatus,
@@ -202,6 +208,15 @@ export interface TreeChunkPayload {
   isComplete: boolean;
   totalSoFar: number;
   fromCache?: boolean;
+}
+
+export interface ChatFileContext {
+  path: string;
+  name: string;
+  mimeType: string;
+  content: string;
+  truncated: boolean;
+  totalLines: number;
 }
 
 export type RoutingStrategyType = 'auto' | 'free-first' | 'fastest' | 'balanced' | 'manual';
@@ -378,8 +393,18 @@ export interface AssistantStreamMetadata {
   streamEventCount: number;
 }
 
+export interface ToolExecutionRecord {
+  id: string;
+  name: string;
+  arguments?: Record<string, unknown>;
+  status: ToolExecutionStatus;
+  output?: string;
+  isError?: boolean;
+}
+
 export interface ChatMessage {
   id: string;
+  taskId?: string;
   role: 'user' | 'assistant' | 'system' | 'tool';
   content: string;
   images?: string[];
@@ -387,6 +412,8 @@ export interface ChatMessage {
   toolStatus?: ToolExecutionStatus;
   toolCalls?: ToolCall[];
   toolResult?: ToolResult;
+  toolExecutions?: ToolExecutionRecord[];
+  statusText?: string;
   proposedDiffs?: ProposedDiff[];
   reasoning?: string;
   errorCard?: ChatErrorCard;
@@ -405,6 +432,13 @@ export interface ProposedDiff {
   status: 'pending' | 'applied' | 'rejected';
 }
 
+export type AgentApprovalKind = 'tool_permission' | 'plan_review';
+
+export interface AgentApprovalDecision {
+  approved: boolean;
+  feedback?: string;
+}
+
 export interface AgentToolApproval {
   id: string;
   toolCall: ToolCall;
@@ -413,10 +447,115 @@ export interface AgentToolApproval {
   reviewDiff?: ProposedDiff;
   addedLines?: number;
   removedLines?: number;
+  approvalKind?: AgentApprovalKind;
+  planReport?: string;
+  checkpoint?: string;
+}
+
+export interface AgentTodoItem {
+  id: string;
+  task: string;
+  status: 'pending' | 'in_progress' | 'completed' | 'failed';
+  priority: 'high' | 'medium' | 'low';
+  context?: string;
+}
+
+export interface AgentLoopState {
+  todos: AgentTodoItem[];
+  mode: string;
+  iteration: number;
+  maxIterations?: number;
+}
+
+export interface AgentSessionSummary {
+  sessionId: string;
+  workspacePath: string;
+  mode: 'plan' | 'execute' | 'hybrid';
+  todoCount: number;
+  updatedAt: number;
+}
+
+export interface BackgroundAgentSnapshot {
+  id: string;
+  name: string;
+  status: 'idle' | 'running' | 'completed' | 'failed';
+  task: string;
+  progress: number;
+  error?: string;
+  startedAt: number;
+  completedAt?: number;
+}
+
+export interface BackgroundAgentDetails {
+  agent: BackgroundAgentSnapshot;
+  transcript: Array<{ role: string; content: string }>;
+}
+
+export interface VoiceTranscriptionSegment {
+  start: number;
+  end: number;
+  text: string;
+}
+
+export interface VoiceTranscriptionResult {
+  text: string;
+  language: string;
+  durationSec: number;
+  segments: VoiceTranscriptionSegment[];
+}
+
+export type AgentTelemetryEvent =
+  | { type: 'tool_call'; toolName: string; args: any; duration: number; success: boolean }
+  | { type: 'llm_call'; provider: string; model: string; tokensIn: number; tokensOut: number; duration: number }
+  | { type: 'agent_iteration'; iteration: number; todosCompleted: number; todosRemaining: number }
+  | { type: 'context_compaction'; tokensBefore: number; tokensAfter: number }
+  | { type: 'error'; message: string; stack?: string };
+
+export type AgentTelemetryRecord = AgentTelemetryEvent & { timestamp: number };
+
+export interface AgentToolPerformanceMetric {
+  toolName: string;
+  count: number;
+  successCount: number;
+  failureCount: number;
+  successRate: number;
+  avgDuration: number;
+}
+
+export interface AgentPerformanceReport {
+  generatedAt: number;
+  totalEvents: number;
+  toolCalls: {
+    totalCount: number;
+    overallSuccessRate: number;
+    averageDuration: number;
+    perTool: AgentToolPerformanceMetric[];
+  };
+  llmCalls: {
+    count: number;
+    tokensIn: number;
+    tokensOut: number;
+    averageDuration: number;
+  };
+  agentIterations: {
+    count: number;
+    averageTodosCompleted: number;
+    averageTodosRemaining: number;
+  };
+  contextCompactions: {
+    count: number;
+    averageTokensBefore: number;
+    averageTokensAfter: number;
+    totalTokensSaved: number;
+  };
+  errors: {
+    count: number;
+    recentMessages: string[];
+  };
 }
 
 export interface AgentStreamChunk {
-  type: 'token' | 'thought' | 'tool_call' | 'tool_result' | 'diff' | 'status' | 'approval_request' | 'done' | 'cancelled' | 'error';
+  type: 'token' | 'thought' | 'tool_call' | 'tool_result' | 'diff' | 'status' | 'approval_request' | 'done' | 'cancelled' | 'error' | 'agent_state';
   taskId?: string;
   content?: string;
   toolCall?: ToolCall;
@@ -424,6 +563,7 @@ export interface AgentStreamChunk {
   diff?: ProposedDiff;
   approvalRequest?: AgentToolApproval;
   error?: string;
+  state?: AgentLoopState;
 }
 
 export interface CommandExecutionOptions {
@@ -687,6 +827,7 @@ export interface ElectronAPI {
   onTreeChunk?: (callback: (payload: TreeChunkPayload) => void) => () => void;
   onTreeUpdated?: (callback: (event: { type: 'change' | 'add' | 'unlink'; relPath: string }) => void) => () => void;
   readFile: (filePath: string) => Promise<IpcResponse<string>>;
+  readFileForContext: (filePath: string, options?: { maxLines?: number }) => Promise<IpcResponse<ChatFileContext>>;
   writeFile: (filePath: string, content: string) => Promise<IpcResponse<void>>;
   createFile: (filePath: string) => Promise<IpcResponse<void>>;
   createDirectory: (dirPath: string) => Promise<IpcResponse<void>>;
@@ -720,9 +861,11 @@ export interface ElectronAPI {
     providerOverride?: ProviderType;
     modelOverride?: string;
     skills?: SkillDefinition[];
+    resumeSessionId?: string;
   }) => Promise<IpcResponse<string>>;
   stopAgentTask: (taskId: string) => Promise<IpcResponse<void>>;
-  respondAgentApproval: (approvalId: string, approved: boolean) => Promise<IpcResponse<void>>;
+  respondAgentApproval: (approvalId: string, approved: boolean, feedback?: string) => Promise<IpcResponse<void>>;
+  sendApprovalResponse: (approvalId: string, response: 'APPROVED' | 'REVISED', feedback?: string) => Promise<IpcResponse<void>>;
   userApproveDiff?: (payload: { approvalId?: string; diffId?: string; approved?: boolean } | boolean) => Promise<IpcResponse<void>>;
   onAgentStream: (callback: (chunk: AgentStreamChunk) => void) => () => void;
   onAgentStreamToken?: (callback: (payload: AgentStreamTokenPayload) => void) => () => void;
@@ -733,6 +876,23 @@ export interface ElectronAPI {
   onAgentDone?: (callback: (payload: AgentDonePayload) => void) => () => void;
   onAgentError?: (callback: (payload: AgentErrorPayload) => void) => () => void;
   applyDiff: (diff: ProposedDiff) => Promise<IpcResponse<void>>;
+  getAgentTodos: () => Promise<IpcResponse<AgentTodoItem[]>>;
+  setAgentMode: (mode: 'plan' | 'execute' | 'hybrid') => Promise<IpcResponse<void>>;
+  getRecentSessions: (workspacePath?: string) => Promise<IpcResponse<AgentSessionSummary[]>>;
+  addApprovalRule: (rule: { id?: string; toolName: string; pattern?: string; action: 'always_ask' | 'auto_approve' | 'auto_deny'; scope: 'workspace' | 'system' | 'network'; expiresAt?: number }) => Promise<IpcResponse<void>>;
+  getBackgroundAgents: () => Promise<IpcResponse<BackgroundAgentSnapshot[]>>;
+  getBackgroundAgentDetails: (agentId: string) => Promise<IpcResponse<BackgroundAgentDetails | null>>;
+  cancelBackgroundAgent: (agentId: string) => Promise<IpcResponse<void>>;
+  getAgentTelemetryReport: () => Promise<IpcResponse<AgentPerformanceReport>>;
+  getAgentTelemetryEvents: (filter?: { type?: string; startTime?: number }) => Promise<IpcResponse<AgentTelemetryRecord[]>>;
+  exportAgentTelemetry: () => Promise<IpcResponse<string>>;
+  clearAgentTelemetry: () => Promise<IpcResponse<void>>;
+  ensureVoiceReady: () => Promise<IpcResponse<void>>;
+  startVoiceRecording: () => Promise<IpcResponse<{ sessionId: string; capturing: boolean }>>;
+  appendVoiceChunk: (sessionId: string, audioBase64: string) => Promise<IpcResponse<void>>;
+  stopVoiceRecording: (sessionId: string) => Promise<IpcResponse<VoiceTranscriptionResult>>;
+  releaseVoiceRecording: () => Promise<IpcResponse<void>>;
+  onAgentStateUpdate: (callback: (state: AgentLoopState) => void) => () => void;
   resolvePtyApproval?: (approvalId: string, approved: boolean) => Promise<IpcResponse<void>>;
   onPtyApprovalRequired?: (callback: (data: { approvalId: string; ptyId: string; command: string; reason: string }) => void) => () => void;
   onPtyCommandBlocked?: (callback: (data: { ptyId: string; command: string; reason: string }) => void) => () => void;
@@ -1014,6 +1174,15 @@ export interface ElectronAPI {
   freeProvidersGetHealth?: () => Promise<IpcResponse<Record<string, ProviderHealthStatus>>>;
   freeProvidersPing?: (providerId?: string) => Promise<IpcResponse<Record<string, ProviderHealthStatus>>>;
 
+  // Omni-Debugger: Multi-Engine Diagnostic & Architecture Inspector
+  debuggerOpenWindow?: () => Promise<IpcResponse<boolean>>;
+  debuggerCloseWindow?: () => Promise<IpcResponse<boolean>>;
+  debuggerSyncState?: (payload: Partial<DebuggerStateSnapshotData>) => Promise<IpcResponse<DebuggerStateSnapshotData>>;
+  debuggerRequestState?: () => Promise<IpcResponse<DebuggerStateSnapshotData>>;
+  debuggerRunAnalysis?: (payload?: { filePath?: string; role?: AnalysisRole }) => Promise<IpcResponse<AnalysisResultData[]>>;
+  onDebuggerUpdate?: (callback: (data: AnalysisResultData[] | { results: AnalysisResultData[] }) => void) => () => void;
+  onDebuggerStateSynced?: (callback: (state: DebuggerStateSnapshotData) => void) => () => void;
+
   // Phase 6.2: Seamless BYOK Interface & Key Management
   byokDetectKeys?: () => Promise<IpcResponse<DetectedApiKey[]>>;
   byokImportDetectedKey?: (keyId: string, providerId?: string) => Promise<IpcResponse<{ providerId: string }>>;
@@ -1043,6 +1212,11 @@ export interface ElectronAPI {
   modelRouterSetPreferences?: (updates: Partial<RouterUserPreferences>) => Promise<IpcResponse<RouterUserPreferences>>;
   modelRouterGetAvailableModels?: () => Promise<IpcResponse<Record<ModelTier, RankedModelCandidate[]>>>;
 
+  // Autonomous Provider & Model Catalog Verification
+  verifyModelCatalog?: () => Promise<IpcResponse<ModelCatalogVerificationSnapshot>>;
+  getModelCatalogVerifications?: () => Promise<IpcResponse<ModelCatalogVerificationSnapshot>>;
+  onModelCatalogVerified?: (callback: (snapshot: ModelCatalogVerificationSnapshot) => void) => () => void;
+
   // Phase 6.5: Unified Provider Dashboard & Quota Management
   dashboardGetData?: () => Promise<IpcResponse<ProviderDashboardData>>;
   dashboardGetOverview?: () => Promise<IpcResponse<{ providers: ConnectedProviderInfo[]; summary: FreeTierSummary; recentActivity: RecentActivityRecord[]; alerts: QuotaAlertItem[] }>>;
@@ -1056,6 +1230,7 @@ export interface ElectronAPI {
   // Diagnostics 1: Provider Connection Diagnostic Harness & Error Taxonomy
   runDiagnostics?: (providerId?: string) => Promise<IpcResponse<DiagnosticRunSummary>>;
   getDiagnosticReport?: (summary?: DiagnosticRunSummary) => Promise<IpcResponse<string>>;
+  getDiagnosticsLatest?: () => Promise<IpcResponse<{ connSummary: DiagnosticRunSummary | null; capSummary: CapabilitySuiteSummary | null }>>;
 
   // Diagnostics 2: End-to-End Capability Test Suite
   runCapabilitySuite?: (options?: { providerId?: string; modelId?: string }) => Promise<IpcResponse<CapabilitySuiteSummary>>;
@@ -1314,6 +1489,33 @@ export interface OpenCodeServiceStatusData {
   catalogEnabled: boolean;
   lastError: string | null;
   lastCheckedAt: number | null;
+}
+
+// Omni-Debugger: Multi-Engine Diagnostic & Architecture Inspector
+export type AnalysisSeverity = 'critical' | 'high' | 'medium' | 'low' | 'info';
+export type AnalysisEngine = 'static' | 'dynamic' | 'arch';
+export type AnalysisRole = 'dev' | 'qa' | 'pm';
+
+export interface AnalysisResultData {
+  id: string;
+  severity: AnalysisSeverity;
+  engine: AnalysisEngine;
+  role: AnalysisRole;
+  message: string;
+  line?: number;
+  codeSnippet?: string;
+  filePath?: string;
+  ruleId?: string;
+  suggestedFix?: string;
+  timestamp?: number;
+}
+
+export interface DebuggerStateSnapshotData {
+  activeFile: string | null;
+  analysisResults: AnalysisResultData[];
+  isPopOutMode: boolean;
+  selectedRole: AnalysisRole;
+  updatedAt?: number;
 }
 
 export type ModuleLlmCompatibility = 'hosted' | 'local' | 'both';

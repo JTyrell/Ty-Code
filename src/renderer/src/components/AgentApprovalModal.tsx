@@ -93,6 +93,7 @@ export const AgentApprovalModal: React.FC<AgentApprovalModalProps> = ({
   }, [isVisible, isSubmitting, activeApproval, ptyApproval]);
 
   if (!isVisible) return null;
+  if (activeApproval?.approvalKind === 'plan_review') return null;
 
   // Determine Title, Command/Path, and Tool Context
   let title = 'Agent wants to perform an action. Allow?';

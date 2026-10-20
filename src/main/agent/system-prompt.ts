@@ -108,6 +108,36 @@ export function shouldInjectEccRules(options?: SystemPromptOptions): boolean {
   }
 }
 
+/**
+ * Mandatory Plan-to-Execute workflow. Every task must be scoped and approved
+ * before mutating execution. This text is user-facing prompt material for the
+ * agent and must stay in sync with the request_approval tool schema below.
+ */
+export const TASK_SCOPING_PROTOCOL = `You are the Ty-Code Enterprise Agentic Harness. You operate using a strict Plan-to-Execute workflow.
+
+Before executing any code, modifying files, or running terminal commands, you MUST first scope the requested task to prevent runaway iteration loops and optimize token usage.
+
+Analyze the user's request and generate a "Ty-Code Task Scoping Report" using this exact structure:
+
+1. **Complexity & Resource Gauge:**
+   - **Category:** [Small / Medium / Large / Epic]
+   - **Estimated Iterations:** [Number] (Limit: 70 max per session)
+   - **Token Impact:** [Low / Medium / High] (Will this trigger Context Compaction?)
+   - **Tool Risk:** [Low / Medium / High] (Does this require destructive shell commands or mass file edits?)
+
+2. **Execution Plan (Phased):**
+   - **Phase 1 (Discovery):** [e.g., Read file structure, grep for dependencies]
+   - **Phase 2 (Implementation):** [e.g., Edit specific files, run tests]
+   - **Phase 3 (Verification):** [e.g., Run build, check for regressions]
+
+3. **Failure Risks & Mitigations:**
+   - Identify missing context or potential sandbox blocks.
+
+4. **Checkpoint Proposal:**
+   - Name the specific step where you will pause execution, update the Todo List, and wait for human review.
+
+CRITICAL RULE: Do not begin executing the task. Output the report and use the \`request_approval\` tool to wait for my explicit "APPROVED" command. If I do not approve, you must refine the plan.`;
+
 export function buildSystemPrompt(
   workspacePath: string,
   activeFilePath?: string,
@@ -150,6 +180,12 @@ You have direct access to tools that interact with the user's project:
 12. git_merge: Merge branches and handle conflicts. Merge requires user approval.
 13. generate_presentation: Generate an interactive, self-contained single-file HTML presentation from a topic and outline and save it to the workspace.
 
+LARGE FILE HANDLING (CRITICAL):
+- If read_file returns a partial result with a hint like "use startLine/endLine to continue", you MUST continue reading the file in chunks until you have read the ENTIRE file.
+- NEVER give up on reading a large file. Always use startLine/endLine parameters to read the next chunk.
+- For files > 500 lines: First call read_file without startLine/endLine to get file info. Then read in 200-line chunks using startLine/endLine until isComplete=true.
+- Example: read_file(filePath) -> returns 1200 lines total, first 200 lines. Next: read_file(filePath, {startLine: 201, endLine: 400}), then read_file(filePath, {startLine: 401, endLine: 600}), etc.
+
 CRITICAL INSTRUCTIONS & PRINCIPLES:
 1. Ground Truth Investigation: Always verify files by calling read_file or grep_search before making assumptions about what code exists. Never guess file paths.
 2. Precision Editing: When modifying existing files, prefer replace_file_content over overwriting entire files. Ensure targetContent is unique and exact.
@@ -167,6 +203,8 @@ CRITICAL INSTRUCTIONS & PRINCIPLES:
   if (isSeoEnabled) {
     prompt += `\n\n${getSeoPromptGuidance(isLocal)}`;
   }
+
+  prompt += `\n\n## TASK SCOPING PROTOCOL (MANDATORY)\n\n${TASK_SCOPING_PROTOCOL}`;
 
   return prompt;
 }
@@ -440,6 +478,41 @@ export const AGENT_TOOLS_DEFINITIONS = [
           }
         },
         required: ['action']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'request_approval',
+      description: 'Present the Ty-Code Task Scoping Report and pause the loop until the user replies APPROVED or sends revision feedback. Mandatory before mutating execution (file edits, terminal commands, Git mutations).',
+      parameters: {
+        type: 'object',
+        properties: {
+          report: {
+            type: 'string',
+            description: 'The complete Task Scoping Report in the mandatory four-section structure: Complexity & Resource Gauge, Execution Plan (Phased), Failure Risks & Mitigations, Checkpoint Proposal.'
+          },
+          summary: { type: 'string', description: 'One-sentence summary of what the task will do (optional).' },
+          checkpoint: { type: 'string', description: 'The specific step where execution will pause again for human review, as stated in section 4 of the report (optional).' }
+        },
+        required: ['report']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'delegate_to_background_agent',
+      description: 'Delegate a subtask to a background agent for parallel execution. Use this when you have multiple independent tasks that can run simultaneously.',
+      parameters: {
+        type: 'object',
+        properties: {
+          agentName: { type: 'string', description: 'Descriptive name for this agent (e.g., "Test Runner", "Code Formatter")' },
+          task: { type: 'string', description: 'The specific task to delegate' },
+          priority: { type: 'string', enum: ['low', 'medium', 'high'], default: 'medium' }
+        },
+        required: ['agentName', 'task']
       }
     }
   }

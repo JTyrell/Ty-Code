@@ -15,14 +15,18 @@ import python from 'highlight.js/lib/languages/python';
 import typescript from 'highlight.js/lib/languages/typescript';
 import yaml from 'highlight.js/lib/languages/yaml';
 import { Send, Square, Sparkles, Trash2, ChevronRight, ChevronDown, Terminal, FileCode, Check, Eye, AlertCircle, Copy, RotateCcw, Loader2, ShieldCheck, X, Users, Lightbulb, Hammer, Compass, Info, Palette, Presentation, Play, ExternalLink, Settings, Activity, Key, WifiOff, Clock, RefreshCw, Zap } from 'lucide-react';
-import { useChatStore } from '../state/chat-store';
+import { useChatStore, groupMessagesByTask } from '../state/chat-store';
 import { useWorkspaceStore } from '../state/workspace-store';
 import { usePairProgrammingStore } from '../state/pair-programming-store';
 import { useOnboardingStore } from '../state/onboarding-store';
 import { ModelSelector } from './ChatInterface/ModelSelector';
 import { ProviderSetupCard } from './ProviderSetupCard';
 import { ChatErrorCard } from './ChatErrorCard';
-import type { ChatMessage, ToolCall, ToolExecutionStatus, ChatErrorCard as ChatErrorCardType, ProviderType } from '../../../preload/types';
+import { BackgroundAgentsPanel } from './agent/BackgroundAgentsPanel';
+import { ChatInput } from './chat/ChatInput';
+import { useChatInputStore } from '../state/chat-input-store';
+import { ChatMessageItem } from './ChatMessage';
+import type { AgentToolApproval, ChatMessage, ToolCall, ToolExecutionStatus, ChatErrorCard as ChatErrorCardType, ProviderType } from '../../../preload/types';
 
 const languages: Record<string, LanguageFn> = {
   bash, shell: bash, sh: bash,
@@ -849,22 +853,240 @@ export const ErrorCard: React.FC<{ errorCard: ChatErrorCardType; onRetry?: () =>
   return <ChatErrorCard errorCard={errorCard} onRetry={onRetry} />;
 };
 
+const planReviewButtonBase: React.CSSProperties = {
+  padding: '8px 14px',
+  borderRadius: '8px',
+  fontSize: '12.5px',
+  fontWeight: 600,
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: '6px',
+  cursor: 'pointer',
+  transition: 'opacity 0.15s ease'
+};
+
+interface PlanReviewCardProps {
+  approval: AgentToolApproval;
+  sending: boolean;
+  onApprove: () => void | Promise<void>;
+  onRevise: (feedback: string) => void | Promise<void>;
+}
+
+const PlanReviewCard: React.FC<PlanReviewCardProps> = ({ approval, sending, onApprove, onRevise }) => {
+  const [reviseOpen, setReviseOpen] = useState(false);
+  const [reviseText, setReviseText] = useState('');
+  const report = approval.planReport || approval.reason || '';
+  const sendFeedback = () => {
+    const trimmed = reviseText.trim();
+    if (!trimmed) return;
+    setReviseOpen(false);
+    setReviseText('');
+    void onRevise(trimmed);
+  };
+  return (
+    <article
+      role="alert"
+      aria-label="Task Scoping Report review"
+      style={{
+        margin: '10px 0',
+        padding: '14px',
+        borderRadius: '12px',
+        border: '1px solid var(--accent-blue, #3b82f6)',
+        background: 'linear-gradient(180deg, rgba(59, 130, 246, 0.10), rgba(59, 130, 246, 0.03))',
+        boxShadow: '0 8px 24px -12px rgba(59, 130, 246, 0.45)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '10px'
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+        <div
+          style={{
+            padding: '8px',
+            borderRadius: '10px',
+            background: 'rgba(59, 130, 246, 0.15)',
+            color: 'var(--accent-blue, #3b82f6)',
+            display: 'flex',
+            flexShrink: 0
+          }}
+        >
+          <Compass size={16} />
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <strong style={{ fontSize: '13px', color: 'var(--text-primary, #f3f4f6)' }}>Task Scoping Report</strong>
+          <div style={{ fontSize: '11px', color: 'var(--text-secondary, #9ca3af)', marginTop: '2px', overflowWrap: 'anywhere' }}>{approval.reason}</div>
+        </div>
+        <span
+          style={{
+            fontSize: '10px',
+            fontWeight: 700,
+            textTransform: 'uppercase',
+            letterSpacing: '0.06em',
+            padding: '3px 8px',
+            borderRadius: '999px',
+            background: 'rgba(59, 130, 246, 0.18)',
+            color: 'var(--accent-blue, #3b82f6)',
+            border: '1px solid rgba(59, 130, 246, 0.4)',
+            flexShrink: 0
+          }}
+        >
+          Plan review
+        </span>
+      </div>
+      {report.trim().length > 0 && (
+        <pre
+          style={{
+            margin: 0,
+            maxHeight: '300px',
+            overflowY: 'auto',
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-word',
+            padding: '10px 12px',
+            borderRadius: '8px',
+            background: 'var(--bg-primary, #121316)',
+            border: '1px solid var(--border-subtle, #262833)',
+            fontFamily: 'var(--font-mono, monospace)',
+            fontSize: '11.5px',
+            lineHeight: 1.55,
+            color: 'var(--text-primary, #f3f4f6)'
+          }}
+        >
+          {report}
+        </pre>
+      )}
+      {approval.checkpoint && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11.5px', color: 'var(--text-secondary, #9ca3af)' }}>
+          <Info size={13} />
+          <span>
+            <strong style={{ color: 'var(--text-primary, #f3f4f6)' }}>Checkpoint:</strong> {approval.checkpoint}
+          </span>
+        </div>
+      )}
+      {reviseOpen && (
+        <textarea
+          value={reviseText}
+          onChange={(e) => setReviseText(e.target.value)}
+          placeholder="Describe what should change in the plan (missing phases, wrong files, tighter scope...)"
+          rows={3}
+          style={{
+            width: '100%',
+            boxSizing: 'border-box',
+            resize: 'vertical',
+            padding: '8px 10px',
+            borderRadius: '8px',
+            background: 'var(--bg-primary, #121316)',
+            border: '1px solid var(--border-subtle, #262833)',
+            color: 'var(--text-primary, #f3f4f6)',
+            fontSize: '12px',
+            fontFamily: 'var(--font-sans, system-ui, sans-serif)'
+          }}
+        />
+      )}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+        <button
+          disabled={sending}
+          onClick={() => void onApprove()}
+          style={{
+            ...planReviewButtonBase,
+            background: 'var(--accent-green, #10b981)',
+            color: '#ffffff',
+            border: 'none',
+            boxShadow: '0 2px 8px rgba(16, 185, 129, 0.35)',
+            cursor: sending ? 'not-allowed' : 'pointer',
+            opacity: sending ? 0.6 : 1
+          }}
+        >
+          <Check size={13} />
+          <span>Approve &amp; Execute</span>
+        </button>
+        {!reviseOpen && (
+          <button
+            disabled={sending}
+            onClick={() => setReviseOpen(true)}
+            style={{
+              ...planReviewButtonBase,
+              background: 'transparent',
+              color: 'var(--text-primary, #f3f4f6)',
+              border: '1px solid var(--border-strong, #3b3e4f)'
+            }}
+          >
+            <RotateCcw size={13} />
+            <span>Revise Plan</span>
+          </button>
+        )}
+        {reviseOpen && (
+          <button
+            disabled={sending || reviseText.trim().length === 0}
+            onClick={sendFeedback}
+            style={{
+              ...planReviewButtonBase,
+              background: 'var(--accent-blue, #3b82f6)',
+              color: '#ffffff',
+              border: 'none',
+              cursor: sending || reviseText.trim().length === 0 ? 'not-allowed' : 'pointer',
+              opacity: sending || reviseText.trim().length === 0 ? 0.6 : 1
+            }}
+          >
+            <Send size={13} />
+            <span>Send feedback</span>
+          </button>
+        )}
+        {reviseOpen && (
+          <button
+            disabled={sending}
+            onClick={() => setReviseOpen(false)}
+            style={{
+              ...planReviewButtonBase,
+              background: 'transparent',
+              color: 'var(--text-secondary, #9ca3af)',
+              border: '1px solid transparent',
+              padding: '8px 10px'
+            }}
+          >
+            <span>Cancel</span>
+          </button>
+        )}
+      </div>
+      <span style={{ fontSize: '10.5px', color: 'var(--text-muted, #6b7280)' }}>
+        Execution tools stay locked until a plan is approved. Plan reviews remain open for up to ten minutes.
+      </span>
+    </article>
+  );
+};
+
+function describeSessionAge(timestamp: number): string {
+  const minutes = Math.max(0, Math.round((Date.now() - timestamp) / 60_000));
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours} hr ago`;
+  return `${Math.round(hours / 24)} days ago`;
+}
+
 export const ChatSidecar: React.FC = () => {
   const [input, setInput] = useState('');
-  const [pendingImages, setPendingImages] = useState<string[]>([]);
   const [sidecarTab, setSidecarTab] = useState<'chat' | 'pair'>('chat');
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const feedRef = useRef<HTMLDivElement>(null);
   const userAtBottomRef = useRef(true);
-  const { messages, isRunning, currentStatus, currentThought, streamingText, pendingApproval, sendMessage, stopTask, respondToApproval, clearChat, agentMode, setAgentMode, draftPrompt, setDraftPrompt, activeErrorCard, dismissErrorCard, contextTokens } = useChatStore();
+  const { messages, isRunning, currentStatus, currentThought, streamingText, pendingApproval, sendMessage, stopTask, respondToApproval, clearChat, agentMode, setAgentMode, draftPrompt, setDraftPrompt, activeErrorCard, dismissErrorCard, contextTokens, recentSessions, pendingResume, loadRecentSessions, acceptSessionResume, dismissSessionResume } = useChatStore();
   const { isPairActive, suggestions, togglePairMode, dismissSuggestion, clearSuggestions } = usePairProgrammingStore();
   const [approvalSending, setApprovalSending] = useState(false);
   const { workspacePath, activeTabPath, openTabs, openDiffReview, applyDiff } = useWorkspaceStore();
   const activeTab = openTabs.find((tab) => tab.path === activeTabPath);
-  const lastAssistantId = [...messages].reverse().find((message) => message.role === 'assistant')?.id;
-  const lastUserMessage = [...messages].reverse().find((message) => message.role === 'user');
-  const firstTokenPending = isRunning && !activeErrorCard && !streamingText && !currentThought && !messages.some((message) => message.role === 'tool' && message.toolStatus === 'running');
+  const groupedMessages = useMemo(() => groupMessagesByTask(messages), [messages]);
+  const lastAssistantId = [...groupedMessages].reverse().find((message) => message.role === 'assistant')?.id;
+  const lastUserMessage = [...groupedMessages].reverse().find((message) => message.role === 'user');
+
+  useEffect(() => {
+    if (!workspacePath || !loadRecentSessions) return;
+    void loadRecentSessions(workspacePath);
+  }, [workspacePath, loadRecentSessions]);
+  const [resumeArmed, setResumeArmed] = useState(false);
+  useEffect(() => {
+    if (!pendingResume) setResumeArmed(false);
+  }, [pendingResume]);
 
   // Up/Down prompt history (persisted across app launches)
   const promptHistoryRef = useRef<string[]>((() => {
@@ -991,14 +1213,20 @@ export const ChatSidecar: React.FC = () => {
   const handleSubmit = (event?: React.FormEvent) => {
     event?.preventDefault();
     if (isRunning) return;
-    if (!input.trim() && pendingImages.length === 0) return;
-    const prompt = input.trim();
-    const images = pendingImages.length > 0 ? [...pendingImages] : undefined;
-    if (prompt) rememberPrompt(prompt);
-    setInput('');
-    setPendingImages([]);
+    const attachments = useChatInputStore.getState().attachments;
+    const media = attachments.filter((attachment) => attachment.type === 'media');
+    const contextParts = attachments
+      .filter((attachment) => attachment.type !== 'media')
+      .map((attachment) => `@${attachment.name}\n${attachment.content}`)
+      .filter(Boolean);
+    const composedPrompt = contextParts.length > 0 ? [input.trim(), ...contextParts].join('\n\n').trim() : input.trim();
+    const images = media.length > 0 ? media.map((attachment) => attachment.content) : undefined;
+    if (!composedPrompt && !images) return;
+    if (composedPrompt) rememberPrompt(composedPrompt);
     historyIndexRef.current = -1;
-    sendPrompt(prompt, true, images);
+    useChatInputStore.getState().clearAttachments();
+    setInput('');
+    sendPrompt(composedPrompt, true, images);
   };
   const handleRegenerate = () => {
     if (isRunning) {
@@ -1010,32 +1238,6 @@ export const ChatSidecar: React.FC = () => {
     } else {
       inputRef.current?.focus();
     }
-  };
-  const removePendingImage = (index: number) => {
-    setPendingImages((current) => current.filter((_, i) => i !== index));
-  };
-  const handlePasteIntoComposer = (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
-    const items = Array.from(event.clipboardData?.items || []);
-    const imageItems = items.filter((item) => item.type.startsWith('image/'));
-    if (imageItems.length === 0) return;
-    event.preventDefault();
-    console.log(`UI: Pasted ${imageItems.length} image(s) into chat composer`);
-    setPendingImages((current) => {
-      const next = [...current];
-      for (const item of imageItems.slice(0, 4 - next.length)) {
-        const file = item.getAsFile();
-        if (!file) continue;
-        if (file.size > 6 * 1024 * 1024) continue;
-        const reader = new FileReader();
-        reader.onload = () => {
-          if (typeof reader.result === 'string') {
-            setPendingImages((latest) => (latest.includes(reader.result as string) ? latest : [...latest.slice(0, 3), reader.result as string]));
-          }
-        };
-        reader.readAsDataURL(file);
-      }
-      return next;
-    });
   };
   const cycleHistory = (direction: 1 | -1, event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     const history = promptHistoryRef.current;
@@ -1225,227 +1427,171 @@ export const ChatSidecar: React.FC = () => {
       </div>
     ) : (
       <div ref={feedRef} onScroll={handleScroll} className="chat-feed" aria-live="polite">
-        {messages.length === 0 && !streamingText && <div className="chat-empty-state"><Sparkles size={30} color="var(--border-strong)" /><strong>How can Ty-Code help you today?</strong><span>Explore your workspace, implement a feature, fix a bug, or run a test suite.</span></div>}
-        {messages.map((message) => <article key={message.id} className={`chat-message is-${message.role}`}>
-          {message.role === 'system' ? (
-            message.content.startsWith('🎨 M3E Canvas updated') ? (() => {
-              const action = message.content.split('🎨 M3E Canvas updated: ')[1]?.split('.')[0] || 'updated_ui';
-              const snippetMatch = message.content.match(/```\n([\s\S]*?)\n```/);
-              const snippet = snippetMatch ? snippetMatch[1] : '';
-              return (
-                <details
-                  className="canvas-update-card"
-                  style={{
-                    alignSelf: 'flex-start',
-                    maxWidth: '94%',
-                    margin: '4px 0',
-                    borderRadius: 8,
-                    background: 'rgba(168, 85, 247, 0.10)',
-                    border: '1px solid rgba(168, 85, 247, 0.3)',
-                    overflow: 'hidden'
-                  }}
-                >
-                  <summary
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 6,
-                      padding: '5px 10px',
-                      cursor: 'pointer',
-                      fontSize: 11,
-                      color: '#d8b4fe',
-                      listStyle: 'none',
-                      userSelect: 'none'
-                    }}
-                  >
-                    <Palette size={12} color="#c084fc" style={{ flexShrink: 0 }} />
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      M3E Canvas updated: {action}
-                    </span>
-                    <ChevronDown size={12} color="#c084fc" style={{ marginLeft: 'auto', flexShrink: 0 }} />
-                  </summary>
-                  <div
-                    style={{
-                      padding: '6px 10px 9px',
-                      borderTop: '1px solid rgba(168, 85, 247, 0.22)',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: 7
-                    }}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => {
-                        void window.electronAPI?.focusCanvasWindow?.().catch(() => undefined);
-                      }}
-                      style={{
-                        alignSelf: 'flex-start',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 5,
-                        padding: '4px 10px',
-                        borderRadius: 6,
-                        background: 'rgba(168, 85, 247, 0.2)',
-                        border: '1px solid rgba(168, 85, 247, 0.45)',
-                        color: '#e9d5ff',
-                        fontSize: 10.5,
-                        fontWeight: 600,
-                        cursor: 'pointer'
-                      }}
-                    >
-                      <ExternalLink size={11} />
-                      View in Canvas
-                    </button>
-                    {snippet && (
-                      <pre
-                        style={{
-                          margin: 0,
-                          maxHeight: 150,
-                          overflow: 'auto',
-                          padding: 7,
-                          borderRadius: 6,
-                          background: 'rgba(10, 10, 14, 0.8)',
-                          border: '1px solid rgba(255, 255, 255, 0.06)',
-                          color: '#9fd6c4',
-                          fontSize: 9.5,
-                          lineHeight: 1.45
-                        }}
-                      >
-                        {snippet}
-                      </pre>
-                    )}
-                  </div>
-                </details>
-              );
-            })() : (
-            <div
-              className="chat-system-message-bubble"
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                padding: '4px 10px',
-                borderRadius: 4,
-                fontSize: 11,
-                color: 'var(--text-muted)',
-                backgroundColor: 'rgba(245, 158, 11, 0.08)',
-                border: '1px solid rgba(245, 158, 11, 0.25)',
-                margin: '4px 0'
-              }}
-            >
-              <span>{message.content}</span>
+        {groupedMessages.length === 0 && !isRunning && (
+          <div className="chat-empty-state">
+            <Sparkles size={30} color="var(--border-strong)" />
+            <strong>How can Ty-Code help you today?</strong>
+            <span>Explore your workspace, implement a feature, fix a bug, or run a test suite.</span>
+          </div>
+        )}
+
+        {!isRunning && pendingResume && !resumeArmed && (
+          <div className="session-resume-card" role="status">
+            <strong>Offer from the previous session</strong>
+            <span>
+              Mode: {pendingResume.mode} | {pendingResume.todoCount} task{pendingResume.todoCount === 1 ? '' : 's'} | {describeSessionAge(pendingResume.updatedAt)}
+            </span>
+            <div className="session-resume-actions">
+              <button type="button" className="session-resume-confirm" onClick={() => { setResumeArmed(true); acceptSessionResume(pendingResume); }}>
+                Resume and continue tasks
+              </button>
+              <button type="button" className="session-resume-dismiss" onClick={() => { setResumeArmed(false); dismissSessionResume(); }}>
+                Ignore
+              </button>
             </div>
-            )
-          ) : message.role === 'user' ? <div className="user-message-bubble">
-            {Array.isArray(message.images) && message.images.length > 0 && (
-              <div className="chat-message-images" data-count={message.images.length}>
-                {message.images.map((src, imageIndex) => <img key={`${message.id}_img_${imageIndex}`} src={src} alt={`Pasted image ${imageIndex + 1}`} className="chat-message-image" />)}
+            <span className="session-resume-note">Your next message resumes this session; tasks and iteration progress are restored from disk.</span>
+          </div>
+        )}
+
+        {groupedMessages.map((message) => {
+          const isLastAssistant = message.id === lastAssistantId;
+          return (
+            <ChatMessageItem
+              key={message.id}
+              message={message}
+              isLastAssistant={isLastAssistant}
+              isRunning={isRunning}
+              currentStatus={currentStatus}
+              contextTokens={contextTokens}
+              onRegenerate={handleRegenerate}
+              onInspectDiff={openDiffReview}
+              onApplyDiff={(diff) => void applyDiff(diff)}
+              onRetryError={handleRegenerate}
+            />
+          );
+        })}
+
+        {pendingApproval && pendingApproval.approvalKind === 'plan_review' && (
+          <PlanReviewCard
+            approval={pendingApproval}
+            sending={approvalSending}
+            onApprove={async () => {
+              setApprovalSending(true);
+              try {
+                await respondToApproval(true);
+              } finally {
+                setApprovalSending(false);
+              }
+            }}
+            onRevise={async (feedback) => {
+              setApprovalSending(true);
+              try {
+                await respondToApproval(false, feedback);
+              } finally {
+                setApprovalSending(false);
+              }
+            }}
+          />
+        )}
+
+        {pendingApproval && pendingApproval.approvalKind !== 'plan_review' && (
+          <article className="agent-approval" role="alert" aria-labelledby="agent-approval-title">
+            <div className="agent-approval-heading">
+              <ShieldCheck size={15} />
+              <div>
+                <strong id="agent-approval-title">Approval required</strong>
+                <span>{pendingApproval.reason}</span>
+              </div>
+            </div>
+            <div className="agent-approval-tool">
+              <strong>{pendingApproval.toolCall.name}</strong>
+              <pre>{JSON.stringify(pendingApproval.toolCall.arguments, null, 2)}</pre>
+            </div>
+            {pendingApproval.reviewDiff && (
+              <details className="agent-approval-diff" open>
+                <summary>
+                  Review proposed file change ({pendingApproval.addedLines || 0} added, {pendingApproval.removedLines || 0} removed)
+                </summary>
+                <div>
+                  <strong>Before</strong>
+                  <pre>{pendingApproval.reviewDiff.originalContent || '(new file)'}</pre>
+                </div>
+                <div>
+                  <strong>After</strong>
+                  <pre>{pendingApproval.reviewDiff.proposedContent}</pre>
+                </div>
+              </details>
+            )}
+            {pendingApproval.affectedPaths && pendingApproval.affectedPaths.length > 0 && (
+              <div className="agent-approval-paths">
+                <strong>Potentially affected paths</strong>
+                <ul>
+                  {pendingApproval.affectedPaths.map((path) => (
+                    <li key={path}>{path}</li>
+                  ))}
+                </ul>
               </div>
             )}
-            {message.content}
-          </div> : <div className="assistant-message-bubble">
-            {/* Start token count indicator */}
-            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '10px', color: '#94a3b8', marginBottom: '6px', padding: '2px 6px', background: 'rgba(255,255,255,0.03)', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.06)' }}>
-              <Zap size={10} color="#818cf8" />
-              <span>Prompt tokens: ~{Math.max(120, Math.round(contextTokens))}</span>
-            </div>
-            {message.isCached && (
-              <span
-                className="chat-cached-badge"
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  padding: '2px 6px',
-                  borderRadius: '4px',
-                  fontSize: '10px',
-                  fontWeight: 600,
-                  backgroundColor: 'rgba(56, 189, 248, 0.15)',
-                  color: '#38bdf8',
-                  border: '1px solid rgba(56, 189, 248, 0.3)',
-                  marginBottom: '6px'
+            <div className="agent-approval-actions">
+              <button
+                className="agent-approval-decline"
+                disabled={approvalSending}
+                onClick={async () => {
+                  setApprovalSending(true);
+                  try {
+                    await respondToApproval(false);
+                  } finally {
+                    setApprovalSending(false);
+                  }
                 }}
               >
-                <Zap size={10} />
-                cached
-              </span>
-            )}
-            {message.failoverNotice && (
-              <div
-                className="chat-failover-notice"
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '3px 8px',
-                  borderRadius: '4px',
-                  fontSize: '11px',
-                  backgroundColor: 'rgba(245, 158, 11, 0.12)',
-                  color: '#f59e0b',
-                  border: '1px solid rgba(245, 158, 11, 0.3)',
-                  marginBottom: '6px'
+                <X size={12} />
+                Deny
+              </button>
+              <button
+                className="agent-approval-accept"
+                disabled={approvalSending}
+                onClick={async () => {
+                  setApprovalSending(true);
+                  try {
+                    await respondToApproval(true);
+                  } finally {
+                    setApprovalSending(false);
+                  }
                 }}
               >
-                <Clock size={11} />
-                <span>{message.failoverNotice}</span>
-              </div>
-            )}
-            {message.toolCall && <ToolCard tool={message.toolCall} status={message.toolStatus} output={message.toolResult?.output ?? (message.toolStatus === 'running' ? undefined : message.content || undefined)} />}
-            {message.toolCalls?.map((tool: ToolCall) => <ToolCard key={tool.id} tool={tool} />)}
-            {message.proposedDiffs?.map((proposedDiff) => <DiffCard key={proposedDiff.id} diff={proposedDiff} onInspect={() => openDiffReview(proposedDiff)} onApply={() => void applyDiff(proposedDiff)} />)}
-            {message.errorCard ? (
-              <ChatErrorCard errorCard={message.errorCard} onRetry={handleRegenerate} />
-            ) : (
-              message.content && <MarkdownContent content={message.content} />
-            )}
-            {message.reasoning && <details className="chat-reasoning"><summary>Reasoning summary</summary><div>{message.reasoning}</div></details>}
-            {/* End token count indicator */}
-            {!message.errorCard && message.content && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', color: '#94a3b8', marginTop: '6px', paddingTop: '4px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-                <Sparkles size={10} color="#34d399" />
-                <span>Response tokens: ~{Math.max(1, Math.round(message.content.length / 4))} • Total session context: ~{Math.round(contextTokens + message.content.length / 4)} tokens</span>
-              </div>
-            )}
-            {message.id === lastAssistantId && !isRunning && lastUserMessage && <div className="assistant-message-actions"><button onClick={handleRegenerate} title="Regenerate last response"><RotateCcw size={11} />Regenerate</button></div>}
-          </div>}
-        </article>)}
-        {streamingText && (
-          <article className="chat-message is-assistant">
-            <div className="assistant-message-bubble">
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '10px', color: '#94a3b8', marginBottom: '6px', padding: '2px 6px', background: 'rgba(255,255,255,0.03)', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.06)' }}>
-                <Zap size={10} color="#818cf8" />
-                <span>Prompt tokens: ~{Math.max(120, Math.round(contextTokens))}</span>
-              </div>
-              <MarkdownContent content={streamingText} />
-              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', color: '#94a3b8', marginTop: '6px', paddingTop: '4px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-                <Sparkles size={10} color="#34d399" />
-                <span>Generating: ~{Math.round(streamingText.length / 4)} tokens…</span>
-              </div>
+                <Check size={12} />
+                {pendingApproval.reviewDiff ? 'Apply change' : 'Approve operation'}
+              </button>
+              <button
+                className="agent-approval-accept-temp"
+                disabled={approvalSending}
+                onClick={async () => {
+                  setApprovalSending(true);
+                  try {
+                    await respondToApproval(true);
+                    if (pendingApproval?.toolCall?.name) {
+                      await window.electronAPI?.addApprovalRule?.({
+                        toolName: pendingApproval.toolCall.name,
+                        action: 'auto_approve',
+                        scope: 'workspace',
+                        expiresAt: Date.now() + 10 * 60 * 1000
+                      });
+                    }
+                  } finally {
+                    setApprovalSending(false);
+                  }
+                }}
+              >
+                Approve for 10 min
+              </button>
             </div>
+            <span className="agent-approval-note">
+              Nothing runs or changes until approved. Requests expire after two minutes.
+            </span>
           </article>
         )}
-        {pendingApproval && <article className="agent-approval" role="alert" aria-labelledby="agent-approval-title">
-          <div className="agent-approval-heading"><ShieldCheck size={15} /><div><strong id="agent-approval-title">Approval required</strong><span>{pendingApproval.reason}</span></div></div>
-          <div className="agent-approval-tool"><strong>{pendingApproval.toolCall.name}</strong><pre>{JSON.stringify(pendingApproval.toolCall.arguments, null, 2)}</pre></div>
-          {pendingApproval.reviewDiff && <details className="agent-approval-diff" open>
-            <summary>Review proposed file change ({pendingApproval.addedLines || 0} added, {pendingApproval.removedLines || 0} removed)</summary>
-            <div><strong>Before</strong><pre>{pendingApproval.reviewDiff.originalContent || '(new file)'}</pre></div>
-            <div><strong>After</strong><pre>{pendingApproval.reviewDiff.proposedContent}</pre></div>
-          </details>}
-          {pendingApproval.affectedPaths && pendingApproval.affectedPaths.length > 0 && <div className="agent-approval-paths"><strong>Potentially affected paths</strong><ul>{pendingApproval.affectedPaths.map((path) => <li key={path}>{path}</li>)}</ul></div>}
-          <div className="agent-approval-actions">
-            <button className="agent-approval-decline" disabled={approvalSending} onClick={async () => { setApprovalSending(true); try { await respondToApproval(false); } finally { setApprovalSending(false); } }}><X size={12} />Deny</button>
-            <button className="agent-approval-accept" disabled={approvalSending} onClick={async () => { setApprovalSending(true); try { await respondToApproval(true); } finally { setApprovalSending(false); } }}><Check size={12} />{pendingApproval.reviewDiff ? 'Apply change' : 'Approve operation'}</button>
-          </div>
-          <span className="agent-approval-note">Nothing runs or changes until approved. Requests expire after two minutes.</span>
-        </article>}
-        {currentThought && <div className="chat-reasoning is-live"><strong>Reasoning</strong><span>{currentThought}</span></div>}
-        {firstTokenPending && !activeErrorCard && (
-          <div className="chat-typing-indicator" role="status">
-            <Loader2 size={12} className="animate-spin" color="var(--accent-primary)" />
-            <span>Thinking…</span>
-          </div>
-        )}
+
         {activeErrorCard && (
           <div className="chat-active-error-banner" style={{ margin: '8px 0' }}>
             <ChatErrorCard
@@ -1459,25 +1605,16 @@ export const ChatSidecar: React.FC = () => {
       </div>
     )}
 
-    <form onSubmit={handleSubmit} className="chat-composer">
-      {pendingImages.length > 0 && (
-        <div className="chat-attachments">
-          {pendingImages.map((src, index) => (
-            <div key={`attachment_${index}`} className="chat-attachment-thumb">
-              <img src={src} alt={`Attachment ${index + 1}`} />
-              <button type="button" className="chat-attachment-remove" onClick={() => removePendingImage(index)} aria-label={`Remove attachment ${index + 1}`}>
-                <X size={10} />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-      <div className="chat-composer-field">
-        <textarea ref={inputRef} value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={handleKeyDown} onPaste={handlePasteIntoComposer} placeholder="Ask Ty-Code… (Enter to send)" aria-label="Message Ty-Code" rows={3} />
-        {isRunning ? <button type="button" onClick={() => void stopTask()} className="chat-send-button is-stop" title="Stop agent" aria-label="Stop agent"><Square size={12} /></button>
-          : <button type="submit" disabled={!input.trim() && pendingImages.length === 0} className="chat-send-button" title="Send message" aria-label="Send message"><Send size={13} /></button>}
-      </div>
-      <div className="chat-composer-hint">Shift+Enter new line · ↑/↓ history · paste images</div>
-    </form>
+    <BackgroundAgentsPanel />
+
+    <ChatInput
+      input={input}
+      inputRef={inputRef}
+      onInputChange={setInput}
+      onKeyDown={handleKeyDown}
+      onSubmit={handleSubmit}
+      isRunning={isRunning}
+      onStop={() => void stopTask()}
+    />
   </aside>;
 };

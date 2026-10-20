@@ -66,6 +66,13 @@ const TreeRow = React.memo<TreeRowProps>(({
   return (
     <div
       className="virtual-tree-row"
+      draggable={!isDirectory}
+      onDragStart={isDirectory
+        ? undefined
+        : (event) => {
+            event.dataTransfer.setData('application/x-ty-code-file-path', path);
+            event.dataTransfer.effectAllowed = 'copy';
+          }}
       onClick={() => onNodeClick(node)}
       onContextMenu={(e) => onNodeContextMenu(e, node)}
       title={`${name} (${relativePath})`}

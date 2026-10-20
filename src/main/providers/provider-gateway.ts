@@ -375,11 +375,19 @@ export async function sendChatRequest(
   try {
     // 4. Make the fetch request with the key in the headers
     const requestStartMs = Date.now();
+    
+    // Create a 120s timeout signal for large file operations and long streaming responses
+    const timeoutSignal = AbortSignal.timeout(120_000);
+    // Combine with any existing abortSignal
+    const combinedSignal = abortSignal 
+      ? AbortSignal.any([abortSignal, timeoutSignal])
+      : timeoutSignal;
+    
     const response = await fetch(config.url, {
       method: 'POST',
       headers,
       body: JSON.stringify(payload),
-      signal: abortSignal
+      signal: combinedSignal
     });
 
     console.log(`[GATEWAY] Response status: ${response.status}`);
@@ -1414,11 +1422,17 @@ export class ProviderGateway {
     const gatewayUrl = `${baseUrl.replace(/\/+$/, '')}/chat/completions`;
     console.log('Gateway: Fetching from', gatewayUrl, 'with model', modelId, 'headers', JSON.stringify({ ...headers, ...(headers.Authorization ? { Authorization: 'Bearer ***' } : {}) }));
     try {
+      // Add 120s timeout for long streaming responses
+      const timeoutSignal = AbortSignal.timeout(120_000);
+      const combinedSignal = abortSignal 
+        ? AbortSignal.any([abortSignal, timeoutSignal])
+        : timeoutSignal;
+      
       response = await fetch(`${baseUrl.replace(/\/+$/, '')}/chat/completions`, {
         method: 'POST',
         headers,
         body: JSON.stringify(body),
-        signal: abortSignal
+        signal: combinedSignal
       });
     } catch (networkErr: unknown) {
       console.error('Gateway: NETWORK ERROR for', gatewayUrl, networkErr instanceof Error ? `${networkErr.name}: ${networkErr.message} cause=${(networkErr as { cause?: { code?: string } }).cause?.code ?? ''}` : String(networkErr));

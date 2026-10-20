@@ -27,6 +27,8 @@ const api: ElectronAPI = {
     return () => ipcRenderer.removeListener('fs:tree-updated', handler);
   },
   readFile: (filePath: string) => ipcRenderer.invoke('fs:read-file', filePath),
+  readFileForContext: (filePath: string, options?: { maxLines?: number }) =>
+    ipcRenderer.invoke('chat:read-file-for-context', filePath, options),
   writeFile: (filePath: string, content: string) => ipcRenderer.invoke('fs:write-file', filePath, content),
   createFile: (filePath: string) => ipcRenderer.invoke('fs:create-file', filePath),
   createDirectory: (dirPath: string) => ipcRenderer.invoke('fs:create-directory', dirPath),
@@ -71,7 +73,10 @@ const api: ElectronAPI = {
     return ipcRenderer.invoke('agent:start-task', params);
   },
   stopAgentTask: (taskId: string) => ipcRenderer.invoke('agent:stop-task', taskId),
-  respondAgentApproval: (approvalId: string, approved: boolean) => ipcRenderer.invoke('agent:respond-approval', { approvalId, approved }),
+  respondAgentApproval: (approvalId: string, approved: boolean, feedback?: string) =>
+    ipcRenderer.invoke('agent:respond-approval', { approvalId, approved, ...(feedback !== undefined ? { feedback } : {}) }),
+  sendApprovalResponse: (approvalId: string, response: 'APPROVED' | 'REVISED', feedback?: string) =>
+    ipcRenderer.invoke('agent:respond-approval', { approvalId, approved: response === 'APPROVED', ...(feedback !== undefined ? { feedback } : {}) }),
   userApproveDiff: (payload: { approvalId?: string; diffId?: string; approved?: boolean } | boolean) => ipcRenderer.invoke('user_approve_diff', payload),
   onAgentStream: (callback) => {
     const listener = (_event: IpcRendererEvent, chunk: AgentStreamChunk) => callback(chunk);
@@ -468,6 +473,27 @@ const api: ElectronAPI = {
   freeProvidersGetHealth: () => ipcRenderer.invoke('free-providers:get-health'),
   freeProvidersPing: (providerId?: string) => ipcRenderer.invoke('free-providers:ping', providerId),
 
+  // Omni-Debugger: Multi-Engine Diagnostic & Architecture Inspector
+  debuggerOpenWindow: () => ipcRenderer.invoke('debugger:open-window'),
+  debuggerCloseWindow: () => ipcRenderer.invoke('debugger:close-window'),
+  debuggerSyncState: (payload: any) => ipcRenderer.invoke('debugger:sync-state', payload),
+  debuggerRequestState: () => ipcRenderer.invoke('debugger:request-state'),
+  debuggerRunAnalysis: (payload?: any) => ipcRenderer.invoke('debugger:run-analysis', payload),
+  onDebuggerUpdate: (callback: (data: any) => void) => {
+    const listener = (_event: unknown, data: any) => callback(data);
+    ipcRenderer.on('debugger:update', listener);
+    return () => {
+      ipcRenderer.removeListener('debugger:update', listener);
+    };
+  },
+  onDebuggerStateSynced: (callback: (state: any) => void) => {
+    const listener = (_event: unknown, state: any) => callback(state);
+    ipcRenderer.on('debugger:state-synced', listener);
+    return () => {
+      ipcRenderer.removeListener('debugger:state-synced', listener);
+    };
+  },
+
   // Phase 6.2: Seamless BYOK Interface & Key Management
   byokDetectKeys: () => ipcRenderer.invoke('byok:detect-keys'),
   byokImportDetectedKey: (keyId: string, providerId?: string) => ipcRenderer.invoke('byok:import-detected-key', keyId, providerId),
@@ -494,6 +520,13 @@ const api: ElectronAPI = {
   modelRouterGetPreferences: () => ipcRenderer.invoke('model-router:get-preferences'),
   modelRouterSetPreferences: (updates: any) => ipcRenderer.invoke('model-router:set-preferences', updates),
   modelRouterGetAvailableModels: () => ipcRenderer.invoke('model-router:get-available-models'),
+  verifyModelCatalog: () => ipcRenderer.invoke('providers:verify-model-catalog'),
+  getModelCatalogVerifications: () => ipcRenderer.invoke('providers:get-model-catalog-verifications'),
+  onModelCatalogVerified: (callback: (snapshot: any) => void) => {
+    const listener = (_event: any, snapshot: any) => callback(snapshot);
+    ipcRenderer.on('providers:catalog-verified', listener);
+    return () => ipcRenderer.removeListener('providers:catalog-verified', listener);
+  },
 
   // Phase 6.5: Unified Provider Dashboard & Quota Management
   dashboardGetData: () => ipcRenderer.invoke('dashboard:get-data'),
@@ -508,6 +541,7 @@ const api: ElectronAPI = {
   // Diagnostics 1: Provider Connection Diagnostic Harness & Error Taxonomy
   runDiagnostics: (providerId?: string) => ipcRenderer.invoke('diagnostics:run', providerId),
   getDiagnosticReport: (summary?: any) => ipcRenderer.invoke('diagnostics:report', summary),
+  getDiagnosticsLatest: () => ipcRenderer.invoke('diagnostics:get-latest'),
 
   // Diagnostics 2: End-to-End Capability Test Suite
   runCapabilitySuite: (options?: any) => ipcRenderer.invoke('diagnostics:run-capabilities', options),
@@ -648,6 +682,29 @@ const api: ElectronAPI = {
     return () => {
       ipcRenderer.removeListener('agent:provider-handoff', handler);
     };
+  },
+
+  // Agent State Management
+  getAgentTodos: () => ipcRenderer.invoke('agent:get-todos'),
+  setAgentMode: (mode: 'plan' | 'execute' | 'hybrid') => ipcRenderer.invoke('agent:set-mode', mode),
+  getRecentSessions: (workspacePath?: string) => ipcRenderer.invoke('agent:list-sessions', workspacePath),
+  addApprovalRule: (rule: { id?: string; toolName: string; pattern?: string; action: 'always_ask' | 'auto_approve' | 'auto_deny'; scope: 'workspace' | 'system' | 'network'; expiresAt?: number }) => ipcRenderer.invoke('agent:add-approval-rule', rule),
+  getBackgroundAgents: () => ipcRenderer.invoke('agent:get-background-agents'),
+  getBackgroundAgentDetails: (agentId: string) => ipcRenderer.invoke('agent:get-background-agent-details', agentId),
+  cancelBackgroundAgent: (agentId: string) => ipcRenderer.invoke('agent:cancel-background-agent', agentId),
+  getAgentTelemetryReport: () => ipcRenderer.invoke('agent:get-telemetry-report'),
+  getAgentTelemetryEvents: (filter?: { type?: string; startTime?: number }) => ipcRenderer.invoke('agent:get-telemetry-events', filter),
+  exportAgentTelemetry: () => ipcRenderer.invoke('agent:export-telemetry'),
+  clearAgentTelemetry: () => ipcRenderer.invoke('agent:clear-telemetry'),
+  ensureVoiceReady: () => ipcRenderer.invoke('voice:init'),
+  startVoiceRecording: () => ipcRenderer.invoke('voice:start-recording'),
+  appendVoiceChunk: (sessionId: string, audioBase64: string) => ipcRenderer.invoke('voice:append-audio-chunk', sessionId, audioBase64),
+  stopVoiceRecording: (sessionId: string) => ipcRenderer.invoke('voice:stop-and-transcribe', sessionId),
+  releaseVoiceRecording: () => ipcRenderer.invoke('voice:release'),
+  onAgentStateUpdate: (callback: (state: { todos: any[]; mode: string; iteration: number }) => void) => {
+    const handler = (_event: any, state: any) => callback(state);
+    ipcRenderer.on('agent:state', handler);
+    return () => ipcRenderer.removeListener('agent:state', handler);
   }
 };
 

@@ -28,6 +28,8 @@ import { useEditorNavigationStore } from './state/editor-navigation-store';
 
 import { Palette } from 'lucide-react';
 import { SketcherWindow } from './components/SketcherWindow';
+import { DebuggerWindow } from './components/debugger/DebuggerWindow';
+import { OmniDebugger } from './components/debugger/OmniDebugger';
 
 // Dynamic import() for Tier 2/3 heavy modules — no top-level static imports
 const TerminalDrawer = React.lazy(() => import('./components/TerminalDrawer').then((m) => ({ default: m.TerminalDrawer })));
@@ -47,7 +49,9 @@ const MainWorkbench: React.FC = () => {
   const [isExtensionTraceOpen, setIsExtensionTraceOpen] = useState(false);
 
   // Resizable Sidebars State
-  const [leftWidth, setLeftWidth] = useState(260);
+  // The left Explorer sidecar always starts closed on a new window. The user
+  // must open it (ActivityBar) and choose a folder from its empty state.
+  const [leftWidth, setLeftWidth] = useState(0);
   const [rightWidth, setRightWidth] = useState(380);
   const [isDraggingLeft, setIsDraggingLeft] = useState(false);
   const [isDraggingRight, setIsDraggingRight] = useState(false);
@@ -66,6 +70,12 @@ const MainWorkbench: React.FC = () => {
       if (window.electronAPI?.sketcherOpenWindow) {
         window.electronAPI.sketcherOpenWindow().catch(console.error);
       }
+      return;
+    }
+
+    if (tab === 'debugger') {
+      setActivityTab('debugger');
+      setLeftWidth((lw) => (lw > 0 ? lw : Math.max(lastLeftWidthRef.current, 360)));
       return;
     }
 
@@ -390,6 +400,7 @@ const MainWorkbench: React.FC = () => {
           </React.Suspense>
           {activityTab === 'skills' && <SkillsPanel />}
           {activityTab === 'outline' && <OutlineView onNavigateToLine={(line) => navigateTo({ line })} />}
+          {activityTab === 'debugger' && <OmniDebugger />}
         </div>
 
         {/* Left Splitter Resizer Handle */}
@@ -501,6 +512,10 @@ export const App: React.FC = () => {
   const isSketcher = typeof window !== 'undefined' && window.location.hash.includes('sketcher');
   if (isSketcher) {
     return <SketcherWindow />;
+  }
+  const isDebugger = typeof window !== 'undefined' && window.location.hash.includes('debugger');
+  if (isDebugger) {
+    return <DebuggerWindow />;
   }
   return <MainWorkbench />;
 };

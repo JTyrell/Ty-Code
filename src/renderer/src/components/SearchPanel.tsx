@@ -15,6 +15,7 @@ import {
   History
 } from 'lucide-react';
 import { useWorkspaceStore } from '../state/workspace-store';
+import { NoProjectEmptyState } from './NoProjectEmptyState';
 import type { FileSearchResult, SearchInFilesOptions, ReplaceInFilesOptions } from '../../../preload/types';
 import { useWorkspaceEditStore } from '../state/workspace-edit-store';
 import { handleAutoAppliedTransaction } from '../services/workspace-edit-commands';
@@ -84,6 +85,11 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({ onNavigateToLocation }
     if (!term.trim()) {
       setResults([]);
       setStatusMessage('');
+      return;
+    }
+    if (!workspacePath) {
+      setResults([]);
+      setStatusMessage('No project is loaded. Open a folder to search across files.');
       return;
     }
 
@@ -189,6 +195,37 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({ onNavigateToLocation }
     const name = filePath.split(/[\/\\]/).pop() || filePath;
     void openFile(filePath, name);
   };
+
+  if (!workspacePath) {
+    return (
+      <div
+        style={{
+          width: '100%',
+          height: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+          backgroundColor: 'var(--bg-secondary)',
+          borderRight: '1px solid var(--border-subtle)',
+          overflow: 'hidden'
+        }}
+      >
+        <div
+          style={{
+            padding: '10px 14px',
+            borderBottom: '1px solid var(--border-subtle)',
+            fontSize: '11px',
+            fontWeight: 700,
+            textTransform: 'uppercase',
+            letterSpacing: '0.05em',
+            color: 'var(--text-secondary)'
+          }}
+        >
+          Search &amp; Replace
+        </div>
+        <NoProjectEmptyState hint="Search scans the currently loaded project. Open a folder to search and replace across files." />
+      </div>
+    );
+  }
 
   return (
     <div

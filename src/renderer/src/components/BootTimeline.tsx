@@ -1,4 +1,5 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Activity,
   AlertTriangle,
@@ -15,12 +16,128 @@ import type { BootTrace, OffenderItem, PerfMark, TransitionMetric } from '../../
 import { transitionProfiler } from '../services/perf/transition-profiler';
 import styles from './BootTimeline.module.css';
 
+/* ---------------------------------------------------------------------------
+ * Hover help tip: 2.5s delay before showing, 7s auto fade, instant hide when
+ * the cursor leaves the target. Rendered through a portal with fixed
+ * coordinates so it never clips inside scroll containers. Text wraps hard and
+ * never bleeds past its boundary.
+ * ------------------------------------------------------------------------- */
+interface InfoTipProps {
+  text: string;
+  children: React.ReactNode;
+  style?: React.CSSProperties;
+}
+
+const INFO_TIP_MAX_WIDTH = 280;
+
+const InfoTip: React.FC<InfoTipProps> = ({ text, children, style }) => {
+  const [visible, setVisible] = useState(false);
+  const [placement, setPlacement] = useState<{ x: number; y: number; above: boolean }>({ x: 0, y: 0, above: true });
+  const showTimerRef = useRef<number | null>(null);
+  const autoHideTimerRef = useRef<number | null>(null);
+  const anchorRef = useRef<HTMLSpanElement>(null);
+
+  const clearTimers = () => {
+    if (showTimerRef.current !== null) {
+      window.clearTimeout(showTimerRef.current);
+      showTimerRef.current = null;
+    }
+    if (autoHideTimerRef.current !== null) {
+      window.clearTimeout(autoHideTimerRef.current);
+      autoHideTimerRef.current = null;
+    }
+  };
+
+  const handleMouseEnter = () => {
+    clearTimers();
+    showTimerRef.current = window.setTimeout(() => {
+      const anchor = anchorRef.current;
+      if (!anchor) return;
+      const rect = anchor.getBoundingClientRect();
+      const halfWidth = INFO_TIP_MAX_WIDTH / 2;
+      const x = Math.max(8, Math.min(rect.left + rect.width / 2 - halfWidth, window.innerWidth - INFO_TIP_MAX_WIDTH - 8));
+      const roomAbove = rect.top > 130;
+      setPlacement({
+        x,
+        above: roomAbove,
+        y: roomAbove ? rect.top - 8 : rect.bottom + 8
+      });
+      setVisible(true);
+      autoHideTimerRef.current = window.setTimeout(() => {
+        setVisible(false);
+        autoHideTimerRef.current = null;
+      }, 7000);
+    }, 2500);
+  };
+
+  const handleMouseLeave = () => {
+    clearTimers();
+    setVisible(false);
+  };
+
+  useEffect(() => clearTimers, []);
+
+  return (
+    <span
+      ref={anchorRef}
+      style={{ ...style, cursor: 'help' }}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+    >
+      {children}
+      {visible &&
+        createPortal(
+          <div
+            role="tooltip"
+            style={{
+              position: 'fixed',
+              left: placement.x,
+              top: placement.y,
+              transform: 'translateX(-50%)',
+              width: INFO_TIP_MAX_WIDTH,
+              maxWidth: INFO_TIP_MAX_WIDTH,
+              boxSizing: 'border-box',
+              padding: '8px 10px',
+              borderRadius: 6,
+              background: 'rgba(18, 20, 24, 0.97)',
+              border: '1px solid rgba(139, 148, 158, 0.35)',
+              boxShadow: '0 6px 18px rgba(0, 0, 0, 0.55)',
+              color: '#e6edf3',
+              fontFamily: "'Segoe UI', system-ui, sans-serif",
+              fontSize: 11.5,
+              lineHeight: 1.5,
+              whiteSpace: 'pre-wrap',
+              overflowWrap: 'anywhere',
+              wordBreak: 'break-word',
+              overflow: 'hidden',
+              zIndex: 100000,
+              animation: 'perfTipIn 120ms ease-out',
+              pointerEvents: 'none'
+            }}
+          >
+            {text}
+          </div>,
+          document.body
+        )}
+    </span>
+  );
+};
+
 interface BootTimelineProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
 type TabKey = 'waterfall' | 'offenders' | 'transitions' | 'sync_io';
+
+// Succinct hover help copy for every data point (plain English, no dashes)
+const CATEGORY_TIPS: Record<string, string> = {
+  sync_io: 'A blocking file or system call that froze the main thread during boot.',
+  eager_import: 'A module parsed at startup instead of loaded only when needed.',
+  network_wait: 'Boot paused while waiting for a network response.',
+  process_spawn: 'Time spent launching a helper process.',
+  render_storm: 'Many re-renders fired in a short burst.'
+};
 
 export const BootTimeline: React.FC<BootTimelineProps> = ({ isOpen, onClose }) => {
   const [activeTab, setActiveTab] = useState<TabKey>('offenders');
@@ -104,7 +221,9 @@ export const BootTimeline: React.FC<BootTimelineProps> = ({ isOpen, onClose }) =
           <div className={styles.headerTitle}>
             <Zap size={20} color="#38bdf8" />
             <h2>Boot & Transition Profiler</h2>
-            <span className={styles.bootBadge}>{totalBootMs.toFixed(1)} ms total</span>
+            <InfoTip text="Total time from process start until all services were ready, in milliseconds.">
+              <span className={styles.bootBadge}>{totalBootMs.toFixed(1)} ms total</span>
+            </InfoTip>
           </div>
           <div className={styles.headerActions}>
             <button
@@ -167,19 +286,25 @@ export const BootTimeline: React.FC<BootTimelineProps> = ({ isOpen, onClose }) =
           {/* Quick Metrics Cards */}
           <div className={styles.statsRow}>
             <div className={styles.statCard}>
-              <span className={styles.statCardLabel}>Cold Start Duration</span>
+              <InfoTip text="How long the full boot took, from process start to services ready. Lower is better.">
+                <span className={styles.statCardLabel}>Cold Start Duration</span>
+              </InfoTip>
               <span className={styles.statCardValue}>{totalBootMs.toFixed(1)} ms</span>
               <span className={styles.statCardSub}>Process start to services ready</span>
             </div>
             <div className={styles.statCard}>
-              <span className={styles.statCardLabel}>Pre-Window Sync IO</span>
+              <InfoTip text="Time spent on blocking file and system calls made before the window could open. These calls delay first paint.">
+                <span className={styles.statCardLabel}>Pre-Window Sync IO</span>
+              </InfoTip>
               <span className={styles.statCardValue}>
                 {syncIoCalls.reduce((acc, c) => acc + c.durationMs, 0).toFixed(1)} ms
               </span>
               <span className={styles.statCardSub}>{syncIoCalls.length} synchronous calls intercepted</span>
             </div>
             <div className={styles.statCard}>
-              <span className={styles.statCardLabel}>Top Lag Culprit</span>
+              <InfoTip text="The single slowest item found during boot, shown with its duration and category.">
+                <span className={styles.statCardLabel}>Top Lag Culprit</span>
+              </InfoTip>
               <span className={styles.statCardValue} style={{ fontSize: '16px' }}>
                 {topOffenders[0]?.item || 'None'}
               </span>
@@ -188,7 +313,9 @@ export const BootTimeline: React.FC<BootTimelineProps> = ({ isOpen, onClose }) =
               </span>
             </div>
             <div className={styles.statCard}>
-              <span className={styles.statCardLabel}>Unmarked Gaps &gt;100ms</span>
+              <InfoTip text="Count of boot time spans longer than 100ms that no performance mark covers. Large gaps point at missing measurements.">
+                <span className={styles.statCardLabel}>Unmarked Gaps &gt;100ms</span>
+              </InfoTip>
               <span className={styles.statCardValue} style={{ color: gapWarnings.length === 0 ? '#7ee787' : '#f87171' }}>
                 {gapWarnings.length}
               </span>
@@ -204,12 +331,12 @@ export const BootTimeline: React.FC<BootTimelineProps> = ({ isOpen, onClose }) =
               <table className={styles.perfTable}>
                 <thead>
                   <tr>
-                    <th style={{ width: 50 }}>Rank</th>
-                    <th>Offending Item / Source</th>
-                    <th style={{ width: 90 }}>Duration</th>
-                    <th style={{ width: 90 }}>Phase</th>
-                    <th style={{ width: 140 }}>Suspected Cause</th>
-                    <th>Details</th>
+                    <th style={{ width: 50 }}><InfoTip text="Position in the slow items list, ranked by measured duration.">Rank</InfoTip></th>
+                    <th><InfoTip text="The module, file, or operation measured as slow.">Offending Item / Source</InfoTip></th>
+                    <th style={{ width: 90 }}><InfoTip text="How long this item took, in milliseconds.">Duration</InfoTip></th>
+                    <th style={{ width: 90 }}><InfoTip text="The boot stage where this cost appeared.">Phase</InfoTip></th>
+                    <th style={{ width: 140 }}><InfoTip text="Category of the slowdown: sync I/O, eager imports, network waits, process spawns, or render storms.">Suspected Cause</InfoTip></th>
+                    <th><InfoTip text="Extra context about why this item was slow, when available.">Details</InfoTip></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -228,9 +355,11 @@ export const BootTimeline: React.FC<BootTimelineProps> = ({ isOpen, onClose }) =
                       </td>
                       <td style={{ textTransform: 'capitalize' }}>{item.phase}</td>
                       <td>
-                        <span className={`${styles.categoryBadge} ${styles[`category_${item.category}`] || ''}`}>
-                          {item.category}
-                        </span>
+                        <InfoTip text={CATEGORY_TIPS[item.category] || 'Type of slowdown detected for this item.'}>
+                          <span className={`${styles.categoryBadge} ${styles[`category_${item.category}`] || ''}`}>
+                            {item.category}
+                          </span>
+                        </InfoTip>
                       </td>
                       <td style={{ color: '#8b949e', fontSize: 11 }}>
                         {item.details || '—'}
@@ -264,14 +393,18 @@ export const BootTimeline: React.FC<BootTimelineProps> = ({ isOpen, onClose }) =
                       <span className={styles.waterfallName}>
                         {mark.name}
                         {mark.category && (
-                          <span className={`${styles.categoryBadge} ${styles[`category_${mark.category}`] || ''}`}>
-                            {mark.category}
-                          </span>
+                          <InfoTip text={CATEGORY_TIPS[mark.category] || 'Type of slowdown detected for this step.'}>
+                            <span className={`${styles.categoryBadge} ${styles[`category_${mark.category}`] || ''}`}>
+                              {mark.category}
+                            </span>
+                          </InfoTip>
                         )}
                       </span>
-                      <span className={styles.waterfallTime}>
-                        +{markTime.toFixed(1)} ms {mark.duration !== undefined ? `(${mark.duration.toFixed(1)} ms)` : ''}
-                      </span>
+                      <InfoTip text="Left number: start time after boot. Right number: how long this step lasted.">
+                        <span className={styles.waterfallTime}>
+                          +{markTime.toFixed(1)} ms {mark.duration !== undefined ? `(${mark.duration.toFixed(1)} ms)` : ''}
+                        </span>
+                      </InfoTip>
                     </div>
                     <div className={styles.barTrack}>
                       <div
@@ -298,12 +431,12 @@ export const BootTimeline: React.FC<BootTimelineProps> = ({ isOpen, onClose }) =
               <table className={styles.perfTable}>
                 <thead>
                   <tr>
-                    <th>Transition Event</th>
-                    <th style={{ width: 110 }}>Event-to-Visible</th>
-                    <th style={{ width: 100 }}>Long Tasks</th>
-                    <th style={{ width: 90 }}>React Renders</th>
-                    <th style={{ width: 90 }}>IPC Calls</th>
-                    <th>Started At</th>
+                    <th><InfoTip text="The UI action being timed, such as opening the terminal.">Transition Event</InfoTip></th>
+                    <th style={{ width: 110 }}><InfoTip text="Time from the user action until the first visible update on screen.">Event-to-Visible</InfoTip></th>
+                    <th style={{ width: 100 }}><InfoTip text="Main thread tasks over 50ms that ran during this transition. These cause jank.">Long Tasks</InfoTip></th>
+                    <th style={{ width: 90 }}><InfoTip text="How many React render passes this transition triggered.">React Renders</InfoTip></th>
+                    <th style={{ width: 90 }}><InfoTip text="How many main process round trips this transition made.">IPC Calls</InfoTip></th>
+                    <th><InfoTip text="When the transition began, measured from app boot.">Started At</InfoTip></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -350,10 +483,10 @@ export const BootTimeline: React.FC<BootTimelineProps> = ({ isOpen, onClose }) =
                   <table className={styles.perfTable}>
                     <thead>
                       <tr>
-                        <th>Operation</th>
-                        <th>Target File / Identifier</th>
-                        <th style={{ width: 100 }}>Duration</th>
-                        <th style={{ width: 110 }}>Timestamp</th>
+                        <th><InfoTip text="The synchronous call, such as reading a file or checking a path.">Operation</InfoTip></th>
+                        <th><InfoTip text="The file or resource the call touched.">Target File / Identifier</InfoTip></th>
+                        <th style={{ width: 100 }}><InfoTip text="How long the call blocked the main thread, in milliseconds.">Duration</InfoTip></th>
+                        <th style={{ width: 110 }}><InfoTip text="When the call happened, relative to process start.">Timestamp</InfoTip></th>
                       </tr>
                     </thead>
                     <tbody>
@@ -385,9 +518,9 @@ export const BootTimeline: React.FC<BootTimelineProps> = ({ isOpen, onClose }) =
                   <table className={styles.perfTable}>
                     <thead>
                       <tr>
-                        <th>Module</th>
-                        <th style={{ width: 120 }}>Parse Cost</th>
-                        <th style={{ width: 120 }}>Recorded At</th>
+                        <th><InfoTip text="A renderer module evaluated at startup.">Module</InfoTip></th>
+                        <th style={{ width: 120 }}><InfoTip text="Time spent parsing and running the module before it was usable.">Parse Cost</InfoTip></th>
+                        <th style={{ width: 120 }}><InfoTip text="When the import finished, relative to process start.">Recorded At</InfoTip></th>
                       </tr>
                     </thead>
                     <tbody>

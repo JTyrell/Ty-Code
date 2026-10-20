@@ -3,21 +3,9 @@ import { Activity } from 'lucide-react';
 import { useChatStore } from '../state/chat-store';
 import type { DiagnosticsFleetHealth, FleetHealthState } from '../../../shared/types/diagnostics';
 
-const DEFAULT_FLEET_HEALTH: DiagnosticsFleetHealth = {
-  state: 'all-healthy',
-  timestamp: Date.now(),
-  healthyCount: 8,
-  totalCount: 8,
-  degradedCount: 0,
-  downCount: 0,
-  quietModeActive: false,
-  batterySaver: false,
-  meteredConnection: false,
-  providers: {}
-};
-
 export const FleetHealthIndicator: React.FC = () => {
-  const [health, setHealth] = useState<DiagnosticsFleetHealth>(DEFAULT_FLEET_HEALTH);
+  // No fabricated defaults: nothing "healthy" is claimed until real fleet data arrives
+  const [health, setHealth] = useState<DiagnosticsFleetHealth | null>(null);
   const openSettings = useChatStore((state) => state.openSettings);
 
   const fetchHealth = useCallback(async () => {
@@ -77,25 +65,31 @@ export const FleetHealthIndicator: React.FC = () => {
     return undefined;
   }, []);
 
-  const state: FleetHealthState = health.state || 'all-healthy';
-  const dotColor = state === 'all-healthy'
-    ? '#10b981'
-    : state === 'degraded'
-      ? '#f59e0b'
-      : '#ef4444';
+  const state: FleetHealthState = health?.state || 'degraded';
+  const dotColor = !health
+    ? '#9ca3af'
+    : state === 'all-healthy'
+      ? '#10b981'
+      : state === 'degraded'
+        ? '#f59e0b'
+        : '#ef4444';
 
-  const labelText = state === 'all-healthy'
-    ? 'Fleet Healthy'
-    : state === 'degraded'
-      ? 'Fleet Degraded'
-      : 'Fleet Down';
+  const labelText = !health
+    ? 'Fleet: checking...'
+    : state === 'all-healthy'
+      ? 'Fleet Healthy'
+      : state === 'degraded'
+        ? 'Fleet Degraded'
+        : 'Fleet Down';
 
   const titleText = (() => {
+    if (!health) return 'Fetching live fleet health from the diagnostics service. Click to open Diagnostics.';
+    const untested = health.untestedCount > 0 ? `, ${health.untestedCount} untested` : '';
     const base = state === 'all-healthy'
-      ? `Fleet Health: All Healthy (${health.healthyCount}/${health.totalCount} operational)`
+      ? `Fleet Health: All Healthy (${health.healthyCount}/${health.totalCount} proven operational)`
       : state === 'degraded'
-        ? `Fleet Health: Degraded (${health.healthyCount} operational, ${health.degradedCount} cooling down, ${health.downCount} down)`
-        : `Fleet Health: No Working Providers (0/${health.totalCount} operational)`;
+        ? `Fleet Health: Degraded (${health.healthyCount} proven healthy, ${health.testedCount}/${health.totalCount} connection-tested${untested})`
+        : `Fleet Health: No Working Providers (0 proven of ${health.totalCount})`;
     const quiet = health.quietModeActive ? ' [Quiet Mode: Pings Paused]' : '';
     return `${base}${quiet}. Click to open Diagnostics.`;
   })();
@@ -140,7 +134,7 @@ export const FleetHealthIndicator: React.FC = () => {
       <span id="status-bar-health-text" style={{ fontWeight: 500 }}>
         {labelText}
       </span>
-      {health.quietModeActive && (
+      {health?.quietModeActive && (
         <span
           id="status-bar-health-quiet-tag"
           style={{

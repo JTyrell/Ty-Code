@@ -9,6 +9,7 @@
  */
 
 import { freeProviderRegistry } from '../providers/free-provider-registry';
+import { diagnosticsHealthMonitor } from './health-monitor';
 import { readStoredCredentials } from '../../ipc/settings-handlers';
 import { parseSSELines, type StreamPayload } from '../../providers/sse-parser';
 import { classifyDiagnosticError, type ClassifiedError } from './error-taxonomy';
@@ -142,6 +143,16 @@ export class DiagnosticService {
       } else {
         failedCount++;
       }
+
+      // Feed authoritative connection-test evidence into the fleet health monitor
+      diagnosticsHealthMonitor.recordConnectionResult(
+        result.providerId,
+        result.status,
+        result.timeToFirstTokenMs,
+        result.errorCode,
+        result.humanMessage,
+        result.testedModel
+      );
     }
 
     const summary: DiagnosticRunSummary = {

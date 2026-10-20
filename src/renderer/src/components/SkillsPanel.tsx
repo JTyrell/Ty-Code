@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { useWorkspaceStore } from '../state/workspace-store';
 import { useChatStore } from '../state/chat-store';
+import { NoProjectEmptyState } from './NoProjectEmptyState';
 import type { SkillDefinition } from '../../../preload/types';
 
 export const SkillsPanel: React.FC = () => {
@@ -22,6 +23,10 @@ export const SkillsPanel: React.FC = () => {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const loadSkills = async () => {
+    if (!workspacePath) {
+      setSkills([]);
+      return;
+    }
     setIsLoading(true);
     try {
       const res = await window.electronAPI.getAvailableSkills(workspacePath);
@@ -55,6 +60,42 @@ export const SkillsPanel: React.FC = () => {
     const prompt = `Activate skill "${skill.name}":\n${skill.description}\n\nInspect current workspace context and execute.`;
     sendMessage(prompt, workspacePath);
   };
+
+  if (!workspacePath) {
+    return (
+      <div
+        style={{
+          width: '100%',
+          height: '100%',
+          backgroundColor: 'var(--bg-secondary)',
+          borderRight: '1px solid var(--border-subtle)',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden'
+        }}
+      >
+        <div
+          style={{
+            height: '35px',
+            padding: '0 12px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            borderBottom: '1px solid var(--border-subtle)',
+            fontSize: '11px',
+            fontWeight: 600,
+            color: 'var(--text-secondary)',
+            textTransform: 'uppercase',
+            letterSpacing: '0.05em'
+          }}
+        >
+          <Sparkles size={14} color="var(--accent-primary)" />
+          <span>Capabilities</span>
+        </div>
+        <NoProjectEmptyState hint="Capabilities load from the project's .agents/skills/ and context/skills/ folders. Open a project to see its skills." />
+      </div>
+    );
+  }
 
   return (
     <div

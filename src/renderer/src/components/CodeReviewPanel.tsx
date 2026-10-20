@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { useCodeReviewStore } from '../state/code-review-store';
 import { useWorkspaceStore } from '../state/workspace-store';
+import { NoProjectEmptyState } from './NoProjectEmptyState';
 
 export const CodeReviewPanel: React.FC = () => {
   const {
@@ -31,7 +32,7 @@ export const CodeReviewPanel: React.FC = () => {
     toggleRule
   } = useCodeReviewStore();
 
-  const { activeTabPath, openTabs } = useWorkspaceStore();
+  const { activeTabPath, openTabs, workspacePath } = useWorkspaceStore();
   const currentTab = openTabs.find((t) => t.path === activeTabPath);
 
   useEffect(() => {
@@ -88,6 +89,38 @@ export const CodeReviewPanel: React.FC = () => {
       </span>
     );
   };
+
+  if (!workspacePath) {
+    return (
+      <div
+        style={{
+          width: '100%',
+          height: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+          backgroundColor: 'var(--bg-secondary)',
+          color: 'var(--text-primary)',
+          overflow: 'hidden'
+        }}
+      >
+        <div
+          style={{
+            padding: '10px 12px',
+            borderBottom: '1px solid var(--border-subtle)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}
+        >
+          <FileCheck size={16} style={{ color: 'var(--accent-primary)' }} />
+          <span style={{ fontWeight: 600, fontSize: '12px', textTransform: 'uppercase' }}>
+            AI Code Review
+          </span>
+        </div>
+        <NoProjectEmptyState hint="AI Code Review analyzes files from the loaded project. Open a folder to review your code." />
+      </div>
+    );
+  }
 
   return (
     <div

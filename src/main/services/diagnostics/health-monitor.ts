@@ -58,12 +58,11 @@ export class DiagnosticsHealthMonitor {
         this.providers.set(p.id, {
           providerId: p.id,
           providerName: p.name,
-          isHealthy: true,
-          status: 'HEALTHY',
-          latencyMs: 120,
+          isHealthy: false,
+          status: 'UNTESTED',
           consecutiveFailures: 0,
           testedModel: p.best_free_models[0] || 'default'
-        });
+        } as ProviderHealthDetail);
       }
     }
   }
@@ -110,25 +109,23 @@ export class DiagnosticsHealthMonitor {
       detail = {
         providerId,
         providerName: reg?.name || providerId,
-        isHealthy: true,
-        status: 'HEALTHY',
-        latencyMs: 150,
+        isHealthy: false,
+        status: 'UNTESTED',
         consecutiveFailures: 0,
         testedModel: reg?.best_free_models[0] || 'default'
       };
       this.providers.set(providerId, detail);
     }
 
+    // Cooldown expired: health is no longer proven and must be re-verified on the next real ping
     const now = Date.now();
     if (detail.cooldownUntil) {
       if (now >= detail.cooldownUntil) {
-        // Cooldown has expired, mark as eligible to probe or recovered
         detail.cooldownUntil = undefined;
         detail.cooldownRemainingSec = 0;
         if (detail.status === 'COOLDOWN' || detail.status === 'RATE_LIMITED' || detail.status === 'PROVIDER_DOWN') {
-          detail.status = 'HEALTHY';
-          detail.isHealthy = true;
-          detail.lastError = undefined;
+          detail.status = 'UNTESTED';
+          detail.isHealthy = false;
         }
       } else {
         detail.cooldownRemainingSec = Math.max(1, Math.ceil((detail.cooldownUntil - now) / 1000));
@@ -150,31 +147,52 @@ export class DiagnosticsHealthMonitor {
     let healthyCount = 0;
     let degradedCount = 0;
     let downCount = 0;
+    let untestedCount = 0;
 
     for (const [id] of this.providers) {
       const detail = this.getProviderDetail(id);
       providersSnapshot[id] = { ...detail };
 
-      if (detail.isHealthy && detail.status === 'HEALTHY' && !detail.cooldownUntil) {
-        healthyCount++;
-      } else if (detail.status === 'RATE_LIMITED' || detail.status === 'COOLDOWN') {
-        degradedCount++;
-      } else if (detail.status === 'PROVIDER_DOWN') {
-        downCount++;
-      } else {
-        degradedCount++;
+      switch (detail.status) {
+        case 'HEALTHY':
+          if (detail.isHealthy && !detail.cooldownUntil) {
+            healthyCount++;
+          } else if (detail.cooldownUntil) {
+            degradedCount++;
+          } else {
+            degradedCount++;
+          }
+          break;
+        case 'RATE_LIMITED':
+        case 'COOLDOWN':
+          degradedCount++;
+          break;
+        case 'UNCONFIGURED':
+          // Reachable but needs a configured key: functional gap, not a network outage
+          degradedCount++;
+          break;
+        case 'PROVIDER_DOWN':
+          downCount++;
+          break;
+        default:
+          untestedCount++;
+          break;
       }
     }
 
     const totalCount = this.providers.size;
-    let state: FleetHealthState = 'all-healthy';
+    const testedCount = totalCount - untestedCount;
+    let state: FleetHealthState;
 
-    if (healthyCount === 0 && totalCount > 0) {
-      state = 'no-working-provider';
-    } else if (healthyCount < totalCount) {
+    if (totalCount === 0 || (healthyCount === 0 && testedCount === 0)) {
+      // Nothing proven yet: never fabricate health, report degraded until evidence arrives
       state = 'degraded';
-    } else {
+    } else if (healthyCount === 0) {
+      state = 'no-working-provider';
+    } else if (healthyCount === totalCount && untestedCount === 0) {
       state = 'all-healthy';
+    } else {
+      state = 'degraded';
     }
 
     return {
@@ -182,6 +200,8 @@ export class DiagnosticsHealthMonitor {
       timestamp: now,
       healthyCount,
       totalCount,
+      testedCount,
+      untestedCount,
       degradedCount,
       downCount,
       quietModeActive: this.isQuietModeActive(),
@@ -189,6 +209,64 @@ export class DiagnosticsHealthMonitor {
       meteredConnection: this.meteredConnection,
       providers: providersSnapshot
     };
+  }
+
+  /**
+   * Ingests an authoritative provider connection diagnostic result.
+   * Only REAL evidence (connection tests, pings) may declare a provider healthy; nothing is assumed.
+   */
+  public recordConnectionResult(
+    providerId: string,
+    status: 'PASS' | 'FAIL' | 'SKIPPED',
+    ttftMs?: number,
+    errorCode?: string,
+    message?: string,
+    testedModel?: string
+  ): ProviderHealthDetail | null {
+    const detail = this.getProviderDetail(providerId);
+    // Unknown ids only enter the fleet when a real test produced evidence (e.g. local Ollama)
+    if (status === 'SKIPPED') {
+      detail.lastPingTime = Date.now();
+      this.notifyListeners();
+      return detail;
+    }
+
+    if (testedModel) detail.testedModel = testedModel;
+
+    if (status === 'PASS') {
+      if (ttftMs && ttftMs > 0) {
+        this.recordSuccess(providerId, ttftMs);
+      } else {
+        this.recordSuccess(providerId);
+      }
+      detail.verifiedAt = Date.now();
+      return detail;
+    }
+
+    detail.lastPingTime = Date.now();
+    detail.verifiedAt = detail.verifiedAt || undefined;
+    const reason = typeof message === 'string' && message.trim() ? message : errorCode || 'Connection test failed';
+
+    if (errorCode === 'CONFIG_MISSING') {
+      detail.isHealthy = false;
+      detail.status = 'UNCONFIGURED';
+      detail.lastError = `Needs configuration: ${reason}`;
+      detail.cooldownUntil = undefined;
+      detail.cooldownRemainingSec = 0;
+      providerHealthMonitor.recordFailure(providerId, reason);
+      this.notifyListeners();
+      return detail;
+    }
+
+    if (errorCode === 'RATE_LIMITED' || errorCode === 'QUOTA_EXCEEDED') {
+      this.recordRateLimit(providerId, this.defaultCooldownMs, reason);
+      detail.verifiedAt = Date.now();
+      return detail;
+    }
+
+    this.recordProviderDown(providerId, this.defaultCooldownMs, `${errorCode || 'FAIL'}: ${reason}`);
+    detail.verifiedAt = Date.now();
+    return detail;
   }
 
   /**
@@ -207,6 +285,7 @@ export class DiagnosticsHealthMonitor {
     detail.cooldownUntil = Date.now() + cooldownMs;
     detail.cooldownRemainingSec = Math.ceil(cooldownMs / 1000);
     detail.consecutiveFailures++;
+    detail.verifiedAt = Date.now();
 
     // Sync with Phase 6.1 provider health monitor
     providerHealthMonitor.recordRateLimit(providerId, cooldownMs);
@@ -230,6 +309,7 @@ export class DiagnosticsHealthMonitor {
     detail.cooldownUntil = Date.now() + cooldownMs;
     detail.cooldownRemainingSec = Math.ceil(cooldownMs / 1000);
     detail.consecutiveFailures++;
+    detail.verifiedAt = Date.now();
 
     providerHealthMonitor.recordFailure(providerId, error);
 
@@ -248,6 +328,7 @@ export class DiagnosticsHealthMonitor {
     detail.cooldownUntil = undefined;
     detail.cooldownRemainingSec = 0;
     detail.consecutiveFailures = 0;
+    detail.verifiedAt = Date.now();
     detail.latencyMs = Math.round(detail.latencyMs ? detail.latencyMs * 0.7 + latencyMs * 0.3 : latencyMs);
 
     providerHealthMonitor.recordSuccess(providerId, latencyMs);
@@ -306,9 +387,12 @@ export class DiagnosticsHealthMonitor {
 
     const reg = freeProviderRegistry.getProvider(providerId);
     if (!reg || reg.base_url === 'auto') {
+      // No deterministic endpoint to probe: never fabricate health, keep it unproven
       detail.lastPingTime = now;
-      detail.isHealthy = true;
-      detail.status = 'HEALTHY';
+      if (detail.status === 'UNTESTED') {
+        detail.status = 'UNTESTED';
+        detail.isHealthy = false;
+      }
       return detail;
     }
 
@@ -366,18 +450,12 @@ export class DiagnosticsHealthMonitor {
       } else if (response.status >= 500) {
         this.recordProviderDown(providerId, this.defaultCooldownMs, `HTTP ${response.status} Provider Down`);
       } else if (response.status === 401 || response.status === 403) {
-        // If unconfigured provider requires a key, check fallback reachability via /models
-        if (reg.auth_type === 'api_key_optional') {
-          // Reachable endpoint, requires auth key
-          detail.lastPingTime = Date.now();
-          detail.latencyMs = elapsed;
-          detail.lastError = 'API key required';
-          // Keep healthy reachability
-          detail.isHealthy = true;
-          detail.status = 'HEALTHY';
-        } else {
-          this.recordProviderDown(providerId, this.defaultCooldownMs, `HTTP ${response.status} Auth Failure`);
-        }
+        // Reachable endpoint, but without a working key there is no usable connection
+        detail.lastPingTime = Date.now();
+        detail.latencyMs = elapsed;
+        detail.lastError = 'API key required or rejected';
+        detail.isHealthy = false;
+        detail.status = 'UNCONFIGURED';
       } else {
         // Other unexpected status codes
         this.recordProviderDown(providerId, this.defaultCooldownMs, `HTTP ${response.status}`);

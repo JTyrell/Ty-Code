@@ -17,6 +17,7 @@
     "build:preload": "esbuild src/preload/index.ts --bundle --platform=node --target=node20 --format=cjs --external:electron --outfile=dist/preload/index.js",
     "build:renderer": "vite build",
     "build": "npm run build:main && npm run build:preload && npm run build:renderer",
+    "prepare:voice-engine": "node resources/voice-engine/build-voice-engine.mjs",
     "test": "node scripts/no-mock-agent-path.mjs && node scripts/no-fixture-replies.mjs && node scripts/no-baked-secrets.mjs && node scripts/no-metadata-only-marketplace.mjs && node scripts/no-fake-extension-data.mjs && node scripts/verify-extension-artifacts.mjs && node scripts/verify-audit-artifacts.mjs && node scripts/verify-attribution.mjs && node scripts/verify-fcc-coverage.mjs && npm run test:live && npm run test:extensions && npm run test:security && npm run typecheck && npm run typecheck:website && npm run audit:security && npm run deps:check",
     "test:live": "node scripts/run-live-e2e.mjs",
     "test:extensions": "node scripts/run-extension-marketplace-tests.mjs",
