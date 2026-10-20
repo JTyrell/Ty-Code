@@ -61,3 +61,8 @@ scripts/fetch-ecc-assets.mjs
 *.tmp
 live-check.md
 test-repo/
+
+# Voice engine bundle artifacts (regenerate with `npm run prepare:voice-engine`)
+resources/voice-engine/models/
+resources/voice-engine/python/
+resources/voice-engine/site-packages/

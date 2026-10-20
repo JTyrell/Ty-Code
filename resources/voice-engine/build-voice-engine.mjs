@@ -61,17 +61,27 @@ function findHostPython() {
     : [['python3'], ['python']];
   for (const args of candidates) {
     try {
+      // Any host Python 3.x qualifies: wheels are selected by explicit
+      // --platform/--python-version ABI tags below, never by the host runtime.
       const out = execFileSync(args[0], [...args.slice(1), '--version'], { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] });
       const version = String(out || '').trim();
-      if (/Python 3\.(9|10|11|12|13)\./.test(version)) {
-        return { command: args[0], extraArgs: args.slice(1), version };
+      if (!/^Python 3\.\d+/.test(version)) {
+        log(`skipping ${args[0]}: ${version}`);
+        continue;
       }
-      log(`skipping ${args[0]}: ${version}`);
+      // The host interpreter merely drives pip, so it must actually have one.
+      try {
+        execFileSync(args[0], [...args.slice(1), '-m', 'pip', '--version'], { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] });
+      } catch {
+        log(`skipping ${args[0]} (${version}): no pip module available`);
+        continue;
+      }
+      return { command: args[0], extraArgs: args.slice(1), version };
     } catch {
       continue;
     }
   }
-  throw new Error('No host Python 3.9+ found. Install Python 3.11 and re-run npm run prepare:voice-engine.');
+  throw new Error('No host Python 3.x with pip found. Install Python with pip and re-run npm run prepare:voice-engine.');
 }
 
 async function downloadTo(url, destPath) {
