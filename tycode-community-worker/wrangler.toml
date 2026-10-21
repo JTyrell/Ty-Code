@@ -12,4 +12,4 @@ compatibility_date = "2026-10-21"
 #  'community_free_tier_key' in Step 1)
 [[kv_namespaces]]
 binding = "TYCODE_KEYS"
-id = "YOUR_KV_NAMESPACE_ID"
+id = "f1b5d7d53a344169bd7ef33787f532d1"
