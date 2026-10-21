@@ -136,7 +136,11 @@ export async function getKey(providerId: string): Promise<string | null> {
 // pure-anonymous free tiers (OpenKilo pool / local Ollama), so the user is
 // never blocked.
 
-const COMMUNITY_KEY_ENDPOINT = 'https://api.tycode.dev/community-key';
+const COMMUNITY_KEY_ENDPOINT = 'https://ty-code.jevountyrell.workers.dev/community-key';
+// TODO(custom-domain): once https://api.tycode.dev is attached to the Worker
+// (Worker "ty-code" -> Settings -> Domains & Routes -> Custom Domain), swap
+// the endpoint back to https://api.tycode.dev/community-key - safeStorage
+// cached keys keep existing users running across the transition.
 const COMMUNITY_KEY_LABEL = 'tycode_community_key';
 let communityKeyCache: string | undefined;
 let communityKeyCachedAt = 0;

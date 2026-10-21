@@ -1,4 +1,7 @@
-name = "tycode"
+# CI (Workers Builds) expects this project name; if it differs, wrangler
+# overrides it and opens a bot PR to reconcile - keep in sync with the
+# Cloudflare project to avoid churn.
+name = "ty-code"
 main = "src/index.ts"
 compatibility_date = "2026-10-21"
 
