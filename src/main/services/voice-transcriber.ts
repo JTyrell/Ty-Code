@@ -46,9 +46,15 @@ function resolveVoiceLayout(): VoiceEngineLayout {
     ? path.join(process.resourcesPath, 'voice-engine')
     : path.join(process.cwd(), 'resources', 'voice-engine');
 
-  const scriptPath = path.join(voiceDir, 'transcriber.py');
+  const bundleScriptPath = path.join(voiceDir, 'transcriber.py');
   const sitePackages = path.join(voiceDir, 'site-packages');
   const modelDir = path.join(voiceDir, 'models', MODEL_NAME);
+
+  let scriptPath = bundleScriptPath;
+  if (!fs.existsSync(scriptPath) && !isPackaged) {
+    const sourceScriptPath = path.join(process.cwd(), 'src', 'main', 'services', 'voice-engine', 'transcriber.py');
+    if (fs.existsSync(sourceScriptPath)) scriptPath = sourceScriptPath;
+  }
 
   let pythonExecutable: string;
   if (process.platform === 'win32') {
@@ -285,6 +291,16 @@ export class VoiceTranscriber {
       }, timeoutMs);
       this.pendingRequest = { resolve, reject, timer };
     });
+  }
+
+  /**
+   * Drops one recording session (audio buffers + session state) WITHOUT
+   * killing the sidecar: the loaded whisper model stays resident so the next
+   * dictation starts instantly. Used when a panel unmounts mid-recording.
+   */
+  discardSession(sessionId: string): void {
+    if (sessionId && this.activeSessionId && sessionId !== this.activeSessionId) return;
+    this.releaseAudio(true);
   }
 
   /** Kills the sidecar process. Called from cleanupAllResources. */

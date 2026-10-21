@@ -891,6 +891,7 @@ export interface ElectronAPI {
   startVoiceRecording: () => Promise<IpcResponse<{ sessionId: string; capturing: boolean }>>;
   appendVoiceChunk: (sessionId: string, audioBase64: string) => Promise<IpcResponse<void>>;
   stopVoiceRecording: (sessionId: string) => Promise<IpcResponse<VoiceTranscriptionResult>>;
+  discardVoiceSession: (sessionId: string) => Promise<IpcResponse<void>>;
   releaseVoiceRecording: () => Promise<IpcResponse<void>>;
   onAgentStateUpdate: (callback: (state: AgentLoopState) => void) => () => void;
   resolvePtyApproval?: (approvalId: string, approved: boolean) => Promise<IpcResponse<void>>;
@@ -1182,6 +1183,7 @@ export interface ElectronAPI {
   debuggerRunAnalysis?: (payload?: { filePath?: string; role?: AnalysisRole }) => Promise<IpcResponse<AnalysisResultData[]>>;
   onDebuggerUpdate?: (callback: (data: AnalysisResultData[] | { results: AnalysisResultData[] }) => void) => () => void;
   onDebuggerStateSynced?: (callback: (state: DebuggerStateSnapshotData) => void) => () => void;
+  onDebuggerAiStream?: (callback: (frame: { runId: string; role: AnalysisRole; phase: 'token' | 'done' | 'error'; chunk?: string; parseMode?: string }) => void) => () => void;
 
   // Phase 6.2: Seamless BYOK Interface & Key Management
   byokDetectKeys?: () => Promise<IpcResponse<DetectedApiKey[]>>;
@@ -1493,7 +1495,7 @@ export interface OpenCodeServiceStatusData {
 
 // Omni-Debugger: Multi-Engine Diagnostic & Architecture Inspector
 export type AnalysisSeverity = 'critical' | 'high' | 'medium' | 'low' | 'info';
-export type AnalysisEngine = 'static' | 'dynamic' | 'arch';
+export type AnalysisEngine = 'static' | 'dynamic' | 'arch' | 'ai';
 export type AnalysisRole = 'dev' | 'qa' | 'pm';
 
 export interface AnalysisResultData {

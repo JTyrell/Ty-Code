@@ -15,6 +15,7 @@ import { ConnectionPool, connectionPool } from './connection-pool';
 import { ProviderRegistry, providerRegistry, type ProviderMetadata, type ModelMetadata } from './provider-registry';
 import { getRoutingStrategy } from './strategies';
 import { fccManager } from './fcc-manager';
+import { credentialStore } from '../auth/credential-store';
 import type { ProviderCandidate, RoutingContext } from './strategies/types';
 
 export interface FailoverEvent {
@@ -151,13 +152,15 @@ export class OmniRouteRouter {
    */
   public getCandidates(settings: ProviderSettings): ProviderCandidate[] {
     const candidates: ProviderCandidate[] = [];
-    const configuredKeys = settings.apiKeys || {};
+    const storeKeys = credentialStore.getAllDecryptedKeys();
+    const configuredKeys = { ...storeKeys, ...(settings.apiKeys || {}) };
     const customEndpoints = settings.customEndpoints || {};
 
     const allProviders = this.registry.getAllProviders();
 
     for (const provider of allProviders) {
-      const apiKey = configuredKeys[provider.id];
+      const pNorm = provider.id.toLowerCase().trim().replace(/-free$/, '');
+      const apiKey = configuredKeys[provider.id] || configuredKeys[pNorm] || credentialStore.getDecryptedKey(provider.id);
       const customEndpoint = customEndpoints[provider.id];
 
       const isConfigured = Boolean(apiKey);

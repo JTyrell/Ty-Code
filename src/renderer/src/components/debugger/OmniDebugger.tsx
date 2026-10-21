@@ -631,7 +631,8 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
                 const engineColor = {
                   static: 'text-indigo-400 bg-indigo-500/10 border-indigo-500/30',
                   dynamic: 'text-purple-400 bg-purple-500/10 border-purple-500/30',
-                  arch: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30'
+                  arch: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30',
+                  ai: 'text-amber-400 bg-amber-500/10 border-amber-500/30'
                 }[item.engine];
 
                 return (

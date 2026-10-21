@@ -18,7 +18,7 @@
 import http from 'node:http';
 import crypto from 'node:crypto';
 import { shell } from 'electron';
-import { readStoredCredentials, saveSettings, writeStoredCredentials } from '../../ipc/settings-handlers';
+import { readStoredCredentials, saveSettings, mergeStoredApiKeys } from '../../ipc/settings-handlers';
 
 export interface OAuthFlowState {
   providerId: 'openrouter' | 'openkilo' | 'github-copilot';
@@ -666,11 +666,7 @@ export class ProviderOAuthService {
    */
   public async disconnectProvider(providerId: string): Promise<boolean> {
     try {
-      const { keys } = await readStoredCredentials();
-      delete keys[providerId];
-      delete keys[providerId.replace('-free', '')];
-      delete keys[`${providerId}-free`];
-      await writeStoredCredentials(keys);
+      await mergeStoredApiKeys({}, [providerId, providerId.replace('-free', ''), `${providerId}-free`]);
 
       // Also reset active provider if it was the disconnected one
       const effective = await (await import('../../ipc/settings-handlers')).getSettings();

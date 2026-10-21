@@ -80,7 +80,12 @@ export class CredentialStore {
     credentials: {}
   };
 
-  private constructor() {}
+  private constructor() {
+    // Kick hydration as early as possible. Sync readers still see an empty
+    // cache until load() resolves, but the boot Tier-0 task awaits load()
+    // before any window exists, so real consumers never race it.
+    void this.load().catch(() => undefined);
+  }
 
   public static getInstance(): CredentialStore {
     if (!CredentialStore.instance) {
@@ -221,22 +226,53 @@ export class CredentialStore {
   }
 
   private getProviderAliases(providerId: string): string[] {
-    const list = [providerId];
-    if (providerId.endsWith('-free')) {
-      list.push(providerId.replace(/-free$/, ''));
+    const p = (providerId || '').toLowerCase().trim();
+    const list = [providerId, p];
+    if (p.endsWith('-free')) {
+      list.push(p.replace(/-free$/, ''));
     } else {
-      list.push(`${providerId}-free`);
+      list.push(`${p}-free`);
     }
-    if (providerId === 'gemini' || providerId === 'google-ai-studio' || providerId === 'google-ai-studio-free') {
-      list.push('gemini', 'google-ai-studio', 'google-ai-studio-free');
+    if (p === 'gemini' || p === 'google-ai-studio' || p === 'google-ai-studio-free' || p.includes('google')) {
+      list.push('gemini', 'google-ai-studio', 'google-ai-studio-free', 'google');
+    }
+    if (p === 'anthropic' || p === 'claude' || p.includes('anthropic')) {
+      list.push('anthropic', 'claude', 'anthropic-claude', 'anthropic-claude-free');
+    }
+    if (p === 'copilot' || p.includes('copilot')) {
+      list.push('copilot', 'github-copilot', 'copilot-subscription');
+    }
+    if (p === 'openkilo' || p === 'kilo') {
+      list.push('openkilo', 'kilo');
+    }
+    if (p === 'opencode' || p === 'opencode-zen') {
+      list.push('opencode', 'opencode-zen');
+    }
+    if (p === 'openrouter' || p === 'openrouter-free') {
+      list.push('openrouter', 'openrouter-free');
+    }
+    if (p === 'groq' || p === 'groq-free') {
+      list.push('groq', 'groq-free');
     }
     return Array.from(new Set(list));
+  }
+
+  /**
+   * Fire-and-forget hydration for sync readers. The cache stays empty until
+   * load() resolves; call sites therefore must not be reached before the boot
+   * Tier-0 snapshot finishes (see index.ts credential_snapshot task).
+   */
+  private ensureLoadedOrPending(): void {
+    if (!this.isLoaded) {
+      void this.load().catch(() => undefined);
+    }
   }
 
   /**
    * Retrieves the decrypted key for a provider
    */
   public getDecryptedKey(providerId: string): string | null {
+    this.ensureLoadedOrPending();
     const aliases = this.getProviderAliases(providerId);
     for (const id of aliases) {
       const record = this.cache.credentials[id];
@@ -252,6 +288,7 @@ export class CredentialStore {
    * Returns all decrypted keys for provider gateway
    */
   public getAllDecryptedKeys(): Record<string, string> {
+    this.ensureLoadedOrPending();
     const result: Record<string, string> = {};
     for (const [providerId, record] of Object.entries(this.cache.credentials)) {
       const decrypted = this.decrypt(record.encryptedKey);
@@ -264,6 +301,7 @@ export class CredentialStore {
    * Checks whether a provider has an encrypted credential saved
    */
   public hasCredential(providerId: string): boolean {
+    this.ensureLoadedOrPending();
     const aliases = this.getProviderAliases(providerId);
     return aliases.some((id) => Boolean(this.cache.credentials[id]?.encryptedKey));
   }
@@ -299,6 +337,7 @@ export class CredentialStore {
    * Lists all configured provider summaries without revealing keys
    */
   public listConfigured(): CredentialSummary[] {
+    this.ensureLoadedOrPending();
     return Object.entries(this.cache.credentials).map(([providerId, record]) => ({
       providerId,
       label: record.label || providerId,
@@ -401,12 +440,25 @@ export class CredentialStore {
    */
   public async testConnection(
     providerId: string,
-    apiKey: string,
+    apiKey?: string,
     modelId?: string
   ): Promise<TestConnectionResult> {
     const startTime = Date.now();
-    const trimmedKey = apiKey.trim();
-    const normId = providerId.toLowerCase().replace(/-free$/, '');
+    const normId = (providerId || '').toLowerCase().trim().replace(/-free$/, '');
+    let resolvedKey = (apiKey || '').trim();
+    if (!resolvedKey) {
+      resolvedKey = (this.getDecryptedKey(providerId) || '').trim();
+    }
+    const trimmedKey = resolvedKey;
+
+    if (!trimmedKey && normId !== 'openkilo' && normId !== 'ollama') {
+      return {
+        success: false,
+        providerId,
+        latencyMs: 0,
+        error: 'API key is required.'
+      };
+    }
 
     try {
       // 0. OpenKilo anonymous free tier verification (zero key required)

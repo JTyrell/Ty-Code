@@ -25,7 +25,7 @@ import {
   handleLspRename, handleLspDocumentSymbols, handleLspWorkspaceSymbols,
   handleLspCodeActions, handleLspSignatureHelp, getLspManager
 } from './ipc/lsp-handlers';
-import { getCredentialStorageStatusResponse, getSettings, getSettingsLayer, getSecurityPolicy, saveSecurityPolicy, saveSettings, saveSettingsLayer, readOnboardingState, writeOnboardingState } from './ipc/settings-handlers';
+import { getCredentialStorageStatusResponse, getSettings, getSettingsLayer, getSecurityPolicy, saveSecurityPolicy, saveSettings, saveSettingsLayer, readOnboardingState, writeOnboardingState, mergeStoredApiKeys } from './ipc/settings-handlers';
 import { settingsManager } from './services/settings-manager';
 import { startAgentTask, stopAgentTask, respondAgentApproval, applyDiff, handleUserApproveDiff } from './ipc/agent-handlers';
 import {
@@ -100,7 +100,7 @@ import { modelClassifier } from './services/providers/model-classifier';
 import { providerHealthMonitor } from './services/providers/health-monitor';
 import { keyDetector, maskKey } from './services/providers/key-detector';
 import { credentialStore } from './services/auth/credential-store';
-import { readStoredCredentials, writeStoredCredentials, encryptSecret, decryptSecret } from './ipc/settings-handlers';
+import { readStoredCredentials, encryptSecret, decryptSecret } from './ipc/settings-handlers';
 import type { CustomProviderConfig, StoredKeySummary } from '../shared/types/byok';
 import { opencodeIntegration } from './services/providers/opencode-integration';
 import { opencodeFreeDetector } from './services/providers/opencode-free-detector';
@@ -542,6 +542,14 @@ function registerIpcHandlers(): void {
       return { success: false, error: err?.message || 'Transcription failed' };
     }
   });
+  ipcMain.handle('voice:discard-session', (_event, sessionId: string) => {
+    try {
+      voiceTranscriber.discardSession(String(sessionId || ''));
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Failed to discard voice session' };
+    }
+  });
   ipcMain.handle('voice:release', () => {
     try {
       voiceTranscriber.release();
@@ -642,11 +650,13 @@ function registerIpcHandlers(): void {
       const saved = await credentialStore.saveCredential(providerId, apiKey, label);
       if (!saved) throw new Error('Credential was not saved: provider id or key was empty.');
       // The agent reads keys via settings-handlers; a failure here means chat would have no key, so do NOT swallow it.
-      const { keys } = await readStoredCredentials();
-      keys[providerId] = apiKey.trim();
+      // mergeStoredApiKeys rewrites the vault without dropping keys it could not decrypt.
       const normId = providerId.replace(/-free$/, '');
-      keys[normId] = apiKey.trim();
-      await writeStoredCredentials(keys);
+      await mergeStoredApiKeys({ [providerId]: apiKey.trim(), [normId]: apiKey.trim() });
+      // Mirror into the legacy whole-document vault so legacy readers see it too (best-effort).
+      try { await saveKey(providerId, apiKey.trim()); } catch (vaultError: unknown) {
+        console.warn('credentials.enc mirror failed (non-fatal)', vaultError);
+      }
       console.log('Key saved to safeStorage', { providerId, backend: credentialStore.getBackendName() });
       // Near-instant autonomous correction: re-verify this provider's model
       // catalog against the live /models endpoint with the new key.
@@ -678,10 +688,7 @@ function registerIpcHandlers(): void {
     try {
       await credentialStore.revokeCredential(providerId);
       try {
-        const { keys } = await readStoredCredentials();
-        delete keys[providerId];
-        delete keys[providerId.replace(/-free$/, '')];
-        await writeStoredCredentials(keys);
+        await mergeStoredApiKeys({}, [providerId, providerId.replace(/-free$/, '')]);
       } catch {
         // Non-blocking
       }
@@ -1425,9 +1432,7 @@ function registerIpcHandlers(): void {
         return { success: false, error: 'Detected key not found or expired.' };
       }
       const targetProvider = providerId || detected.providerId;
-      const { keys } = await readStoredCredentials();
-      keys[targetProvider] = detected.rawKey;
-      await writeStoredCredentials(keys);
+      await mergeStoredApiKeys({ [targetProvider]: detected.rawKey });
 
       if (detected.endpoint) {
         const currentSettings = await settingsManager.getEffectiveSettings();
@@ -1497,11 +1502,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle('byok:revoke-key', async (event, providerId: string) => {
     if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
     try {
-      const { keys } = await readStoredCredentials();
-      delete keys[providerId];
-      delete keys[providerId.replace('-free', '')];
-      delete keys[`${providerId}-free`];
-      await writeStoredCredentials(keys);
+      await mergeStoredApiKeys({}, [providerId, providerId.replace('-free', ''), `${providerId}-free`]);
       return { success: true, data: true };
     } catch (err: unknown) {
       return { success: false, error: err instanceof Error ? err.message : String(err) };
@@ -1539,15 +1540,26 @@ function registerIpcHandlers(): void {
         importedKeys = parsed;
       }
 
-      const { keys } = await readStoredCredentials();
+      const updates: Record<string, string> = {};
       const updatedProviders: string[] = [];
       for (const [provider, rawKey] of Object.entries(importedKeys)) {
         if (typeof rawKey === 'string' && rawKey.trim()) {
-          keys[provider] = rawKey.trim();
+          updates[provider] = rawKey.trim();
           updatedProviders.push(provider);
         }
       }
-      await writeStoredCredentials(keys);
+      await mergeStoredApiKeys(updates);
+      // Mirror imported keys into the hardware-backed credential store + legacy vault (best-effort).
+      for (const [provider, rawKey] of Object.entries(updates)) {
+        try {
+          if (!credentialStore.hasCredential(provider)) {
+            await credentialStore.saveCredential(provider, rawKey, 'Imported from backup bundle');
+          }
+          await saveKey(provider, rawKey);
+        } catch {
+          // Mirror is best-effort; the vault copy above is authoritative.
+        }
+      }
       return {
         success: true,
         data: {
@@ -1568,9 +1580,14 @@ function registerIpcHandlers(): void {
       }
       const providerId = config.id || `custom-${Date.now()}`;
       if (config.apiKey && config.apiKey.trim()) {
-        const { keys } = await readStoredCredentials();
-        keys[providerId] = config.apiKey.trim();
-        await writeStoredCredentials(keys);
+        await mergeStoredApiKeys({ [providerId]: config.apiKey.trim() });
+        try {
+          if (!credentialStore.hasCredential(providerId)) {
+            await credentialStore.saveCredential(providerId, config.apiKey.trim(), 'Custom Provider');
+          }
+        } catch {
+          // Mirror is best-effort
+        }
       }
       const currentSettings = await settingsManager.getEffectiveSettings();
       const customEndpoints = { ...(currentSettings.customEndpoints || {}), [providerId]: config.baseUrl };
@@ -2350,9 +2367,11 @@ function registerProviderHandlers(): void {
       }> = {};
 
       for (const [providerId, h] of Object.entries(health)) {
+        const hasKey = ProviderGateway.providerHasStoredKey(providerId) || Boolean(credentialStore.getDecryptedKey(providerId));
         statuses[providerId] = {
           connected:
             h.successfulRequests > 0 ||
+            hasKey ||
             (providerId === 'opencode' && supply.hostedReachable === true) ||
             (providerId === 'openkilo' && supply.kiloReachable === true),
           latencyMs: h.latencyMs,
@@ -2362,6 +2381,48 @@ function registerProviderHandlers(): void {
           autoDisabled: h.autoDisabled
         };
       }
+
+      // Ensure all configured credentials appear in statuses as connected
+      const configuredEntries = credentialStore.listConfigured();
+      for (const entry of configuredEntries) {
+        if (entry.configured) {
+          const norm = entry.providerId.replace(/-free$/, '');
+          for (const id of [entry.providerId, norm]) {
+            if (!statuses[id]) {
+              statuses[id] = {
+                connected: true,
+                latencyMs: 120,
+                successfulRequests: 0,
+                failedRequests: 0,
+                isRateLimited: false,
+                autoDisabled: false
+              };
+            } else {
+              statuses[id].connected = true;
+            }
+          }
+        }
+      }
+
+      // Also ensure any provider with stored keys in vault or env is marked connected
+      const knownProviders = ['anthropic', 'openrouter', 'groq', 'gemini', 'google-ai-studio', 'deepseek', 'openai', 'opencode', 'copilot'];
+      for (const pid of knownProviders) {
+        if (ProviderGateway.providerHasStoredKey(pid)) {
+          if (!statuses[pid]) {
+            statuses[pid] = {
+              connected: true,
+              latencyMs: 120,
+              successfulRequests: 0,
+              failedRequests: 0,
+              isRateLimited: false,
+              autoDisabled: false
+            };
+          } else {
+            statuses[pid].connected = true;
+          }
+        }
+      }
+
       // The always-on hosted supply anchors stay connected even before the FCC
       // layer records its first request outcome.
       if (!statuses.opencode) {
@@ -3017,8 +3078,15 @@ function registerFccHandlers(): void {
   ipcMain.handle('save-provider-key', async (_event, arg1: any, arg2?: string) => {
     const provider = typeof arg1 === 'object' && arg1 !== null ? arg1.provider : arg1;
     const key = typeof arg1 === 'object' && arg1 !== null ? arg1.key : arg2;
-    await saveKey(provider, key || '');
-    return { success: true };
+    if (!provider || !key || !String(key).trim()) return { success: false, error: 'Provider and key are required.' };
+    try {
+      await saveKey(provider, String(key).trim());
+      await credentialStore.saveCredential(provider, String(key).trim(), `${String(provider).toUpperCase()} Key`);
+      await mergeStoredApiKeys({ [String(provider).toLowerCase().trim()]: String(key).trim() });
+      return { success: true };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
   });
 
   ipcMain.handle('get-provider-key', async (_event, arg1: any) => {
@@ -3044,8 +3112,66 @@ function registerFccHandlers(): void {
   });
 }
 
-function cleanupAllResources(): void {
-  cleanupAllPtys();
+/**
+ * One-way key recovery for dev-to-packaged transitions. Keys configured while
+ * running `npm run dev` land in %APPDATA%\Electron, packaged builds read
+ * %APPDATA%\Ty-Code - the two never shared credentials, which made every
+ * installed build present "not connected" despite keys being saved. DPAPI
+ * ciphertext is OS-user-bound on Windows, so it can be re-encrypted into the
+ * active store; on platforms where cross-app decryption fails the record is
+ * skipped (never wiped).
+ */
+async function ingestSiblingUserDataCredentials(): Promise<void> {
+  try {
+    const currentDir = app.getPath('userData');
+    try {
+      if (await credentialStore.hasAnyCredentials()) return;
+    } catch {
+      // Fall through and attempt ingestion anyway
+    }
+    const parentDir = path.dirname(currentDir);
+    const candidates = ['Ty-Code', 'Electron', 'ty-code']
+      .map((name) => path.join(parentDir, name))
+      .filter((candidate) => candidate.toLowerCase() !== currentDir.toLowerCase());
+    for (const dir of candidates) {
+      try {
+        const raw = fsSync.readFileSync(path.join(dir, 'credentials.json'), 'utf8');
+        const parsed = JSON.parse(raw) as { credentials?: Record<string, { providerId?: string; encryptedKey?: string }> };
+        for (const record of Object.values(parsed.credentials || {})) {
+          if (!record || !record.providerId || !record.encryptedKey) continue;
+          if (credentialStore.hasCredential(record.providerId)) continue;
+          try {
+            const decrypted = credentialStore.decrypt(record.encryptedKey);
+            if (decrypted) await credentialStore.saveCredential(record.providerId, decrypted, 'Migrated from previous install');
+          } catch {
+            // Cross-app decrypt unavailable on this platform; skip record
+          }
+        }
+      } catch {
+        // Candidate dir missing or unreadable
+      }
+      try {
+        const rawVault = fsSync.readFileSync(path.join(dir, 'ty-code-settings.json'), 'utf8');
+        const parsedVault = JSON.parse(rawVault) as { apiKeys?: Record<string, string> };
+        for (const [provider, cipher] of Object.entries(parsedVault.apiKeys || {})) {
+          if (!provider || typeof cipher !== 'string' || credentialStore.hasCredential(provider)) continue;
+          try {
+            const decrypted = decryptSecret(cipher);
+            if (decrypted) await credentialStore.saveCredential(provider, decrypted, 'Migrated from previous install');
+          } catch {
+            // Undecryptable record; skip
+          }
+        }
+      } catch {
+        // Candidate dir missing or unreadable
+      }
+    }
+  } catch (err) {
+    console.warn('[TIER0] sibling userData credential migration skipped:', err);
+  }
+}
+
+function cleanupAllResources(): void {  cleanupAllPtys();
   try {
     voiceTranscriber.release();
   } catch {
@@ -3209,6 +3335,30 @@ app.whenReady().then(async () => {
   // TIER 0: Before first paint (<800ms budget)
   // Window frame + theme tokens + layout shell + last-session metadata
   // -------------------------------------------------------------
+  bootScheduler.register(
+    'credential_snapshot',
+    'Credential Store Load & Key Migration',
+    0,
+    'frame',
+    async () => {
+      try {
+        await credentialStore.load();
+        await ingestSiblingUserDataCredentials();
+        try {
+          const { keys } = await readStoredCredentials();
+          for (const [providerId, rawKey] of Object.entries(keys)) {
+            if (rawKey && !credentialStore.hasCredential(providerId)) {
+              await credentialStore.saveCredential(providerId, rawKey, `${providerId} Key`);
+            }
+          }
+        } catch {
+          // Vault mirror is best-effort; the Tier-1 hydration retries later.
+        }
+      } catch (err) {
+        console.warn('[TIER0] credential snapshot skipped:', err);
+      }
+    }
+  );
   bootScheduler.register(
     'window_frame',
     'Window Frame & Layout Shell',

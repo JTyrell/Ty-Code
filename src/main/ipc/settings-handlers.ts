@@ -13,6 +13,8 @@ import {
 } from '../../shared/types/settings';
 import { migrateProviderSettings } from '../services/orchestration/migration';
 import { settingsManager } from '../services/settings-manager';
+import { credentialStore } from '../services/auth/credential-store';
+import { getAllVaultKeys } from '../services/credential-vault';
 
 const getUserDataPath = (): string => {
   try {
@@ -100,14 +102,18 @@ async function removeLegacyBase64Credentials(filePath: string, parsed: Record<st
   return safeSettings;
 }
 
-export async function readStoredCredentials(): Promise<{ parsed: Record<string, unknown>; keys: Record<string, string> }> {
+export async function readStoredCredentials(): Promise<{
+  parsed: Record<string, unknown>;
+  keys: Record<string, string>;
+  encryptedKeys: Record<string, string>;
+}> {
   let raw: string | null = null;
   let sourcePath = SETTINGS_FILE;
   for (const filePath of [SETTINGS_FILE, LEGACY_SETTINGS_FILE]) {
     try { raw = await fs.readFile(filePath, 'utf8'); sourcePath = filePath; break; }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
   }
-  if (!raw) return { parsed: {}, keys: {} };
+  if (!raw) return { parsed: {}, keys: {}, encryptedKeys: {} };
   const value: unknown = JSON.parse(raw);
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Legacy settings document must be a JSON object.');
   let parsed = value as Record<string, unknown>;
@@ -115,11 +121,13 @@ export async function readStoredCredentials(): Promise<{ parsed: Record<string, 
     ? parsed.apiKeys as StoredCredentialSettings['apiKeys']
     : {};
   const keys: Record<string, string> = {};
+  const encryptedKeys: Record<string, string> = {};
   let migrateLegacyFallback = false;
   let removeLegacyFallback = false;
   const secureStorageAvailable = getCredentialStorageStatus().available;
   for (const [provider, secret] of Object.entries(storedKeys || {})) {
-    if (typeof secret !== 'string') continue;
+    if (typeof secret !== 'string' || !secret) continue;
+    encryptedKeys[provider] = secret;
     if (isLegacyBase64Fallback(secret)) {
       if (secureStorageAvailable) {
         migrateLegacyFallback = true;
@@ -129,14 +137,22 @@ export async function readStoredCredentials(): Promise<{ parsed: Record<string, 
       }
       continue;
     }
-    keys[provider] = decryptSecret(secret);
+    // Undecryptable records (e.g. ciphertext written by a different machine or
+    // app instance) are preserved verbatim: they look "disconnected" until the
+    // right storage backend is back, but they are NEVER silently erased.
+    try {
+      const decrypted = decryptSecret(secret);
+      if (decrypted) keys[provider] = decrypted;
+    } catch {
+      continue;
+    }
   }
   if (removeLegacyFallback) parsed = await removeLegacyBase64Credentials(sourcePath, parsed);
   if (migrateLegacyFallback) {
     if (sourcePath !== SETTINGS_FILE) parsed = await removeLegacyBase64Credentials(sourcePath, parsed);
-    await writeStoredCredentials(keys);
+    await mergeStoredApiKeys(keys);
   }
-  return { parsed, keys };
+  return { parsed, keys, encryptedKeys };
 }
 
 export async function writeStoredCredentials(apiKeys: Record<string, string>): Promise<void> {
@@ -155,12 +171,84 @@ export async function writeStoredCredentials(apiKeys: Record<string, string>): P
   }
 }
 
+/**
+ * Single source of truth for every vault write. Reads the raw ciphertext,
+ * preserves every record it cannot decrypt (never loses keys on transient
+ * storage failures), applies the requested updates/revoke set, and rewrites
+ * the document as { ...existing-siblings, apiKeys } so unknown fields
+ * (legacy settings data) survive every write.
+ */
+export async function mergeStoredApiKeys(
+  updates: Record<string, string>,
+  revokeProviders: string[] = []
+): Promise<Record<string, string>> {
+  const { parsed, keys, encryptedKeys } = await readStoredCredentials();
+  const mergedCipher: Record<string, string> = { ...encryptedKeys };
+
+  for (const provider of revokeProviders) {
+    delete mergedCipher[provider];
+  }
+
+  const resolvedKeys: Record<string, string> = { ...keys };
+  for (const [provider, rawKey] of Object.entries(updates)) {
+    const trimmed = typeof rawKey === 'string' ? rawKey.trim() : '';
+    if (!provider || !trimmed) continue;
+    mergedCipher[provider] = encryptSecret(trimmed);
+    resolvedKeys[provider] = trimmed;
+  }
+
+  const document = { ...parsed, apiKeys: mergedCipher };
+  await fs.mkdir(path.dirname(SETTINGS_FILE), { recursive: true });
+  const temporaryFile = `${SETTINGS_FILE}.${process.pid}.${Date.now()}.tmp`;
+  try {
+    await fs.writeFile(temporaryFile, JSON.stringify(document, null, 2), { encoding: 'utf8', mode: 0o600 });
+    await fs.rename(temporaryFile, SETTINGS_FILE);
+  } catch (error) {
+    await fs.rm(temporaryFile, { force: true }).catch(() => undefined);
+    throw error;
+  }
+  return resolvedKeys;
+}
+
 async function readEffectiveSettings(): Promise<ProviderSettings> {
   const { parsed, keys } = await readStoredCredentials();
-  const legacySettings = migrateProviderSettings({ ...parsed, apiKeys: keys });
+  // Union the hardware-backed credential store into the effective key map so
+  // main-internal consumers (agent gateway requests) resolve keys saved by ANY
+  // writer, even if the vault file never received that provider id.
+  const storeKeys = credentialStore.getAllDecryptedKeys();
+  let vaultKeys: Record<string, string> = {};
+  try {
+    vaultKeys = getAllVaultKeys();
+  } catch {}
+  const mergedApiKeys: Record<string, string> = { ...vaultKeys, ...storeKeys, ...keys };
+
+  // Expand aliases so any consumer looking up 'gemini', 'anthropic', etc. finds the key
+  const gKey = mergedApiKeys['google-ai-studio-free'] || mergedApiKeys['google-ai-studio'] || mergedApiKeys['gemini'];
+  if (gKey) {
+    if (!mergedApiKeys['gemini']) mergedApiKeys['gemini'] = gKey;
+    if (!mergedApiKeys['google-ai-studio']) mergedApiKeys['google-ai-studio'] = gKey;
+    if (!mergedApiKeys['google-ai-studio-free']) mergedApiKeys['google-ai-studio-free'] = gKey;
+  }
+  const aKey = mergedApiKeys['anthropic'] || mergedApiKeys['claude'] || mergedApiKeys['anthropic-claude'];
+  if (aKey) {
+    if (!mergedApiKeys['claude']) mergedApiKeys['claude'] = aKey;
+    if (!mergedApiKeys['anthropic']) mergedApiKeys['anthropic'] = aKey;
+  }
+  const cKey = mergedApiKeys['copilot-subscription'] || mergedApiKeys['github-copilot'] || mergedApiKeys['copilot'];
+  if (cKey) {
+    if (!mergedApiKeys['copilot']) mergedApiKeys['copilot'] = cKey;
+  }
+  if (mergedApiKeys['openrouter-free'] && !mergedApiKeys['openrouter']) {
+    mergedApiKeys['openrouter'] = mergedApiKeys['openrouter-free'];
+  }
+  if (mergedApiKeys['groq-free'] && !mergedApiKeys['groq']) {
+    mergedApiKeys['groq'] = mergedApiKeys['groq-free'];
+  }
+
+  const legacySettings = migrateProviderSettings({ ...parsed, apiKeys: mergedApiKeys });
   await settingsManager.initializeFromLegacySettings(legacySettings);
   const effective: SettingsData = await settingsManager.getEffectiveSettings();
-  return { ...effective, apiKeys: keys, apiKeysConfigured: undefined };
+  return { ...effective, apiKeys: mergedApiKeys, apiKeysConfigured: undefined };
 }
 
 /** Renderer-safe settings: API key values are never returned over IPC. */
@@ -172,8 +260,25 @@ export async function getCredentialStorageStatusResponse(): Promise<IpcResponse<
 export async function getSettings(): Promise<IpcResponse<ProviderSettings>> {
   try {
     const settings = await readEffectiveSettings();
+    // "Connected" is the union of every credential layer: vault file,
+    // hardware-backed credentialStore, and legacy vault. Deriving it from a
+    // single store previously made providers vanish after restarts when any
+    // one store was unreadable or younger than the others.
     const apiKeysConfigured: Partial<Record<ProviderType, boolean>> = {};
-    for (const [provider, key] of Object.entries(settings.apiKeys)) apiKeysConfigured[provider as ProviderType] = Boolean(key);
+    for (const [provider, key] of Object.entries(settings.apiKeys)) {
+      if (key) {
+        apiKeysConfigured[provider as ProviderType] = true;
+        const norm = provider.replace(/-free$/, '') as ProviderType;
+        apiKeysConfigured[norm] = true;
+      }
+    }
+    for (const entry of credentialStore.listConfigured()) {
+      if (entry.configured) {
+        apiKeysConfigured[entry.providerId as ProviderType] = true;
+        const norm = entry.providerId.replace(/-free$/, '') as ProviderType;
+        apiKeysConfigured[norm] = true;
+      }
+    }
     return { success: true, data: { ...settings, apiKeys: {}, apiKeysConfigured } };
   } catch (error: unknown) {
     return { success: false, error: error instanceof Error ? error.message : String(error) };
@@ -237,12 +342,7 @@ export async function saveSettings(updates: Partial<ProviderSettings>): Promise<
     await settingsManager.saveLayer('global', globalUpdates);
 
     if (apiKeys !== undefined) {
-      const { keys } = await readStoredCredentials();
-      const mergedKeys = { ...keys };
-      for (const [provider, rawKey] of Object.entries(apiKeys)) {
-        if (typeof rawKey === 'string' && rawKey.trim()) mergedKeys[provider as ProviderType] = rawKey.trim();
-      }
-      await writeStoredCredentials(mergedKeys);
+      await mergeStoredApiKeys(apiKeys as Record<string, string>);
     }
     return { success: true };
   } catch (error: unknown) {

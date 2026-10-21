@@ -146,8 +146,8 @@ export async function sendChatRequest(
   let key = apiKey;
   if (config.requiresKey && !key && config.providerId !== 'openkilo' && norm !== 'openkilo') {
     const keyCandidates = Array.from(new Set([
-      providerId,
-      config.providerId,
+      ...getProviderAliases(providerId),
+      ...getProviderAliases(config.providerId),
       norm,
       norm.replace(/-free$/, ''),
       config.providerId.replace(/-free$/, ''),
@@ -693,10 +693,37 @@ const HANDOFF_ENV_HINTS: Record<string, string[]> = {
   opencode: ['OPENCODE_API_KEY', 'OPENCODE_ZEN_API_KEY']
 };
 
+export function getProviderAliases(providerId: string): string[] {
+  const p = (providerId || '').toLowerCase().trim();
+  const norm = p.replace(/-free$/, '');
+  const aliases = new Set<string>([providerId, p, norm, `${norm}-free`]);
+  if (p.includes('google') || p === 'gemini') {
+    ['gemini', 'google-ai-studio', 'google-ai-studio-free', 'google'].forEach((a) => aliases.add(a));
+  }
+  if (p === 'anthropic' || p === 'claude' || p.includes('anthropic')) {
+    ['anthropic', 'claude', 'anthropic-claude', 'anthropic-claude-free'].forEach((a) => aliases.add(a));
+  }
+  if (p === 'copilot' || p.includes('copilot')) {
+    ['copilot', 'github-copilot', 'copilot-subscription'].forEach((a) => aliases.add(a));
+  }
+  if (p === 'openkilo' || p === 'kilo') {
+    ['openkilo', 'kilo'].forEach((a) => aliases.add(a));
+  }
+  if (p === 'openrouter') {
+    ['openrouter', 'openrouter-free'].forEach((a) => aliases.add(a));
+  }
+  if (p === 'groq') {
+    ['groq', 'groq-free'].forEach((a) => aliases.add(a));
+  }
+  if (p === 'opencode') {
+    ['opencode', 'opencode-zen'].forEach((a) => aliases.add(a));
+  }
+  return Array.from(aliases);
+}
+
 /** True only when THIS provider has credentials of its own (or is keyless). */
 export function providerHasOwnKey(providerId: string): boolean {
-  const norm = (providerId || '').toLowerCase().trim().replace(/-free$/, '');
-  const candidates = Array.from(new Set([providerId, norm, `${norm}-free`]));
+  const candidates = getProviderAliases(providerId);
   for (const candidate of candidates) {
     try {
       const stored = credentialStore.getDecryptedKey(candidate);
@@ -706,7 +733,7 @@ export function providerHasOwnKey(providerId: string): boolean {
     }
   }
   for (const candidate of candidates) {
-    for (const envVar of HANDOFF_ENV_HINTS[candidate] || HANDOFF_ENV_HINTS[norm] || []) {
+    for (const envVar of HANDOFF_ENV_HINTS[candidate] || []) {
       const envValue = process.env[envVar];
       if (envValue && envValue.trim().length > 4) return true;
     }
@@ -813,7 +840,14 @@ export class ProviderGateway {
     return configuredUrl;
   }
 
-  static getEndpoint(provider: ProviderType, customEndpoints: Partial<Record<ProviderType, string>> = {}): string {    if (customEndpoints && customEndpoints[provider]) return customEndpoints[provider]!;
+  static getEndpoint(provider: ProviderType, customEndpoints: Partial<Record<ProviderType, string>> = {}): string {
+    const rawCustom = customEndpoints && customEndpoints[provider];
+    if (rawCustom) {
+      if (rawCustom.includes('api.openkilo.com')) {
+        return 'https://api.kilo.ai/api/gateway';
+      }
+      return rawCustom;
+    }
     const freeProvider = freeProviderRegistry.getProvider(provider);
     if (freeProvider?.base_url && freeProvider.base_url !== 'auto') return freeProvider.base_url;
     const preconfigured = getPreconfiguredProvider(provider);
@@ -826,6 +860,9 @@ export class ProviderGateway {
       case 'opencode': return 'https://api.opencode.ai/v1';
       case 'groq': return 'https://api.groq.com/openai/v1';
       case 'deepseek': return 'https://api.deepseek.com';
+      case 'anthropic': return 'https://api.anthropic.com/v1';
+      case 'gemini':
+      case 'google-ai-studio': return 'https://generativelanguage.googleapis.com';
       case 'ollama': return 'http://localhost:11434/v1';
       case 'fcc-proxy': return 'http://localhost:8082/v1';
       default: return 'https://openrouter.ai/api/v1';
@@ -1041,6 +1078,23 @@ export class ProviderGateway {
     return providerHasOwnKey(providerId);
   }
 
+  static resolveStoredKey(providerId: string): string | null {
+    const candidates = getProviderAliases(providerId);
+    for (const candidate of candidates) {
+      try {
+        const stored = credentialStore.getDecryptedKey(candidate);
+        if (stored && stored.trim()) return stored.trim();
+      } catch {}
+    }
+    for (const candidate of candidates) {
+      for (const envVar of HANDOFF_ENV_HINTS[candidate] || []) {
+        const envValue = process.env[envVar];
+        if (envValue && envValue.trim().length > 4) return envValue.trim();
+      }
+    }
+    return null;
+  }
+
   /**
    * Test connection to a provider endpoint.
    * Sends a minimal 1-token completion request to verify credentials, or pings local server for zero-config.
@@ -1053,10 +1107,13 @@ export class ProviderGateway {
   ): Promise<TestConnectionResult> {
     const startTime = performance.now();
     const preconfigured = getPreconfiguredProvider(providerId);
-    const baseUrl = (customEndpoint || preconfigured?.baseUrl || this.getEndpoint(providerId as ProviderType, {})).replace(/\/+$/, '');
+    let baseUrl = (customEndpoint || preconfigured?.baseUrl || this.getEndpoint(providerId as ProviderType, {})).replace(/\/+$/, '');
+    if (baseUrl.includes('api.openkilo.com')) {
+      baseUrl = 'https://api.kilo.ai/api/gateway';
+    }
 
-    // Zero-config (e.g. Ollama) or Custom provider without required key: ping server / models endpoint
-    if (preconfigured?.setupType === 'zero_config' || providerId === 'ollama' || (providerId === 'custom' && !apiKey?.trim())) {
+    // Zero-config (e.g. Ollama, OpenKilo) or Custom provider without required key: ping server / models endpoint
+    if (preconfigured?.setupType === 'zero_config' || providerId === 'ollama' || providerId === 'openkilo' || (providerId === 'custom' && !apiKey?.trim())) {
       try {
         let modelsCount = 0;
         try {
@@ -1090,7 +1147,12 @@ export class ProviderGateway {
       }
     }
 
-    if (!apiKey?.trim()) {
+    let effectiveKey = (apiKey || '').trim();
+    if (!effectiveKey) {
+      effectiveKey = (this.resolveStoredKey(providerId) || '').trim();
+    }
+
+    if (!effectiveKey) {
       return {
         success: false,
         latencyMs: 0,
@@ -1098,12 +1160,82 @@ export class ProviderGateway {
       };
     }
 
+    const norm = (providerId || '').toLowerCase().trim();
+
+    // Native Anthropic test endpoint
+    if (norm === 'anthropic' || norm === 'claude' || norm === 'anthropic-claude') {
+      try {
+        const res = await fetch('https://api.anthropic.com/v1/models', {
+          headers: {
+            'x-api-key': effectiveKey,
+            'anthropic-version': '2023-06-01'
+          },
+          signal: AbortSignal.timeout(10_000)
+        });
+        const latencyMs = Math.max(1, Math.round(performance.now() - startTime));
+        if (res.ok) {
+          providerHealthMonitor.recordRequestOutcome(providerId, true, latencyMs);
+          return { success: true, latencyMs };
+        }
+        if (res.status === 401 || res.status === 403) {
+          providerHealthMonitor.recordRequestOutcome(providerId, false, latencyMs, 'Invalid Anthropic API key');
+          return { success: false, latencyMs, error: 'Invalid Anthropic API key' };
+        }
+        const msgRes = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'x-api-key': effectiveKey,
+            'anthropic-version': '2023-06-01',
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            model: modelId || 'claude-3-5-haiku-20241022',
+            messages: [{ role: 'user', content: 'test' }],
+            max_tokens: 1
+          }),
+          signal: AbortSignal.timeout(10_000)
+        });
+        const msgLatency = Math.max(1, Math.round(performance.now() - startTime));
+        if (msgRes.ok) {
+          providerHealthMonitor.recordRequestOutcome(providerId, true, msgLatency);
+          return { success: true, latencyMs: msgLatency };
+        }
+        const errBody = await msgRes.text().catch(() => '');
+        providerHealthMonitor.recordRequestOutcome(providerId, false, msgLatency, errBody);
+        return { success: false, latencyMs: msgLatency, error: msgRes.status === 401 ? 'Invalid Anthropic API key' : `HTTP ${msgRes.status}` };
+      } catch (err: unknown) {
+        const latencyMs = Math.round(performance.now() - startTime);
+        return { success: false, latencyMs, error: err instanceof Error ? err.message : String(err) };
+      }
+    }
+
     const isGoogle = this.isGoogleProvider(providerId);
+
+    // Native Google Gemini test endpoint
+    if (isGoogle) {
+      try {
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(effectiveKey)}`, {
+          signal: AbortSignal.timeout(10_000)
+        });
+        const latencyMs = Math.max(1, Math.round(performance.now() - startTime));
+        if (res.ok) {
+          providerHealthMonitor.recordRequestOutcome(providerId, true, latencyMs);
+          return { success: true, latencyMs };
+        }
+        if (res.status === 400 || res.status === 403) {
+          providerHealthMonitor.recordRequestOutcome(providerId, false, latencyMs, 'Invalid Google Gemini API key');
+          return { success: false, latencyMs, error: 'Invalid Google Gemini API key' };
+        }
+      } catch {
+        // Fall through to OpenAI-compatible test below
+      }
+    }
+
     const testModel = modelId || (isGoogle ? 'gemini-2.0-flash' : preconfigured?.defaultModel || (providerId === 'groq' ? 'llama-3.3-70b-versatile' : providerId.includes('openkilo') ? 'kilo-auto/free' : 'dots-studio/dots-3-note-preview:free'));
 
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey.trim()}`
+      'Authorization': `Bearer ${effectiveKey}`
     };
     if (providerId === 'openrouter') {
       headers['HTTP-Referer'] = 'https://ty-code.dev';
@@ -1251,17 +1383,46 @@ export class ProviderGateway {
       if (candidate.apiKey && candidate.apiKey.trim()) {
         apiKey = candidate.apiKey.trim();
       } else {
+        const aliases = getProviderAliases(providerId);
         // 1. Try secure credentialStore (RealConnect 2 Electron safeStorage)
-        const storedKey = credentialStore.getDecryptedKey(providerId);
-        if (storedKey && storedKey.trim()) {
-          apiKey = storedKey.trim();
-        } else {
-          // 2. Fall back to settings-handlers or settings.apiKeys
+        for (const alias of aliases) {
+          const storedKey = credentialStore.getDecryptedKey(alias);
+          if (storedKey && storedKey.trim()) {
+            apiKey = storedKey.trim();
+            break;
+          }
+        }
+        // 2. Try settings-handlers or settings.apiKeys
+        if (!apiKey) {
           try {
             const { keys } = await readStoredCredentials();
-            apiKey = keys[providerId] || keys[providerId.replace(/-free$/, '')] || settings.apiKeys?.[providerId] || '';
+            for (const alias of aliases) {
+              if (keys[alias] && keys[alias].trim()) {
+                apiKey = keys[alias].trim();
+                break;
+              }
+            }
           } catch {
-            apiKey = settings.apiKeys?.[providerId] || '';
+            // Non-blocking
+          }
+        }
+        // 3. Try legacy vault (credentials.enc)
+        if (!apiKey) {
+          for (const alias of aliases) {
+            const vaultKey = await getKey(alias).catch(() => undefined);
+            if (vaultKey && vaultKey.trim()) {
+              apiKey = vaultKey.trim();
+              break;
+            }
+          }
+        }
+        // 4. Try settings.apiKeys
+        if (!apiKey && settings.apiKeys) {
+          for (const alias of aliases) {
+            if (settings.apiKeys[alias as ProviderType]) {
+              apiKey = settings.apiKeys[alias as ProviderType]!;
+              break;
+            }
           }
         }
       }
@@ -1419,7 +1580,13 @@ export class ProviderGateway {
 
     let response: Response;
     const fetchStartTime = performance.now();
-    const gatewayUrl = `${baseUrl.replace(/\/+$/, '')}/chat/completions`;
+    let gatewayUrl = `${baseUrl.replace(/\/+$/, '')}/chat/completions`;
+    if (this.isGoogleProvider(providerId) || baseUrl.includes('generativelanguage.googleapis.com')) {
+      gatewayUrl = this.googleChatUrl(baseUrl)!;
+    }
+    if (gatewayUrl.includes('api.openkilo.com')) {
+      gatewayUrl = 'https://api.kilo.ai/api/gateway/chat/completions';
+    }
     console.log('Gateway: Fetching from', gatewayUrl, 'with model', modelId, 'headers', JSON.stringify({ ...headers, ...(headers.Authorization ? { Authorization: 'Bearer ***' } : {}) }));
     try {
       // Add 120s timeout for long streaming responses
@@ -1428,7 +1595,7 @@ export class ProviderGateway {
         ? AbortSignal.any([abortSignal, timeoutSignal])
         : timeoutSignal;
       
-      response = await fetch(`${baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+      response = await fetch(gatewayUrl, {
         method: 'POST',
         headers,
         body: JSON.stringify(body),

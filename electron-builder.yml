@@ -33,6 +33,9 @@ asar: true
 asarUnpack:
   - "**/node-pty/prebuilds/**"
   - "**/node-pty/build/Release/**"
+  # Worker threads and forked sandbox children must be real files on disk;
+  # worker_threads cannot load JS module code from inside the asar archive.
+  - "**/dist/main/workers/**"
 
 extraMetadata:
   main: dist/main/index.js

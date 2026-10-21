@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { useEffect } from 'react';
 
 export type AnalysisSeverity = 'critical' | 'high' | 'medium' | 'low' | 'info';
-export type AnalysisEngine = 'static' | 'dynamic' | 'arch';
+export type AnalysisEngine = 'static' | 'dynamic' | 'arch' | 'ai';
 export type AnalysisRole = 'dev' | 'qa' | 'pm';
 
 export interface AnalysisResult {

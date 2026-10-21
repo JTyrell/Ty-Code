@@ -58,7 +58,13 @@ function normalizeGlobal(value: unknown): SettingsData {
   const source = isRecord(raw.settings) ? raw.settings : raw;
   const defaults = SettingsSchema.parse(DEFAULT_SETTINGS);
   const endpointEntries = Object.entries(isRecord(source.customEndpoints) ? source.customEndpoints : {})
-    .filter(([key, endpoint]) => key.length > 0 && key.length <= 128 && typeof endpoint === 'string' && endpoint.length <= 4096);
+    .filter(([key, endpoint]) => key.length > 0 && key.length <= 128 && typeof endpoint === 'string' && endpoint.length <= 4096)
+    .map(([key, endpoint]) => {
+      if (typeof endpoint === 'string' && endpoint.includes('api.openkilo.com')) {
+        return [key, 'https://api.kilo.ai/api/gateway'];
+      }
+      return [key, endpoint];
+    });
   const categoryValues = [
     ProviderSettingsSchema.safeParse({
       activeProvider: typeof source.activeProvider === 'string' && source.activeProvider ? source.activeProvider : defaults.activeProvider,

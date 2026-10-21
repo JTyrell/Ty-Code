@@ -20,7 +20,7 @@ import type {
 } from '../../../shared/types/opencode-sync';
 import type { PreConfiguredProvider } from '../../../preload/types';
 import { opencodeFreeDetector } from './opencode-free-detector';
-import { readStoredCredentials, writeStoredCredentials } from '../../ipc/settings-handlers';
+import { mergeStoredApiKeys } from '../../ipc/settings-handlers';
 import { settingsManager } from '../settings-manager';
 import { getAllPreconfiguredProviders } from '../../config/provider-registry';
 
@@ -151,7 +151,7 @@ export class OpenCodeIntegration {
       };
     }
 
-    const { keys: storedKeys } = await readStoredCredentials();
+    const importedUpdates: Record<string, string> = {};
     const currentSettings = await settingsManager.getEffectiveSettings();
     const customEndpoints = { ...(currentSettings.customEndpoints || {}) };
 
@@ -164,7 +164,7 @@ export class OpenCodeIntegration {
       for (const [providerId, rawKey] of Object.entries(config.keys)) {
         if (typeof rawKey === 'string' && rawKey.trim()) {
           const cleanId = providerId.toLowerCase().replace(/_api_key$/i, '');
-          storedKeys[cleanId] = rawKey.trim();
+          importedUpdates[cleanId] = rawKey.trim();
           importedKeysCount++;
           if (!importedProviders.includes(cleanId)) importedProviders.push(cleanId);
         }
@@ -177,7 +177,7 @@ export class OpenCodeIntegration {
         if (typeof provData === 'object' && provData !== null) {
           const p = provData as OpenCodeProviderConfig;
           if (p.apiKey && typeof p.apiKey === 'string' && p.apiKey.trim()) {
-            storedKeys[id] = p.apiKey.trim();
+            importedUpdates[id] = p.apiKey.trim();
             importedKeysCount++;
           }
           if (p.baseUrl && typeof p.baseUrl === 'string' && p.baseUrl.trim()) {
@@ -196,7 +196,7 @@ export class OpenCodeIntegration {
       for (const [id, customProv] of Object.entries(config.customProviders)) {
         if (typeof customProv === 'object' && customProv !== null) {
           if (customProv.apiKey && typeof customProv.apiKey === 'string') {
-            storedKeys[id] = customProv.apiKey.trim();
+            importedUpdates[id] = customProv.apiKey.trim();
             importedKeysCount++;
           }
           if (customProv.baseUrl) {
@@ -211,7 +211,7 @@ export class OpenCodeIntegration {
     }
 
     // Persist encrypted keys and custom endpoints
-    await writeStoredCredentials(storedKeys);
+    await mergeStoredApiKeys(importedUpdates);
     await settingsManager.saveLayer('global', { customEndpoints });
 
     this.lastSyncedTimestamp = Date.now();

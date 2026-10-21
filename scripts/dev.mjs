@@ -15,6 +15,7 @@
 
 import { createServer } from 'vite';
 import * as esbuild from 'esbuild';
+import { buildDebuggerWorkers } from './build-debugger-workers.mjs';
 import { spawn } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -97,6 +98,9 @@ async function runDev() {
     outfile: path.resolve(rootDir, 'dist/preload/index.js'),
     sourcemap: true
   });
+
+  console.log('[Dev] Bundling debugger worker threads (static/arch/dynamic-sandbox)...');
+  await buildDebuggerWorkers(rootDir);
 
   console.log('[Dev] Launching Electron...');
   const electronProcess = spawn(electron, ['.'], {

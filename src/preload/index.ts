@@ -493,6 +493,13 @@ const api: ElectronAPI = {
       ipcRenderer.removeListener('debugger:state-synced', listener);
     };
   },
+  onDebuggerAiStream: (callback: (frame: any) => void) => {
+    const listener = (_event: unknown, frame: any) => callback(frame);
+    ipcRenderer.on('debugger:ai-stream', listener);
+    return () => {
+      ipcRenderer.removeListener('debugger:ai-stream', listener);
+    };
+  },
 
   // Phase 6.2: Seamless BYOK Interface & Key Management
   byokDetectKeys: () => ipcRenderer.invoke('byok:detect-keys'),
@@ -700,6 +707,7 @@ const api: ElectronAPI = {
   startVoiceRecording: () => ipcRenderer.invoke('voice:start-recording'),
   appendVoiceChunk: (sessionId: string, audioBase64: string) => ipcRenderer.invoke('voice:append-audio-chunk', sessionId, audioBase64),
   stopVoiceRecording: (sessionId: string) => ipcRenderer.invoke('voice:stop-and-transcribe', sessionId),
+  discardVoiceSession: (sessionId: string) => ipcRenderer.invoke('voice:discard-session', sessionId),
   releaseVoiceRecording: () => ipcRenderer.invoke('voice:release'),
   onAgentStateUpdate: (callback: (state: { todos: any[]; mode: string; iteration: number }) => void) => {
     const handler = (_event: any, state: any) => callback(state);

@@ -409,10 +409,16 @@ export function ChatInput({ input, inputRef, onInputChange, onKeyDown, onSubmit,
   }, [stopVoiceTranscription, startVoiceCapture]);
 
   useEffect(() => () => {
-    try {
-      void window.electronAPI?.releaseVoiceRecording?.();
-    } catch {
-      // Release is best-effort on unmount
+    // Keep the loaded whisper model resident: only discard an in-flight
+    // recording session. Full engine release is reserved for app shutdown.
+    const sessionId = micSessionRef.current;
+    micSessionRef.current = '';
+    if (sessionId) {
+      try {
+        void window.electronAPI?.discardVoiceSession?.(sessionId);
+      } catch {
+        // Session discard is best-effort on unmount
+      }
     }
     teardownVoiceCapture();
   }, [teardownVoiceCapture]);

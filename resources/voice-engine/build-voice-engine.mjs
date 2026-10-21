@@ -210,6 +210,15 @@ async function downloadModel() {
   log('Systran/faster-whisper-tiny.en model files ready');
 }
 
+function installTranscriber() {
+  const source = path.join(REPO_ROOT, 'src', 'main', 'services', 'voice-engine', 'transcriber.py');
+  if (!fs.existsSync(source)) {
+    throw new Error(`transcriber.py source is missing: ${source}`);
+  }
+  fs.copyFileSync(source, path.join(VOICE_DIR, 'transcriber.py'));
+  log('transcriber.py copied into the bundle layout');
+}
+
 async function main() {
   ensureDirs();
   const hostPython = findHostPython();
@@ -223,6 +232,7 @@ async function main() {
     }
     await installSitePackages(hostPython);
     await downloadModel();
+    installTranscriber();
     log('voice engine bundle complete. Ready for electron-builder packaging.');
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
