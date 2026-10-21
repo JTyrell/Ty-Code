@@ -1,0 +1,13 @@
+{
+  "name": "tycode-community-worker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Cloudflare Worker that distributes the Ty-Code Community Key from KV (TYCODE_KEYS) to Electron clients.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

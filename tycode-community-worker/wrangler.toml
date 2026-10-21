@@ -1,0 +1,15 @@
+name = "tycode-community-worker"
+main = "src/index.ts"
+compatibility_date = "2026-10-21"
+
+# nodejs_compat is NOT required: this worker only uses Web-standard APIs
+# (Request/Response/fetch + KV). Keep it off for a minimal attack surface.
+
+# KV binding - the community key secret lives ONLY in Cloudflare KV, never in
+# source code. Replace the placeholder with your real namespace ID from:
+#   npx wrangler kv namespace list
+# (you created the namespace TYCODE_KEYS and stored the key under the name
+#  'community_free_tier_key' in Step 1)
+[[kv_namespaces]]
+binding = "TYCODE_KEYS"
+id = "YOUR_KV_NAMESPACE_ID"

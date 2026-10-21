@@ -22,7 +22,7 @@ import { providerHealthMonitor } from '../services/providers/health-monitor';
 import { readStoredCredentials } from '../ipc/settings-handlers';
 import { keyDetector } from '../services/providers/key-detector';
 
-import { getKey, getCommunityKeyCached, hasCommunityKey, invalidateCommunityKey } from '../services/credential-vault';
+import { getKey, getCommunityKey, getCommunityKeyCached, hasCommunityKey, invalidateCommunityKey } from '../services/credential-vault';
 import { getVerifiedModels, type VerifiedModelConfig } from '../services/verified-models';
 import { fetchFCCCatalog, canFccServeCompletions } from '../services/fcc-catalog-sync';
 
@@ -316,11 +316,23 @@ export async function sendChatRequest(
 
     if (!key) {
       if (isTyCodeFree) {
-        // Zero-friction guarantee: when the Community Key is unavailable
-        // (offline first launch or backend down), degrade to the pure-
+        // Zero-friction guarantee: last-chance bootstrap of the Community Key
+        // (cache-first, 5s remote timeout). Only when the endpoint is down or
+        // offline-first-launch returns null do we degrade to the pure-
         // anonymous free pool instead of demanding user input.
-        console.warn('[GATEWAY] ty-code-free: Community Key unavailable; degrading to anonymous OpenKilo pool.');
-        config = { modelId, name: modelId, url: KILO_URL, requiresKey: false, providerId: 'openkilo' };
+        try {
+          const community = await getCommunityKey();
+          if (community) {
+            key = community;
+            console.log('[GATEWAY] ty-code-free: Community Key resolved via bootstrap.');
+          }
+        } catch (err) {
+          console.warn('[GATEWAY] Community Key bootstrap error:', err instanceof Error ? err.message : err);
+        }
+        if (!key) {
+          console.warn('[GATEWAY] ty-code-free: Community Key unavailable; degrading to anonymous OpenKilo pool.');
+          config = { modelId, name: modelId, url: KILO_URL, requiresKey: false, providerId: 'openkilo' };
+        }
       } else {
         // One-Key Premium bridge (ZeroFriction-2): premium direct provider has
         // no key of its own, but the user's single OpenRouter key unlocks the

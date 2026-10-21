@@ -116,48 +116,124 @@ export async function getKey(providerId: string): Promise<string | null> {
   // (plaintext lives only in memory). Overriding with the user's own
   // OpenRouter key happens through the alias checks above, never here.
   if (normProvider === 'ty-code-free' || normProvider === 'tycode-free') {
-    const community = await fetchCommunityKey();
+    const community = await getCommunityKey();
     if (community && community.trim()) return community.trim();
   }
 
   return null;
 }
 
-// ===== Community Key remote bootstrap (ZeroFriction-1) =====
+// ===== Community Key remote bootstrap (ZeroFriction, Cloudflare KV edition) ==
 //
-// Source of truth: https://api.tycode.dev/v1/community-key — a rotating,
-// IP-rate-limited distribution endpoint operated by the project. The client
-// boots the key once, stores it ONLY under safeStorage encryption inside the
-// existing credentials.enc vault, and afterwards works from the encrypted
-// cache with zero latency (and offline). No key is ever written to disk in
-// plaintext and no key is ever baked into source code. If the endpoint is
-// unreachable (first launch offline), callers recover via the pure-anonymous
-// free tiers (OpenKilo pool / local Ollama), so the user is never blocked.
+// Source of truth: https://api.tycode.dev/community-key - a Cloudflare Worker
+// (tycode-community-worker/) that serves the rotating key from the KV
+// namespace TYCODE_KEYS (stored under 'community_free_tier_key'). The client
+// boots the key once, stores it ONLY under safeStorage encryption through the
+// standard saveKey()/getKey() vault functions, and afterwards works from the
+// encrypted cache with zero latency (and offline). No key is ever written to
+// disk in plaintext and no key is ever baked into source code. If the
+// endpoint is unreachable (first launch offline), callers recover via the
+// pure-anonymous free tiers (OpenKilo pool / local Ollama), so the user is
+// never blocked.
 
-const COMMUNITY_KEY_ENDPOINT = 'https://api.tycode.dev/v1/community-key';
+const COMMUNITY_KEY_ENDPOINT = 'https://api.tycode.dev/community-key';
 const COMMUNITY_KEY_LABEL = 'tycode_community_key';
 let communityKeyCache: string | undefined;
 let communityKeyCachedAt = 0;
-let communityKeyInFlight: Promise<string | undefined> | null = null;
+// Horizon after which the cached Community Key is considered stale. When the
+// Worker payload carries a plausible expiresAt (7 days), revalidation waits
+// that long - keeping the client at roughly one endpoint hit per week per
+// user, which is what keeps the free-tier KV budget effectively unbounded.
+let communityKeyExpiresAt = 0;
+let communityKeyInFlight: Promise<string | null> | null = null;
 
-async function persistCommunityKey(key: string): Promise<void> {
-  if (!safeStorage.isEncryptionAvailable()) {
-    throw new Error('safeStorage encryption is not available');
-  }
-  const keys = loadAllKeys();
-  keys[COMMUNITY_KEY_LABEL] = key;
+/** Wire contract served by the Ty-Code community Cloudflare Worker. */
+interface CommunityKeyPayload {
+  key?: string;
+  token?: string;
+  provider?: string;
+  expiresAt?: number;
+}
 
-  const filePath = getCredentialsFilePath();
-  const dir = path.dirname(filePath);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
+/**
+ * Remote fetch portion of the Community Key bootstrap (5s strict timeout so a
+ * hanging backend can never stall the Main Process event loop). On success the
+ * key is persisted through the standard saveKey() path (safeStorage
+ * encryption + credentialStore sync) and mirrored into the memory cache.
+ */
+async function fetchCommunityKeyRemote(): Promise<string | null> {
+  try {
+    const response = await fetch(COMMUNITY_KEY_ENDPOINT, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      signal: AbortSignal.timeout(5000)
+    });
+    if (!response.ok) {
+      console.warn(`[VAULT] Community key bootstrap failed (HTTP ${response.status}).`);
+      return null;
+    }
+    const data = (await response.json().catch(() => undefined)) as CommunityKeyPayload | undefined;
+    const value = String(data?.key || data?.token || '').trim();
+    if (value.length < 8 || value.length > 256) {
+      console.warn('[VAULT] Community key payload was empty or malformed.');
+      return null;
+    }
+    await saveKey(COMMUNITY_KEY_LABEL, value);
+    communityKeyCache = value;
+    communityKeyCachedAt = Date.now();
+    const exp = Number(data?.expiresAt);
+    communityKeyExpiresAt =
+      Number.isFinite(exp) && exp > Date.now() && exp <= Date.now() + 30 * 86_400_000
+        ? exp
+        : Date.now() + 24 * 3_600_000;
+    console.log('[VAULT] Community key bootstrapped and encrypted via safeStorage.');
+    return value;
+  } catch (err) {
+    console.warn('[VAULT] Community bootstrap endpoint unreachable:', err instanceof Error ? err.message : err);
+    return null;
   }
-  fs.writeFileSync(filePath, safeStorage.encryptString(JSON.stringify(keys)));
+}
+
+/**
+ * Community Key resolution, cache-first (Remote Bootstrap with Local
+ * Encrypted Caching):
+ *   1. Encrypted local cache via getKey('tycode_community_key') - zero
+ *      latency, fully offline after the first successful launch.
+ *   2. Single HTTPS GET to the Worker endpoint (5s AbortSignal.timeout),
+ *      routed once for concurrent callers via the shared in-flight promise.
+ *   3. Persist with saveKey() (safeStorage DPAPI/Keychain/Secret Service).
+ *   4. Any failure (offline, endpoint down, malformed payload) resolves to
+ *      null - never throws, the app calls never crash on this path.
+ */
+export async function getCommunityKey(): Promise<string | null> {
+  try {
+    const cached = await getKey(COMMUNITY_KEY_LABEL);
+    if (cached && cached.trim()) {
+      const value = cached.trim();
+      if (communityKeyCache !== value) communityKeyCachedAt = Date.now();
+      communityKeyCache = value;
+      // Expired-at is module memory only (never persisted, so it cannot leak
+      // into any settings or credential UI). Across app restarts a restored
+      // cache gets a conservative 24h horizon: at worst one revalidation per
+      // user per day - still far inside the free-tier KV write budget.
+      if (!communityKeyExpiresAt) communityKeyExpiresAt = Date.now() + 24 * 3_600_000;
+      return value;
+    }
+  } catch {
+    // Vault read failure -> proceed to the remote fetch
+  }
+  if (communityKeyInFlight) return communityKeyInFlight;
+  communityKeyInFlight = fetchCommunityKeyRemote();
+  try {
+    return await communityKeyInFlight;
+  } finally {
+    communityKeyInFlight = null;
+  }
 }
 
 /**
  * Returns the Community Key synchronously when it is already known from
- * memory or the encrypted cache. Never performs network requests — used for
+ * memory or the encrypted cache. Never performs network requests - used for
  * cheap availability probes (router gating, failover eligibility).
  */
 export function getCommunityKeyCached(): string | undefined {
@@ -184,82 +260,52 @@ export function hasCommunityKey(): boolean {
  */
 export function warmUpCommunityKey(): void {
   if (getCommunityKeyCached()) return;
-  void fetchCommunityKey().catch(() => undefined);
+  void getCommunityKey().catch(() => undefined);
 }
 
 /**
  * Re-fetches the Community Key when the cached copy is older than maxAgeMs.
- * Supports the backend's key rotation: once a distributed key retires
- * (r/f (401/403 upstream), the next resolution path invalidates and this
- * routine restores a fresh key without waiting for the user's next session.
+ * Supports key rotation: once a distributed key retires upstream (401/403),
+ * the next resolution path invalidates and this routine restores a fresh key
+ * without waiting for the user's next session.
  */
 export async function revalidateCommunityKey(maxAgeMs: number): Promise<void> {
   const cached = getCommunityKeyCached();
-  if (cached && Date.now() - communityKeyCachedAt < maxAgeMs) return;
+  // Horizon: the server-provided expiry wins when known (weekly cadence);
+  // otherwise fall back to the caller's maxAgeMs (6h boot poll).
+  const horizon = communityKeyExpiresAt || communityKeyCachedAt + maxAgeMs;
+  if (cached && Date.now() < horizon) return;
   if (communityKeyInFlight) {
     await communityKeyInFlight.catch(() => undefined);
     return;
   }
+  // force=true bypasses the encrypted-cache short-circuit so a rotated key
+  // actually replaces the retired one
   await fetchCommunityKey(true).catch(() => undefined);
 }
 
 /**
- * Bootstraps the Community Key with a single HTTPS GET. Concurrent callers
- * share one in-flight request. On success the key is encrypted with
- * safeStorage and persisted for offline reuse. Returns undefined when the
- * endpoint is unreachable (offline) or returns an unusable payload.
- * Pass force=true to skip the cache short-circuit (rotation revalidation).
+ * Back-compat wrapper over getCommunityKey(): legacy call sites (credential
+ * alias chains) keep their boolean contract. force=true skips the cache
+ * short-circuit (rotation revalidation).
  */
 export async function fetchCommunityKey(force = false): Promise<string | undefined> {
-  if (!force) {
-    const cached = getCommunityKeyCached();
-    if (cached) return cached;
+  if (force) {
+    communityKeyCache = undefined;
+    return (await fetchCommunityKeyRemote()) || undefined;
   }
-  if (communityKeyInFlight) return communityKeyInFlight;
-
-  communityKeyInFlight = (async () => {
-    try {
-      const response = await fetch(COMMUNITY_KEY_ENDPOINT, {
-        method: 'GET',
-        headers: { Accept: 'application/json' },
-        signal: AbortSignal.timeout(10_000)
-      });
-      if (!response.ok) {
-        console.warn(`[VAULT] Community key bootstrap failed (HTTP ${response.status}).`);
-        return undefined;
-      }
-      const data = (await response.json().catch(() => undefined)) as { key?: string; token?: string } | undefined;
-      const value = String(data?.key || data?.token || '').trim();
-      if (value.length < 8 || value.length > 256) {
-        console.warn('[VAULT] Community key payload was empty or malformed.');
-        return undefined;
-      }
-      try {
-        await persistCommunityKey(value);
-      } catch (err) {
-        // Persistence failure must not block serving the key for this session
-        console.warn('[VAULT] Failed persisting community key:', err instanceof Error ? err.message : err);
-      }
-      communityKeyCache = value;
-      communityKeyCachedAt = Date.now();
-      console.log('[VAULT] Community key bootstrapped and encrypted in safeStorage cache.');
-      return value;
-    } catch (err) {
-      console.warn('[VAULT] Community bootstrap endpoint unreachable:', err instanceof Error ? err.message : err);
-      return undefined;
-    } finally {
-      communityKeyInFlight = null;
-    }
-  })();
-  return communityKeyInFlight;
+  return (await getCommunityKey()) || undefined;
 }
 
 /**
- * Drops the cached Community Key (memory + encrypted store) after a 401/403
- * so the next attempt bootstraps the current rotation.
+ * Drops the cached Community Key (memory + encrypted vault + credentialStore
+ * sync) after a 401/403 so the next attempt bootstraps the current rotation.
  */
 export function invalidateCommunityKey(): void {
   communityKeyCache = undefined;
+  communityKeyCachedAt = 0;
+  communityKeyExpiresAt = 0;
+  communityKeyCachedAt = 0;
   try {
     const keys = loadAllKeys();
     if (keys[COMMUNITY_KEY_LABEL]) {
@@ -273,6 +319,13 @@ export function invalidateCommunityKey(): void {
     }
   } catch {
     // Cache reset in memory is sufficient
+  }
+  try {
+    void import('./auth/credential-store').then(({ credentialStore }) =>
+      credentialStore.revokeCredential(COMMUNITY_KEY_LABEL).catch(() => undefined)
+    );
+  } catch {
+    // Memory reset above is sufficient for this session
   }
 }
 
