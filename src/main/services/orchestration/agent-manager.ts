@@ -171,6 +171,22 @@ export class OpenCodeAgentManager {
       basePrompt.push('', getEccRulesPrompt(isLocal));
     }
 
+    // Task scoping is mandatory for ALL providers (Harness Controller). This
+    // harness has no request_approval tool, so the report is produced as text
+    // and the user's approval is gated through the harness approval flow
+    // (mutating tools stay blocked until the user confirms).
+    basePrompt.push(
+      '',
+      '## TASK SCOPING PROTOCOL (MANDATORY)',
+      'You operate using a strict Plan-to-Execute workflow regardless of which provider is driving this agent.',
+      "Before executing any code, modifying files, or running terminal commands, generate a 'Ty-Code Task Scoping Report' with this exact structure:",
+      '1. **Complexity & Resource Gauge:** Category (Small/Medium/Large/Epic), Estimated Iterations (70 max), Token Impact (Low/Medium/High), Tool Risk (Low/Medium/High).',
+      '2. **Execution Plan (Phased):** Phase 1 (Discovery), Phase 2 (Implementation), Phase 3 (Verification).',
+      '3. **Failure Risks & Mitigations:** missing context or potential sandbox blocks.',
+      '4. **Checkpoint Proposal:** the specific step where you pause, update the Todo List, and wait for human review.',
+      'CRITICAL RULE: Do not begin executing the task. Output the report first and wait for explicit approval. Mutating tools (write, edit, patch, bash) remain gated by the harness until the user approves.'
+    );
+
     return basePrompt.join('\n');
   }
 

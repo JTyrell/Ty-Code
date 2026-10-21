@@ -22,8 +22,9 @@ import { providerHealthMonitor } from '../services/providers/health-monitor';
 import { readStoredCredentials } from '../ipc/settings-handlers';
 import { keyDetector } from '../services/providers/key-detector';
 
-import { getKey } from '../services/credential-vault';
+import { getKey, getCommunityKeyCached, hasCommunityKey, invalidateCommunityKey } from '../services/credential-vault';
 import { getVerifiedModels, type VerifiedModelConfig } from '../services/verified-models';
+import { fetchFCCCatalog, canFccServeCompletions } from '../services/fcc-catalog-sync';
 
 import { BrowserWindow } from 'electron';
 import { DEFAULT_PRESET_MODELS } from '../../preload/preset-models';
@@ -58,6 +59,54 @@ export interface GatewayToolCall {
 const FCC_SIDECAR_URL = 'http://localhost:8082/v1/chat/completions';
 const KILO_URL = 'https://api.kilo.ai/api/gateway/chat/completions';
 
+// ZeroFriction-2 One-Key Premium: premium direct providers transparently
+// re-route through OpenRouter's unified API when the provider's own native
+// key is absent but the user's OpenRouter key (the One Key) is stored.
+// Community Key material is deliberately excluded — the shared community
+// budget must never fund paid per-token premium traffic.
+const OPENROUTER_CHAT_URL = 'https://openrouter.ai/api/v1/chat/completions';
+
+const PREMIUM_MODEL_OPENROUTER_MAP: Record<string, { model: string; name: string }> = {
+  openai: { model: 'openai/gpt-4o', name: 'GPT-4o' },
+  anthropic: { model: 'anthropic/claude-3.5-sonnet', name: 'Claude 3.5 Sonnet' },
+  claude: { model: 'anthropic/claude-3.5-sonnet', name: 'Claude 3.5 Sonnet' },
+  alibaba: { model: 'qwen/qwen-max', name: 'Qwen Max' },
+  qwen: { model: 'qwen/qwen-max', name: 'Qwen Max' },
+  deepseek: { model: 'deepseek/deepseek-chat', name: 'DeepSeek V3' }
+};
+
+/**
+ * Layered OpenRouter key resolution (credentialStore -> settings vault ->
+ * legacy vault -> env). Used by the One-Key Premium bridge in sendChatRequest.
+ */
+async function resolveOpenRouterKey(): Promise<string | undefined> {
+  for (const candidate of ['openrouter', 'openrouter-free']) {
+    try {
+      const stored = credentialStore.getDecryptedKey(candidate);
+      if (stored && stored.trim()) return stored.trim();
+    } catch {
+      // Vault read failure - continue to next layer
+    }
+  }
+  try {
+    const { readStoredCredentials } = await import('../ipc/settings-handlers');
+    const { keys } = await readStoredCredentials();
+    for (const candidate of ['openrouter', 'openrouter-free']) {
+      const value = keys[candidate];
+      if (value && value.trim()) return value.trim();
+    }
+  } catch {
+    // Non-blocking: fall through to legacy vault
+  }
+  for (const candidate of ['openrouter', 'openrouter-free']) {
+    const vaultKey = await getKey(candidate).catch(() => undefined);
+    if (vaultKey && vaultKey.trim()) return vaultKey.trim();
+  }
+  const envValue = process.env.OPENROUTER_API_KEY;
+  if (envValue && envValue.trim().length > 4) return envValue.trim();
+  return undefined;
+}
+
 export async function sendChatRequest(
   providerId: string,
   modelId: string,
@@ -76,10 +125,27 @@ export async function sendChatRequest(
   const norm = (providerId || '').toLowerCase().trim().replace(/-free$/, '');
   const isKilo = norm === 'kilo' || norm === 'openkilo';
   const isCopilot = norm === 'copilot' || norm === 'github-copilot' || norm === 'copilot-subscription';
-  // FCC Free Tier: the 'anthropic-claude-free' binding normalizes to
+  // Ty-Code Free (ZeroFriction-1): the zero-friction community tier. Requests
+  // route to OpenRouter and authenticate with the rotating Community Key or
+  // the user's own OpenRouter key; no user input is ever required.
+  const isTyCodeFree = norm === 'ty-code-free' || (providerId || '').toLowerCase().trim() === 'ty-code-free';
+  // FCC Free Tier: the 'fcc' provider id hydrates the FCC supply layer through
+  // the dynamic catalog; the 'anthropic-claude-free' binding normalizes to
   // 'anthropic-claude' (single -free suffix strip), and the provider registry
-  // also exposes the raw 'fcc-proxy' id. Both route through the local sidecar.
-  const isFccProxy = norm === 'anthropic-claude' || norm === 'fcc-proxy' || norm === 'fccproxy' || providerId === 'fcc-proxy';
+  // also exposes the raw 'fcc-proxy' id. All three route through the FCC layer.
+  const isFcc = norm === 'fcc' || (providerId || '').toLowerCase().trim() === 'fcc';
+  const isFccProxy =
+    isFcc ||
+    norm === 'anthropic-claude' ||
+    norm === 'fcc-proxy' ||
+    norm === 'fccproxy' ||
+    providerId === 'fcc-proxy';
+
+  // One-Key Premium (ZeroFriction-2): when a premium direct request is bridged
+  // to OpenRouter, the wire payload must use OpenRouter's namespaced model id
+  // (e.g. "openai/gpt-4o") rather than the provider-native id. Typed as
+  // undefined until a bridge actually rewrites the request.
+  let bridgeRequestModel: string | undefined;
 
   // 1. Fetch verified models catalog and find requested model configuration
   const allModels = await getVerifiedModels();
@@ -98,21 +164,35 @@ export async function sendChatRequest(
   // Gracefully fallback to standard endpoints if model is not directly listed
     if (!config) {
       if (isFccProxy) {
-        // FCC Auto routing, tier 1: real FCC sidecar when the genuine binary is
-        // up. Otherwise gracefully degrade: tier 2 = any provider that owns its
-        // key (never borrowed), tier 3 = the anonymous OpenKilo pool.
-        const sidecarRunning = (() => {
+        // FCC Auto routing. Tier 0: a live entry from the dynamic FCC catalog
+        // (sidecar, supply facade, or connected subscription) while a genuine
+        // free-claude-code binary can serve completions. Tier 1: the FCC
+        // sidecar itself (genuine binary up). Then graceful degradation:
+        // tier 2 = any provider that owns its key (never borrowed), tier 3 =
+        // the anonymous OpenKilo pool.
+        const canServe = (() => {
           try {
-            const status = fccManager.getStatus();
-            return Boolean(status.running) || fccManager.isGenuineBinaryRunning();
+            return canFccServeCompletions();
           } catch {
             return false;
           }
         })();
-        console.log(`[FCC][AUTO] provider=${providerId} model=${modelId} sidecar=${sidecarRunning ? 'running' : 'down'}`);
-        if (sidecarRunning) {
-          console.log(`[FCC][AUTO] Tier 1 — routing through FCC sidecar at ${FCC_SIDECAR_URL}`);
-          config = { modelId, name: 'FCC Free Tier', url: FCC_SIDECAR_URL, requiresKey: false, providerId: 'anthropic-claude-free' };
+        console.log(`[FCC][AUTO] provider=${providerId} model=${modelId} genuineBinary=${canServe ? 'up' : 'down'}`);
+        if (canServe) {
+          let fccEntry: VerifiedModelConfig | undefined;
+          try {
+            const fccCatalog = await fetchFCCCatalog();
+            fccEntry = fccCatalog.find((m) => (m.modelId || '').toLowerCase() === (modelId || '').toLowerCase());
+          } catch {
+            fccEntry = undefined;
+          }
+          if (fccEntry) {
+            console.log(`[FCC][AUTO] Tier 0 — dynamic FCC catalog entry ${fccEntry.providerId} (${fccEntry.modelId})`);
+            config = fccEntry;
+          } else {
+            console.log(`[FCC][AUTO] Tier 1 — routing through FCC sidecar at ${FCC_SIDECAR_URL}`);
+            config = { modelId, name: 'FCC Free Tier', url: FCC_SIDECAR_URL, requiresKey: false, providerId: 'anthropic-claude-free' };
+          }
         } else {
           const nativeFallback = pickHandoffCandidate(allModels, 'fcc-proxy', modelId);
           if (nativeFallback) {
@@ -125,6 +205,8 @@ export async function sendChatRequest(
         }
       } else if (norm === 'openrouter') {
         config = { modelId, name: modelId, url: 'https://openrouter.ai/api/v1/chat/completions', requiresKey: true, providerId: 'openrouter' };
+      } else if (norm === 'ty-code-free') {
+        config = { modelId, name: modelId, url: 'https://openrouter.ai/api/v1/chat/completions', requiresKey: true, providerId: 'ty-code-free' };
       } else if (norm === 'groq') {
         config = { modelId, name: modelId, url: 'https://api.groq.com/openai/v1/chat/completions', requiresKey: true, providerId: 'groq' };
       } else if (norm === 'anthropic' || norm === 'claude') {
@@ -135,9 +217,30 @@ export async function sendChatRequest(
       config = { modelId, name: modelId, url: 'https://api.kilo.ai/api/gateway/chat/completions', requiresKey: false, providerId: 'openkilo' };
     } else if (isCopilot) {
       config = { modelId, name: modelId, url: 'https://api.githubcopilot.com/chat/completions', requiresKey: true, providerId: 'copilot' };
+    } else if (norm === 'openai') {
+      config = { modelId, name: modelId, url: 'https://api.openai.com/v1/chat/completions', requiresKey: true, providerId: 'openai' };
+    } else if (norm === 'deepseek') {
+      config = { modelId, name: modelId, url: 'https://api.deepseek.com/chat/completions', requiresKey: true, providerId: 'deepseek' };
+    } else if (norm === 'qwen' || norm === 'alibaba') {
+      config = { modelId, name: modelId, url: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions', requiresKey: true, providerId: 'alibaba' };
     } else {
       throw new Error('Unverified model or provider requested');
     }
+  }
+
+  // FCC hybrid guard: 'fcc' entries from the unified feed point at the sidecar,
+  // whose embedded stub cannot serve completions without a genuine
+  // free-claude-code binary. When the sidecar URL is not user-overridden and
+  // the binary is down, re-route through the FCC auto tiers instead of failing.
+  const sidecarUrlPattern = /\b(127\.0\.0\.1|localhost):8082\b/;
+  if (
+    (config.providerId === 'fcc' || config.providerId === 'fcc-proxy') &&
+    sidecarUrlPattern.test(config.url) &&
+    !canFccServeCompletions()
+  ) {
+    console.log(`[FCC][HYBRID] FCC route unavailable for "${modelId}"; applying FCC auto-tier fallback`);
+    const nativeFallback = pickHandoffCandidate(allModels, 'fcc-proxy', modelId);
+    config = nativeFallback || { modelId, name: modelId, url: KILO_URL, requiresKey: false, providerId: 'openkilo' };
   }
 
   // 2. Read key from secure vault at request time
@@ -195,6 +298,7 @@ export async function sendChatRequest(
         gemini: ['GEMINI_API_KEY', 'GOOGLE_API_KEY'],
         deepseek: ['DEEPSEEK_API_KEY'],
         copilot: ['GITHUB_COPILOT_TOKEN', 'COPILOT_TOKEN'],
+        chatgpt: ['CHATGPT_TOKEN', 'CHATGPT_API_KEY'],
         opencode: ['OPENCODE_API_KEY', 'OPENCODE_ZEN_API_KEY']
       };
       for (const candidate of keyCandidates) {
@@ -211,11 +315,44 @@ export async function sendChatRequest(
     }
 
     if (!key) {
-      throw new Error(
-        `[GATEWAY] CONFIG_MISSING: No API key configured for "${providerId}" in any credential layer. Re-save your ${providerId} key in Settings.`
-      );
+      if (isTyCodeFree) {
+        // Zero-friction guarantee: when the Community Key is unavailable
+        // (offline first launch or backend down), degrade to the pure-
+        // anonymous free pool instead of demanding user input.
+        console.warn('[GATEWAY] ty-code-free: Community Key unavailable; degrading to anonymous OpenKilo pool.');
+        config = { modelId, name: modelId, url: KILO_URL, requiresKey: false, providerId: 'openkilo' };
+      } else {
+        // One-Key Premium bridge (ZeroFriction-2): premium direct provider has
+        // no key of its own, but the user's single OpenRouter key unlocks the
+        // whole premium lineup. Re-route to OpenRouter's unified API with the
+        // namespaced model id instead of demanding another key.
+        const premiumRoute = PREMIUM_MODEL_OPENROUTER_MAP[norm];
+        if (premiumRoute) {
+          const openRouterKey = await resolveOpenRouterKey();
+          if (openRouterKey) {
+            console.log(`[GATEWAY][ONE-KEY] ${norm}/${modelId} has no native key; bridging to OpenRouter as ${premiumRoute.model}`);
+            config = {
+              modelId: premiumRoute.model,
+              name: premiumRoute.name,
+              url: OPENROUTER_CHAT_URL,
+              requiresKey: true,
+              providerId: 'openrouter'
+            };
+            bridgeRequestModel = premiumRoute.model;
+            key = openRouterKey;
+          }
+        }
+        if (!key) {
+          throw new Error(
+            `[GATEWAY] CONFIG_MISSING: No API key configured for "${providerId}" in any credential layer. Re-save your ${providerId} key in Settings.`
+          );
+        }
+      }
     }
   }
+
+  // Whether the resolved key came from the Community Key card (rotating).
+  const usedCommunityKey = isTyCodeFree && Boolean(key && key === getCommunityKeyCached());
 
   // 3. Construct headers
   const headers: Record<string, string> = {
@@ -236,7 +373,7 @@ export async function sendChatRequest(
     headers['Editor-Version'] = 'vscode/1.85.0';
     headers['Editor-Plugin-Version'] = 'copilot-chat/0.11.1';
     headers['Copilot-Integration-Id'] = 'vscode-chat';
-  } else if (normP === 'openrouter') {
+  } else if (normP === 'openrouter' || normP === 'ty-code-free') {
     headers['HTTP-Referer'] = 'https://github.com/Alishahryar1/free-claude-code';
     headers['X-Title'] = 'Ty-Code';
   }
@@ -322,7 +459,7 @@ export async function sendChatRequest(
     }
   } else {
     payload = {
-      model: isCopilot ? requestModel : modelId,
+      model: isCopilot ? requestModel : bridgeRequestModel || modelId,
       // Reasoning models (Kilo Auto / DeepSeek R1-style) require every earlier
       // assistant turn to carry the reasoning returned with it.
       messages: formattedMessages.map((m: any) => {
@@ -348,6 +485,11 @@ export async function sendChatRequest(
 
   let fullText = '';
   let fullThought = '';
+
+  // FCC stream normalization inputs: lines the OpenAI SSE parser could not
+  // categorize are kept aside so non-SSE FCC flavors (NDJSON, bare JSON,
+  // plain text) can be salvaged into a token stream after the read loop.
+  const strayNonSseLines: string[] = [];
 
   // Structured tool_calls accumulator (OpenAI delta.tool_calls fragments and
   // Anthropic tool_use content blocks both land here).
@@ -396,6 +538,12 @@ export async function sendChatRequest(
     // fails over to the next eligible free provider instead of hard-failing,
     // so a revoked/expired key never blocks a free conversation.
     const shouldHandoff = response.status === 429 || response.status >= 500 || response.status === 401 || response.status === 403 || (response.status === 404 && /:free|\/free/.test(requestModel || modelId));
+    if (shouldHandoff && usedCommunityKey && (response.status === 401 || response.status === 403)) {
+      // The rotating Community Key was rejected: drop the cached card so the
+      // next attempt re-bootstraps the current rotation, then fail over.
+      console.warn('[GATEWAY] ty-code-free: Community Key rejected; invalidating cache for re-bootstrap.');
+      invalidateCommunityKey();
+    }
     if (shouldHandoff) {
       if (handoffCount < 2) {
         console.log(`[GATEWAY] Provider failed (${response.status}). Handing off to next provider (Attempt ${handoffCount + 1}/2).`);
@@ -584,6 +732,8 @@ export async function sendChatRequest(
           } catch (parseErr) {
             console.warn('[GATEWAY] SSE chunk parse skipped:', parseErr instanceof Error ? parseErr.message : parseErr);
           }
+        } else {
+          strayNonSseLines.push(trimmed);
         }
       }
     }
@@ -606,6 +756,67 @@ export async function sendChatRequest(
               if (onToken) onToken(token);
             }
           } catch {}
+        }
+      }
+    }
+
+    // FCC responses are not always OpenAI SSE: genuine free-claude-code
+    // flavors may stream NDJSON, answer with a bare JSON object, or emit
+    // plain text. If no OpenAI token was ever decoded, salvage the stray
+    // payload into the onToken/onReasoning stream so agent-engine keeps a
+    // stable token flow (AgentStreamChunk { type: 'token', content }).
+    if (fullText === '' && strayNonSseLines.length > 0) {
+      const salvageable = strayNonSseLines.filter(
+        (l) => !/^(event|id|retry):/i.test(l) && l !== '[DONE]'
+      );
+      if (salvageable.length > 0) {
+        const blobText = salvageable.join('\n');
+        let salvagedContent = '';
+        let salvagedThought = '';
+        let structured = false;
+        try {
+          const blob = JSON.parse(blobText) as any;
+          const candidate = blob?.choices?.[0]?.message?.content ?? blob?.choices?.[0]?.delta?.content ?? blob?.content?.[0]?.text;
+          if (typeof candidate === 'string') {
+            salvagedContent = candidate;
+            structured = true;
+          }
+          const blobThought = blob?.choices?.[0]?.delta?.reasoning_content ?? blob?.choices?.[0]?.delta?.reasoning;
+          if (typeof blobThought === 'string' && blobThought) salvagedThought = blobThought;
+        } catch {
+          // Not a single JSON blob — try per-line NDJSON, then fall back to
+          // the raw text stream so plain prose is never swallowed.
+          const ndjsonPieces: string[] = [];
+          const plainPieces: string[] = [];
+          for (const line of salvageable) {
+            if (line.startsWith('{')) {
+              try {
+                const json = JSON.parse(line) as any;
+                const piece = json?.choices?.[0]?.delta?.content ?? json?.choices?.[0]?.message?.content ?? json?.delta?.text;
+                if (typeof piece === 'string' && piece) {
+                  ndjsonPieces.push(piece);
+                  structured = true;
+                }
+                const pieceThought = json?.choices?.[0]?.delta?.reasoning_content ?? json?.choices?.[0]?.delta?.reasoning;
+                if (typeof pieceThought === 'string' && pieceThought) salvagedThought += pieceThought;
+              } catch {
+                plainPieces.push(line);
+              }
+            } else {
+              plainPieces.push(line);
+            }
+          }
+          if (ndjsonPieces.length > 0) salvagedContent = [...(salvagedContent ? [salvagedContent] : []), ...ndjsonPieces].join('');
+          if (!structured) salvagedContent = [...ndjsonPieces, ...plainPieces].join(plainPieces.length > 0 && ndjsonPieces.length > 0 ? '\n' : '').trim();
+        }
+        if (salvagedContent.trim()) {
+          fullText = salvagedContent;
+          if (salvagedThought) {
+            fullThought += salvagedThought;
+            if (onReasoning) onReasoning(salvagedThought);
+          }
+          console.log(`[GATEWAY] FCC non-SSE stream normalized (${salvageable.length} line(s), structured=${structured}).`);
+          if (onToken) onToken(salvagedContent);
         }
       }
     }
@@ -706,8 +917,14 @@ export function getProviderAliases(providerId: string): string[] {
   if (p === 'copilot' || p.includes('copilot')) {
     ['copilot', 'github-copilot', 'copilot-subscription'].forEach((a) => aliases.add(a));
   }
+  if (p === 'chatgpt' || p.includes('chatgpt')) {
+    ['chatgpt', 'chatgpt-subscription'].forEach((a) => aliases.add(a));
+  }
   if (p === 'openkilo' || p === 'kilo') {
     ['openkilo', 'kilo'].forEach((a) => aliases.add(a));
+  }
+  if (p === 'ty-code-free' || p === 'tycode-free') {
+    ['ty-code-free', 'openrouter', 'openrouter-free'].forEach((a) => aliases.add(a));
   }
   if (p === 'openrouter') {
     ['openrouter', 'openrouter-free'].forEach((a) => aliases.add(a));
@@ -723,6 +940,12 @@ export function getProviderAliases(providerId: string): string[] {
 
 /** True only when THIS provider has credentials of its own (or is keyless). */
 export function providerHasOwnKey(providerId: string): boolean {
+  const p = (providerId || '').toLowerCase().trim();
+  // The Ty-Code Free community tier counts as available when the rotating
+  // Community Key card exists in the encrypted cache (zero user input).
+  if (p === 'ty-code-free' || p === 'tycode-free') {
+    if (hasCommunityKey()) return true;
+  }
   const candidates = getProviderAliases(providerId);
   for (const candidate of candidates) {
     try {
@@ -732,6 +955,13 @@ export function providerHasOwnKey(providerId: string): boolean {
       // Vault read failure — treat as no key
     }
   }
+  try {
+    const { getAllVaultKeys } = require('../services/credential-vault');
+    const vKeys = getAllVaultKeys();
+    for (const candidate of candidates) {
+      if (vKeys[candidate] && vKeys[candidate].trim()) return true;
+    }
+  } catch {}
   for (const candidate of candidates) {
     for (const envVar of HANDOFF_ENV_HINTS[candidate] || []) {
       const envValue = process.env[envVar];
@@ -856,6 +1086,8 @@ export class ProviderGateway {
     if (registered?.defaultEndpoint) return registered.defaultEndpoint;
     switch (provider) {
       case 'openrouter': return 'https://openrouter.ai/api/v1';
+      case 'ty-code-free':
+      case 'tycode-free': return 'https://openrouter.ai/api/v1';
       case 'openkilo': return 'https://api.kilo.ai/api/gateway';
       case 'opencode': return 'https://api.opencode.ai/v1';
       case 'groq': return 'https://api.groq.com/openai/v1';
@@ -1086,6 +1318,13 @@ export class ProviderGateway {
         if (stored && stored.trim()) return stored.trim();
       } catch {}
     }
+    try {
+      const { getAllVaultKeys } = require('../services/credential-vault');
+      const vKeys = getAllVaultKeys();
+      for (const candidate of candidates) {
+        if (vKeys[candidate] && vKeys[candidate].trim()) return vKeys[candidate].trim();
+      }
+    } catch {}
     for (const candidate of candidates) {
       for (const envVar of HANDOFF_ENV_HINTS[candidate] || []) {
         const envValue = process.env[envVar];
@@ -1150,6 +1389,19 @@ export class ProviderGateway {
     let effectiveKey = (apiKey || '').trim();
     if (!effectiveKey) {
       effectiveKey = (this.resolveStoredKey(providerId) || '').trim();
+    }
+    if (!effectiveKey) {
+      try {
+        const { readStoredCredentials } = await import('../ipc/settings-handlers');
+        const { keys } = await readStoredCredentials();
+        const candidates = getProviderAliases(providerId);
+        for (const cand of candidates) {
+          if (keys[cand] && keys[cand].trim()) {
+            effectiveKey = keys[cand].trim();
+            break;
+          }
+        }
+      } catch {}
     }
 
     if (!effectiveKey) {

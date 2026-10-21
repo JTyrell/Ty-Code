@@ -384,7 +384,17 @@ export const SettingsModal: React.FC = () => {
         statuses[p.id] = { status: 'disconnected' };
       }
     }
-    setProviderStatuses((prev) => ({ ...statuses, ...prev }));
+    setProviderStatuses((prev) => {
+      const merged: Record<string, ProviderStatusInfo> = { ...prev };
+      for (const [id, s] of Object.entries(statuses)) {
+        if (s.status === 'connected') {
+          merged[id] = { status: 'connected', latencyMs: prev[id]?.latencyMs };
+        } else if (!merged[id]) {
+          merged[id] = s;
+        }
+      }
+      return merged;
+    });
 
     if (settings.activeProvider && registryProviders.some((p) => p.id === settings.activeProvider)) {
       setSelectedGridProviderId(settings.activeProvider);
@@ -393,6 +403,25 @@ export const SettingsModal: React.FC = () => {
       setIsCustomSelected(true);
     }
   }, [settings, registryProviders, isSettingsOpen]);
+
+  // Listen to OAuth status events in SettingsModal to keep provider statuses fresh
+  useEffect(() => {
+    if (!window.electronAPI?.onOAuthStatusChanged) return;
+    const unsub = window.electronAPI.onOAuthStatusChanged((statusMap: Record<string, any>) => {
+      setProviderStatuses((prev) => {
+        const next = { ...prev };
+        for (const [id, s] of Object.entries(statusMap)) {
+          if (s?.connected) {
+            next[id] = { status: 'connected' };
+          }
+        }
+        return next;
+      });
+    });
+    return () => {
+      unsub();
+    };
+  }, []);
 
   useEffect(() => {
     if (!isSettingsOpen) return;

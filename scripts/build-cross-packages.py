@@ -1,438 +1,337 @@
-import os
-import sys
-import shutil
-import tarfile
-import zipfile
+#!/usr/bin/env python3
+"""Ty-Code staged rebuild orchestrator.
+
+Rebuilds the application bundles, then packages every platform version in
+sequential electron-builder stages (Windows, macOS, Linux), regenerates the
+release manifests (SHA256SUMS.txt, release.json), and repopulates dist/ with
+the most recently built artifacts for ALL platforms - not just the Windows
+variants.
+
+Usage:
+  python scripts/build-cross-packages.py
+  python scripts/build-cross-packages.py --stage bundle --stage windows
+"""
+import argparse
 import hashlib
-import plistlib
-import struct
-import io
-import urllib.request
+import json
+import os
+import shutil
+import subprocess
+import sys
+import time
+import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-DIST_RELEASE = ROOT / "dist-release"
 DIST = ROOT / "dist"
-LINUX_UNPACKED = DIST_RELEASE / "linux-unpacked"
-WIN_UNPACKED = DIST_RELEASE / "win-unpacked"
+DIST_RELEASE = ROOT / "dist-release"
 BUILD_DIR = ROOT / "build"
-VERSION = "1.0.0"
+WIN_UNPACKED = DIST_RELEASE / "win-unpacked"
+MAC_UNPACKED = DIST_RELEASE / "mac-unpacked"
+LINUX_UNPACKED = DIST_RELEASE / "linux-unpacked"
 
-def log(msg: str):
-    print(f"[build-cross-packages] {msg}", flush=True)
+STAGES = [
+    "clean",
+    "bundle",
+    "windows",
+    "macos",
+    "linux",
+    "aliases",
+    "checksums",
+    "release-json",
+    "dist-sync",
+]
 
-def sha256_file(path: Path) -> str:
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        while chunk := f.read(1024 * 1024):
-            h.update(chunk)
-    return h.hexdigest()
+VERSIONED_PREFIXES = ("Ty-Code-", "ty-code_", "ty-code-")
+STALE_MANIFESTS = ("SHA256SUMS.txt", "release.json")
+STALE_UPDATER_YML = ("latest.yml", "latest-mac.yml", "latest-linux.yml")
+STALE_UNPACKED_DIRS = (WIN_UNPACKED, MAC_UNPACKED, LINUX_UNPACKED)
+STALE_DIST_BUNDLES = (DIST / "main", DIST / "preload", DIST / "renderer")
 
-def clean_old_versions():
-    log("Cleaning old 0.1.0 artifacts from dist-release...")
-    for item in DIST_RELEASE.iterdir():
-        if item.is_file() and "0.1.0" in item.name:
-            item.unlink()
-            log(f"  Removed old file: {item.name}")
+ALIAS_GROUPS = [
+    ("Ty-Code-{v}-mac.dmg", "Ty-Code-{v}.dmg"),
+    ("Ty-Code-{v}.AppImage", "Ty-Code-{v}-x64.AppImage"),
+    ("ty-code_{v}_amd64.deb", "Ty-Code-{v}-x64.deb"),
+    ("ty-code-{v}.x86_64.rpm", "Ty-Code-{v}-x64.rpm"),
+]
 
-def sync_resources():
-    log("Synchronizing compiled app.asar and unpacked dependencies to linux-unpacked...")
-    win_res = WIN_UNPACKED / "resources"
-    linux_res = LINUX_UNPACKED / "resources"
-    linux_res.mkdir(parents=True, exist_ok=True)
-    if (win_res / "app.asar").exists():
-        shutil.copy2(win_res / "app.asar", linux_res / "app.asar")
-    if (win_res / "app.asar.unpacked").exists():
-        shutil.copytree(win_res / "app.asar.unpacked", linux_res / "app.asar.unpacked", dirs_exist_ok=True)
-    log("Resources synchronized successfully.")
+RELEASE_BINARIES = [
+    "Ty-Code-Setup-{v}.exe",
+    "Ty-Code-{v}-win.zip",
+    "Ty-Code-{v}-portable.exe",
+    "Ty-Code-{v}.dmg",
+    "Ty-Code-{v}-mac.dmg",
+    "Ty-Code-{v}-mac.zip",
+    "Ty-Code-{v}.AppImage",
+    "Ty-Code-{v}-x64.AppImage",
+    "ty-code_{v}_amd64.deb",
+    "Ty-Code-{v}-x64.deb",
+    "ty-code-{v}.x86_64.rpm",
+    "Ty-Code-{v}-x64.rpm",
+]
 
-def create_ar_archive(output_path: Path, files: list[tuple[str, bytes]]):
-    with open(output_path, "wb") as f:
-        f.write(b"!<arch>\n")
-        for filename, content in files:
-            name_field = f"{filename}/".ljust(16)
-            mtime_field = str(int(1728000000)).ljust(12)
-            owner_field = "0".ljust(6)
-            group_field = "0".ljust(6)
-            mode_field = "100644".ljust(8)
-            size_field = str(len(content)).ljust(10)
-            trailer = b"`\n"
-            header = (name_field + mtime_field + owner_field + group_field + mode_field + size_field).encode("ascii") + trailer
-            assert len(header) == 60
-            f.write(header)
-            f.write(content)
-            if len(content) % 2 == 1:
-                f.write(b"\n")
+STAGE_RUNNERS = {}
 
-def build_linux_deb():
-    deb_name = f"Ty-Code-{VERSION}-x64.deb"
-    deb_alias = f"ty-code_{VERSION}_amd64.deb"
-    deb_path = DIST_RELEASE / deb_name
-    log(f"Building Debian package: {deb_path}")
-    
-    if not LINUX_UNPACKED.exists():
-        raise FileNotFoundError(f"{LINUX_UNPACKED} does not exist.")
-        
-    debian_binary = b"2.0\n"
-    total_bytes = sum(f.stat().st_size for f in LINUX_UNPACKED.rglob("*") if f.is_file())
-    installed_size_kb = (total_bytes + 1023) // 1024
-    
-    control_content = f"""Package: ty-code
-Version: {VERSION}
-Section: devel
-Priority: optional
-Architecture: amd64
-Maintainer: Ty-Code Team <team@ty-code.com>
-Installed-Size: {installed_size_kb}
-Homepage: https://ty-code.com
-Description: Ty-Code
- Intelligent desktop coding workspace for pairing with AI.
-""".replace("\r\n", "\n").encode("utf-8")
 
-    control_tar_buf = io.BytesIO()
-    with tarfile.open(fileobj=control_tar_buf, mode="w:gz") as tar:
-        ti = tarfile.TarInfo("./control")
-        ti.size = len(control_content)
-        ti.mtime = 1728000000
-        ti.mode = 0o644
-        ti.uname = "root"
-        ti.gname = "root"
-        tar.addfile(ti, io.BytesIO(control_content))
-    control_tar_bytes = control_tar_buf.getvalue()
+def register_stage(func):
+    STAGE_RUNNERS[func.__name__.removeprefix("stage_").replace("_", "-")] = func
+    return func
 
-    desktop_content = """[Desktop Entry]
-Name=Ty-Code
-Comment=Intelligent coding environment
-Exec=/opt/ty-code/electron %U
-Terminal=false
-Type=Application
-Icon=ty-code
-Categories=Development;IDE;
-MimeType=x-scheme-handler/ty-code;
-""".replace("\r\n", "\n").encode("utf-8")
 
-    bin_script = """#!/bin/sh
-exec /opt/ty-code/electron "$@"
-""".replace("\r\n", "\n").encode("utf-8")
+def log(message):
+    print(f"[build-cross-packages] {message}", flush=True)
 
-    data_tar_buf = io.BytesIO()
-    with tarfile.open(fileobj=data_tar_buf, mode="w:gz") as tar:
-        for dir_path in ["./opt", "./opt/ty-code", "./usr", "./usr/bin", "./usr/share", "./usr/share/applications", "./usr/share/pixmaps"]:
-            ti = tarfile.TarInfo(dir_path)
-            ti.type = tarfile.DIRTYPE
-            ti.mtime = 1728000000
-            ti.mode = 0o755
-            ti.uname = "root"
-            ti.gname = "root"
-            tar.addfile(ti)
 
-        ti = tarfile.TarInfo("./usr/bin/ty-code")
-        ti.size = len(bin_script)
-        ti.mtime = 1728000000
-        ti.mode = 0o755
-        ti.uname = "root"
-        ti.gname = "root"
-        tar.addfile(ti, io.BytesIO(bin_script))
+def read_version():
+    package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
+    return package["version"]
 
-        ti = tarfile.TarInfo("./usr/share/applications/ty-code.desktop")
-        ti.size = len(desktop_content)
-        ti.mtime = 1728000000
-        ti.mode = 0o644
-        ti.uname = "root"
-        ti.gname = "root"
-        tar.addfile(ti, io.BytesIO(desktop_content))
 
-        icon_path = BUILD_DIR / "icon.png"
-        if icon_path.exists():
-            icon_bytes = icon_path.read_bytes()
-            ti = tarfile.TarInfo("./usr/share/pixmaps/ty-code.png")
-            ti.size = len(icon_bytes)
-            ti.mtime = 1728000000
-            ti.mode = 0o644
-            ti.uname = "root"
-            ti.gname = "root"
-            tar.addfile(ti, io.BytesIO(icon_bytes))
+def sha256_file(path):
+    hasher = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            hasher.update(chunk)
+    return hasher.hexdigest()
 
-        for p in LINUX_UNPACKED.rglob("*"):
-            rel = p.relative_to(LINUX_UNPACKED).as_posix()
-            arcname = f"./opt/ty-code/{rel}"
-            if p.is_dir():
-                ti = tarfile.TarInfo(arcname)
-                ti.type = tarfile.DIRTYPE
-                ti.mtime = 1728000000
-                ti.mode = 0o755
-                ti.uname = "root"
-                ti.gname = "root"
-                tar.addfile(ti)
-            elif p.is_file():
-                ti = tarfile.TarInfo(arcname)
-                ti.size = p.stat().st_size
-                ti.mtime = 1728000000
-                if p.name in ["electron", "chrome-sandbox", "chrome_crashpad_handler"] or p.suffix in [".so", ".bin"]:
-                    ti.mode = 0o755
-                else:
-                    ti.mode = 0o644
-                ti.uname = "root"
-                ti.gname = "root"
-                with open(p, "rb") as pf:
-                    tar.addfile(ti, pf)
 
-    data_tar_bytes = data_tar_buf.getvalue()
+def is_windows():
+    return os.name == "nt"
 
-    create_ar_archive(deb_path, [
-        ("debian-binary", debian_binary),
-        ("control.tar.gz", control_tar_bytes),
-        ("data.tar.gz", data_tar_bytes),
-    ])
-    shutil.copy2(deb_path, DIST_RELEASE / deb_alias)
-    log(f"Debian packages created: {deb_path.name} & {deb_alias}")
-    return deb_path
 
-def build_linux_appimage():
-    appimage_name = f"Ty-Code-{VERSION}-x64.AppImage"
-    appimage_alias = f"Ty-Code-{VERSION}.AppImage"
-    appimage_path = DIST_RELEASE / appimage_name
-    log(f"Building AppImage package: {appimage_path}")
+def command(cmdline):
+    if is_windows():
+        return ["cmd.exe", "/c"] + [str(part) for part in cmdline]
+    return [str(part) for part in cmdline]
 
-    header = b"""#!/bin/sh
-# Ty-Code AppImage Self-Extracting Executable
-set -e
-HERE="$(mktemp -d -t ty-code-appimage-XXXXXX)"
-trap 'rm -rf "$HERE"' EXIT INT TERM
-sed '1,/^#__APPIMAGE_ARCHIVE__#/d' "$0" | tar -xz -C "$HERE"
-exec "$HERE/electron" "$@"
-exit 1
-#__APPIMAGE_ARCHIVE__#
-"""
-    tar_buf = io.BytesIO()
-    with tarfile.open(fileobj=tar_buf, mode="w:gz") as tar:
-        for p in LINUX_UNPACKED.rglob("*"):
-            rel = p.relative_to(LINUX_UNPACKED).as_posix()
-            if p.is_dir():
-                ti = tarfile.TarInfo(rel)
-                ti.type = tarfile.DIRTYPE
-                ti.mtime = 1728000000
-                ti.mode = 0o755
-                tar.addfile(ti)
-            elif p.is_file():
-                ti = tarfile.TarInfo(rel)
-                ti.size = p.stat().st_size
-                ti.mtime = 1728000000
-                if p.name in ["electron", "chrome-sandbox", "chrome_crashpad_handler"] or p.suffix in [".so", ".bin"]:
-                    ti.mode = 0o755
-                else:
-                    ti.mode = 0o644
-                with open(p, "rb") as pf:
-                    tar.addfile(ti, pf)
-                    
-    with open(appimage_path, "wb") as f:
-        f.write(header)
-        f.write(tar_buf.getvalue())
-        
-    shutil.copy2(appimage_path, DIST_RELEASE / appimage_alias)
-    log(f"AppImage packages created: {appimage_path.name} & {appimage_alias}")
-    return appimage_path
 
-def build_linux_rpm():
-    rpm_name = f"Ty-Code-{VERSION}-x64.rpm"
-    rpm_alias = f"ty-code-{VERSION}.x86_64.rpm"
-    rpm_path = DIST_RELEASE / rpm_name
-    log(f"Building RPM package: {rpm_path}")
-    
-    rpm_header = b"\xed\xab\xee\xdb\x03\x00\x00\x00" + (b"\x00" * 88)
-    tar_buf = io.BytesIO()
-    with tarfile.open(fileobj=tar_buf, mode="w:gz") as tar:
-        for p in LINUX_UNPACKED.rglob("*"):
-            rel = p.relative_to(LINUX_UNPACKED).as_posix()
-            arcname = f"opt/ty-code/{rel}"
-            if p.is_dir():
-                ti = tarfile.TarInfo(arcname)
-                ti.type = tarfile.DIRTYPE
-                ti.mtime = 1728000000
-                ti.mode = 0o755
-                tar.addfile(ti)
-            elif p.is_file():
-                ti = tarfile.TarInfo(arcname)
-                ti.size = p.stat().st_size
-                ti.mtime = 1728000000
-                ti.mode = 0o755 if (p.name in ["electron", "chrome-sandbox"] or p.suffix in [".so"]) else 0o644
-                with open(p, "rb") as pf:
-                    tar.addfile(ti, pf)
-    with open(rpm_path, "wb") as f:
-        f.write(rpm_header)
-        f.write(tar_buf.getvalue())
-    shutil.copy2(rpm_path, DIST_RELEASE / rpm_alias)
-    log(f"RPM packages created: {rpm_path.name} & {rpm_alias}")
-    return rpm_path
+def looks_versioned(name):
+    return name.lower().startswith(VERSIONED_PREFIXES)
 
-def download_file(url: str, dest: Path):
-    if dest.exists():
-        log(f"Using cached file: {dest.name}")
-        return
-    log(f"Downloading {url} to {dest.name}...")
-    req = urllib.request.Request(url, headers={"User-Agent": "Ty-Code-Builder/1.0"})
-    with urllib.request.urlopen(req) as resp, open(dest, "wb") as out:
-        shutil.copyfileobj(resp, out)
-    log(f"Downloaded {dest.name} ({dest.stat().st_size:,} bytes)")
 
-def build_macos_packages():
-    mac_zip_name = f"Ty-Code-{VERSION}-mac.zip"
-    mac_dmg_name = f"Ty-Code-{VERSION}-mac.dmg"
-    mac_dmg_alias = f"Ty-Code-{VERSION}.dmg"
-    mac_zip_path = DIST_RELEASE / mac_zip_name
-    mac_dmg_path = DIST_RELEASE / mac_dmg_name
-    
-    log(f"Building macOS packages: {mac_zip_name} & {mac_dmg_name}")
-    cache_dir = ROOT / ".cache"
-    cache_dir.mkdir(exist_ok=True)
-    electron_zip = cache_dir / "electron-v41.10.6-darwin-x64.zip"
-    download_url = "https://github.com/electron/electron/releases/download/v41.10.6/electron-v41.10.6-darwin-x64.zip"
-    download_file(download_url, electron_zip)
+def run(cmdline, env=None):
+    printable = " ".join(str(part) for part in command(cmdline))
+    log(f"Running: {printable}")
+    merged = os.environ.copy()
+    if env:
+        merged.update(env)
+    started = time.monotonic()
+    completed = subprocess.run(command(cmdline), cwd=ROOT, env=merged)
+    elapsed = time.monotonic() - started
+    if completed.returncode == 0:
+        log(f"Command finished OK ({elapsed:.1f}s).")
+        return True
+    log(f"Command FAILED with exit code {completed.returncode} ({elapsed:.1f}s).")
+    return False
 
-    temp_app_dir = cache_dir / "mac_build"
-    if temp_app_dir.exists():
-        shutil.rmtree(temp_app_dir, ignore_errors=True)
-    temp_app_dir.mkdir(parents=True, exist_ok=True)
 
-    log("Extracting Electron.app template...")
-    with zipfile.ZipFile(electron_zip, "r") as z:
-        z.extractall(temp_app_dir)
+def electron_builder_bin():
+    suffix = ".cmd" if is_windows() else ""
+    local = ROOT / "node_modules" / ".bin" / f"electron-builder{suffix}"
+    if local.exists():
+        return local
+    return shutil.which("electron-builder")
 
-    orig_app = temp_app_dir / "Electron.app"
-    ty_app = temp_app_dir / "Ty-Code.app"
-    if orig_app.exists():
-        orig_app.rename(ty_app)
 
-    macos_dir = ty_app / "Contents" / "MacOS"
-    orig_exe = macos_dir / "Electron"
-    ty_exe = macos_dir / "Ty-Code"
-    if orig_exe.exists():
-        orig_exe.rename(ty_exe)
-
-    plist_path = ty_app / "Contents" / "Info.plist"
-    if plist_path.exists():
-        with open(plist_path, "rb") as f:
-            pl = plistlib.load(f)
-        pl["CFBundleDisplayName"] = "Ty-Code"
-        pl["CFBundleName"] = "Ty-Code"
-        pl["CFBundleExecutable"] = "Ty-Code"
-        pl["CFBundleIdentifier"] = "com.tycode.app"
-        pl["CFBundleShortVersionString"] = VERSION
-        pl["CFBundleVersion"] = VERSION
-        with open(plist_path, "wb") as f:
-            plistlib.dump(pl, f)
-
-    res_src = WIN_UNPACKED / "resources"
-    res_dest = ty_app / "Contents" / "Resources"
-    res_dest.mkdir(parents=True, exist_ok=True)
-
-    log("Copying app.asar and unpacked assets into Ty-Code.app...")
-    if (res_src / "app.asar").exists():
-        shutil.copy2(res_src / "app.asar", res_dest / "app.asar")
-    if (res_src / "app.asar.unpacked").exists():
-        shutil.copytree(res_src / "app.asar.unpacked", res_dest / "app.asar.unpacked", dirs_exist_ok=True)
-
-    if (BUILD_DIR / "icon.png").exists():
-        shutil.copy2(BUILD_DIR / "icon.png", res_dest / "icon.png")
-
-    log(f"Zipping {mac_zip_path.name}...")
-    with zipfile.ZipFile(mac_zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        for file in ty_app.rglob("*"):
-            rel = file.relative_to(temp_app_dir)
-            zf.write(file, rel)
-    log(f"macOS ZIP created: {mac_zip_path.name}")
-
-    log(f"Creating {mac_dmg_path.name}...")
-    dmg_buf = io.BytesIO()
-    with zipfile.ZipFile(dmg_buf, "w", zipfile.ZIP_DEFLATED) as dz:
-        for file in ty_app.rglob("*"):
-            rel = file.relative_to(temp_app_dir)
-            dz.write(file, rel)
-    dmg_magic = b"koly" + (b"\x00" * 508)
-    with open(mac_dmg_path, "wb") as df:
-        df.write(dmg_buf.getvalue())
-        df.write(dmg_magic)
-    shutil.copy2(mac_dmg_path, DIST_RELEASE / mac_dmg_alias)
-    log(f"macOS DMG created: {mac_dmg_path.name} & {mac_dmg_alias}")
-    return mac_zip_path, mac_dmg_path
-
-def build_windows_zip():
-    win_zip_name = f"Ty-Code-{VERSION}-win.zip"
-    win_zip_path = DIST_RELEASE / win_zip_name
-    log(f"Building Windows portable ZIP: {win_zip_path}")
-    if not WIN_UNPACKED.exists():
-        raise FileNotFoundError(f"{WIN_UNPACKED} does not exist.")
-    with zipfile.ZipFile(win_zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        for file in WIN_UNPACKED.rglob("*"):
-            rel = file.relative_to(WIN_UNPACKED)
-            zf.write(file, rel)
-    log(f"Windows portable ZIP created: {win_zip_name} ({win_zip_path.stat().st_size:,} bytes)")
-    return win_zip_path
-
-def generate_checksums():
-    checksums_file = DIST_RELEASE / "SHA256SUMS.txt"
-    log("Generating SHA256SUMS.txt...")
-    lines = []
-    
-    release_filenames = [
-        f"Ty-Code-Setup-{VERSION}.exe",
-        f"Ty-Code-{VERSION}-win.zip",
-        f"Ty-Code-{VERSION}-portable.exe",
-        f"Ty-Code-{VERSION}.dmg",
-        f"Ty-Code-{VERSION}-mac.dmg",
-        f"Ty-Code-{VERSION}-mac.zip",
-        f"Ty-Code-{VERSION}.AppImage",
-        f"Ty-Code-{VERSION}-x64.AppImage",
-        f"ty-code_{VERSION}_amd64.deb",
-        f"Ty-Code-{VERSION}-x64.deb",
-        f"ty-code-{VERSION}.x86_64.rpm",
-        f"Ty-Code-{VERSION}-x64.rpm"
+def bundle_outputs_ok():
+    required = [
+        DIST / "main" / "index.js",
+        DIST / "preload" / "index.js",
+        DIST / "renderer" / "index.html",
     ]
+    for path in required:
+        if not path.exists():
+            log(f"Missing bundle output: {path}")
+            return False
+    workers = DIST / "main" / "workers"
+    if not workers.is_dir() or not any(workers.glob("*.js")):
+        log("Missing debugger worker bundles under dist/main/workers.")
+        return False
+    return True
 
-    for fname in release_filenames:
-        p = DIST_RELEASE / fname
-        if p.exists() and p.is_file():
-            digest = sha256_file(p)
-            lines.append(f"{digest}  {fname}")
-            log(f"  {fname}: {digest}")
 
-    checksums_content = "\n".join(lines) + "\n"
-    checksums_file.write_text(checksums_content, encoding="utf-8")
-    log(f"SHA256SUMS.txt created with {len(lines)} release assets.")
-    return checksums_file
+@register_stage
+def stage_clean(version):
+    if DIST.exists():
+        for item in list(DIST.iterdir()):
+            if not item.is_file():
+                continue
+            if looks_versioned(item.name) or item.name in STALE_MANIFESTS or item.name in STALE_UPDATER_YML:
+                item.unlink()
+                log(f"Removed stale dist file: {item.name}")
+    if DIST_RELEASE.exists():
+        for item in list(DIST_RELEASE.iterdir()):
+            if not item.is_file():
+                continue
+            if looks_versioned(item.name) or item.name in STALE_MANIFESTS or item.name in STALE_UPDATER_YML:
+                item.unlink()
+                log(f"Removed stale dist-release file: {item.name}")
+    for unpacked in STALE_UNPACKED_DIRS:
+        if unpacked.exists():
+            shutil.rmtree(unpacked, ignore_errors=True)
+            log(f"Removed stale unpacked tree: {unpacked.name}/")
+    for bundle_dir in STALE_DIST_BUNDLES:
+        if bundle_dir.exists():
+            shutil.rmtree(bundle_dir, ignore_errors=True)
+            log(f"Removed stale bundle tree: {bundle_dir.name}/")
+    return True
 
-def sync_to_dist():
-    log("Copying release manifests (SHA256SUMS.txt, release.json) to dist/...")
+
+@register_stage
+def stage_bundle(version):
+    npm = shutil.which("npm")
+    if npm is None:
+        log("npm not found on PATH.")
+        return False
+    if not run([npm, "run", "build"]):
+        return False
+    if not bundle_outputs_ok():
+        log("Bundle verification failed; dist/ is incomplete.")
+        return False
+    log("Bundle stage verified: main, workers, preload, renderer are fresh.")
+    return True
+
+
+@register_stage
+def stage_windows(version):
+    eb = electron_builder_bin()
+    if eb is None:
+        log("electron-builder binary not found; run `npm install` first.")
+        return False
+    if not run([eb, "--win", "--publish", "never"]):
+        return False
+    if not WIN_UNPACKED.is_dir():
+        log(f"Windows unpacked tree not produced: {WIN_UNPACKED}")
+        return False
+    zip_path = DIST_RELEASE / f"Ty-Code-{version}-win.zip"
+    log(f"Zipping {WIN_UNPACKED.name}/ into {zip_path.name}...")
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
+        for path in sorted(WIN_UNPACKED.rglob("*")):
+            zf.write(path, path.relative_to(WIN_UNPACKED).as_posix())
+    log(f"Created {zip_path.name} ({zip_path.stat().st_size:,} bytes).")
+    return True
+
+
+@register_stage
+def stage_macos(version):
+    eb = electron_builder_bin()
+    if eb is None:
+        log("electron-builder binary not found; run `npm install` first.")
+        return False
+    env = {"CSC_IDENTITY_AUTO_DISCOVERY": "false"}
+    ok = run([eb, "--mac", "--publish", "never"], env=env)
+    if not ok:
+        log("macOS stage failed. DMG/ZIP targets require a macOS host (codesign + hdiutil); on non-mac hosts these artifacts are skipped.")
+    return ok
+
+
+@register_stage
+def stage_linux(version):
+    eb = electron_builder_bin()
+    if eb is None:
+        log("electron-builder binary not found; run `npm install` first.")
+        return False
+    ok = run([eb, "--linux", "--publish", "never"])
+    if not ok:
+        log("Linux stage failed. DEB/RPM/AppImage targets require a Linux host (fpm + fuse tooling); on non-Linux hosts these artifacts are skipped.")
+    return ok
+
+
+@register_stage
+def stage_aliases(version):
+    for group in ALIAS_GROUPS:
+        names = [name.format(v=version) for name in group]
+        source = next(((DIST_RELEASE / n) for n in names if (DIST_RELEASE / n).exists()), None)
+        if source is None:
+            log(f"Alias group skipped, no canonical artifact: {names[0]}")
+            continue
+        for name in names:
+            target = DIST_RELEASE / name
+            if target.exists():
+                continue
+            shutil.copy2(source, target)
+            log(f"Alias {target.name} -> {source.name}")
+    return True
+
+
+@register_stage
+def stage_checksums(version):
+    binaries = [name.format(v=version) for name in RELEASE_BINARIES]
+    present = [name for name in binaries if (DIST_RELEASE / name).exists()]
+    if not present:
+        log("No platform artifacts found; cannot write SHA256SUMS.txt.")
+        return False
+    for name in binaries:
+        if name not in present:
+            log(f"WARNING: expected release artifact missing: {name}")
+    lines = []
+    for name in binaries:
+        path = DIST_RELEASE / name
+        if path.exists():
+            digest = sha256_file(path)
+            lines.append(f"{digest}  {name}")
+            log(f"{name}: {digest}")
+    manifest = DIST_RELEASE / "SHA256SUMS.txt"
+    manifest.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    log(f"SHA256SUMS.txt written with {len(lines)} entries ({len(binaries) - len(present)} of {len(binaries)} platform artifacts unavailable on this host).")
+    return True
+
+
+@register_stage
+def stage_release_json(version):
+    generator = ROOT / "scripts" / "generate-release-json.py"
+    python = shutil.which("python") or shutil.which("python3")
+    if python is None:
+        log("python not found on PATH.")
+        return False
+    return run([python, str(generator)])
+
+
+@register_stage
+def stage_dist_sync(version):
     DIST.mkdir(parents=True, exist_ok=True)
-    for name in ["SHA256SUMS.txt", "release.json"]:
-        src = DIST_RELEASE / name
-        if src.exists():
-            shutil.copy2(src, DIST / name)
-            log(f"  Copied {name} to dist/")
+    for name in [name.format(v=version) for name in RELEASE_BINARIES] + list(STALE_UPDATER_YML) + list(STALE_MANIFESTS):
+        source = DIST_RELEASE / name
+        if source.exists():
+            shutil.copy2(source, DIST / name)
+            log(f"Copied {name} -> dist/")
+    return True
+
+
+def summarize(results):
+    log("Stage summary:")
+    for stage, ok in results.items():
+        log(f"  {'OK  ' if ok else 'FAIL'} {stage}")
+    return all(results.values())
+
 
 def main():
-    DIST_RELEASE.mkdir(parents=True, exist_ok=True)
-    clean_old_versions()
-    sync_resources()
-    
-    # 1. Linux packages
-    build_linux_deb()
-    build_linux_appimage()
-    build_linux_rpm()
-    
-    # 2. macOS packages
-    build_macos_packages()
+    parser = argparse.ArgumentParser(description="Ty-Code staged cross-platform rebuild (clean + bundle + win/mac/linux stages + manifests + dist sync).")
+    parser.add_argument("--stage", action="append", choices=STAGES, help="Run only these stages (repeatable). Defaults to all stages in canonical order.")
+    args = parser.parse_args()
+    selected = args.stage or STAGES
 
-    # 3. Windows portable ZIP
-    build_windows_zip()
-    
-    # 4. SHA-256 manifest
-    generate_checksums()
+    version = read_version()
+    log(f"Ty-Code v{version} staged rebuild starting (dist/ and dist-release/ will be repopulated).")
 
-    # 5. Mirror to dist/
-    sync_to_dist()
-    
-    log("All platform packages built and checksummed successfully!")
+    results = {}
+    for stage in selected:
+        log(f"=== stage: {stage} (Ty-Code {version}) ===")
+        results[stage] = STAGE_RUNNERS[stage](version)
+        if stage == "bundle" and not results[stage]:
+            log("Bundle stage failed; aborting remaining stages (would package stale or missing bundles).")
+            break
+
+    ok = summarize(results)
+    binaries_root = any((DIST_RELEASE / name.format(v=version)).exists() for name in RELEASE_BINARIES)
+    if ok and binaries_root:
+        log(f"All requested stages completed. dist/ holds the freshest Ty-Code {version} build for every platform stage that succeeded on this host.")
+        return 0
+    if ok and not binaries_root:
+        log("Stages reported success but no release binaries were produced; check platform stage notes above.")
+        return 1
+    return 1
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

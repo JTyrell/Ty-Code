@@ -44,6 +44,7 @@
     "package:mac": "npm run build && electron-builder --mac --publish never",
     "package:linux": "npm run build && electron-builder --linux --publish never",
     "package:all": "npm run build && electron-builder -mwl --publish never",
+    "package:staged": "python scripts/build-cross-packages.py",
     "release:notes": "node scripts/generate-release-notes.mjs",
     "dev:website": "vite --config website/vite.config.ts",
     "build:website": "vite build --config website/vite.config.ts",

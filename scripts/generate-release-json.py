@@ -8,7 +8,7 @@ DIST = ROOT / "dist"
 CHECKSUMS_FILE = DIST_RELEASE / "SHA256SUMS.txt"
 RELEASE_JSON_FILE = DIST_RELEASE / "release.json"
 
-VERSION = "1.0.0"
+VERSION = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))["version"]
 TAG = f"v{VERSION}"
 
 def classify_installer(name: str):

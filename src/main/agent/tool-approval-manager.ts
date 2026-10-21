@@ -1,3 +1,15 @@
+// Tool Approval Manager (Harness Controller)
+//
+// This policy is deliberately PROVIDER-AGNOSTIC: `checkApproval` receives only
+// (toolName, args), never a provider or model id, so every tool execution is
+// gated identically whether the agent was driven by a paid model, an FCC free
+// model, a subscription bridge or a local Ollama build. Auto-approve is
+// reserved for read-only, workspace-bound operations; everything that mutates
+// the workspace or escapes it (writes, replacements, terminal commands) always
+// asks. Workspace containment itself is enforced separately in the Main
+// process by SecurityPolicyEngine + ShellSandbox, again with no knowledge of
+// the driving provider.
+
 import type { AgentApprovalDecision } from '../../preload/types';
 
 export interface ApprovalRule {
@@ -60,35 +72,19 @@ export class ToolApprovalManager {
     }
   }
 
-  checkApproval(toolName: string, args: any): Promise<boolean> {
+  /**
+   * Finds the first rule matching a tool call. Tool names are normalized
+   * through TOOL_ALIASES on both sides so harnesses that use different names
+   * resolve to exactly the same policy. Pattern rules are matched against
+   * the serialized arguments so per-argument rules (e.g. "allow git status
+   * but not git commit") evaluate the same way everywhere.
+   */
+  private matchRule(toolName: string, args: any): ApprovalRule | null {
     this.pruneExpired();
     const normalized = TOOL_ALIASES[String(toolName)] || String(toolName);
-    let matched: ApprovalRule | null = null;
     for (const rule of this.rules) {
       const ruleTool = TOOL_ALIASES[rule.toolName] || rule.toolName;
       if (ruleTool !== normalized) continue;
-      if (rule.pattern) {
-        try {
-          const probe = JSON.stringify(args ?? {});
-          if (!new RegExp(rule.pattern).test(probe)) continue;
-        } catch {
-          continue;
-        }
-      }
-      matched = rule;
-      break;
-    }
-    if (!matched) return this.requestUserApproval(String(toolName), args ?? {});
-    if (matched.action === 'auto_deny') return Promise.resolve(false);
-    if (matched.action === 'auto_approve') return Promise.resolve(true);
-    return this.requestUserApproval(String(toolName), args ?? {});
-  }
-
-  hasRuleWithAction(toolName: string, args: any, action: ApprovalRule['action']): boolean {
-    const normalized = TOOL_ALIASES[String(toolName)] || String(toolName);
-    for (const rule of this.rules) {
-      const ruleTool = TOOL_ALIASES[rule.toolName] || rule.toolName;
-      if (ruleTool !== normalized || rule.action !== action) continue;
       if (rule.pattern) {
         try {
           if (!new RegExp(rule.pattern).test(JSON.stringify(args ?? {}))) continue;
@@ -96,9 +92,22 @@ export class ToolApprovalManager {
           continue;
         }
       }
-      return true;
+      return rule;
     }
-    return false;
+    return null;
+  }
+
+  checkApproval(toolName: string, args: any): Promise<boolean> {
+    const matched = this.matchRule(toolName, args);
+    if (!matched) return this.requestUserApproval(String(toolName), args ?? {});
+    if (matched.action === 'auto_deny') return Promise.resolve(false);
+    if (matched.action === 'auto_approve') return Promise.resolve(true);
+    return this.requestUserApproval(String(toolName), args ?? {});
+  }
+
+  hasRuleWithAction(toolName: string, args: any, action: ApprovalRule['action']): boolean {
+    const matched = this.matchRule(toolName, args);
+    return Boolean(matched && matched.action === action);
   }
 
   addRule(rule: ApprovalRule): void {

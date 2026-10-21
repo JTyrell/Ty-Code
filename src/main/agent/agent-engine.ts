@@ -1,5 +1,5 @@
 import type { AgentApprovalDecision, AgentHarnessType, AgentStreamChunk, AgentToolApproval, ChatMessage, ProposedDiff, ProviderSettings, ToolCall } from '../../preload/types';
-import { ProviderGateway, type ChatCompletionMessage, type GatewayToolCall, type GatewayToolSchema } from '../providers/provider-gateway';
+import { ProviderGateway, type ChatCompletionMessage, type GatewayToolCall, type GatewayToolSchema, getVerifiedModels, isFreeModel, providerHasOwnKey } from '../providers/provider-gateway';
 export { ProviderGateway };
 import { buildSystemPrompt, AGENT_TOOLS_DEFINITIONS, TASK_SCOPING_PROTOCOL, getEccRulesPrompt, getSeoPromptGuidance, isLocalModel } from './system-prompt';
 import { ToolExecutor, type ToolExecutionResponse } from './tool-executor';
@@ -11,7 +11,7 @@ import { moduleRegistry } from '../services/module-registry';
 import { mcpManager } from '../services/mcp-manager';
 import { diagnosticsHealthMonitor } from '../services/diagnostics/health-monitor';
 import { optimizationPipeline } from '../providers/optimization-pipeline';
-import { failoverResumeManager } from './failover-resume';
+import { failoverResumeManager, type TurnSnapshot } from './failover-resume';
 import { agentStateManager, AgentMode, type TodoItem } from './agent-state-manager';
 import { compactMessages, estimateContextTokens, estimateTokenCount, generateSummary, shouldCompact, buildFallbackSummary, MODEL_CONTEXT_LIMIT } from './context-compactor';
 import { fileMemoryManager, extractKeySymbols, extractDependencies } from './file-memory';
@@ -42,6 +42,54 @@ export interface RunAgentParams {
   onProviderHandoff?: (info: { fromProvider: string; toProvider: string; toModel: string }) => void;
   taskId?: string;
   resumeSessionId?: string;
+}
+
+/**
+ * Picks the next agent provider after a mid-turn provider failure.
+ *
+ * Uses the SAME unified provider feed as the rest of the app
+ * (getVerifiedModels) plus the layered key resolver (providerHasOwnKey), so
+ * the agent can hop between paid, free, FCC sidecar, subscription and local
+ * providers with zero special-casing. Roadmap order:
+ *   1. FCC supply layer (free capacity outranks burning keys)
+ *   2. The SAME model on another provider (keeps behaviour consistent)
+ *   3. Free pool (keyless or owned free tiers), then any keyed candidate
+ */
+async function pickNextAgentProvider(
+  excludedProviderIds: Set<string>,
+  failedModelId: string
+): Promise<{ providerId: string; modelId: string } | undefined> {
+  try {
+    const models = await getVerifiedModels();
+    const normId = (id: string): string => (id || '').toLowerCase().trim().replace(/-free$/, '');
+    const isFreeCandidate = (m: { modelId: string; providerId: string; requiresKey: boolean }): boolean =>
+      isFreeModel(m.modelId, m.providerId) || !m.requiresKey;
+
+    const eligible = models.filter((m) => {
+      const pid = normId(m.providerId);
+      if (pid && excludedProviderIds.has(pid)) return false;
+      return !m.requiresKey || providerHasOwnKey(m.providerId);
+    });
+    if (eligible.length === 0) return undefined;
+
+    const fccEntry = eligible.find(
+      (m) =>
+        normId(m.providerId) === 'fcc' ||
+        m.providerId.toLowerCase().trim() === 'fcc-proxy' ||
+        m.providerId.toLowerCase().trim() === 'anthropic-claude-free'
+    );
+    if (fccEntry) return { providerId: fccEntry.providerId, modelId: fccEntry.modelId };
+
+    const failedModel = (failedModelId || '').toLowerCase();
+    const sameModelElsewhere = eligible.find((m) => m.modelId.toLowerCase() === failedModel);
+    if (sameModelElsewhere) return { providerId: sameModelElsewhere.providerId, modelId: sameModelElsewhere.modelId };
+
+    const freePool = eligible.filter(isFreeCandidate);
+    const pool = freePool.length > 0 ? freePool : eligible;
+    return { providerId: pool[0].providerId, modelId: pool[0].modelId };
+  } catch {
+    return undefined;
+  }
 }
 
 export class AgentEngine {
@@ -285,6 +333,18 @@ export class AgentEngine {
     let currentSettings = { ...settings };
     const failedProviders = new Set<string>();
 
+    // ===== Seamless Mid-Turn Failover state (Harness Controller) =====
+    // Once a provider throttles or goes down mid-run, the engine pins the next
+    // eligible provider from getVerifiedModels() for the remainder of the run
+    // and resumes the loop with the Todo state fully preserved.
+    const providerSwitch: { provider: string; model: string; active: boolean } = { provider: '', model: '', active: false };
+    const MAX_PROVIDER_SWITCHES = 3;
+    let providerSwitchesUsed = 0;
+    let runProvider = '';
+    let runModel = '';
+    let savedPartialStream = '';
+    let currentTurnSnapshot: TurnSnapshot | null = null;
+
     onChunk({ type: 'status', content: 'Thinking…' });
 
     // Helper: Build messages with todo context injected
@@ -372,38 +432,50 @@ export class AgentEngine {
       try {
         console.log(`[AGENT] Iteration ${stateManager.iterationCount + 1}/${stateManager.maxIterations} — mode: ${stateManager.currentMode}`);
 
-        // Select provider/model
-        const rawActiveProvider = currentSettings.activeProvider || '';
-        const isAutoBinding = !rawActiveProvider || rawActiveProvider === 'auto';
+        // Select provider/model. Once a mid-turn failover has pinned a new
+        // provider, that override drives every subsequent iteration of this
+        // run; the Todo list is untouched by the switch.
         let activeProvider: string;
         let activeModel: string;
-
-        if (isAutoBinding) {
-          const lastUserMessage = [...messages].reverse().find((m: any) => m.role === 'user');
-          const promptSample = String(lastUserMessage?.content || '').slice(0, 2000) || 'general assistance';
-          try {
-            const decision = await modelRouter.selectModel(promptSample);
-            activeProvider = decision.selectedModel.providerId;
-            activeModel = decision.selectedModel.modelId;
-          } catch (autoErr: unknown) {
-            console.warn('[AGENT] FCC Auto routing unavailable, using free default:', autoErr instanceof Error ? autoErr.message : autoErr);
-            activeProvider = 'openkilo';
-            activeModel = 'kilo-auto/free';
-          }
+        if (providerSwitch.active && providerSwitch.provider) {
+          activeProvider = providerSwitch.provider;
+          activeModel = providerSwitch.model || 'kilo-auto/free';
+          runProvider = activeProvider;
+          runModel = activeModel;
+          console.log(`[AGENT] Provider (failover override): ${activeProvider}, Model: ${activeModel}`);
         } else {
-          activeProvider = rawActiveProvider;
-          activeModel = currentSettings.activeModel || '';
-          if (!activeModel || (activeProvider === 'openkilo' && !activeModel.endsWith(':free') && !activeModel.endsWith('/free'))) {
-            if (activeProvider === 'openkilo') {
+          const rawActiveProvider = currentSettings.activeProvider || '';
+          const isAutoBinding = !rawActiveProvider || rawActiveProvider === 'auto';
+
+          if (isAutoBinding) {
+            const lastUserMessage = [...messages].reverse().find((m: any) => m.role === 'user');
+            const promptSample = String(lastUserMessage?.content || '').slice(0, 2000) || 'general assistance';
+            try {
+              const decision = await modelRouter.selectModel(promptSample);
+              activeProvider = decision.selectedModel.providerId;
+              activeModel = decision.selectedModel.modelId;
+            } catch (autoErr: unknown) {
+              console.warn('[AGENT] FCC Auto routing unavailable, using free default:', autoErr instanceof Error ? autoErr.message : autoErr);
+              activeProvider = 'openkilo';
               activeModel = 'kilo-auto/free';
-            } else if (activeProvider === 'groq') {
-              activeModel = 'llama-3.3-70b-versatile';
-            } else {
-              activeModel = 'qwen/qwen-2.5-coder-32b-instruct:free';
+            }
+          } else {
+            activeProvider = rawActiveProvider;
+            activeModel = currentSettings.activeModel || '';
+            if (!activeModel || (activeProvider === 'openkilo' && !activeModel.endsWith(':free') && !activeModel.endsWith('/free'))) {
+              if (activeProvider === 'openkilo') {
+                activeModel = 'kilo-auto/free';
+              } else if (activeProvider === 'groq') {
+                activeModel = 'llama-3.3-70b-versatile';
+              } else {
+                activeModel = 'qwen/qwen-2.5-coder-32b-instruct:free';
+              }
             }
           }
+          runProvider = activeProvider;
+          runModel = activeModel;
+          console.log(`[AGENT] Provider: ${activeProvider}, Model: ${activeModel}`);
         }
-        console.log(`[AGENT] Provider: ${activeProvider}, Model: ${activeModel}`);
 
         // 1. Compact context when the estimated token budget crosses the model limit
         const preCompactTokens = estimateContextTokens(messages);
@@ -431,6 +503,18 @@ export class AgentEngine {
         // 2. Send to LLM with current todos in system prompt
         const messagesWithTodos = buildMessagesWithTodos(messages, stateManager.todos);
 
+        // Mid-turn failover snapshot: tracks the streamed output of this turn
+        // so a throttle mid-stream can pin another provider without losing the
+        // text already delivered to the renderer.
+        savedPartialStream = '';
+        const turnSnapshot = failoverResumeManager.createSnapshot(
+          `${sessionId}:iteration:${stateManager.iterationCount}`,
+          messagesWithTodos,
+          activeProvider,
+          activeModel
+        );
+        currentTurnSnapshot = turnSnapshot;
+
         let streamThought = '';
         let structuredCalls: GatewayToolCall[] = [];
         const llmCallStartedAt = Date.now();
@@ -442,6 +526,8 @@ export class AgentEngine {
           true,
           undefined,
           (chunk: string) => {
+            savedPartialStream += chunk;
+            failoverResumeManager.recordTokens(turnSnapshot, chunk, undefined);
             onChunk({ type: 'token', content: chunk });
           },
           0,
@@ -449,6 +535,7 @@ export class AgentEngine {
           params.onProviderHandoff,
           (thought: string) => {
             streamThought += thought;
+            failoverResumeManager.recordTokens(turnSnapshot, undefined, thought);
           },
           toolSchemas,
           (calls: GatewayToolCall[]) => {
@@ -878,6 +965,71 @@ export class AgentEngine {
           return;
         }
         const message = err instanceof Error ? err.message : String(err);
+
+        // ===== Seamless Mid-Turn Failover =====
+        // ProviderGateway raises [RATE_LIMITED]/[PROVIDER_DOWN] (or
+        // "Maximum handoffs") when its internal handoff budget burns out.
+        // The ReAct loop must never die because of a provider: pin the next
+        // eligible provider from getVerifiedModels(), inject the hidden switch
+        // instruction, and resume with the Todo state fully intact.
+        const providerFailure =
+          /\[RATE_LIMITED\]|\[PROVIDER_DOWN\]|\(429\)|\(500\)|\(502\)|\(503\)|\(504\)|Maximum handoffs/i.test(message);
+        if (providerFailure && providerSwitchesUsed < MAX_PROVIDER_SWITCHES) {
+          providerSwitchesUsed++;
+          const failedProvider = runProvider || currentSettings.activeProvider || '';
+          const failedModel = runModel || currentSettings.activeModel || '';
+          if (currentTurnSnapshot) {
+            try {
+              await failoverResumeManager.finalizeSegment(currentTurnSnapshot, message);
+            } catch {
+              // Ledger recording must never block a failover
+            }
+          }
+          const failedProviderNorm = (failedProvider || '').toLowerCase().trim().replace(/-free$/, '');
+          const next = await pickNextAgentProvider(new Set([...failedProviders, failedProviderNorm]), failedModel);
+          if (next) {
+            if (failedProviderNorm) failedProviders.add(failedProviderNorm);
+            providerSwitch.provider = next.providerId;
+            providerSwitch.model = next.modelId;
+            providerSwitch.active = true;
+
+            // Preserve text already streamed to the renderer, then inject the
+            // hidden provider-switch instruction (exact harness format).
+            if (savedPartialStream.trim().length > 0) {
+              messages.push({ role: 'assistant', content: savedPartialStream });
+            }
+            const rateLimited = /\[RATE_LIMITED\]|\(429\)|rate limit/i.test(message);
+            messages.push({
+              role: 'system',
+              content: `[SYSTEM: Provider switched to ${next.providerId} due to ${rateLimited ? 'rate limit' : 'provider outage'}. Continue the task.]`
+            });
+
+            onChunk({ type: 'status', content: `Provider switched to ${next.providerId}. Continuing the current task.` });
+            try {
+              params.onProviderHandoff?.({
+                fromProvider: failedProvider,
+                toProvider: next.providerId,
+                toModel: next.modelId
+              });
+            } catch {
+              // Notification callback must never break the failover chain
+            }
+            agentObservability.recordEvent({
+              type: 'provider_failover',
+              fromProvider: failedProvider,
+              toProvider: next.providerId,
+              toModel: next.modelId,
+              error: message.slice(0, 300)
+            });
+
+            stateManager.iterationCount++;
+            persistSessionState();
+            savedPartialStream = '';
+            currentTurnSnapshot = null;
+            continue; // resume the ReAct loop; Todo state untouched
+          }
+        }
+
         persistSessionState(false);
         agentObservability.recordEvent({
           type: 'error',

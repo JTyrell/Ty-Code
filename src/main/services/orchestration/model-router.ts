@@ -184,6 +184,7 @@ export class ModelRouter {
       case 'openkilo': case 'openkilo-free': return 'OpenKilo';
       case 'opencode': case 'opencode-free': return 'OpenCode Zen';
       case 'openrouter': case 'openrouter-free': return 'OpenRouter';
+      case 'ty-code-free': case 'tycode-free': return 'Ty-Code Free';
       case 'groq': case 'groq-free': return 'Groq';
       case 'google-ai-studio': case 'google-ai-studio-free': return 'Google AI Studio';
       case 'ollama': return 'Ollama (local)';
@@ -235,7 +236,14 @@ export class ModelRouter {
         providerId: vm.providerId,
         providerName: ModelRouter.providerDisplayName(vm.providerId),
         tier: ModelRouter.classifyTierFromId(vm.modelId, vm.name || ''),
-        isFree: !vm.requiresKey || (vm.providerId || '').toLowerCase().includes('opencode'),
+        // Ty-Code Free counts as the zero-friction community supply: no user
+        // input is ever required (rotating Community Key bootstrapped in the
+        // credential vault), so the default FREE-first ranking treats it as
+        // free supply.
+        isFree:
+          !vm.requiresKey ||
+          (vm.providerId || '').toLowerCase() === 'ty-code-free' ||
+          (vm.providerId || '').toLowerCase().includes('opencode'),
         baseLatencyMs: ModelRouter.baseLatencyFor(vm.providerId),
         provenance: vm.requiresKey ? 'your key' : 'anonymous'
       });
@@ -532,10 +540,10 @@ export class ModelRouter {
 
   private getFallbackDefault(): RankedModelCandidate {
     return {
-      modelId: 'qwen/qwen-2.5-coder-32b-instruct:free',
-      modelName: 'Qwen 2.5 Coder 32B Instruct',
-      providerId: 'openrouter-free',
-      providerName: 'OpenRouter',
+      modelId: 'deepseek/deepseek-v4.1-flash:free',
+      modelName: 'DeepSeek V4.1 Flash (Ty-Code Free)',
+      providerId: 'ty-code-free',
+      providerName: 'Ty-Code Free',
       tier: 'tier_a_coding',
       isFree: true,
       latencyMs: 380,

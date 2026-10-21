@@ -119,6 +119,9 @@ linux:
     - target: rpm
       arch:
         - x64
+    - target: appimage
+      arch:
+        - x64
   category: Development
 
 deb:

@@ -255,6 +255,55 @@ export class ProviderOAuthService {
   }
 
   /**
+   * Persists an OAuth credential across all zero-server storage layers:
+   * 1. ty-code-settings.json (via saveSettings / mergeStoredApiKeys)
+   * 2. hardware-backed credentialStore (credentials.json)
+   * 3. credential-vault (credentials.enc)
+   * And broadcasts 'settings:changed' to all renderer windows so UI immediately reflects connection.
+   */
+  private async persistCapturedKey(providerId: string, apiKey: string, aliases: string[] = []): Promise<void> {
+    const keysMap: Record<string, string> = { [providerId]: apiKey };
+    for (const alias of aliases) {
+      keysMap[alias] = apiKey;
+    }
+
+    // 1. Save in settings layer / ty-code-settings.json
+    await saveSettings({ apiKeys: keysMap });
+
+    // 2. Save in hardware-backed credentialStore (credentials.json)
+    try {
+      const { credentialStore } = await import('./credential-store');
+      for (const [id, key] of Object.entries(keysMap)) {
+        await credentialStore.saveCredential(id, key, `${id.toUpperCase()} Key`);
+      }
+    } catch (err) {
+      console.warn(`[OAuth] Failed to sync ${providerId} to credentialStore:`, err);
+    }
+
+    // 3. Save in credential-vault (credentials.enc)
+    try {
+      const { saveKey } = await import('../credential-vault');
+      for (const [id, key] of Object.entries(keysMap)) {
+        await saveKey(id, key).catch(() => undefined);
+      }
+    } catch (err) {
+      console.warn(`[OAuth] Failed to sync ${providerId} to credential-vault:`, err);
+    }
+
+    // 4. Broadcast settings:changed to all renderer windows
+    try {
+      const { BrowserWindow } = await import('electron');
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
+          win.webContents.send('settings:changed');
+        }
+      }
+    } catch (err) {
+      console.warn('[OAuth] Failed to broadcast settings:changed:', err);
+    }
+  }
+
+  /**
    * Dispatches incoming loopback HTTP request from browser redirect
    */
   private async handleLoopbackRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
@@ -299,11 +348,8 @@ export class ProviderOAuthService {
           throw new Error('No API key received from OpenRouter authorization exchange.');
         }
 
-        // Store ONLY the credential — OAuth sign-in must not silently reorder the
-        // user's active provider selection.
-        await saveSettings({
-          apiKeys: { openrouter: apiKey }
-        });
+        // Store credential across all safeStorage layers and notify UI
+        await this.persistCapturedKey('openrouter', apiKey, ['openrouter-free']);
 
         res.writeHead(200, { 'Content-Type': 'text/html' });
         res.end(generateBrowserResponseHtml('Connected to OpenRouter!', 'OpenRouter is now securely connected to Ty-Code via operating-system safeStorage. You can close this tab and return to Ty-Code.', true));
@@ -317,9 +363,7 @@ export class ProviderOAuthService {
           throw new Error('No access token received from OpenKilo authorization exchange.');
         }
 
-        await saveSettings({
-          apiKeys: { openkilo: apiKey }
-        });
+        await this.persistCapturedKey('openkilo', apiKey, ['openkilo-free']);
 
         res.writeHead(200, { 'Content-Type': 'text/html' });
         res.end(generateBrowserResponseHtml('Connected to OpenKilo!', 'OpenKilo OAuth is now active with full catalog access. You can close this tab and return to Ty-Code.', true));
@@ -484,9 +528,7 @@ export class ProviderOAuthService {
           apiKey = await this.exchangeOpenRouterPKCECode(code, codeVerifier);
         }
         if (apiKey) {
-          await saveSettings({
-            apiKeys: { openrouter: apiKey }
-          });
+          await this.persistCapturedKey('openrouter', apiKey, ['openrouter-free']);
           this.stopLoopbackServer();
           this.notifyStatusListeners();
           return true;
@@ -497,9 +539,7 @@ export class ProviderOAuthService {
           apiKey = await this.exchangeOpenKiloCode(code);
         }
         if (apiKey) {
-          await saveSettings({
-            apiKeys: { openkilo: apiKey }
-          });
+          await this.persistCapturedKey('openkilo', apiKey, ['openkilo-free']);
           this.stopLoopbackServer();
           this.notifyStatusListeners();
           return true;
@@ -601,10 +641,10 @@ export class ProviderOAuthService {
       };
 
       if (json.access_token) {
-        // Successfully authorized! Store securely in safeStorage
+        // Successfully authorized! Store securely across all safeStorage layers
+        await this.persistCapturedKey('github-models', json.access_token, ['github-copilot', 'copilot']);
         await saveSettings({
-          activeProvider: 'github-models' as any,
-          apiKeys: { 'github-models': json.access_token, 'github-copilot': json.access_token } as any
+          activeProvider: 'github-models' as any
         });
 
         if (this.activeCopilotFlow) {
@@ -666,7 +706,19 @@ export class ProviderOAuthService {
    */
   public async disconnectProvider(providerId: string): Promise<boolean> {
     try {
-      await mergeStoredApiKeys({}, [providerId, providerId.replace('-free', ''), `${providerId}-free`]);
+      const aliases = [providerId, providerId.replace('-free', ''), `${providerId}-free`];
+      if (providerId === 'copilot' || providerId === 'github-copilot' || providerId === 'github-models') {
+        aliases.push('copilot', 'github-copilot', 'github-models');
+      }
+      await mergeStoredApiKeys({}, aliases);
+
+      // Revoke from hardware-backed credentialStore as well
+      try {
+        const { credentialStore } = await import('./credential-store');
+        for (const target of aliases) {
+          await credentialStore.revokeCredential(target);
+        }
+      } catch {}
 
       // Also reset active provider if it was the disconnected one
       const effective = await (await import('../../ipc/settings-handlers')).getSettings();
@@ -681,6 +733,16 @@ export class ProviderOAuthService {
       } catch {
         // ledger optional
       }
+
+      // Broadcast settings:changed
+      try {
+        const { BrowserWindow } = await import('electron');
+        for (const win of BrowserWindow.getAllWindows()) {
+          if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
+            win.webContents.send('settings:changed');
+          }
+        }
+      } catch {}
 
       this.notifyStatusListeners();
       return true;
@@ -697,7 +759,20 @@ export class ProviderOAuthService {
     const { keys } = await readStoredCredentials();
 
     const checkProvider = (id: string, name: string): ProviderAuthStatus => {
-      const key = keys[id] || keys[`${id}-free`];
+      let key = keys[id] || keys[`${id}-free`];
+      if (!key) {
+        try {
+          const { credentialStore } = require('./credential-store');
+          key = credentialStore.getDecryptedKey(id) || credentialStore.getDecryptedKey(`${id}-free`);
+        } catch {}
+      }
+      if (!key) {
+        try {
+          const { getAllVaultKeys } = require('../credential-vault');
+          const vKeys = getAllVaultKeys();
+          key = vKeys[id] || vKeys[`${id}-free`];
+        } catch {}
+      }
       if (!key) {
         return {
           providerId: id,

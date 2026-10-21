@@ -189,6 +189,15 @@ export async function mergeStoredApiKeys(
     delete mergedCipher[provider];
   }
 
+  if (revokeProviders.length > 0) {
+    try {
+      const { credentialStore } = await import('../services/auth/credential-store');
+      for (const provider of revokeProviders) {
+        await credentialStore.revokeCredential(provider).catch(() => undefined);
+      }
+    } catch {}
+  }
+
   const resolvedKeys: Record<string, string> = { ...keys };
   for (const [provider, rawKey] of Object.entries(updates)) {
     const trimmed = typeof rawKey === 'string' ? rawKey.trim() : '';
@@ -343,7 +352,31 @@ export async function saveSettings(updates: Partial<ProviderSettings>): Promise<
 
     if (apiKeys !== undefined) {
       await mergeStoredApiKeys(apiKeys as Record<string, string>);
+      // Synchronize with hardware-backed credentialStore and vault
+      try {
+        const { credentialStore } = await import('../services/auth/credential-store');
+        const { saveKey } = await import('../services/credential-vault');
+        for (const [providerId, rawKey] of Object.entries(apiKeys as Record<string, string>)) {
+          if (typeof rawKey === 'string' && rawKey.trim()) {
+            await credentialStore.saveCredential(providerId, rawKey.trim(), `${providerId.toUpperCase()} Key`);
+            await saveKey(providerId, rawKey.trim()).catch(() => undefined);
+          }
+        }
+      } catch (err) {
+        console.warn('[saveSettings] Failed syncing credentials to vault/store:', err);
+      }
     }
+
+    // Broadcast settings:changed to all renderer windows so UI stays in sync
+    try {
+      const { BrowserWindow } = await import('electron');
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
+          win.webContents.send('settings:changed');
+        }
+      }
+    } catch {}
+
     return { success: true };
   } catch (error: unknown) {
     return { success: false, error: error instanceof Error ? error.message : String(error) };

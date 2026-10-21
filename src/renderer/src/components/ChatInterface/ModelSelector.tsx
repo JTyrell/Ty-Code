@@ -21,8 +21,6 @@ import {
   Check,
   Sliders,
   Layers,
-  ShieldCheck,
-  Clock,
   Compass,
   ArrowRight
 } from 'lucide-react';
@@ -94,8 +92,8 @@ export const FALLBACK_CATALOG: Record<ModelTier, RankedModelCandidate[]> = {
   ],
   tier_a_coding: [
     {
-      modelId: 'qwen/qwen-2.5-coder-32b-instruct:free',
-      modelName: 'Qwen 2.5 Coder 32B Instruct',
+      modelId: 'cohere/north-mini-code:free',
+      modelName: 'North Mini Code (Free)',
       providerId: 'openrouter-free',
       providerName: 'OpenRouter',
       tier: 'tier_a_coding',
@@ -120,17 +118,17 @@ export const FALLBACK_CATALOG: Record<ModelTier, RankedModelCandidate[]> = {
       selectionReason: 'Massive 262K context code specialist'
     },
     {
-      modelId: 'llama-3.3-70b-versatile',
-      modelName: 'Llama 3.3 70B Versatile (Groq)',
-      providerId: 'groq-free',
-      providerName: 'Groq',
+      modelId: 'deepseek/deepseek-v4.1-flash:free',
+      modelName: 'DeepSeek V4.1 Flash (Free)',
+      providerId: 'openrouter-free',
+      providerName: 'OpenRouter',
       tier: 'tier_a_coding',
       isFree: true,
       latencyMs: 0,
       healthScore: 1.0,
       isRateLimited: false,
       compositeRankScore: 190,
-      selectionReason: 'Ultra-fast 70B inference engine'
+      selectionReason: 'High-throughput reasoning coder with 1M context'
     }
   ],
   tier_b_general: [
@@ -148,17 +146,17 @@ export const FALLBACK_CATALOG: Record<ModelTier, RankedModelCandidate[]> = {
       selectionReason: 'Balanced conversation and technical explanations'
     },
     {
-      modelId: 'gemini-1.5-flash',
-      modelName: 'Gemini 1.5 Flash (AI Studio)',
-      providerId: 'google-ai-studio-free',
-      providerName: 'Google AI Studio',
+      modelId: 'meituan/longcat-2.0:free',
+      modelName: 'LongCat 2.0 (Free)',
+      providerId: 'openrouter-free',
+      providerName: 'OpenRouter',
       tier: 'tier_b_general',
       isFree: true,
       latencyMs: 0,
       healthScore: 1.0,
       isRateLimited: false,
       compositeRankScore: 165,
-      selectionReason: 'High-speed multimodal intelligence'
+      selectionReason: '1M context MoE generalist from Meituan'
     }
   ],
   tier_c_fast: [
@@ -176,17 +174,17 @@ export const FALLBACK_CATALOG: Record<ModelTier, RankedModelCandidate[]> = {
       selectionReason: 'Sub-100ms ultra-fast execution'
     },
     {
-      modelId: 'gemini-2.0-flash-exp',
-      modelName: 'Gemini 2.0 Flash Exp',
-      providerId: 'google-ai-studio-free',
-      providerName: 'Google AI Studio',
+      modelId: 'minimax/minimax-m3.1-flash:free',
+      modelName: 'MiniMax M3.1 Flash (Free)',
+      providerId: 'openrouter-free',
+      providerName: 'OpenRouter',
       tier: 'tier_c_fast',
       isFree: true,
       latencyMs: 0,
       healthScore: 1.0,
       isRateLimited: false,
       compositeRankScore: 195,
-      selectionReason: 'Experimental ultra-responsive flash model'
+      selectionReason: 'Ultra-responsive flash model with 1M context'
     }
   ]
 };
@@ -664,15 +662,26 @@ export const ModelSelector: React.FC = () => {
             );
           })()}
 
-          {/* Grouped Models List — first by connection state, then by tier */}
+          {/* Grouped Models List — first by supply tier (Free / Premium / Local), then capability tier */}
           {(() => {
             const tiers = Object.keys(catalog) as ModelTier[];
-            const connectedModels = (models: RankedModelCandidate[]) =>
-              models.filter((m) => isProviderConnected(m.providerId));
-            const pendingModels = (models: RankedModelCandidate[]) =>
-              models.filter((m) => !isProviderConnected(m.providerId));
-            const connectedTotal = tiers.reduce((n, t) => n + connectedModels(catalog[t] || []).length, 0);
-            const pendingTotal = tiers.reduce((n, t) => n + pendingModels(catalog[t] || []).length, 0);
+            const isLocalModel = (m: RankedModelCandidate): boolean =>
+              (m.providerId || '').includes('ollama') || (m.providerName || '').includes('Ollama');
+
+            const freeByTier = tiers
+              .map((tierKey) => ({ tier: tierKey, models: (catalog[tierKey] || []).filter((m) => m.isFree && !isLocalModel(m)) }))
+              .filter((g) => g.models.length > 0);
+            const premiumByTier = tiers
+              .map((tierKey) => ({ tier: tierKey, models: (catalog[tierKey] || []).filter((m) => !m.isFree && !isLocalModel(m)) }))
+              .filter((g) => g.models.length > 0);
+            const localByTier = tiers
+              .map((tierKey) => ({ tier: tierKey, models: (catalog[tierKey] || []).filter((m) => isLocalModel(m)) }))
+              .filter((g) => g.models.length > 0);
+
+            const freeTotal = freeByTier.reduce((n, g) => n + g.models.length, 0);
+            const premiumTotal = premiumByTier.reduce((n, g) => n + g.models.length, 0);
+            const localTotal = localByTier.reduce((n, g) => n + g.models.length, 0);
+            const premiumConnectedTotal = premiumByTier.reduce((n, g) => n + g.models.filter((m) => isProviderConnected(m.providerId)).length, 0);
 
             const renderTierGroup = (tierKey: ModelTier, models: RankedModelCandidate[], groupKey: string) => {
               if (models.length === 0) return null;
@@ -702,6 +711,12 @@ export const ModelSelector: React.FC = () => {
                         key={candidate.modelId}
                         id={`model-option-${candidate.modelId.replace(/[^a-zA-Z0-9_-]/g, '_')}`}
                         onClick={() => void handleSelectModel(candidate)}
+                        onMouseEnter={(e) => {
+                          if (!isSelected) (e.currentTarget as HTMLDivElement).style.background = 'rgba(255, 255, 255, 0.05)';
+                        }}
+                        onMouseLeave={(e) => {
+                          if (!isSelected) (e.currentTarget as HTMLDivElement).style.background = 'rgba(255, 255, 255, 0.02)';
+                        }}
                         style={{
                           display: 'flex',
                           alignItems: 'center',
@@ -810,63 +825,87 @@ export const ModelSelector: React.FC = () => {
               );
             };
 
-            return (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {/* Connected / Active — providers with at least one verified success */}
-                {connectedTotal > 0 && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <div
-                      id="models-group-connected"
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                        padding: '3px 4px',
-                        borderRadius: '4px',
-                        background: 'rgba(16, 185, 129, 0.08)',
-                        border: '1px solid rgba(16, 185, 129, 0.22)'
-                      }}
-                    >
-                      <ShieldCheck size={11} color="#34d399" style={{ flexShrink: 0 }} />
-                      <span style={{ fontSize: '10px', fontWeight: 700, color: '#34d399', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                        Connected / Active
-                      </span>
-                      <span style={{ marginLeft: 'auto', fontSize: '9px', color: 'rgba(52, 211, 153, 0.75)' }}>
-                        {connectedTotal}
-                      </span>
-                    </div>
-                    {tiers.map((tierKey) => renderTierGroup(tierKey, connectedModels(catalog[tierKey] || []), `conn-${tierKey}`))}
+            const renderSection = (
+              sectionKey: string,
+              id: string,
+              label: string,
+              count: number,
+              groups: { tier: ModelTier; models: RankedModelCandidate[] }[],
+              headerBg: string,
+              headerBorder: string,
+              labelColor: string,
+              hint?: React.ReactNode
+            ) => {
+              if (count === 0 && !hint) return null;
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div
+                    id={id}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '3px 4px',
+                      borderRadius: '4px',
+                      background: headerBg,
+                      border: `1px solid ${headerBorder}`
+                    }}
+                  >
+                    <span style={{ fontSize: '11px', flexShrink: 0 }}>{label}</span>
+                    <span style={{ marginLeft: 'auto', fontSize: '9px', color: labelColor }}> {count > 0 ? `${count}` : ''}</span>
                   </div>
+                  {hint}
+                  {groups.map((g) => renderTierGroup(g.tier, g.models, `${sectionKey}-${g.tier}`))}
+                </div>
+              );
+            };
+
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {/* Ty-Code Free — zero-friction community supply, no key required */}
+                {renderSection(
+                  'free',
+                  'models-group-free',
+                  '⚡ Ty-Code Free (No Key Required)',
+                  freeTotal,
+                  freeByTier,
+                  'rgba(16, 185, 129, 0.08)',
+                  'rgba(16, 185, 129, 0.22)',
+                  'rgba(52, 211, 153, 0.75)'
                 )}
 
-                {/* Disconnected / Inactive — providers that have not completed a verified success yet */}
-                {pendingTotal > 0 && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <div
-                      id="models-group-inactive"
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                        padding: '3px 4px',
-                        borderRadius: '4px',
-                        background: 'rgba(148, 163, 184, 0.08)',
-                        border: '1px solid rgba(148, 163, 184, 0.22)'
-                      }}
-                    >
-                      <Clock size={11} color="#94a3b8" style={{ flexShrink: 0 }} />
-                      <span style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                        Disconnected / Inactive
-                      </span>
-                      <span style={{ marginLeft: 'auto', fontSize: '9px', color: 'rgba(148, 163, 184, 0.8)' }}>
-                        {pendingTotal}
-                      </span>
-                    </div>
+                {/* Premium — unlocked with the One Key (OpenRouter) or a provider's own key */}
+                {renderSection(
+                  'premium',
+                  'models-group-premium',
+                  '🚀 Premium (Requires One Key)',
+                  premiumTotal,
+                  premiumByTier,
+                  'rgba(245, 158, 11, 0.08)',
+                  'rgba(245, 158, 11, 0.22)',
+                  'rgba(251, 191, 36, 0.8)',
+                  premiumTotal > 0 && premiumConnectedTotal === 0 ? (
                     <div style={{ fontSize: '9px', color: 'var(--text-muted)', padding: '0 4px' }}>
-                      Connect the provider (Settings → Providers) to activate these models.
+                      Add your OpenRouter key once in Settings to unlock these; a provider's own key also works.
                     </div>
-                    {tiers.map((tierKey) => renderTierGroup(tierKey, pendingModels(catalog[tierKey] || []), `pend-${tierKey}`))}
-                  </div>
+                  ) : undefined
+                )}
+
+                {/* Local — Ollama models running on this machine */}
+                {renderSection(
+                  'local',
+                  'models-group-local',
+                  '💻 Local (Ollama)',
+                  localTotal,
+                  localByTier,
+                  'rgba(148, 163, 184, 0.08)',
+                  'rgba(148, 163, 184, 0.22)',
+                  'rgba(148, 163, 184, 0.8)',
+                  localTotal === 0 ? (
+                    <div style={{ fontSize: '9px', color: 'var(--text-muted)', padding: '0 4px' }}>
+                      Install Ollama to see fully local models here.
+                    </div>
+                  ) : undefined
                 )}
               </div>
             );

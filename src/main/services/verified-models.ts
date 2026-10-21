@@ -5,10 +5,14 @@
  *  1. FCC catalog (free-claude-code supply layer; probes verified at sync) — the
  *     primary baked-in supply: OpenRouter, OpenKilo, OpenCode, Groq, Google,
  *     Copilot, and every other curated FCC provider.
- *  2. Curated OpenKilo Kilo Gateway free models (verified against live /models).
- *  3. OpenCode Zen hosted free models (standard, baked-in — not optional).
- *  4. Native preconfigured providers.
- *  5. Local Ollama models detected on this machine.
+ *  2. Dynamically fetched FCC catalog (fcc-catalog-sync): the live FCC sidecar
+ *     /v1/models, the local supply facade remapped to real upstream endpoints,
+ *     and connected subscription (Copilot/ChatGPT) pro models.
+ *  3. Curated OpenKilo Kilo Gateway free models (verified against live /models).
+ *  4. OpenCode Zen hosted free models (standard, baked-in — not optional).
+ *  5. Ty-Code Free community tier (ZeroFriction-1): baked, zero-user-input.
+ *  6. Native preconfigured providers.
+ *  7. Local Ollama models detected on this machine.
  *
  * Entries are deduped per provider+model. The cache has a 60s TTL so newly
  * synced FCC / Kilo / OpenCode models appear without restarting the app.
@@ -17,6 +21,7 @@
 import { detectLocalOllamaModels } from './local-model-detector';
 import { getAllPreconfiguredProviders } from '../config/provider-registry';
 import { fccCatalogSync } from './fcc/catalog-sync';
+import { fetchFCCCatalog } from './fcc-catalog-sync';
 import { OPENKILO_CURATED_FREE_MODELS } from './orchestration/openkilo-provider';
 
 export interface VerifiedModelConfig {
@@ -74,6 +79,135 @@ const OPENCODE_ZEN_FREE_MODELS: VerifiedModelConfig[] = [
   }
 ];
 
+// 3.5 Ty-Code Free Tier (ZeroFriction-1): all free supply aggregated into a
+// single zero-friction virtual provider. Requires no user input — requests
+// route to OpenRouter's OpenAI-compatible endpoint and authenticate with the
+// rotating Community Key bootstrapped via credential-vault (or the user's own
+// OpenRouter key when one is stored). requiresKey stays true because the
+// upstream genuinely needs a key; the key is simply never supplied by the
+// user and never lives in source code.
+//
+// Every entry below was verified live on OpenRouter as of 2026-10-21
+// (openrouter pages fetched directly + the daily-refreshed free-model tracker
+// klymentiev.com/assets/data/openrouter-free-models.json checked 06:10 UTC
+// that day, all entries "answered" 200 in this week's runs). Retired slugs
+// (qwen-2.5-coder:free, deepseek-r1:free, gemma-2:free, llama-3.3:free) are
+// excluded because their :free variants no longer exist upstream.
+// Includes the best current free Chinese open models (DeepSeek V4.1 Flash,
+// GLM 5.3 Flash, LongCat 2.0) alongside NVIDIA Nemotron, Cohere and MiniMax.
+const TY_CODE_FREE_MODELS: VerifiedModelConfig[] = [
+  {
+    modelId: 'deepseek/deepseek-v4.1-flash:free',
+    name: 'DeepSeek V4.1 Flash (Ty-Code Free)',
+    url: 'https://openrouter.ai/api/v1/chat/completions',
+    requiresKey: true,
+    providerId: 'ty-code-free'
+  },
+  {
+    modelId: 'z-ai/glm-5.3-flash:free',
+    name: 'GLM 5.3 Flash (Ty-Code Free)',
+    url: 'https://openrouter.ai/api/v1/chat/completions',
+    requiresKey: true,
+    providerId: 'ty-code-free'
+  },
+  {
+    modelId: 'nvidia/nemotron-3-ultra-550b-a55b:free',
+    name: 'Nemotron 3 Ultra 550B (Ty-Code Free)',
+    url: 'https://openrouter.ai/api/v1/chat/completions',
+    requiresKey: true,
+    providerId: 'ty-code-free'
+  },
+  {
+    modelId: 'nvidia/nemotron-3.5-super-vl:free',
+    name: 'Nemotron 3.5 Super VL (Ty-Code Free)',
+    url: 'https://openrouter.ai/api/v1/chat/completions',
+    requiresKey: true,
+    providerId: 'ty-code-free'
+  },
+  {
+    modelId: 'meituan/longcat-2.0:free',
+    name: 'LongCat 2.0 (Ty-Code Free)',
+    url: 'https://openrouter.ai/api/v1/chat/completions',
+    requiresKey: true,
+    providerId: 'ty-code-free'
+  },
+  {
+    modelId: 'cohere/north-mini-code:free',
+    name: 'North Mini Code (Ty-Code Free)',
+    url: 'https://openrouter.ai/api/v1/chat/completions',
+    requiresKey: true,
+    providerId: 'ty-code-free'
+  },
+  {
+    modelId: 'minimax/minimax-m3.1-flash:free',
+    name: 'MiniMax M3.1 Flash (Ty-Code Free)',
+    url: 'https://openrouter.ai/api/v1/chat/completions',
+    requiresKey: true,
+    providerId: 'ty-code-free'
+  },
+  {
+    modelId: 'nvidia/nemotron-3.5-lightning:free',
+    name: 'Nemotron 3.5 Lightning (Ty-Code Free)',
+    url: 'https://openrouter.ai/api/v1/chat/completions',
+    requiresKey: true,
+    providerId: 'ty-code-free'
+  },
+  {
+    // Inkling free variants are gated by OpenRouter to recognized agentic
+    // harnesses (403 otherwise); Ty-Code's tool loop qualifies it as one, and
+    // any rejection fails over gracefully to other free models.
+    modelId: 'thinkingmachines/inkling-small:free',
+    name: 'Inkling Small (Ty-Code Free)',
+    url: 'https://openrouter.ai/api/v1/chat/completions',
+    requiresKey: true,
+    providerId: 'ty-code-free'
+  },
+  {
+    modelId: 'thinkingmachines/inkling:free',
+    name: 'Inkling (Ty-Code Free)',
+    url: 'https://openrouter.ai/api/v1/chat/completions',
+    requiresKey: true,
+    providerId: 'ty-code-free'
+  }
+];
+
+// 3.6 One-Key Premium (ZeroFriction-2): a single OpenRouter key unlocks every
+// premium model through the unified OpenRouter API. These entries surface in
+// the model dropdown's Premium section only when that key is stored
+// (filterRoutableFreeFirst keeps them out of the free-first default pool).
+// Qwen and DeepSeek intentionally appear in BOTH tiers: the free variants
+// above serve zero-configuration users, these paid flagships serve One-Key users.
+const OPENROUTER_PREMIUM_MODELS: VerifiedModelConfig[] = [
+  {
+    modelId: 'openai/gpt-4o',
+    name: 'GPT-4o (Premium)',
+    url: 'https://openrouter.ai/api/v1/chat/completions',
+    requiresKey: true,
+    providerId: 'openrouter'
+  },
+  {
+    modelId: 'anthropic/claude-3.5-sonnet',
+    name: 'Claude 3.5 Sonnet (Premium)',
+    url: 'https://openrouter.ai/api/v1/chat/completions',
+    requiresKey: true,
+    providerId: 'openrouter'
+  },
+  {
+    modelId: 'qwen/qwen-max',
+    name: 'Qwen Max (Premium)',
+    url: 'https://openrouter.ai/api/v1/chat/completions',
+    requiresKey: true,
+    providerId: 'openrouter'
+  },
+  {
+    modelId: 'deepseek/deepseek-chat',
+    name: 'DeepSeek V3 (Premium)',
+    url: 'https://openrouter.ai/api/v1/chat/completions',
+    requiresKey: true,
+    providerId: 'openrouter'
+  }
+];
+
 function joinUrl(base: string, path: string): string {
   const cleanBase = base.replace(/\/+$/, '');
   if (cleanBase.endsWith('/chat/completions')) return cleanBase;
@@ -118,9 +252,20 @@ function buildBakedModels(): VerifiedModelConfig[] {
   // 3. OpenCode Zen hosted free models (standard baked-in supply)
   baked.push(...OPENCODE_ZEN_FREE_MODELS);
 
+  // 3.5 Ty-Code Free Tier: zero-friction community-served free models
+  baked.push(...TY_CODE_FREE_MODELS);
+
+  // 3.6 One-Key Premium: unlockable with a single OpenRouter key
+  baked.push(...OPENROUTER_PREMIUM_MODELS);
+
   // 4. Native preconfigured providers (works even if FCC catalog sync is cold)
   for (const provider of getAllPreconfiguredProviders() || []) {
     if (!provider.baseUrl || !provider.defaultModel) continue;
+    // Local Ollama is dynamic-only: detectLocalOllamaModels() adds verified
+    // local models at runtime. Baking the registry's suggestion model
+    // (qwen2.5-coder:latest) here would surface a dead localhost entry on
+    // machines without Ollama.
+    if ((provider.id || '').toLowerCase() === 'ollama') continue;
     baked.push({
       modelId: provider.defaultModel,
       name: provider.name,
@@ -143,13 +288,14 @@ export async function getVerifiedModels(): Promise<VerifiedModelConfig[]> {
     return cachedModels!;
   }
 
-  const [baked, localModels] = await Promise.all([
+  const [baked, localModels, fccModels] = await Promise.all([
     Promise.resolve(buildBakedModels()),
-    detectLocalOllamaModels().catch(() => [] as VerifiedModelConfig[])
+    detectLocalOllamaModels().catch(() => [] as VerifiedModelConfig[]),
+    fetchFCCCatalog().catch(() => [] as VerifiedModelConfig[])
   ]);
 
   const merged = new Map<string, VerifiedModelConfig>();
-  for (const model of [...baked, ...localModels]) {
+  for (const model of [...baked, ...fccModels, ...localModels]) {
     if (!model.modelId || !model.url) continue;
     const key = `${(model.providerId || '').toLowerCase()}::${model.modelId}`;
     if (merged.has(key)) continue;

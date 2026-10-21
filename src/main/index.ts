@@ -121,7 +121,7 @@ import { diagnosticsHealthMonitor } from './services/diagnostics/health-monitor'
 import { connectivityTracer } from './services/diagnostics/connectivity-tracer';
 import { providerOAuth } from './services/auth/provider-oauth';
 import { usageLedger } from './services/usage/ledger';
-import { saveKey, getKey, testKey } from './services/credential-vault';
+import { saveKey, getKey, testKey, warmUpCommunityKey, revalidateCommunityKey } from './services/credential-vault';
 import { initiateCopilotDeviceFlow, pollCopilotToken } from './services/auth/subscription-auth';
 import { canvasSyncManager } from './services/canvas-sync-manager';
 import { canvasAgentEngine, type CanvasAgentGenerationResult } from './agent/canvas-agent-engine';
@@ -2947,10 +2947,19 @@ function registerFccHandlers(): void {
     const config = allModels.find(m => m.modelId === modelId);
     if (!config) throw new Error("Unverified model requested");
 
+    const isTyCodeFreeModel = (config.providerId || '').toLowerCase() === 'ty-code-free';
+    let effectiveKey = apiKey;
+    if (config.requiresKey && !effectiveKey && isTyCodeFreeModel) {
+      // Zero-friction verification: the community tier uses the rotating
+      // Community Key bootstrapped by the vault, never user input.
+      const community = await getKey('ty-code-free');
+      if (community && community.trim()) effectiveKey = community.trim();
+    }
+
     const headers: Record<string, string> = { "Content-Type": "application/json" };
-    if (config.requiresKey && apiKey) {
-      headers["Authorization"] = `Bearer ${apiKey}`;
-    } else if (config.requiresKey && !apiKey) {
+    if (config.requiresKey && effectiveKey) {
+      headers["Authorization"] = `Bearer ${effectiveKey}`;
+    } else if (config.requiresKey && !effectiveKey && !isTyCodeFreeModel) {
       throw new Error("API key required for this model");
     }
 
@@ -3544,6 +3553,26 @@ app.whenReady().then(async () => {
       // Standard, not optional: OpenCode Zen free models + OpenKilo gateway are
       // always part of the baked-in supply, routed & managed by the FCC backend.
       await opencodeServiceManager.ensureStandardSupply();
+    }
+  );
+
+  bootScheduler.register(
+    'community_key_bootstrap',
+    'Community Key Bootstrap & Rotation Revalidation (ty-code-free across restarts)',
+    2,
+    'providers',
+    async () => {
+      // Prefetch the rotating Community Key once so free-tier availability is
+      // true from the very first chat (no lazy network stall mid-message).
+      warmUpCommunityKey();
+      // Rotation support: refresh the encrypted cache when older than 6h so a
+      // retired key rarely surfaces as a 401/403 mid-session; failures are
+      // non-fatal (anonymous free pool + 401/403 invalidation remain safe).
+      const ROTATION_REVALIDATE_MS = 6 * 60 * 60 * 1000;
+      const revalidation = setInterval(() => {
+        void revalidateCommunityKey(ROTATION_REVALIDATE_MS);
+      }, ROTATION_REVALIDATE_MS);
+      if (typeof revalidation.unref === 'function') revalidation.unref();
     }
   );
 

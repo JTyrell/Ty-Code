@@ -30,10 +30,14 @@ import {
   Server,
   Terminal,
   CheckCircle2,
-  FolderOpen
+  FolderOpen,
+  Rocket,
+  ChevronDown,
+  Zap
 } from 'lucide-react';
 import type { DetectedApiKey, StoredKeySummary } from '../../../../shared/types/byok';
-import type { CredentialStorageStatus } from '../../../../preload/types';
+import type { CredentialStorageStatus, ProviderType } from '../../../../preload/types';
+import { useChatStore } from '../../state/chat-store';
 import { useOnboardingStore } from '../../state/onboarding-store';
 
 export interface APIKeyManagerProps {
@@ -45,6 +49,7 @@ export const APIKeyManager: React.FC<APIKeyManagerProps> = ({
   onRefreshStoredKeys,
   onOpenWizardForProvider
 }) => {
+  const { settings, saveSettings } = useChatStore();
   const [detectedKeys, setDetectedKeys] = useState<DetectedApiKey[]>([]);
   const [storedKeys, setStoredKeys] = useState<StoredKeySummary[]>([]);
   const [revealedKeys, setRevealedKeys] = useState<Record<string, string>>({});
@@ -57,6 +62,9 @@ export const APIKeyManager: React.FC<APIKeyManagerProps> = ({
   const [errorNotice, setErrorNotice] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [isExporting, setIsExporting] = useState(false);
+  const [premiumKeyInput, setPremiumKeyInput] = useState('');
+  const [premiumSaving, setPremiumSaving] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   // Load initial state
   useEffect(() => {
@@ -92,6 +100,42 @@ export const APIKeyManager: React.FC<APIKeyManagerProps> = ({
       setErrorNotice(err instanceof Error ? err.message : String(err));
     } finally {
       setIsDetecting(false);
+    }
+  };
+
+  // Premium Active state: the OpenRouter key (the One Key) unlocks GPT-4o,
+  // Claude 3.5 Sonnet, Qwen Max and DeepSeek; the free tier needs nothing.
+  const premiumActive =
+    Boolean(settings?.apiKeysConfigured?.['openrouter' as ProviderType]) ||
+    storedKeys.some((k) => (k.providerId === 'openrouter' || k.providerId === 'openrouter-free') && k.isConfigured);
+
+  // One-Key Premium activation: verify the key against OpenRouter live, then
+  // persist it through the encrypted settings vault (same path as the wizard).
+  const handleActivatePremium = async () => {
+    const key = premiumKeyInput.trim();
+    if (!key) {
+      setErrorNotice('Enter your OpenRouter API key to unlock premium models.');
+      return;
+    }
+    setPremiumSaving(true);
+    setErrorNotice(null);
+    try {
+      const res = await window.electronAPI.providerTestConnection({ providerId: 'openrouter', apiKey: key });
+      const result = res.success ? res.data : undefined;
+      if (!result || !result.success) {
+        setErrorNotice(result?.error || res.error || 'OpenRouter rejected this key. Check it at openrouter.ai/settings/keys.');
+        return;
+      }
+      await saveSettings({ apiKeys: { openrouter: key } });
+      setPremiumKeyInput('');
+      setActionNotice('Premium unlocked! One key now covers GPT-4o, Claude 3.5 Sonnet, Qwen Max and DeepSeek.');
+      setTimeout(() => setActionNotice(null), 4500);
+      await refreshAll();
+      if (onRefreshStoredKeys) await onRefreshStoredKeys();
+    } catch (err: unknown) {
+      setErrorNotice(err instanceof Error ? err.message : String(err));
+    } finally {
+      setPremiumSaving(false);
     }
   };
 
@@ -413,6 +457,236 @@ export const APIKeyManager: React.FC<APIKeyManagerProps> = ({
       )}
 
       {/* ============================================================ */}
+      {/* START FREE — ZERO CONFIGURATION CARD                         */}
+      {/* ============================================================ */}
+      <div
+        id="start-free-card"
+        style={{
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: '14px',
+          padding: '16px',
+          borderRadius: '10px',
+          background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.12) 0%, rgba(16, 185, 129, 0.03) 100%)',
+          border: '1px solid rgba(16, 185, 129, 0.3)'
+        }}
+      >
+        <div
+          style={{
+            width: '38px',
+            height: '38px',
+            borderRadius: '50%',
+            background: 'rgba(16, 185, 129, 0.18)',
+            border: '1px solid rgba(16, 185, 129, 0.4)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0
+          }}
+        >
+          <CheckCircle2 size={20} color="#34d399" />
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+            <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: '#f8fafc' }}>
+              Start Free (Zero Configuration)
+            </h3>
+            <span
+              style={{
+                padding: '2px 8px',
+                borderRadius: '12px',
+                background: 'rgba(16, 185, 129, 0.2)',
+                color: '#34d399',
+                fontSize: '10px',
+                fontWeight: 700,
+                textTransform: 'uppercase',
+                letterSpacing: '0.5px'
+              }}
+            >
+              Active
+            </span>
+          </div>
+          <p style={{ margin: '4px 0 0 0', fontSize: '11.5px', color: '#94a3b8', lineHeight: 1.55 }}>
+            Chat immediately with free models — Ty-Code Free (GLM 5.3 Flash, DeepSeek V4.1 Flash, Nemotron 3 Ultra, LongCat 2.0),
+            the managed FCC supply, OpenKilo's free gateway, or fully local Ollama. No key entry needed; the router picks a
+            healthy free endpoint per request and fails over automatically.
+          </p>
+        </div>
+      </div>
+
+      {/* ============================================================ */}
+      {/* UNLOCK PREMIUM — ONE KEY CARD                                */}
+      {/* ============================================================ */}
+      <div
+        id="unlock-premium-card"
+        style={{
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: '14px',
+          padding: '16px',
+          borderRadius: '10px',
+          background: premiumActive
+            ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(16, 185, 129, 0.02) 100%)'
+            : 'linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(245, 158, 11, 0.02) 100%)',
+          border: premiumActive ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(245, 158, 11, 0.3)'
+        }}
+      >
+        <div
+          style={{
+            width: '38px',
+            height: '38px',
+            borderRadius: '50%',
+            background: premiumActive ? 'rgba(16, 185, 129, 0.18)' : 'rgba(245, 158, 11, 0.18)',
+            border: premiumActive ? '1px solid rgba(16, 185, 129, 0.4)' : '1px solid rgba(245, 158, 11, 0.4)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0
+          }}
+        >
+          {premiumActive ? <CheckCircle2 size={20} color="#34d399" /> : <Rocket size={20} color="#fbbf24" />}
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+            <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: '#f8fafc' }}>
+              Unlock Premium (One Key)
+            </h3>
+            {premiumActive ? (
+              <span
+                style={{
+                  padding: '2px 8px',
+                  borderRadius: '12px',
+                  background: 'rgba(16, 185, 129, 0.2)',
+                  color: '#34d399',
+                  fontSize: '10px',
+                  fontWeight: 700,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px'
+                }}
+              >
+                Premium Active
+              </span>
+            ) : (
+              <span
+                style={{
+                  padding: '2px 8px',
+                  borderRadius: '12px',
+                  background: 'rgba(245, 158, 11, 0.15)',
+                  color: '#fbbf24',
+                  fontSize: '10px',
+                  fontWeight: 700,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px'
+                }}
+              >
+                Optional
+              </span>
+            )}
+          </div>
+          <p style={{ margin: '4px 0 0 0', fontSize: '11.5px', color: '#94a3b8', lineHeight: 1.55 }}>
+            One OpenRouter key unlocks the whole premium lineup: GPT-4o, Claude 3.5 Sonnet, Qwen Max and DeepSeek V3.
+            {premiumActive
+              ? ' Your saved key is active — replace it below any time.'
+              : ' Get a key below if you want more capability.'}
+          </p>
+          <div style={{ display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
+            <input
+              type="password"
+              id="input-openrouter-one-key"
+              placeholder="sk-or-v1-..."
+              value={premiumKeyInput}
+              onChange={(e) => setPremiumKeyInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void handleActivatePremium();
+              }}
+              style={{
+                flex: 1,
+                minWidth: '220px',
+                padding: '8px 12px',
+                borderRadius: '6px',
+                border: '1px solid rgba(245, 158, 11, 0.35)',
+                background: 'rgba(15, 23, 42, 0.6)',
+                color: '#f8fafc',
+                fontSize: '12px',
+                fontFamily: 'monospace'
+              }}
+            />
+            <button
+              type="button"
+              id="btn-activate-premium"
+              disabled={premiumSaving}
+              onClick={() => void handleActivatePremium()}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '8px 16px',
+                borderRadius: '6px',
+                background: 'var(--accent-primary)',
+                border: 'none',
+                color: '#ffffff',
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: premiumSaving ? 'wait' : 'pointer'
+              }}
+            >
+              <Zap size={13} />
+              {premiumSaving ? 'Verifying...' : premiumActive ? 'Replace Key' : 'Unlock Premium'}
+            </button>
+            <a
+              href="https://openrouter.ai/settings/keys"
+              onClick={(e) => {
+                e.preventDefault();
+                void window.electronAPI.openExternal('https://openrouter.ai/settings/keys');
+              }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '5px',
+                padding: '8px 10px',
+                borderRadius: '6px',
+                background: 'rgba(255, 255, 255, 0.05)',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                color: '#cbd5e1',
+                fontSize: '12px',
+                textDecoration: 'none'
+              }}
+            >
+              <ExternalLink size={12} />
+              Get a key
+            </a>
+          </div>
+        </div>
+      </div>
+
+      {/* Advanced: auto-detection, direct provider keys and stored-key management */}
+      <button
+        type="button"
+        id="btn-advanced-keys-toggle"
+        onClick={() => setShowAdvanced((prev) => !prev)}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          padding: '10px 12px',
+          borderRadius: '8px',
+          background: 'rgba(30, 41, 59, 0.4)',
+          border: '1px solid rgba(255, 255, 255, 0.08)',
+          color: '#cbd5e1',
+          fontSize: '12px',
+          fontWeight: 600,
+          cursor: 'pointer'
+        }}
+      >
+        <Sparkles size={13} color="var(--accent-primary)" />
+        Advanced / All Providers
+        <span style={{ fontSize: '11px', color: '#64748b' }}>( {storedKeys.length} keys stored )</span>
+        <ChevronDown size={14} style={{ marginLeft: 'auto', transform: showAdvanced ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s ease' }} />
+      </button>
+
+      {showAdvanced && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+      {/* ============================================================ */}
       {/* AUTO-DETECTION SECTION                                       */}
       {/* ============================================================ */}
       <div
@@ -730,15 +1004,17 @@ export const APIKeyManager: React.FC<APIKeyManagerProps> = ({
                         cursor: 'pointer'
                       }}
                     >
-                      Add Key
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          })}
+                       Add Key
+                     </button>
+                   )}
+                 </div>
+               </div>
+             );
+           })}
+         </div>
+       </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };

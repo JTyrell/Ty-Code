@@ -22,6 +22,7 @@ import {
   Cpu
 } from 'lucide-react';
 import type { PreConfiguredProvider, DiscoveredModel, TestConnectionResult } from '../../../../preload/types';
+import { useChatStore } from '../../state/chat-store';
 
 export interface ProviderSetupFormProps {
   provider: PreConfiguredProvider;
@@ -78,6 +79,9 @@ export const ProviderSetupForm: React.FC<ProviderSetupFormProps> = ({
   const isCopilot = providerId === 'github-copilot' || providerId === 'github-models';
   const hasOAuthCapability = isOpenRouter || isOpenKilo || isCopilot;
 
+  const [localConfigured, setLocalConfigured] = useState(false);
+  const effectiveIsConfigured = isConfigured || localConfigured;
+
   useEffect(() => {
     setApiKey('');
     setCustomEndpoint(initialCustomEndpoint || providerBaseUrl);
@@ -88,6 +92,7 @@ export const ProviderSetupForm: React.FC<ProviderSetupFormProps> = ({
     setOauthState({ status: 'idle' });
     setCopilotFlow(null);
     setShowManualByok(!hasOAuthCapability);
+    setLocalConfigured(false);
   }, [providerId, initialCustomEndpoint, providerBaseUrl, hasOAuthCapability]);
 
   // Listen for OAuth status change events pushed from main process
@@ -96,9 +101,11 @@ export const ProviderSetupForm: React.FC<ProviderSetupFormProps> = ({
     const unsub = window.electronAPI.onOAuthStatusChanged((statusMap: Record<string, any>) => {
       const pStatus = statusMap[providerId] || statusMap[providerId.replace('-free', '')];
       if (pStatus?.connected) {
+        setLocalConfigured(true);
         setOauthState({ status: 'success', message: `Connected to ${provider?.name || providerId} securely!` });
         setTimeout(() => setOauthState({ status: 'idle' }), 3000);
-        void handleTestConnection();
+        void useChatStore.getState().initSettings();
+        void handleTestConnection(true);
       }
     });
     return () => {
@@ -120,13 +127,15 @@ export const ProviderSetupForm: React.FC<ProviderSetupFormProps> = ({
     }
   };
 
-  const handleTestConnection = async () => {
+  const handleTestConnection = async (forceConfigured?: boolean | React.MouseEvent) => {
+    const isForced = typeof forceConfigured === 'boolean' ? forceConfigured : false;
     setValidationError('');
     setTestResult(null);
     setIsTesting(true);
 
     try {
-      if (!isZeroConfig && !apiKey.trim() && !isConfigured) {
+      const hasKeyOrConfigured = apiKey.trim() || effectiveIsConfigured || isForced;
+      if (!isZeroConfig && !hasKeyOrConfigured) {
         setValidationError('Please enter an API key before testing connection.');
         setIsTesting(false);
         return;
@@ -179,7 +188,7 @@ export const ProviderSetupForm: React.FC<ProviderSetupFormProps> = ({
 
   const handleSave = async () => {
     setValidationError('');
-    if (!isZeroConfig && !apiKey.trim() && !isConfigured) {
+    if (!isZeroConfig && !apiKey.trim() && !effectiveIsConfigured) {
       setValidationError('Please enter an API key.');
       return;
     }
@@ -346,9 +355,11 @@ export const ProviderSetupForm: React.FC<ProviderSetupFormProps> = ({
         await window.electronAPI.byokRevokeKey(provider.id);
       }
       setApiKey('');
+      setLocalConfigured(false);
       setTestResult(null);
       setOauthState({ status: 'idle' });
       setCopilotFlow(null);
+      void useChatStore.getState().initSettings();
     } finally {
       setIsDisconnecting(false);
     }
@@ -379,11 +390,11 @@ export const ProviderSetupForm: React.FC<ProviderSetupFormProps> = ({
                 fontSize: '10px',
                 padding: '2px 7px',
                 borderRadius: '10px',
-                backgroundColor: isConfigured ? 'rgba(16, 185, 129, 0.15)' : 'var(--bg-hover)',
-                color: isConfigured ? 'var(--accent-green)' : 'var(--text-muted)'
+                backgroundColor: effectiveIsConfigured ? 'rgba(16, 185, 129, 0.15)' : 'var(--bg-hover)',
+                color: effectiveIsConfigured ? 'var(--accent-green)' : 'var(--text-muted)'
               }}
             >
-              {isConfigured ? 'Connected (Encrypted in safeStorage)' : 'Not connected'}
+              {effectiveIsConfigured ? 'Connected (Encrypted in safeStorage)' : 'Not connected'}
             </span>
           </div>
           <p style={{ margin: '4px 0 0', fontSize: '11px', color: 'var(--text-secondary)' }}>
@@ -392,7 +403,7 @@ export const ProviderSetupForm: React.FC<ProviderSetupFormProps> = ({
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          {isConfigured && (
+          {effectiveIsConfigured && (
             <button
               type="button"
               onClick={handleDisconnect}
@@ -500,7 +511,7 @@ export const ProviderSetupForm: React.FC<ProviderSetupFormProps> = ({
               ) : (
                 <>
                   <Share2 size={13} />
-                  <span>{isConfigured ? 'Re-connect OpenRouter' : 'Connect OpenRouter'}</span>
+                  <span>{effectiveIsConfigured ? 'Re-connect OpenRouter' : 'Connect OpenRouter'}</span>
                 </>
               )}
             </button>
@@ -643,7 +654,7 @@ export const ProviderSetupForm: React.FC<ProviderSetupFormProps> = ({
                 }}
               >
                 <Cpu size={13} />
-                <span>{isConfigured ? 'Re-connect Copilot' : 'Connect Copilot'}</span>
+                <span>{effectiveIsConfigured ? 'Re-connect Copilot' : 'Connect Copilot'}</span>
               </button>
             )}
           </div>
@@ -819,7 +830,7 @@ export const ProviderSetupForm: React.FC<ProviderSetupFormProps> = ({
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
                 placeholder={
-                  isConfigured
+                  effectiveIsConfigured
                     ? '•••••••••••••••• (Stored in operating-system secure storage. Enter a new key to replace)'
                     : provider.id === 'openrouter'
                       ? 'sk-or-v1-...'
@@ -906,7 +917,7 @@ export const ProviderSetupForm: React.FC<ProviderSetupFormProps> = ({
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '4px' }}>
         <button
           type="button"
-          onClick={handleTestConnection}
+          onClick={() => void handleTestConnection()}
           disabled={isTesting}
           id="btn-test-provider-connection"
           style={{
