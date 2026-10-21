@@ -1,7 +1,7 @@
 # Ty-Code 🚀
 
-> **A Standalone Desktop AI Coding Assistant & Monaco IDE**  
-> Powered by Electron, Monaco Editor (VS Code engine), and a multi-provider LLM gateway inspired by [`free-claude-code`](https://github.com/Alishahryar1/free-claude-code).
+> **The Local-First AI IDE That Respects Your Code.**
+> Ty-Code delivers Cursor-level productivity with zero cloud exfiltration. Start free with zero configuration, or bring your own key for premium models. 100% local data sovereignty.
 
 [![Powered by FCC](https://img.shields.io/badge/Model%20Supply-free--claude--code-indigo.svg)](https://github.com/Alishahryar1/free-claude-code)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -10,19 +10,14 @@
 
 ## Overview
 
-**Ty-Code** brings the agentic power of **Claude Code** and **Antigravity** into a native desktop application. It integrates the **Monaco Editor** as its primary code editing environment and connects seamlessly to free, low-cost, or local LLMs (OpenRouter, Groq, DeepSeek, Ollama, LM Studio), liberating developers from expensive proprietary API subscriptions.
+**Ty-Code** is a native desktop AI IDE built on the **Monaco Editor** (the VS Code engine). It ships with a built-in **Ty-Code Free Tier (Zero Configuration)** so you can start coding instantly, and a seamless **One-Key Premium** upgrade path when you want GPT-4o, Claude 3.5 Sonnet, Qwen-Max, and 100+ more. Everything runs behind a strict **Zero-Telemetry Guarantee**, backed by the [`free-claude-code`](https://github.com/Alishahryar1/free-claude-code) supply layer.
 
-### Key Highlights
-- 🖥️ **Monaco Editor Core**: VS Code's editing engine with syntax highlighting, language servers, multi-file tabs, and side-by-side diff review.
-- 🤖 **Agentic Coding Engine**: Autonomous multi-turn agent capable of reading files, writing code, executing surgical text replacements, running terminal commands, and searching directories.
-- 🔌 **Pluggable & Zero/Low-Cost AI Providers**:
-  - **OpenRouter**: Access hundreds of models, including free tiers (DeepSeek V3, DeepSeek R1, Qwen 2.5 Coder, Llama 3.3).
-  - **Groq**: Lightning-fast inference (~300+ tokens/sec).
-  - **DeepSeek Direct**: Official API support.
-  - **Local Ollama / LM Studio**: 100% private, offline inference (`qwen2.5-coder`, `deepseek-r1`).
-  - **Free-Claude-Code Proxy**: Direct compatibility with `Alishahryar1/free-claude-code` proxy servers (`http://localhost:8082`).
-- 🛡️ **Security Sandboxing**: API credentials use Electron `safeStorage` backed by the operating-system credential store; saving is disabled when secure storage is unavailable. Telemetry is off by default and never transmitted by the current build.
-- 📦 **Cross-Platform**: Ready to package as a standalone executable for Windows (`.exe`), macOS (`.dmg`), and Linux (`.AppImage`).
+### Feature Grid
+
+1. **Zero-Friction Onboarding:** "Start coding in seconds with our built-in Free Tier. No sign-ups, no credit cards. Upgrade seamlessly with a single API key when you're ready."
+2. **OS-Level Credential Encryption:** "We don't store your keys in plaintext `.env` files. Ty-Code uses native `safeStorage` (Windows DPAPI, macOS Keychain, Linux Secret Service) to encrypt your credentials at rest."
+3. **Intelligent Agentic Harness:** "Our ReAct execution loop features built-in task scoping, todo tracking, and background agent delegation. The AI plans before it acts, preventing runaway token costs."
+4. **True Zero-Telemetry:** "No silent analytics. No code exfiltration. Your workspace remains entirely under your control, making Ty-Code the ideal choice for HIPAA, defense, and enterprise environments."
 
 ---
 

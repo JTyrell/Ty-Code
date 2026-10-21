@@ -8,7 +8,10 @@ import {
   Command,
   Trash2,
   Sparkles,
-  Cpu
+  Cpu,
+  Layers,
+  ShieldCheck,
+  Frame
 } from 'lucide-react';
 import { useWorkspaceStore } from '../state/workspace-store';
 import { useChatStore } from '../state/chat-store';
@@ -319,6 +322,113 @@ export const WelcomePage: React.FC<WelcomePageProps> = ({ onStartTour }) => {
                   </button>
                 ))
               )}
+            </div>
+          </div>
+        </div>
+
+        {/* Architecture Highlights */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.05em' }}>
+            Why Ty-Code
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px' }}>
+            <div
+              style={{
+                backgroundColor: 'var(--bg-secondary)',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: '8px',
+                padding: '16px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '10px'
+              }}
+            >
+              <div
+                style={{
+                  width: '34px',
+                  height: '34px',
+                  borderRadius: '8px',
+                  background: 'rgba(129, 140, 248, 0.12)',
+                  border: '1px solid rgba(129, 140, 248, 0.3)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              >
+                <Layers size={17} color="#818cf8" />
+              </div>
+              <div style={{ fontSize: '13px', fontWeight: 600 }}>
+                Unified Multi-Model Routing
+              </div>
+              <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)', lineHeight: 1.55 }}>
+                Ty-Code's intelligent ProviderGateway normalizes OpenAI, Anthropic, Groq, and local Ollama models into a single, seamless experience. If one provider rate-limits, we auto-failover without dropping your context.
+              </div>
+            </div>
+
+            <div
+              style={{
+                backgroundColor: 'var(--bg-secondary)',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: '8px',
+                padding: '16px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '10px'
+              }}
+            >
+              <div
+                style={{
+                  width: '34px',
+                  height: '34px',
+                  borderRadius: '8px',
+                  background: 'rgba(52, 211, 153, 0.12)',
+                  border: '1px solid rgba(52, 211, 153, 0.3)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              >
+                <ShieldCheck size={17} color="#34d399" />
+              </div>
+              <div style={{ fontSize: '13px', fontWeight: 600 }}>
+                Enterprise Security Sandbox
+              </div>
+              <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)', lineHeight: 1.55 }}>
+                Agent tool execution is strictly bounded to your workspace. Destructive commands require explicit approval, and edits over 5 lines trigger a Monaco Diff review.
+              </div>
+            </div>
+
+            <div
+              style={{
+                backgroundColor: 'var(--bg-secondary)',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: '8px',
+                padding: '16px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '10px'
+              }}
+            >
+              <div
+                style={{
+                  width: '34px',
+                  height: '34px',
+                  borderRadius: '8px',
+                  background: 'rgba(56, 189, 248, 0.12)',
+                  border: '1px solid rgba(56, 189, 248, 0.3)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              >
+                <Frame size={17} color="#38bdf8" />
+              </div>
+              <div style={{ fontSize: '13px', fontWeight: 600 }}>
+                M3E UI Canvas
+              </div>
+              <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)', lineHeight: 1.55 }}>
+                Prototype visually in a dedicated, floating window. Chat with the canvas to generate React, Tailwind, or Flutter UIs in real-time, synced perfectly with your main editor.
+              </div>
             </div>
           </div>
         </div>
