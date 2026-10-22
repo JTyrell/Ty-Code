@@ -1,11 +1,11 @@
 # Ty-Code Remediation Report — Plain-Language "What Is Needed"
-**Generated**: 2026-10-19T17:46:27.602Z
+**Generated**: 2026-10-21T23:41:04.104Z
 **Status**: ACTION REQUIRED
 
 ## 1. RECOMMENDED NEXT ACTION (Single Highest-Value Step)
 > [!IMPORTANT]
 > **Start coding immediately with OpenKilo (Kilo Gateway)**
-> OpenKilo (Kilo Gateway) is fully operational (1632ms TTFT - Streaming & tool-calling verified). You can start coding right now without waiting.
+> OpenKilo (Kilo Gateway) is fully operational (1000ms TTFT - Streaming & tool-calling verified). You can start coding right now without waiting.
 
 ## 2. WORKING NOW (Providers & Models Ready Immediately)
 > [!NOTE]
@@ -13,8 +13,8 @@
 
 | Provider | Model | Auth Mode | Latency | Status |
 | :--- | :--- | :--- | :--- | :--- |
-| **OpenKilo (Kilo Gateway)** | `kilo-auto/free` | `anonymous` | 1632ms | **READY TO USE** |
-| **OpenRouter (Free Tier)** | `nvidia/nemotron-3-ultra-550b-a55b:free` | `api_key_optional` | 779ms | **READY TO USE** |
+| **OpenKilo (Kilo Gateway)** | `kilo-auto/free` | `anonymous` | 1000ms | **READY TO USE** |
+| **OpenRouter (Free Tier)** | `nvidia/nemotron-3-ultra-550b-a55b:free` | `api_key_optional` | 656ms | **READY TO USE** |
 
 ## 3. MISSING FROM YOU (User Action Required)
 - [ ] **Groq (Free Tier)** (`MODEL_UNAVAILABLE`): Selected model 'llama-3.3-70b-versatile' is not available or not free on Groq (Free Tier) (HTTP 404).

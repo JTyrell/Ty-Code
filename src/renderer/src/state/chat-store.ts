@@ -465,6 +465,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
         const response = await window.electronAPI.getSettings();
         if (response.success && response.data) set({ settings: response.data });
         else if (response.error) console.error('Failed to load settings:', response.error);
+        // Keep the unified settings store in step (boot + settings:changed).
+        try {
+          const { useSettingsStore } = await import('./settings-store');
+          await useSettingsStore.getState().hydrate();
+        } catch {
+          // Unified store not loaded yet; chat settings remain authoritative.
+        }
       } catch (err) { console.error('Failed to load settings:', err); }
     };
     if (!settingsChangedUnsubscribe) {
@@ -524,6 +531,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
           if (typeof value === 'string' && value.trim()) apiKeysConfigured[provider as ProviderType] = true;
         }
         set({ settings: { ...current, ...updates, apiKeys: {}, apiKeysConfigured, customEndpoints: { ...current.customEndpoints, ...updates.customEndpoints } } });
+      }
+      // Funnel persisted selections through the unified store: its sync
+      // watcher updates the main-process active agent config + gateway.
+      try {
+        const { useSettingsStore } = await import('./settings-store');
+        await useSettingsStore.getState().hydrate();
+      } catch {
+        // Unified store unavailable; settings still persisted and broadcast.
       }
       return true;
     } catch (err) { console.error('Failed to save settings:', err); return false; }

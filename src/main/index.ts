@@ -5,7 +5,8 @@ import { app, BrowserWindow, ipcMain, session, shell, dialog, type IpcMainInvoke
 import path from 'path';
 import os from 'os';
 import fsSync from 'fs';
-import { ProviderGateway } from './providers/provider-gateway';
+import { ProviderGateway, setGatewayActiveConfig } from './providers/provider-gateway';
+import { detectLocalOllamaModels } from './services/local-model-detector';
 import { PRECONFIGURED_PROVIDERS } from './config/provider-registry';
 import type { PreConfiguredProvider } from '../preload/types';
 import { historyExtractor } from './services/history-extractor';
@@ -26,6 +27,7 @@ import {
   handleLspCodeActions, handleLspSignatureHelp, getLspManager
 } from './ipc/lsp-handlers';
 import { getCredentialStorageStatusResponse, getSettings, getSettingsLayer, getSecurityPolicy, saveSecurityPolicy, saveSettings, saveSettingsLayer, readOnboardingState, writeOnboardingState, mergeStoredApiKeys } from './ipc/settings-handlers';
+import { setActiveAgentConfig } from './agent/agent-config';
 import { settingsManager } from './services/settings-manager';
 import { startAgentTask, stopAgentTask, respondAgentApproval, applyDiff, handleUserApproveDiff } from './ipc/agent-handlers';
 import {
@@ -121,7 +123,7 @@ import { diagnosticsHealthMonitor } from './services/diagnostics/health-monitor'
 import { connectivityTracer } from './services/diagnostics/connectivity-tracer';
 import { providerOAuth } from './services/auth/provider-oauth';
 import { usageLedger } from './services/usage/ledger';
-import { saveKey, getKey, testKey, warmUpCommunityKey, revalidateCommunityKey } from './services/credential-vault';
+import { saveKey, getKey, testKey, warmUpCommunityKey, revalidateCommunityKey, getCommunityKeyCached, hasCommunityKey } from './services/credential-vault';
 import { initiateCopilotDeviceFlow, pollCopilotToken } from './services/auth/subscription-auth';
 import { canvasSyncManager } from './services/canvas-sync-manager';
 import { canvasAgentEngine, type CanvasAgentGenerationResult } from './agent/canvas-agent-engine';
@@ -830,6 +832,33 @@ function registerIpcHandlers(): void {
     if (result.success && updates?.telemetry?.enabled === false) await getTelemetryManager().clearData();
     if (result.success && updates?.['lsp.autoStart'] !== undefined) getLspManager(currentWorkspacePath).setAutoStart(updates['lsp.autoStart']);
     return result;
+  });
+
+  // Renderer selection changes funnel here: validate -> active agent config ->
+  // gateway override -> persist. Credentials never travel over this channel;
+  // only masked key summaries (e.g. "sk-ant-••••1234") are returned.
+  ipcMain.handle('providers:update-active-config', async (event, config: { providerId?: string; modelId?: string }) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      const providerId = typeof config?.providerId === 'string' ? config.providerId : '';
+      const modelId = typeof config?.modelId === 'string' ? config.modelId : '';
+      const summary = await setActiveAgentConfig(providerId, modelId);
+      if (summary.keyStatus === 'missing') {
+        return {
+          success: false,
+          error: `No API key configured for "${summary.providerId}" and the Ty-Code Free tier is currently unreachable. The previous selection stays active.`
+        };
+      }
+      setGatewayActiveConfig(summary.providerId, summary.modelId);
+      // Persist through the regular settings layer so restarts keep this
+      // selection; the summary may carry a downgraded Ty-Code Free pair.
+      try {
+        await saveSettings({ activeProvider: summary.providerId as any, activeModel: summary.modelId });
+      } catch {}
+      return { success: true, data: summary };
+    } catch (error: unknown) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
   });
 
   ipcMain.handle('agent:start-task', async (_event, params) => {
@@ -2448,6 +2477,54 @@ function registerProviderHandlers(): void {
       return { success: true, data: statuses };
     } catch (err: unknown) {
       return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  // Unified catalog for the redesigned "AI Providers & Models" tab: verified
+  // models + zero-telemetry availability booleans (no credentials, ever).
+  ipcMain.handle('providers:get-verified-catalog', async (event) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      const [catalog, settingsRes, ollamaModels] = await Promise.all([
+        getVerifiedModels(),
+        getSettings(),
+        detectLocalOllamaModels().catch(() => [])
+      ]);
+      const communityKeyCached = Boolean(getCommunityKeyCached());
+      if (!communityKeyCached) {
+        try {
+          warmUpCommunityKey();
+        } catch {
+          // Probe path re-resolves lazily when needed.
+        }
+      }
+      const configured = (settingsRes.data?.apiKeysConfigured || {}) as Record<string, boolean>;
+      const providerKeyConfigured: Record<string, boolean> = {};
+      for (const [providerId, isConfigured] of Object.entries(configured)) {
+        if (!isConfigured) continue;
+        providerKeyConfigured[providerId] = true;
+        const norm = providerId.replace(/-free$/, '');
+        providerKeyConfigured[norm] = true;
+      }
+      const openRouterKeyAvailable = Boolean(
+        providerKeyConfigured['openrouter'] ||
+        providerKeyConfigured['openrouter-free'] ||
+        (process.env.OPENROUTER_API_KEY && process.env.OPENROUTER_API_KEY.trim().length > 4)
+      );
+      // Internal wire URLs are main-process routing detail: withheld here.
+      const models = catalog.map((m) => ({ modelId: m.modelId, name: m.name, providerId: m.providerId, requiresKey: m.requiresKey }));
+      return {
+        success: true,
+        data: {
+          models,
+          communityKeyCached,
+          openRouterKeyAvailable,
+          providerKeyConfigured,
+          ollamaConnected: ollamaModels.length > 0
+        }
+      };
+    } catch (error: unknown) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   });
 

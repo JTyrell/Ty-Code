@@ -23,7 +23,7 @@ export const PERMANENT_FREE_PROVIDERS: FreeProvider[] = [
     auth_type: 'api_key_optional',
     best_free_models: [
       'nvidia/nemotron-3-ultra-550b-a55b:free',
-      'qwen/qwen-2.5-coder-32b-instruct:free',
+      'poolside/laguna-xs-2.1:free',
       'dots-studio/dots-3-note-preview:free',
       'poolside/laguna-s-2.1:free',
       'cohere/north-mini-code:free',
@@ -33,7 +33,7 @@ export const PERMANENT_FREE_PROVIDERS: FreeProvider[] = [
     setup_instructions: 'Get free API key at openrouter.ai/keys',
     model_capabilities: {
       reasoning: ['nemotron-3-ultra-550b-a55b:free'],
-      coding: ['qwen-2.5-coder-32b-instruct:free', 'north-mini-code:free'],
+      coding: ['laguna-xs-2.1:free', 'north-mini-code:free'],
       fast: ['nemotron-3.5-lightning:free', 'lfm-2.5-2.6b:free'],
       general: ['dots-3-note-preview:free', 'gemma-4-31b-it:free']
     },
@@ -66,12 +66,11 @@ export const PERMANENT_FREE_PROVIDERS: FreeProvider[] = [
       'poolside/laguna-s-2.1:free',
       'nvidia/nemotron-3.5-super-vl:free',
       'cohere/north-mini-code:free',
-      'openrouter/free',
-      'thinkingmachines/inkling-small:free'
+      'openrouter/free'
     ],
     setup_instructions: 'No API key required - works instantly',
     model_capabilities: {
-      reasoning: ['nemotron-3.5-super-vl', 'inkling-small'],
+      reasoning: ['nemotron-3.5-super-vl'],
       coding: ['laguna-s-2.1', 'north-mini-code'],
       large_context: ['kilo-auto/free', 'nemotron-3.5-lightning'],
       efficient: ['north-mini-code']
@@ -330,7 +329,7 @@ export class FreeProviderRegistry {
         return {
           providerId: 'openrouter-free',
           providerName: 'OpenRouter (Free Tier)',
-          modelId: 'qwen/qwen-2.5-coder-32b-instruct:free'
+          modelId: 'poolside/laguna-s-2.1:free'
         };
       case 'fast':
         return {

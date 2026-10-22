@@ -460,7 +460,7 @@ export class CanvasAgentEngine {
     }
 
     let provider = 'openrouter';
-    let model = 'qwen/qwen-2.5-coder-32b-instruct:free';
+    let model = 'google/gemma-4-31b-it:free';
     try {
       const settings = await settingsManager.getEffectiveSettings();
       provider = (settings?.activeProvider as string) || provider;

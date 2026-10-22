@@ -37,6 +37,10 @@ export interface OpenKiloModelDefinition {
  * Curated catalog of free models on Kilo Gateway, verified against the live
  * GET https://api.kilo.ai/api/gateway/models endpoint.
  * Only genuine zero-cost model IDs are listed here.
+ * Re-audited 2026-10-21 with real chat/completions probes: thinkingmachines/
+ * inkling-small:free and nvidia/nemotron-3-super-120b-a12b:free now 404 on
+ * Kilo, xingchen-agi/xing4.0-29b-a4b:free returns persistent upstream 429 —
+ * all three were removed. Probe again before re-adding any of them.
  */
 export const OPENKILO_CURATED_FREE_MODELS: OpenKiloModelDefinition[] = [
   {
@@ -106,17 +110,6 @@ export const OPENKILO_CURATED_FREE_MODELS: OpenKiloModelDefinition[] = [
     description: '550B-parameter ultra tier for complex multi-step reasoning at zero cost.'
   },
   {
-    id: 'thinkingmachines/inkling-small:free',
-    name: 'Thinking Machines Inkling Small Free',
-    contextWindow: 1_048_576,
-    maxOutputTokens: 16_384,
-    isFree: true,
-    category: 'Premium/Reasoning',
-    primaryTask: 'reasoning',
-    codingScore: 92,
-    description: '1M context compact thinker for careful planning and analysis.'
-  },
-  {
     id: 'dots-studio/dots-3-note-preview:free',
     name: 'Dots 3 Note Preview Free',
     contextWindow: 512_000,
@@ -126,17 +119,6 @@ export const OPENKILO_CURATED_FREE_MODELS: OpenKiloModelDefinition[] = [
     primaryTask: 'general',
     codingScore: 88,
     description: '512K context generalist assistant for whole-repo chat and review.'
-  },
-  {
-    id: 'nvidia/nemotron-3-super-120b-a12b:free',
-    name: 'NVIDIA Nemotron 3 Super 120B Free',
-    contextWindow: 262_144,
-    maxOutputTokens: 16_384,
-    isFree: true,
-    category: 'Premium/Reasoning',
-    primaryTask: 'reasoning',
-    codingScore: 93,
-    description: '120B super tier balancing reasoning depth and throughput.'
   },
   {
     id: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free',
@@ -170,17 +152,6 @@ export const OPENKILO_CURATED_FREE_MODELS: OpenKiloModelDefinition[] = [
     primaryTask: 'fast-edit',
     codingScore: 91,
     description: 'Low-latency sibling of Laguna S for instant, surgical edits.'
-  },
-  {
-    id: 'xingchen-agi/xing4.0-29b-a4b:free',
-    name: 'Xingchen 4.0 29B Free',
-    contextWindow: 262_144,
-    maxOutputTokens: 8_192,
-    isFree: true,
-    category: 'Fast',
-    primaryTask: 'general',
-    codingScore: 87,
-    description: 'Open generalist tuned for everyday dev Q&A.'
   },
   {
     id: 'nvidia/nemotron-3.5-content-safety:free',

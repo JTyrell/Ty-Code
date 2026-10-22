@@ -176,10 +176,36 @@ export type {
   QuotaAlertItem
 };
 
+/**
+ * Renderer-safe verified catalog summary. Routes bare facts only: no
+ * endpoints, no credentials. Availability booleans back the UI pills.
+ */
+export interface VerifiedModelCatalogSummary {
+  models: Array<{ modelId: string; name: string; providerId: string; requiresKey: boolean }>;
+  communityKeyCached: boolean;
+  openRouterKeyAvailable: boolean;
+  providerKeyConfigured: Record<string, boolean>;
+  ollamaConnected: boolean;
+}
+
 export interface IpcResponse<T = unknown> {
   success: boolean;
   data?: T;
   error?: string;
+}
+
+/**
+ * Masked result of an active provider selection sync. Never carries usable
+ * credentials: the renderer only sees a display-safe preview string
+ * (e.g. "sk-ant-••••1234") or nothing at all.
+ */
+export interface ActiveProviderConfigSummary {
+  providerId: string;
+  modelId: string;
+  keyStatus: 'own' | 'community' | 'anonymous' | 'missing';
+  maskedKey?: string;
+  degraded?: boolean;
+  reason?: 'MISSING_KEY' | 'UNRESOLVED_COMMUNITY';
 }
 
 export interface FileNode {
@@ -837,6 +863,8 @@ export interface ElectronAPI {
   searchFiles: (query: string) => Promise<IpcResponse<string[]>>;
   getSettings: () => Promise<IpcResponse<ProviderSettings>>;
   saveSettings: (settings: Partial<ProviderSettings>) => Promise<IpcResponse<void>>;
+  /** Selection -> active agent config sync. Returns masked summaries only. */
+  updateActiveProviderConfig: (config: { providerId: string; modelId?: string }) => Promise<IpcResponse<ActiveProviderConfigSummary>>;
   getTelemetryPreview: () => Promise<IpcResponse<TelemetryPreview>>;
   deleteTelemetryEvent: (index: number, expected: TelemetryEvent) => Promise<IpcResponse<void>>;
   clearTelemetryData: () => Promise<IpcResponse<void>>;
@@ -1113,6 +1141,8 @@ export interface ElectronAPI {
 
   // Phase 2.1: Provider Onboarding & Dynamic Discovery
   providerGetRegistry: () => Promise<IpcResponse<PreConfiguredProvider[]>>;
+  /** Unified verified catalog for the AI Providers & Models tab. */
+  getVerifiedModelCatalog?: () => Promise<IpcResponse<VerifiedModelCatalogSummary>>;
   providerGetConnectionStatus: () => Promise<IpcResponse<Record<string, ProviderConnectivitySnapshot>>>;
   providerGetModels: (params: { providerId: string; apiKey?: string; customEndpoint?: string }) => Promise<IpcResponse<DiscoveredModel[]>>;
   providerTestConnection: (params: { providerId: string; apiKey?: string; modelId?: string; customEndpoint?: string }) => Promise<IpcResponse<TestConnectionResult>>;

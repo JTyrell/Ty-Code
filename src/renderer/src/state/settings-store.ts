@@ -1,0 +1,178 @@
+import { create } from 'zustand';
+import { toast } from './toast-store';
+import type { ActiveProviderConfigSummary, ProviderType } from '../../../preload/types';
+
+/**
+ * Unified UI-facing settings store for the active provider/model pair.
+ *
+ * Two responsibilities:
+ * 1. Single source of truth for the renderer ("AI Providers & Models" tab,
+ *    model quick selector, chat sidecar dropdown).
+ * 2. Sync with the main process: a zustand subscription watches the pair and
+ *    calls `window.electronAPI.updateActiveProviderConfig` whenever it
+ *    changes (deduplicated and revertible on failure).
+ *
+ * SECURITY INVARIANT: this store never touches API key values. Main only
+ * replies with masked summaries (e.g. "sk-ant-••••1234").
+ */
+
+interface SettingsStoreState {
+  activeProviderId: string;
+  activeModelId: string;
+  /** Set once the persisted selection has been read at boot. */
+  hydrated: boolean;
+  syncing: boolean;
+  /** Last sync failure message for debug surfaces; empty when all is well. */
+  lastSyncError: string;
+  hydrate: () => Promise<void>;
+  setActiveProvider: (providerId: string, modelId?: string) => void;
+  setActiveModel: (modelId: string) => void;
+}
+
+export const TY_CODE_FREE_PROVIDER = 'ty-code-free';
+export const TY_CODE_FREE_MODEL = 'google/gemma-4-31b-it:free';
+
+const DEFAULTS = {
+  activeProviderId: TY_CODE_FREE_PROVIDER,
+  activeModelId: TY_CODE_FREE_MODEL
+};
+
+function configSignature(providerId: string, modelId: string): string {
+  return `${providerId}::${modelId}`;
+}
+
+export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
+  activeProviderId: DEFAULTS.activeProviderId,
+  activeModelId: DEFAULTS.activeModelId,
+  hydrated: false,
+  syncing: false,
+  lastSyncError: '',
+
+  hydrate: async () => {
+    try {
+      const response = await window.electronAPI.getSettings();
+      if (response.success && response.data) {
+        set({
+          activeProviderId: response.data.activeProvider || DEFAULTS.activeProviderId,
+          activeModelId: response.data.activeModel || '',
+          hydrated: true
+        });
+      } else {
+        set({ hydrated: true });
+      }
+    } catch {
+      set({ hydrated: true });
+    }
+  },
+
+  setActiveProvider: (providerId, modelId) => {
+    set({
+      activeProviderId: providerId || DEFAULTS.activeProviderId,
+      activeModelId: modelId !== undefined ? modelId : get().activeModelId
+    });
+  },
+
+  setActiveModel: (modelId) => {
+    set({
+      activeModelId: modelId,
+      activeProviderId: get().activeProviderId || DEFAULTS.activeProviderId
+    });
+  }
+}));
+
+let lastSyncedSignature = '';
+let syncInFlight = false;
+
+async function syncActiveConfigToMain(providerId: string, modelId: string): Promise<boolean> {
+  if (syncInFlight) return false;
+  syncInFlight = true;
+  useSettingsStore.setState({ syncing: true });
+  try {
+    const response = await window.electronAPI.updateActiveProviderConfig({ providerId, modelId });
+    if (!response.success) throw new Error(response.error || 'Active provider sync failed');
+    const summary = (response.data || {}) as ActiveProviderConfigSummary;
+
+    // Main may have downgraded the pair (missing key -> Ty-Code Free).
+    if (summary.providerId && (summary.providerId !== providerId || summary.modelId !== modelId)) {
+      lastSyncedSignature = configSignature(summary.providerId, summary.modelId);
+      useSettingsStore.setState({
+        activeProviderId: summary.providerId,
+        activeModelId: summary.modelId
+      });
+    } else {
+      lastSyncedSignature = configSignature(providerId, modelId);
+    }
+
+    if (summary.degraded && summary.reason === 'MISSING_KEY') {
+      toast.warning(
+        'Provider key missing',
+        `Switched to Ty-Code Free (${summary.providerId}) so chat keeps working. Add your ${providerId} key in Settings > API Keys.`
+      );
+    }
+
+    // Mirror into the chat sidecar store so its dropdown reflects the change.
+    try {
+      const { useChatStore } = await import('./chat-store');
+      const chatState = useChatStore.getState();
+      if (chatState.settings) {
+        useChatStore.setState({
+          settings: {
+            ...chatState.settings,
+            activeProvider: summary.providerId as unknown as ProviderType,
+            activeModel: summary.modelId
+          }
+        });
+      }
+    } catch {
+      // Chat sidecar not mounted yet; next hydrate picks the pair up.
+    }
+
+    useSettingsStore.setState({ lastSyncError: '' });
+    return true;
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    useSettingsStore.setState({ lastSyncError: message });
+    toast.error('Provider selection not synced', message);
+    return false;
+  } finally {
+    syncInFlight = false;
+    useSettingsStore.setState({ syncing: false });
+  }
+}
+
+/** Guards against re-entrancy when reverting a failed sync to its old pair. */
+let reverting = false;
+
+function armSettingsSyncWatcher(): void {
+  useSettingsStore.subscribe((state, prevState) => {
+    if (reverting) return;
+    const changed =
+      state.activeProviderId !== prevState.activeProviderId || state.activeModelId !== prevState.activeModelId;
+    if (!changed || !state.hydrated) return;
+
+    const signature = configSignature(state.activeProviderId, state.activeModelId);
+    if (signature === lastSyncedSignature) return;
+
+    const revertPair = {
+      providerId: prevState.activeProviderId,
+      modelId: prevState.activeModelId
+    };
+
+    void (async () => {
+      const ok = await syncActiveConfigToMain(state.activeProviderId, state.activeModelId);
+      if (!ok) {
+        const previousSignature = configSignature(revertPair.providerId, revertPair.modelId);
+        if (previousSignature !== lastSyncedSignature) {
+          reverting = true;
+          useSettingsStore.setState({
+            activeProviderId: revertPair.providerId,
+            activeModelId: revertPair.modelId || ''
+          });
+          reverting = false;
+        }
+      }
+    })();
+  });
+}
+
+armSettingsSyncWatcher();

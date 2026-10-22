@@ -340,7 +340,8 @@ export interface ProviderConnectivityTrace {
   providerName: string;
   modelId: string;
   authType: string;
-  status: 'PASS' | 'FAIL' | 'RUNNING' | 'PENDING';
+  status: 'PASS' | 'FAIL' | 'RUNNING' | 'PENDING' | 'SKIPPED';
+  skipReason?: string;
   firstFailingHop?: HopId;
   taxonomyCode?: DiagnosticErrorCode;
   errorSummary?: string;
@@ -380,6 +381,8 @@ export interface FullConnectivityTraceReport {
     totalTested: number;
     passedCount: number;
     failedCount: number;
+    skippedCount: number;
+    skippedNote?: string;
   };
   providers: Record<string, ProviderConnectivityTrace>;
   mockScan: MockScanReport;

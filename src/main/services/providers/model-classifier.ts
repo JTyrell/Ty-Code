@@ -21,8 +21,7 @@ export const MODEL_TIERS: Record<ModelTier, TierClassification> = {
     models: [
       'nvidia/nemotron-3-ultra-550b-a55b:free',
       'deepseek/deepseek-r1-0528',
-      'nvidia/nemotron-3.5-super-vl:free',
-      'thinkingmachines/inkling-small:free'
+      'nvidia/nemotron-3.5-super-vl:free'
     ],
     recommendedUseCases: [
       'Algorithmic problem solving',
@@ -37,8 +36,8 @@ export const MODEL_TIERS: Record<ModelTier, TierClassification> = {
     description: 'Best for code generation, surgical block edits, syntax transformations, and unit tests',
     models: [
       'poolside/laguna-s-2.1:free',
+      'poolside/laguna-xs-2.1:free',
       'cohere/north-mini-code:free',
-      'qwen/qwen-2.5-coder-32b-instruct:free',
       'claude-3-5-sonnet-20241022 (via FCC)',
       'codellama/CodeLlama-34b-Instruct-hf',
       'llama-3.3-70b-versatile (Groq)'

@@ -230,7 +230,7 @@ export class BackgroundAgentOrchestrator {
       if (!activeModel || (activeProvider === 'openkilo' && !activeModel.endsWith(':free') && !activeModel.endsWith('/free'))) {
         if (activeProvider === 'openkilo') activeModel = 'kilo-auto/free';
         else if (activeProvider === 'groq') activeModel = 'llama-3.3-70b-versatile';
-        else activeModel = 'qwen/qwen-2.5-coder-32b-instruct:free';
+        else activeModel = 'google/gemma-4-31b-it:free';
       }
 
       const messages = buildAgentMessages(agent.task, context);

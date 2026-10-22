@@ -118,8 +118,8 @@ export const FALLBACK_CATALOG: Record<ModelTier, RankedModelCandidate[]> = {
       selectionReason: 'Massive 262K context code specialist'
     },
     {
-      modelId: 'deepseek/deepseek-v4.1-flash:free',
-      modelName: 'DeepSeek V4.1 Flash (Free)',
+      modelId: 'google/gemma-4-31b-it:free',
+      modelName: 'Gemma 4 31B (Free)',
       providerId: 'openrouter-free',
       providerName: 'OpenRouter',
       tier: 'tier_a_coding',
@@ -128,7 +128,7 @@ export const FALLBACK_CATALOG: Record<ModelTier, RankedModelCandidate[]> = {
       healthScore: 1.0,
       isRateLimited: false,
       compositeRankScore: 190,
-      selectionReason: 'High-throughput reasoning coder with 1M context'
+      selectionReason: 'Strong generalist with 262K context and multimodal input'
     }
   ],
   tier_b_general: [
@@ -146,8 +146,8 @@ export const FALLBACK_CATALOG: Record<ModelTier, RankedModelCandidate[]> = {
       selectionReason: 'Balanced conversation and technical explanations'
     },
     {
-      modelId: 'meituan/longcat-2.0:free',
-      modelName: 'LongCat 2.0 (Free)',
+      modelId: 'nvidia/nemotron-3.5-super-vl:free',
+      modelName: 'Nemotron 3.5 Super VL (Free)',
       providerId: 'openrouter-free',
       providerName: 'OpenRouter',
       tier: 'tier_b_general',
@@ -156,7 +156,7 @@ export const FALLBACK_CATALOG: Record<ModelTier, RankedModelCandidate[]> = {
       healthScore: 1.0,
       isRateLimited: false,
       compositeRankScore: 165,
-      selectionReason: '1M context MoE generalist from Meituan'
+      selectionReason: '1M context multimodal generalist from NVIDIA'
     }
   ],
   tier_c_fast: [

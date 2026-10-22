@@ -350,7 +350,7 @@ export class UsageAnalyticsService {
         providerName: 'OpenRouter Free',
         bestFor: 'Reasoning & Specialized Coding',
         ratingTier: 'S',
-        strengths: ['DeepSeek R1 :free access', 'Qwen 2.5 Coder :free', 'No credit card required']
+        strengths: ['Nemotron + Gemma :free access', 'Laguna + North code models :free', 'No credit card required']
       },
       {
         providerId: 'groq-free',

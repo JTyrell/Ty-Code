@@ -22,7 +22,9 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
+import { app } from 'electron';
 import type { BrowserWindow } from 'electron';
+import type { ProviderSettings } from '../../../preload/types';
 import type {
   HopId,
   HopTraceRecord,
@@ -34,10 +36,37 @@ import type {
 } from '../../../shared/types/diagnostics';
 import { classifyDiagnosticError, type ClassifiedError } from './error-taxonomy';
 import { readStoredCredentials, getProviderSettings } from '../../ipc/settings-handlers';
+import { getCommunityKey } from '../credential-vault';
 import { freeProviderRegistry } from '../providers/free-provider-registry';
 import { ProviderGateway } from '../../providers/provider-gateway';
 
 export const CANNED_TRACE_PROMPT = 'Reply with exactly: TRACE-OK';
+
+/**
+ * Connectivity probes always ride a model that was answered live with the
+ * Community Key on 2026-10-21 (single-shot chat/completions probes against
+ * OpenRouter; Kilo checked the same day for the anonymous pool). Re-probe
+ * before changing any slug here so lower layers (H6) never fail because the
+ * probe picked a retired model rather than real connectivity problems.
+ */
+const PROBE_MODEL_MATRIX: Record<string, string> = {
+  'ty-code-free': 'google/gemma-4-31b-it:free',
+  openkilo: 'kilo-auto/free',
+  'openkilo-free': 'kilo-auto/free',
+  openrouter: 'google/gemma-4-31b-it:free',
+  'openrouter-free': 'google/gemma-4-31b-it:free',
+  groq: 'llama-3.1-8b-instant',
+  'groq-free': 'llama-3.1-8b-instant'
+};
+
+function resolveProbeModel(providerId: string): string {
+  const direct = PROBE_MODEL_MATRIX[providerId];
+  if (direct) return direct;
+  const registry =
+    freeProviderRegistry.getProvider(providerId) ||
+    freeProviderRegistry.getProvider(`${providerId}-free`);
+  return registry?.best_free_models?.[0] || 'google/gemma-4-31b-it:free';
+}
 
 export const HOP_DEFINITIONS: Record<HopId, { title: string; layer: string; description: string }> = {
   H1: {
@@ -139,10 +168,12 @@ export class ConnectivityTracer extends EventEmitter {
       H10: { hop: 'H10', name: HOP_DEFINITIONS.H10.title, status: 'PENDING', timestamp: now }
     };
 
-    const freeProvider = freeProviderRegistry.getProvider(providerId);
+    const freeProvider =
+      freeProviderRegistry.getProvider(providerId) ||
+      freeProviderRegistry.getProvider(`${providerId}-free`);
     const trace: ProviderConnectivityTrace = {
       providerId,
-      providerName: freeProvider?.name || providerId,
+      providerName: freeProvider?.name || (providerId === 'ty-code-free' ? 'Ty-Code Free (Community)' : providerId),
       modelId,
       authType: freeProvider?.auth_type || (providerId === 'openkilo' ? 'anonymous' : 'api_key'),
       status: 'RUNNING',
@@ -400,6 +431,12 @@ export class ConnectivityTracer extends EventEmitter {
 
   /**
    * Runs a live probe for a single provider through the ACTUAL code path.
+   *
+   * Probe honesty rules:
+   * - Never probed with a model that was not verified live (matrix above).
+   * - Key-required providers that simply have no stored key are SKIPPED, not
+   *   FAIL: "not configured yet" is expected state, not broken connectivity.
+   * - ty-code-free rides the Community Key exactly like the nightly chat path.
    */
   public async probeProvider(
     providerId: string,
@@ -407,8 +444,10 @@ export class ConnectivityTracer extends EventEmitter {
     mainWindow?: BrowserWindow | null
   ): Promise<ProviderConnectivityTrace> {
     const traceId = `trace_${providerId}_${Date.now()}`;
-    const freeProv = freeProviderRegistry.getProvider(providerId);
-    const modelId = freeProv?.best_free_models?.[0] || 'default-model';
+    const freeProv =
+      freeProviderRegistry.getProvider(providerId) ||
+      freeProviderRegistry.getProvider(`${providerId}-free`);
+    const modelId = resolveProbeModel(providerId);
     const trace = this.startTrace(providerId, modelId, CANNED_TRACE_PROMPT, traceId);
 
     const win = mainWindow || this.activeMainWindow;
@@ -459,10 +498,13 @@ export class ConnectivityTracer extends EventEmitter {
       };
 
       // Apply provider override for this probe
-      const effectiveSettings = {
+      const effectiveSettings: ProviderSettings = {
         ...settings,
         activeProvider: providerId as any,
         activeModel: modelId
+      };
+      (effectiveSettings as { apiKeys?: Record<string, string> }).apiKeys = {
+        ...((settings.apiKeys || {}) as Record<string, string>)
       };
 
       // H4: Agent engine assembly
@@ -491,7 +533,30 @@ export class ConnectivityTracer extends EventEmitter {
 
       // H5 & H6 & H7: Provider Gateway + Network + SSE Streaming
       const { keys: storedKeys } = await readStoredCredentials();
-      const apiKey = storedKeys[providerId] || (providerId === 'openkilo' ? 'anonymous' : undefined);
+      let apiKey: string | undefined;
+
+      if (providerId === 'ty-code-free' || providerId === 'tycode-free') {
+        // Ride the rotating Community Key exactly like the daily chat path:
+        // cached-first bootstrap through credential-vault (never user input).
+        let community: string | null = null;
+        try {
+          community = await getCommunityKey();
+        } catch (err) {
+          console.warn('[TRACER] Community Key bootstrap read failed:', err instanceof Error ? err.message : err);
+        }
+        if (community && community.trim()) {
+          apiKey = community.trim();
+          (effectiveSettings as { apiKeys?: Record<string, string> }).apiKeys!['ty-code-free'] = apiKey;
+        }
+      } else if (providerId === 'openkilo' || freeProv?.auth_type === 'anonymous') {
+        apiKey = storedKeys[providerId] || 'anonymous';
+      } else {
+        apiKey =
+          storedKeys[providerId] ||
+          storedKeys[`${providerId}-free`] ||
+          storedKeys[providerId.replace(/-free$/, '')];
+      }
+
       const baseUrl = ProviderGateway.getEndpoint(providerId as any, effectiveSettings.customEndpoints || {});
 
       // H5: safeStorage check (PRESENCE ONLY, NEVER VALUE)
@@ -503,7 +568,13 @@ export class ConnectivityTracer extends EventEmitter {
           baseUrl,
           keyPresent: Boolean(apiKey),
           keyLength: apiKey ? apiKey.length : 0,
-          keySource: apiKey ? (providerId === 'openkilo' && apiKey === 'anonymous' ? 'anonymous_free_tier' : 'safeStorage') : 'none'
+          keySource: apiKey
+            ? providerId === 'ty-code-free' || providerId === 'tycode-free'
+              ? 'community_vault'
+              : providerId === 'openkilo' || freeProv?.auth_type === 'anonymous'
+                ? 'anonymous_free_tier'
+                : 'safeStorage'
+            : 'none'
         }
       });
 
@@ -511,15 +582,18 @@ export class ConnectivityTracer extends EventEmitter {
       let firstChunkCaptured = false;
       const fetchStart = performance.now();
 
-      // Check for CONFIG_MISSING on key-requiring providers
+      // Key-required probe without a stored key is expected state, not a
+      // connectivity failure: finish as SKIPPED with actionable guidance.
       if (!apiKey && freeProv?.auth_type !== 'anonymous' && providerId !== 'openkilo' && freeProv?.auth_type !== 'fcc_proxy') {
-        const errorMsg = `No API key configured for provider '${providerId}'.`;
+        const skipReason = `Optional provider '${providerId}' has no stored key yet. Not configured does not mean broken; add a free key to test it.`;
         this.recordHop(traceId, 'H5', {
-          status: 'FAIL',
-          error: errorMsg,
-          taxonomyCode: 'CONFIG_MISSING'
+          status: 'SKIPPED',
+          error: undefined,
+          metadata: { keySource: 'none' }
         });
-        return this.finishTrace(traceId, errorMsg);
+        trace.skipReason = skipReason;
+        this.emitSkip(traceId, trace, skipReason);
+        return trace;
       }
 
       // Execute actual streamChat call through ProviderGateway
@@ -569,7 +643,8 @@ export class ConnectivityTracer extends EventEmitter {
             method: 'POST',
             status: 200,
             statusText: 'OK',
-            durationMs: Math.round(performance.now() - fetchStart)
+            durationMs: Math.round(performance.now() - fetchStart),
+            probeModel: modelId
           }
         });
 
@@ -606,21 +681,21 @@ export class ConnectivityTracer extends EventEmitter {
             status: 'FAIL',
             durationMs: elapsed,
             error: errMsg,
-            metadata: { url: `${baseUrl}/chat/completions`, method: 'POST', status: 401 }
+            metadata: { url: `${baseUrl}/chat/completions`, method: 'POST', status: 401, probeModel: modelId }
           });
         } else if (errMsg.includes('404') || errMsg.includes('model not found')) {
           this.recordHop(traceId, 'H6', {
             status: 'FAIL',
             durationMs: elapsed,
             error: errMsg,
-            metadata: { url: `${baseUrl}/chat/completions`, method: 'POST', status: 404 }
+            metadata: { url: `${baseUrl}/chat/completions`, method: 'POST', status: 404, probeModel: modelId }
           });
         } else if (errMsg.includes('ECONNRESET') || errMsg.includes('ECONNREFUSED') || errMsg.includes('ENOTFOUND') || errMsg.includes('fetch failed')) {
           this.recordHop(traceId, 'H6', {
             status: 'FAIL',
             durationMs: elapsed,
             error: errMsg,
-            metadata: { url: `${baseUrl}/chat/completions`, method: 'POST', errorType: 'network_blocked' }
+            metadata: { url: `${baseUrl}/chat/completions`, method: 'POST', errorType: 'network_blocked', probeModel: modelId }
           });
         } else if (errMsg.includes('SSE') || errMsg.includes('parse') || errMsg.includes('delta')) {
           this.recordHop(traceId, 'H7', {
@@ -631,7 +706,8 @@ export class ConnectivityTracer extends EventEmitter {
           this.recordHop(traceId, 'H6', {
             status: 'FAIL',
             durationMs: elapsed,
-            error: errMsg
+            error: errMsg,
+            metadata: { probeModel: modelId }
           });
         }
 
@@ -641,6 +717,30 @@ export class ConnectivityTracer extends EventEmitter {
       const msg = outerErr instanceof Error ? outerErr.message : String(outerErr);
       return this.finishTrace(traceId, msg);
     }
+  }
+
+  /**
+   * Marks a trace as cleanly skipped (expected, not broken) without a FAIL
+   * taxonomy or fake hop data, and stores it in the completed trace map so
+   * the diagnostics UI can render "Not configured" alongside PASS/FAIL rows.
+   */
+  private emitSkip(traceId: string, trace: ProviderConnectivityTrace, skipReason: string): void {
+    trace.status = 'SKIPPED';
+    trace.endTime = Date.now();
+    trace.totalDurationMs = Math.max(1, trace.endTime - trace.startTime);
+    trace.errorSummary = undefined;
+    trace.remedy = skipReason;
+
+    const hopOrder: HopId[] = ['H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'H7', 'H8', 'H9', 'H10'];
+    for (const h of hopOrder) {
+      if (trace.hops[h].status === 'PENDING') {
+        trace.hops[h] = { ...trace.hops[h], status: 'SKIPPED' };
+      }
+    }
+
+    this.activeTraces.delete(traceId);
+    this.completedTraces.set(traceId, trace);
+    this.broadcastTraceUpdate(traceId, trace);
   }
 
   /**
@@ -662,8 +762,10 @@ export class ConnectivityTracer extends EventEmitter {
     const settingsRes = await getProviderSettings();
     const settings = settingsRes.data;
 
-    // Providers to test: always test openkilo (zero-key anonymous requirement), plus active and any configured key
-    const providerSet = new Set<string>(['openkilo']);
+    // Providers to test: the zero-input community tier and the anonymous
+    // OpenKilo degrade pool are always probed; the active provider and every
+    // provider that actually holds a stored key are added from real state.
+    const providerSet = new Set<string>(['ty-code-free', 'openkilo']);
 
     if (settings?.activeProvider) {
       providerSet.add(settings.activeProvider);
@@ -675,14 +777,16 @@ export class ConnectivityTracer extends EventEmitter {
       }
     }
 
-    // Include top standard free providers to assess reachability
-    providerSet.add('openrouter');
+    // 'openrouter' is only probed when it genuinely holds a stored key; without
+    // one it is expected state and must not fabricate a connectivity failure.
 
     const providerList = Array.from(providerSet);
     const providerResults: Record<string, ProviderConnectivityTrace> = {};
 
     let passedCount = 0;
     let failedCount = 0;
+    let skippedCount = 0;
+    const skippedReasons: string[] = [];
     let firstFailingProvider: string | undefined;
     let firstFailingHop: HopId | undefined;
 
@@ -692,6 +796,9 @@ export class ConnectivityTracer extends EventEmitter {
 
       if (trace.status === 'PASS') {
         passedCount++;
+      } else if (trace.status === 'SKIPPED') {
+        skippedCount++;
+        if (trace.skipReason) skippedReasons.push(`${provId}: ${trace.skipReason}`);
       } else {
         failedCount++;
         if (!firstFailingProvider) {
@@ -707,13 +814,16 @@ export class ConnectivityTracer extends EventEmitter {
       cannedPrompt: CANNED_TRACE_PROMPT,
       appVersion: '1.0.0',
       platform: process.platform,
+      // SKIPPED probes are expected state; only configured-but-broken controls fail.
       overallStatus: failedCount === 0 ? 'PASS' : 'FAIL',
       firstFailingProvider,
       firstFailingHop,
       summary: {
         totalTested: providerList.length,
         passedCount,
-        failedCount
+        failedCount,
+        skippedCount,
+        skippedNote: skippedReasons.length ? skippedReasons.join(' | ') : undefined
       },
       providers: providerResults,
       mockScan
@@ -721,17 +831,25 @@ export class ConnectivityTracer extends EventEmitter {
 
     this.latestFullReport = report;
 
-    // 3. Write docs/traces/connectivity-trace.json
+    // 3. Persist the JSON report to userData (never into a user project or a
+    // read-only install directory).
     await this.saveTraceReport(report, workspaceRoot);
 
     return report;
   }
 
   /**
-   * Persists connectivity trace JSON to docs/traces/connectivity-trace.json
+   * Persists connectivity trace JSON to <userData>/diagnostics/connectivity-trace.json.
+   * Falls back to process.cwd() when paths resolution is unavailable (tests).
    */
-  public async saveTraceReport(report: FullConnectivityTraceReport, workspaceRoot = process.cwd()): Promise<string> {
-    const tracesDir = path.join(workspaceRoot, 'docs', 'traces');
+  public async saveTraceReport(report: FullConnectivityTraceReport, _workspaceRoot = process.cwd()): Promise<string> {
+    let baseDir: string;
+    try {
+      baseDir = app.getPath('userData');
+    } catch {
+      baseDir = _workspaceRoot;
+    }
+    const tracesDir = path.join(baseDir, 'diagnostics');
     const targetFile = path.join(tracesDir, 'connectivity-trace.json');
 
     await fs.mkdir(tracesDir, { recursive: true });

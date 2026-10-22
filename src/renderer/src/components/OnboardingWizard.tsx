@@ -45,7 +45,7 @@ import { toast } from '../state/toast-store';
 
 // The default Ty-Code Free serving model: verified live against OpenRouter
 // (baked in src/main/services/verified-models.ts, providerId 'ty-code-free').
-const FREE_DEFAULT_MODEL = 'deepseek/deepseek-v4.1-flash:free';
+const FREE_DEFAULT_MODEL = 'google/gemma-4-31b-it:free';
 // Default One-Key Premium landing model (OPENROUTER_PREMIUM_MODELS).
 const PREMIUM_DEFAULT_MODEL = 'openai/gpt-4o';
 

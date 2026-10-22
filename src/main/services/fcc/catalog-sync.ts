@@ -88,15 +88,15 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
         description: '550B MoE reasoning model with multi-step chain-of-thought'
       },
       {
-        id: 'qwen/qwen-2.5-coder-32b-instruct:free',
-        name: 'Qwen 2.5 Coder 32B Instruct',
-        contextWindow: 32_768,
+        id: 'poolside/laguna-s-2.1:free',
+        name: 'Poolside Laguna S 2.1 (Free)',
+        contextWindow: 262_144,
         maxOutputTokens: 8192,
         isFree: true,
         capabilities: { coding: true, tools: true, speedTokensPerSec: 72 },
         provenance: 'FCC',
         costTier: 'free',
-        description: 'State-of-the-art open coding specialist'
+        description: '262K context coding specialist for repository-scale work'
       },
       {
         id: 'dots-studio/dots-3-note-preview:free',

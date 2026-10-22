@@ -489,7 +489,8 @@ export const DiagnosticsPanel: React.FC = () => {
           setActiveTraceProvider(provs[0]);
         }
         if (res.data.overallStatus === 'PASS') {
-          toast.success('Live Trace Passed! All hops verified.');
+          const skippedNote = res.data.summary.skippedCount > 0 ? ` (${res.data.summary.skippedCount} optional provider${res.data.summary.skippedCount === 1 ? '' : 's'} skipped, no key)` : '';
+          toast.success(`Live Trace Passed! All hops verified.${skippedNote}`);
         } else {
           toast.warning(`Trace Failed at ${res.data.firstFailingHop || 'unknown hop'} (${res.data.firstFailingProvider || 'provider'})`);
         }
@@ -782,8 +783,8 @@ export const DiagnosticsPanel: React.FC = () => {
                   </div>
                   <div className="text-[11px] opacity-80">
                     {connSummary.zeroKeyOperational
-                      ? 'Anonymous tier (OpenKilo / local inference) is active. Free reasoning and completions available out-of-the-box.'
-                      : 'No anonymous free tier currently active. Please review OpenKilo or local Ollama.'}
+                      ? 'Zero-input tier active (Ty-Code Free community key + OpenKilo / local inference). Free reasoning and completions available out-of-the-box.'
+                      : 'No anonymous free tier currently active. Review Ty-Code Free, OpenKilo or local Ollama.'}
                   </div>
                 </div>
               </div>
@@ -1931,7 +1932,11 @@ export const DiagnosticsPanel: React.FC = () => {
                   </span>
                 </div>
                 <div className="text-xs opacity-90 pl-6">
-                  {traceReport.summary.passedCount} of {traceReport.summary.totalTested} providers passed.
+                  {traceReport.summary.passedCount} of {traceReport.summary.totalTested} providers passed
+                  {traceReport.summary.skippedCount > 0
+                    ? `, ${traceReport.summary.skippedCount} skipped (optional, no key configured)`
+                    : ''}
+                  .
                   Canned probe prompt: &ldquo;{traceReport.cannedPrompt}&rdquo;
                 </div>
               </div>
@@ -1950,6 +1955,13 @@ export const DiagnosticsPanel: React.FC = () => {
               {Object.entries(traceReport.providers).map(([pId, trace]) => {
                 const isActive = activeTraceProvider === pId;
                 const isPass = trace.status === 'PASS';
+                const isSkipped = trace.status === 'SKIPPED';
+                const badgeClass = isPass
+                  ? 'bg-emerald-500/20 text-emerald-400'
+                  : isSkipped
+                    ? 'bg-amber-500/20 text-amber-400'
+                    : 'bg-rose-500/20 text-rose-400';
+                const badgeLabel = isPass ? 'PASS' : isSkipped ? 'SKIP' : `FAIL (${trace.firstFailingHop || 'ERR'})`;
                 return (
                   <button
                     key={pId}
@@ -1962,13 +1974,9 @@ export const DiagnosticsPanel: React.FC = () => {
                   >
                     <span>{trace.providerName || pId}</span>
                     <span
-                      className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
-                        isPass
-                          ? 'bg-emerald-500/20 text-emerald-400'
-                          : 'bg-rose-500/20 text-rose-400'
-                      }`}
+                      className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${badgeClass}`}
                     >
-                      {isPass ? 'PASS' : `FAIL (${trace.firstFailingHop || 'ERR'})`}
+                      {badgeLabel}
                     </span>
                   </button>
                 );
@@ -2010,6 +2018,19 @@ export const DiagnosticsPanel: React.FC = () => {
                             <span>{trace.remedy}</span>
                           </div>
                         )}
+                      </div>
+                    )}
+
+                    {trace.status === 'SKIPPED' && (
+                      <div className="p-3 rounded-lg bg-amber-950/20 border border-amber-500/30 text-xs space-y-1">
+                        <div className="font-semibold text-amber-300 flex items-center gap-1.5">
+                          <Info size={14} className="text-amber-400" />
+                          <span>Skipped: {trace.skipReason || 'Not configured (expected state, not a failure).'}</span>
+                        </div>
+                        <div className="text-amber-200/70 pl-5">
+                          This provider was not probed because it holds no stored key. Add one in Settings &gt; Providers to include it
+                          in tests.
+                        </div>
                       </div>
                     )}
                   </div>

@@ -4,6 +4,7 @@ export { ProviderGateway };
 import { buildSystemPrompt, AGENT_TOOLS_DEFINITIONS, TASK_SCOPING_PROTOCOL, getEccRulesPrompt, getSeoPromptGuidance, isLocalModel } from './system-prompt';
 import { ToolExecutor, type ToolExecutionResponse } from './tool-executor';
 import { getHarness } from '../services/orchestration/harnesses';
+import { getActiveAgentConfig } from './agent-config';
 import { SecurityPolicyEngine } from '../services/security-policy';
 import { settingsManager, type SettingsManager } from '../services/settings-manager';
 import { modelRouter } from '../services/orchestration/model-router';
@@ -444,7 +445,12 @@ export class AgentEngine {
           runModel = activeModel;
           console.log(`[AGENT] Provider (failover override): ${activeProvider}, Model: ${activeModel}`);
         } else {
-          const rawActiveProvider = currentSettings.activeProvider || '';
+          // Live active-config read: renderer selections (providers:update-
+          // active-config) land here between iterations without a task restart.
+          const agentCfg = getActiveAgentConfig();
+          const hasLiveOverride = agentCfg.providerId && agentCfg.updatedAt > 0;
+          const rawActiveProvider = (hasLiveOverride ? agentCfg.providerId : currentSettings.activeProvider) || '';
+          const rawConfiguredModel = hasLiveOverride ? agentCfg.modelId : currentSettings.activeModel;
           const isAutoBinding = !rawActiveProvider || rawActiveProvider === 'auto';
 
           if (isAutoBinding) {
@@ -461,14 +467,14 @@ export class AgentEngine {
             }
           } else {
             activeProvider = rawActiveProvider;
-            activeModel = currentSettings.activeModel || '';
+            activeModel = rawConfiguredModel || '';
             if (!activeModel || (activeProvider === 'openkilo' && !activeModel.endsWith(':free') && !activeModel.endsWith('/free'))) {
               if (activeProvider === 'openkilo') {
                 activeModel = 'kilo-auto/free';
               } else if (activeProvider === 'groq') {
                 activeModel = 'llama-3.3-70b-versatile';
               } else {
-                activeModel = 'qwen/qwen-2.5-coder-32b-instruct:free';
+                activeModel = 'google/gemma-4-31b-it:free';
               }
             }
           }

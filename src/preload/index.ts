@@ -37,6 +37,7 @@ const api: ElectronAPI = {
   searchFiles: (query: string) => ipcRenderer.invoke('fs:search-files', query),
   getSettings: () => ipcRenderer.invoke('settings:get'),
   saveSettings: (settings) => ipcRenderer.invoke('settings:save', settings),
+  updateActiveProviderConfig: (config) => ipcRenderer.invoke('providers:update-active-config', config),
   getTelemetryPreview: () => ipcRenderer.invoke('telemetry:get-preview'),
   deleteTelemetryEvent: (index, expected) => ipcRenderer.invoke('telemetry:delete-event', { index, expected }),
   clearTelemetryData: () => ipcRenderer.invoke('telemetry:clear-data'),
@@ -378,6 +379,7 @@ const api: ElectronAPI = {
 
   // Phase 2.1: Provider Onboarding & Dynamic Discovery
   providerGetRegistry: () => ipcRenderer.invoke('provider:get-registry'),
+  getVerifiedModelCatalog: () => ipcRenderer.invoke('providers:get-verified-catalog'),
   providerGetConnectionStatus: () => ipcRenderer.invoke('provider:get-connection-status'),
   providerGetModels: (params) => ipcRenderer.invoke('provider:get-models', params),
   providerTestConnection: (params) => ipcRenderer.invoke('provider:test-connection', params),

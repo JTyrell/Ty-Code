@@ -59,7 +59,7 @@ export const DEFAULT_FALLBACK_PROVIDERS: Record<string, string> = {
   'fireworks-ai-free': 'OpenKilo or Groq',
   'huggingface-free': 'OpenKilo or Together AI',
   'google-ai-studio-free': 'OpenRouter Free or OpenKilo',
-  'anthropic-claude-free': 'OpenRouter Free (deepseek-r1:free)'
+  'anthropic-claude-free': 'OpenRouter Free (gemma-4-31b-it:free)'
 };
 
 /**

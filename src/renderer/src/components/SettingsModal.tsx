@@ -64,6 +64,7 @@ import { ApiKeyManager } from './ApiKeyManager';
 import { OpenCodeIntegration } from './settings/OpenCodeIntegration';
 import { useOnboardingStore } from '../state/onboarding-store';
 import { DiagnosticsPanel } from './settings/DiagnosticsPanel';
+import { ProvidersModelsTab } from './settings/ProvidersModelsTab';
 import { UsageLedgerView } from './dashboard/UsageLedgerView';
 import type { FreeProvider } from '../../../shared/types/free-providers';
 import type { StoredKeySummary, CustomProviderConfig } from '../../../shared/types/byok';
@@ -957,182 +958,20 @@ export const SettingsModal: React.FC = () => {
           {/* Tab 0: Simple API Key Harvesting & SafeStorage Vault (KeyHarvest) */}
           {activeTab === 'apikeys' && <ApiKeyManager />}
 
-          {/* Tab 1: AI Provider Onboarding, Configuration & Dynamic Model Discovery */}
+          {/* Tab 1: AI Providers & Models — verified catalog, categorized
+              Free / Premium / Local, instant activation via the unified store */}
           {activeTab === 'providers' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              {/* Unified Provisioning & Wizard Launcher Banner */}
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '12px 16px',
-                  background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.12), rgba(168, 85, 247, 0.12))',
-                  border: '1px solid rgba(99, 102, 241, 0.3)',
-                  borderRadius: '10px'
-                }}
-              >
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Sparkles size={16} color="#818cf8" />
-                    <span style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc' }}>
-                      Unified Provider Access
-                    </span>
-                    <span style={{ fontSize: '11px', padding: '1px 6px', borderRadius: '4px', background: 'rgba(99, 102, 241, 0.2)', color: '#c7d2fe' }}>
-                      Tiered Provisioning &amp; BYOK
-                    </span>
-                  </div>
-                  <p style={{ margin: '3px 0 0 0', fontSize: '11px', color: '#94a3b8' }}>
-                    Manage free accounts (Tier 1), one-click OAuth (Tier 1b), local Ollama (Tier 2), and power-user BYOK keys (Tier 3) in one credential vault.
-                  </p>
-                </div>
+            <ProvidersModelsTab
+              onOpenApiKeys={() => setActiveTab('apikeys')}
+              onOpenByok={() => setActiveTab('byok')}
+              onOpenProviderSetup={() => setIsProviderModalOpen(true)}
+              onOpenWizard={() => useOnboardingStore.getState().openWizard('welcome')}
+            />
+          )}
 
-                <button
-                  type="button"
-                  id="settings-re-run-wizard-btn"
-                  onClick={() => {
-                    useOnboardingStore.getState().openWizard('welcome');
-                  }}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    padding: '7px 14px',
-                    borderRadius: '6px',
-                    background: 'var(--accent-primary, #6366f1)',
-                    border: 'none',
-                    color: '#ffffff',
-                    fontSize: '12px',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    boxShadow: '0 2px 8px rgba(99, 102, 241, 0.35)',
-                    whiteSpace: 'nowrap'
-                  }}
-                >
-                  <Sparkles size={13} />
-                  <span>Re-run Setup Wizard</span>
-                </button>
-              </div>
-
-              {/* Upstream Free-Model Supply Attribution (FCC) */}
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  padding: '8px 12px',
-                  borderRadius: '6px',
-                  background: 'rgba(99, 102, 241, 0.08)',
-                  border: '1px solid rgba(99, 102, 241, 0.2)',
-                  fontSize: '11px',
-                  color: '#a5b4fc'
-                }}
-              >
-                <Zap size={13} color="#818cf8" style={{ flexShrink: 0 }} />
-                <span>
-                  Free-model supply layer powered by free-claude-code (FCC) — AGPL-3.0 / MIT — <a href="https://github.com/Alishahryar1/free-claude-code" target="_blank" rel="noopener noreferrer" style={{ color: '#c7d2fe', textDecoration: 'underline' }}>https://github.com/Alishahryar1/free-claude-code</a>
-                </span>
-              </div>
-
-              {/* Autonomous Live Model Catalog Verification (corrects the provider & models DB) */}
-              <ModelCatalogVerifierPanel
-                onCorrectionsApplied={() => {
-                  void refreshByokData();
-                }}
-              />
-
-              {/* Provider Selection Grid */}
-              <ProviderSelectionGrid
-                providers={registryProviders}
-                selectedProviderId={selectedGridProviderId}
-                onSelectProvider={(id) => {
-                  setSelectedGridProviderId(id);
-                  setIsCustomSelected(false);
-                  setIsProviderModalOpen(true);
-                }}
-                providerStatuses={providerStatuses}
-                onSelectCustom={() => {
-                  setIsCustomSelected(true);
-                  setIsProviderModalOpen(true);
-                }}
-                isCustomSelected={isCustomSelected}
-              />
-
-              {/* Active Provider Quick Banner & Quick Launch */}
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '12px 16px',
-                  borderRadius: '8px',
-                  background: 'rgba(30, 41, 59, 0.4)',
-                  border: '1px solid rgba(255, 255, 255, 0.08)',
-                  marginTop: '4px'
-                }}
-                id="active-provider-summary-banner"
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Selected Provider:</span>
-                  <strong style={{ fontSize: '13px', color: 'var(--text-primary)' }}>
-                    {isCustomSelected ? 'Custom OpenAI-Compatible' : currentProvider?.name}
-                  </strong>
-                  {settings?.activeModel && !isCustomSelected && (
-                    <span
-                      style={{
-                        fontSize: '11px',
-                        color: 'var(--accent-primary)',
-                        background: 'rgba(99, 102, 241, 0.12)',
-                        padding: '2px 8px',
-                        borderRadius: '4px',
-                        fontFamily: 'monospace'
-                      }}
-                    >
-                      {settings.activeModel}
-                    </span>
-                  )}
-                  {providerStatuses[selectedGridProviderId]?.status === 'connected' && (
-                    <span
-                      style={{
-                        fontSize: '10px',
-                        color: '#34d399',
-                        background: 'rgba(16, 185, 129, 0.12)',
-                        padding: '2px 6px',
-                        borderRadius: '4px',
-                        fontWeight: 600
-                      }}
-                    >
-                      CONNECTED
-                    </span>
-                  )}
-                </div>
-
-                <button
-                  type="button"
-                  id="btn-open-provider-config-modal"
-                  onClick={() => setIsProviderModalOpen(true)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    padding: '7px 14px',
-                    borderRadius: '6px',
-                    background: 'var(--accent-primary)',
-                    color: '#ffffff',
-                    border: 'none',
-                    fontSize: '12px',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    boxShadow: '0 2px 8px rgba(99, 102, 241, 0.3)'
-                  }}
-                >
-                  <Sliders size={13} />
-                  Configure &amp; Test Provider
-                </button>
-              </div>
-
-              {/* Floating Window for Provider Setup / Custom Form */}
-              {isProviderModalOpen && (
+          {/* Floating Window for Provider Setup / Custom Form (reached from the
+              AI Providers & Models tab) */}
+          {isProviderModalOpen && (
                 <div
                   className="provider-config-floating-overlay"
                   id="provider-config-floating-overlay"
@@ -1310,8 +1149,6 @@ export const SettingsModal: React.FC = () => {
                   </div>
                 </div>
               )}
-            </div>
-          )}
 
           {/* Tab: Seamless BYOK Interface & Key Management (Phase 6.2) */}
           {activeTab === 'byok' && (

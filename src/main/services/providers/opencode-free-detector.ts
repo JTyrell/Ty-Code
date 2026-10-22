@@ -15,8 +15,6 @@ export const OPENCODE_CURATED_FREE_MODELS: Record<string, string[]> = {
   openrouter: [
     'nvidia/nemotron-3-ultra-550b-a55b:free',
     'google/gemma-4-31b-it:free',
-    'qwen/qwen-2.5-coder-32b-instruct:free',
-    'thinkingmachines/inkling-small:free',
     'dots-studio/dots-3-note-preview:free',
     'cohere/north-mini-code:free',
     'nvidia/nemotron-3.5-lightning:free'

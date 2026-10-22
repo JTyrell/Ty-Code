@@ -22,7 +22,7 @@ import { providerHealthMonitor } from '../services/providers/health-monitor';
 import { readStoredCredentials } from '../ipc/settings-handlers';
 import { keyDetector } from '../services/providers/key-detector';
 
-import { getKey, getCommunityKey, getCommunityKeyCached, hasCommunityKey, invalidateCommunityKey } from '../services/credential-vault';
+import { getKey, getCommunityKey, warmUpCommunityKey, getCommunityKeyCached, hasCommunityKey, invalidateCommunityKey } from '../services/credential-vault';
 import { getVerifiedModels, type VerifiedModelConfig } from '../services/verified-models';
 import { fetchFCCCatalog, canFccServeCompletions } from '../services/fcc-catalog-sync';
 
@@ -58,6 +58,29 @@ export interface GatewayToolCall {
 
 const FCC_SIDECAR_URL = 'http://localhost:8082/v1/chat/completions';
 const KILO_URL = 'https://api.kilo.ai/api/gateway/chat/completions';
+
+const TY_CODE_FREE_PROVIDER = 'ty-code-free';
+const TY_CODE_FREE_MODEL = 'google/gemma-4-31b-it:free';
+
+/**
+ * Gateway-side active override (set via IPC from renderer selections).
+ * sendChatRequest callers omit nothing normally; the override is only used
+ * when a call arrives with a blank provider/model so the gateway still knows
+ * where to route. Main-process only: no credentials are stored here.
+ */
+let gatewayActiveOverride: { providerId: string; modelId: string } | null = null;
+
+export function setGatewayActiveConfig(providerId: string, modelId: string): { providerId: string; modelId: string } {
+  gatewayActiveOverride = {
+    providerId: (providerId || TY_CODE_FREE_PROVIDER).trim(),
+    modelId: (modelId || (gatewayActiveOverride?.providerId === providerId ? gatewayActiveOverride.modelId : TY_CODE_FREE_MODEL)).trim()
+  };
+  return { ...gatewayActiveOverride };
+}
+
+export function getGatewayActiveOverride(): { providerId: string; modelId: string } | null {
+  return gatewayActiveOverride ? { ...gatewayActiveOverride } : null;
+}
 
 // ZeroFriction-2 One-Key Premium: premium direct providers transparently
 // re-route through OpenRouter's unified API when the provider's own native
@@ -121,6 +144,13 @@ export async function sendChatRequest(
   tools?: GatewayToolSchema[],
   onToolCalls?: (calls: GatewayToolCall[]) => void
 ): Promise<string> {
+  // Fall back to the active selection when a caller omits provider/model so
+  // untargeted gateway calls still route to the user's chosen supply.
+  const overrideCfg = gatewayActiveOverride;
+  if (!providerId || !String(providerId).trim()) providerId = overrideCfg?.providerId || TY_CODE_FREE_PROVIDER;
+  if (!modelId || !String(modelId).trim()) {
+    modelId = overrideCfg && overrideCfg.providerId === providerId ? overrideCfg.modelId : TY_CODE_FREE_MODEL;
+  }
   const provider = providerId;
   const norm = (providerId || '').toLowerCase().trim().replace(/-free$/, '');
   const isKilo = norm === 'kilo' || norm === 'openkilo';
@@ -129,6 +159,15 @@ export async function sendChatRequest(
   // route to OpenRouter and authenticate with the rotating Community Key or
   // the user's own OpenRouter key; no user input is ever required.
   const isTyCodeFree = norm === 'ty-code-free' || (providerId || '').toLowerCase().trim() === 'ty-code-free';
+  // Selecting a Ty-Code Free model must trigger the Community Key bootstrap
+  // before routing decisions; cache-first warm-up keeps the stream path hot.
+  if (isTyCodeFree) {
+    try {
+      warmUpCommunityKey();
+    } catch {
+      // Warm-up failure is fine: the stream path re-resolves lazily.
+    }
+  }
   // FCC Free Tier: the 'fcc' provider id hydrates the FCC supply layer through
   // the dynamic catalog; the 'anthropic-claude-free' binding normalizes to
   // 'anthropic-claude' (single -free suffix strip), and the provider registry

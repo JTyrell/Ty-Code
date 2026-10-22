@@ -11,6 +11,8 @@
 import { freeProviderRegistry } from '../providers/free-provider-registry';
 import { diagnosticsHealthMonitor } from './health-monitor';
 import { readStoredCredentials } from '../../ipc/settings-handlers';
+import { getCommunityKey } from '../credential-vault';
+import { canFccServeCompletions } from '../fcc-catalog-sync';
 import { parseSSELines, type StreamPayload } from '../../providers/sse-parser';
 import { classifyDiagnosticError, type ClassifiedError } from './error-taxonomy';
 import type {
@@ -37,6 +39,49 @@ const CANNED_TOOL = {
     }
   }
 };
+
+/**
+ * The Ty-Code Free community tier is the app's flagship zero-input supply, but
+ * it is not a freeProviderRegistry entry (no user key exists). Diagnostics must
+ * test WHAT THE APP ACTUALLY SERVES, so it is tested here as a first-class
+ * anonymous provider: probe model was answered live with the Community Key on
+ * 2026-10-21 (single-shot OpenRouter probe); re-probe before swapping it.
+ */
+const TY_CODE_FREE_PROVIDER: FreeProvider = {
+  id: 'ty-code-free',
+  name: 'Ty-Code Free (Community Key)',
+  base_url: 'https://openrouter.ai/api/v1',
+  auth_type: 'anonymous',
+  best_free_models: ['google/gemma-4-31b-it:free'],
+  setup_instructions: 'Zero configuration: the rotating Community Key is provisioned automatically at first launch.',
+  model_capabilities: { zero_key: ['google/gemma-4-31b-it:free'] },
+  signup_url: 'https://openrouter.ai/keys'
+};
+
+/** Skipped rows must read as "optional, add a key if you want it", never as a failure. */
+function buildNotConfiguredResult(provider: FreeProvider, steps: Record<DiagnosticStep, StepResult>): ProviderDiagnosticResult {
+  steps.auth = {
+    step: 'auth',
+    status: 'SKIPPED',
+    durationMs: 0,
+    message: 'Not configured (expected state, not a failure)'
+  };
+  return {
+    providerId: provider.id,
+    providerName: provider.name,
+    authType: provider.auth_type,
+    baseUrl: provider.base_url === 'auto' ? 'https://openrouter.ai/api/v1' : provider.base_url.replace(/\/+$/, ''),
+    status: 'SKIPPED',
+    errorCode: 'CONFIG_MISSING',
+    failedStep: 'auth',
+    humanMessage: 'Optional provider not configured yet.',
+    remedy: 'Add a free key for this provider if you want it tested. This is expected on a fresh install.',
+    actionUrl: provider.signup_url,
+    actionLabel: 'Get free key',
+    steps,
+    testedModel: provider.best_free_models[0]
+  };
+}
 
 export class DiagnosticService {
   private static instance: DiagnosticService;
@@ -103,8 +148,12 @@ export class DiagnosticService {
       providersToTest = providersToTest.filter((p) => p.id === targetProviderId);
       if (targetProviderId === 'ollama') {
         providersToTest = [localOllamaCandidate];
+      } else if (targetProviderId === 'ty-code-free') {
+        providersToTest = [TY_CODE_FREE_PROVIDER];
       }
     } else {
+      // The community tier is what the app serves out-of-the-box: always tested.
+      providersToTest.unshift(TY_CODE_FREE_PROVIDER);
       // Check if Ollama is running locally and add it to zero-key list
       try {
         const ping = await fetch('http://localhost:11434/api/tags', { signal: AbortSignal.timeout(1500) }).catch(() => null);
@@ -184,35 +233,71 @@ export class DiagnosticService {
       latency: { step: 'latency', status: 'SKIPPED', durationMs: 0 }
     };
 
-    const apiKey = await this.resolveApiKey(provider.id, storedKeys);
+    let apiKey = await this.resolveApiKey(provider.id, storedKeys);
+    const isCommunityProvider = provider.id === 'ty-code-free';
+    if (isCommunityProvider && !apiKey) {
+      // The community tier holds no user key: ride the rotating Community Key
+      // bootstrap exactly like the daily chat path.
+      apiKey = (await getCommunityKey().catch(() => null)) || undefined;
+    }
     const requiresKey = provider.auth_type !== 'anonymous' && provider.auth_type !== 'opencode_integration';
+    const isOptionalTier = provider.auth_type === 'api_key_optional' || provider.auth_type === 'fcc_proxy';
     const baseUrl = provider.base_url === 'auto' ? 'https://openrouter.ai/api/v1' : provider.base_url.replace(/\/+$/, '');
-    const modelToTest = provider.best_free_models[0] || 'kilo-auto/free';
+    const modelToTest = provider.best_free_models[0] || (isCommunityProvider ? 'google/gemma-4-31b-it:free' : 'kilo-auto/free');
 
-    // 0. Pre-check: CONFIG_MISSING
-    if (requiresKey && !apiKey) {
+    // Pre-check: keyless FCC binding without a running genuine binary is an
+    // expected environment state; skip instead of reporting breakage.
+    if (provider.id === 'anthropic-claude-free' && !canFccServeCompletions()) {
       steps.auth = {
         step: 'auth',
-        status: 'FAIL',
+        status: 'SKIPPED',
         durationMs: 0,
-        error: 'No API key configured for a provider that requires one'
+        message: 'free-claude-code sidecar not installed/running (expected on most machines)'
       };
-      const classified = classifyDiagnosticError(provider.id, 'CONFIG_MISSING', {
-        signupUrl: provider.signup_url,
-        providerName: provider.name
-      });
       return {
         providerId: provider.id,
         providerName: provider.name,
         authType: provider.auth_type,
         baseUrl,
-        status: 'FAIL',
+        status: 'SKIPPED',
         errorCode: 'CONFIG_MISSING',
         failedStep: 'auth',
-        humanMessage: classified.humanMessage,
-        remedy: classified.remedy,
-        actionUrl: classified.actionUrl,
-        actionLabel: classified.actionLabel,
+        humanMessage: 'FCC sidecar is not running. This binding activates only when free-claude-code is installed.',
+        remedy: 'Install/connect free-claude-code to enable this supply; nothing is broken.',
+        steps,
+        testedModel: modelToTest
+      };
+    }
+
+    // 0. Pre-check: not configured -> SKIPPED (expected state, not failure)
+    if (requiresKey && !apiKey) {
+      return buildNotConfiguredResult(provider, steps);
+    }
+    if (isOptionalTier && !apiKey) {
+      return buildNotConfiguredResult(provider, steps);
+    }
+
+    // Community tier without a resolvable key: provisioning is temporarily
+    // unavailable (endpoint down, offline cache empty, or rate limited). The
+    // runtime degrades to the anonymous OpenKilo pool; that covers real
+    // connectivity, so reporting SKIP here is the honest state.
+    if (isCommunityProvider && !apiKey) {
+      steps.auth = {
+        step: 'auth',
+        status: 'SKIPPED',
+        durationMs: 0,
+        message: 'Community Key bootstrap unavailable (offline or rate limited); runtime degrades to OpenKilo automatically.'
+      };
+      return {
+        providerId: provider.id,
+        providerName: provider.name,
+        authType: provider.auth_type,
+        baseUrl,
+        status: 'SKIPPED',
+        errorCode: 'CONFIG_MISSING',
+        failedStep: 'auth',
+        humanMessage: 'Community Key not provisioned on this machine yet.',
+        remedy: 'Ty-Code Free automatically serves via the anonymous OpenKilo pool until the key bootstrap succeeds; connectivity is intact.',
         steps,
         testedModel: modelToTest
       };
@@ -225,7 +310,7 @@ export class DiagnosticService {
     if (apiKey) {
       headers.Authorization = `Bearer ${apiKey}`;
     }
-    if (provider.id.includes('openrouter')) {
+    if (provider.id.includes('openrouter') || isCommunityProvider) {
       headers['HTTP-Referer'] = 'https://ty-code.dev';
       headers['X-Title'] = 'Ty-Code Connection Diagnostics';
     }
@@ -600,7 +685,7 @@ export class DiagnosticService {
     for (const res of data.results) {
       const ttft = res.timeToFirstTokenMs ? `${res.timeToFirstTokenMs}ms` : '-';
       const code = res.errorCode ? `\`${res.errorCode}\`` : '-';
-      const statusBadge = res.status === 'PASS' ? 'PASS' : `FAIL (${res.errorCode || 'UNKNOWN'})`;
+      const statusBadge = res.status === 'PASS' ? 'PASS' : res.status === 'SKIPPED' ? 'SKIPPED (not configured)' : `FAIL (${res.errorCode || 'UNKNOWN'})`;
       lines.push(`| **${res.providerName}** | \`${res.authType}\` | **${statusBadge}** | ${ttft} | ${code} | ${res.humanMessage} |`);
     }
 

@@ -118,15 +118,6 @@ export const ROUTER_MODEL_CATALOG: ModelCatalogEntry[] = [
     baseLatencyMs: 350
   },
   {
-    modelId: 'thinkingmachines/inkling-small:free',
-    modelName: 'Inkling Small (Kilo Gateway)',
-    providerId: 'openkilo-free',
-    providerName: 'OpenKilo',
-    tier: 'tier_b_general',
-    isFree: true,
-    baseLatencyMs: 390
-  },
-  {
     modelId: 'gemini-1.5-flash',
     modelName: 'Gemini 1.5 Flash (AI Studio)',
     providerId: 'google-ai-studio-free',
@@ -540,8 +531,8 @@ export class ModelRouter {
 
   private getFallbackDefault(): RankedModelCandidate {
     return {
-      modelId: 'deepseek/deepseek-v4.1-flash:free',
-      modelName: 'DeepSeek V4.1 Flash (Ty-Code Free)',
+      modelId: 'google/gemma-4-31b-it:free',
+      modelName: 'Gemma 4 31B (Ty-Code Free)',
       providerId: 'ty-code-free',
       providerName: 'Ty-Code Free',
       tier: 'tier_a_coding',

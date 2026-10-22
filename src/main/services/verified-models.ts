@@ -87,46 +87,29 @@ const OPENCODE_ZEN_FREE_MODELS: VerifiedModelConfig[] = [
 // upstream genuinely needs a key; the key is simply never supplied by the
 // user and never lives in source code.
 //
-// Every entry below was verified live on OpenRouter as of 2026-10-21
-// (openrouter pages fetched directly + the daily-refreshed free-model tracker
-// klymentiev.com/assets/data/openrouter-free-models.json checked 06:10 UTC
-// that day, all entries "answered" 200 in this week's runs). Retired slugs
-// (qwen-2.5-coder:free, deepseek-r1:free, gemma-2:free, llama-3.3:free) are
-// excluded because their :free variants no longer exist upstream.
-// Includes the best current free Chinese open models (DeepSeek V4.1 Flash,
-// GLM 5.3 Flash, LongCat 2.0) alongside NVIDIA Nemotron, Cohere and MiniMax.
+// Every entry below was verified live on 2026-10-21 (~19:05 UTC) via
+// single-shot chat/completions probes against OpenRouter using the rotating
+// Community Key fetched fresh from the community Worker. Of the 18 slugs in
+// OpenRouter's live :free catalog, 14 answered 200; the ones excluded here are
+// "only available on agentic harnesses"-failed gateway-side. Newly retired
+// since the previous bake (do not re-add without a fresh probe): deepseek/
+// deepseek-v4.1-flash:free, z-ai/glm-5.3-flash:free, meituan/longcat-2.0:free
+// and nvidia/nemotron-3-super-120b-a12b:free (404 "unavailable for free"),
+// xingchen-agi/xing4.0-29b-a4b:free (persistent 429 from upstream provider).
+// Also live but deliberately excluded: nvidia/nemotron-3.5-content-safety
+// (single-purpose safety classifier) and nvidia/nemotron-3-nano-omni-30b
+// (audio/video omni variant, unreliable for text-only agent payloads).
 const TY_CODE_FREE_MODELS: VerifiedModelConfig[] = [
   {
-    modelId: 'deepseek/deepseek-v4.1-flash:free',
-    name: 'DeepSeek V4.1 Flash (Ty-Code Free)',
+    modelId: 'google/gemma-4-31b-it:free',
+    name: 'Gemma 4 31B (Ty-Code Free)',
     url: 'https://openrouter.ai/api/v1/chat/completions',
     requiresKey: true,
     providerId: 'ty-code-free'
   },
   {
-    modelId: 'z-ai/glm-5.3-flash:free',
-    name: 'GLM 5.3 Flash (Ty-Code Free)',
-    url: 'https://openrouter.ai/api/v1/chat/completions',
-    requiresKey: true,
-    providerId: 'ty-code-free'
-  },
-  {
-    modelId: 'nvidia/nemotron-3-ultra-550b-a55b:free',
-    name: 'Nemotron 3 Ultra 550B (Ty-Code Free)',
-    url: 'https://openrouter.ai/api/v1/chat/completions',
-    requiresKey: true,
-    providerId: 'ty-code-free'
-  },
-  {
-    modelId: 'nvidia/nemotron-3.5-super-vl:free',
-    name: 'Nemotron 3.5 Super VL (Ty-Code Free)',
-    url: 'https://openrouter.ai/api/v1/chat/completions',
-    requiresKey: true,
-    providerId: 'ty-code-free'
-  },
-  {
-    modelId: 'meituan/longcat-2.0:free',
-    name: 'LongCat 2.0 (Ty-Code Free)',
+    modelId: 'google/gemma-4-26b-a4b-it:free',
+    name: 'Gemma 4 26B A4B (Ty-Code Free)',
     url: 'https://openrouter.ai/api/v1/chat/completions',
     requiresKey: true,
     providerId: 'ty-code-free'
@@ -134,6 +117,20 @@ const TY_CODE_FREE_MODELS: VerifiedModelConfig[] = [
   {
     modelId: 'cohere/north-mini-code:free',
     name: 'North Mini Code (Ty-Code Free)',
+    url: 'https://openrouter.ai/api/v1/chat/completions',
+    requiresKey: true,
+    providerId: 'ty-code-free'
+  },
+  {
+    modelId: 'poolside/laguna-s-2.1:free',
+    name: 'Poolside Laguna S (Ty-Code Free)',
+    url: 'https://openrouter.ai/api/v1/chat/completions',
+    requiresKey: true,
+    providerId: 'ty-code-free'
+  },
+  {
+    modelId: 'poolside/laguna-xs-2.1:free',
+    name: 'Poolside Laguna XS (Ty-Code Free)',
     url: 'https://openrouter.ai/api/v1/chat/completions',
     requiresKey: true,
     providerId: 'ty-code-free'
@@ -153,18 +150,36 @@ const TY_CODE_FREE_MODELS: VerifiedModelConfig[] = [
     providerId: 'ty-code-free'
   },
   {
-    // Inkling free variants are gated by OpenRouter to recognized agentic
-    // harnesses (403 otherwise); Ty-Code's tool loop qualifies it as one, and
-    // any rejection fails over gracefully to other free models.
-    modelId: 'thinkingmachines/inkling-small:free',
-    name: 'Inkling Small (Ty-Code Free)',
+    modelId: 'nvidia/nemotron-3-ultra-550b-a55b:free',
+    name: 'Nemotron 3 Ultra 550B (Ty-Code Free)',
     url: 'https://openrouter.ai/api/v1/chat/completions',
     requiresKey: true,
     providerId: 'ty-code-free'
   },
   {
-    modelId: 'thinkingmachines/inkling:free',
-    name: 'Inkling (Ty-Code Free)',
+    modelId: 'nvidia/nemotron-3.5-super-vl:free',
+    name: 'Nemotron 3.5 Super VL (Ty-Code Free)',
+    url: 'https://openrouter.ai/api/v1/chat/completions',
+    requiresKey: true,
+    providerId: 'ty-code-free'
+  },
+  {
+    modelId: 'dots-studio/dots-3-note-preview:free',
+    name: 'Dots 3 Note Preview (Ty-Code Free)',
+    url: 'https://openrouter.ai/api/v1/chat/completions',
+    requiresKey: true,
+    providerId: 'ty-code-free'
+  },
+  {
+    modelId: 'recursive/flint-v1.0:free',
+    name: 'Flint 1.0 (Ty-Code Free)',
+    url: 'https://openrouter.ai/api/v1/chat/completions',
+    requiresKey: true,
+    providerId: 'ty-code-free'
+  },
+  {
+    modelId: 'liquid/lfm-2.5-2.6b:free',
+    name: 'Liquid LFM 2.5 2.6B (Ty-Code Free)',
     url: 'https://openrouter.ai/api/v1/chat/completions',
     requiresKey: true,
     providerId: 'ty-code-free'

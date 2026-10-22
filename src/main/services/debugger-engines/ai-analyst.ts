@@ -102,7 +102,7 @@ async function resolveProviderModel(): Promise<{ provider: string; model: string
   if (!model || (provider === 'openkilo' && !model.endsWith(':free') && !model.endsWith('/free'))) {
     if (provider === 'openkilo') model = 'kilo-auto/free';
     else if (provider === 'groq') model = 'llama-3.3-70b-versatile';
-    else model = 'qwen/qwen-2.5-coder-32b-instruct:free';
+    else model = 'google/gemma-4-31b-it:free';
   }
   return { provider, model };
 }

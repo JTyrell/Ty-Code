@@ -50,11 +50,11 @@ const FREE_CLOUD_PROVIDERS: ProviderOption[] = [
   {
     id: 'openrouter',
     name: 'OpenRouter Free',
-    tagline: 'Access NVIDIA Nemotron, Qwen 2.5 Coder, Laguna for free',
+    tagline: 'Access NVIDIA Nemotron, Cohere North, Laguna for free',
     defaultModel: 'nvidia/nemotron-3-ultra-550b-a55b:free',
     recommendedModels: [
       'nvidia/nemotron-3-ultra-550b-a55b:free',
-      'qwen/qwen-2.5-coder-32b-instruct:free',
+      'cohere/north-mini-code:free',
       'dots-studio/dots-3-note-preview:free',
       'google/gemma-4-31b-it:free'
     ],

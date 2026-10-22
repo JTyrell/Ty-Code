@@ -18,7 +18,8 @@ export type FreeProviderId =
   | 'fireworks-ai-free'
   | 'google-ai-studio-free'
   | 'anthropic-claude-free'
-  | 'opencode-built-in';
+  | 'opencode-built-in'
+  | 'ty-code-free';
 
 export type FreeAuthType =
   | 'api_key_optional'

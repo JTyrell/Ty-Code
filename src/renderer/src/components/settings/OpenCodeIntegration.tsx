@@ -558,7 +558,7 @@ export const OpenCodeIntegration: React.FC<OpenCodeIntegrationProps> = ({
               )}
             </div>
             <span style={{ fontSize: '11px', color: '#94a3b8' }}>
-              {freeSummary?.openRouterFreeModels?.length || 7} models (R1, Qwen 2.5 Coder, Llama 3.3)
+              {freeSummary?.openRouterFreeModels?.length || 5} models (Nemotron, Gemma 4, Laguna)
             </span>
           </div>
 

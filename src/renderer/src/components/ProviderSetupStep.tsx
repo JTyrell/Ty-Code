@@ -51,7 +51,7 @@ export const PROVIDER_CATALOG: Record<string, ProviderCatalogEntry> = {
   openrouter: {
     id: 'openrouter',
     name: 'OpenRouter',
-    tagline: 'Access 15+ top free models including DeepSeek R1 and Qwen 2.5 Coder',
+    tagline: 'Access top free models like Nemotron, Cohere North and Laguna',
     flow: 'oauth-pkce-preferred',
     signupUrl: 'https://openrouter.ai/keys',
     instructions: [
@@ -64,7 +64,7 @@ export const PROVIDER_CATALOG: Record<string, ProviderCatalogEntry> = {
     defaultModel: 'nvidia/nemotron-3-ultra-550b-a55b:free',
     freeModels: [
       'nvidia/nemotron-3-ultra-550b-a55b:free',
-      'qwen/qwen-2.5-coder-32b-instruct:free',
+      'cohere/north-mini-code:free',
       'dots-studio/dots-3-note-preview:free',
       'google/gemma-4-31b-it:free'
     ],

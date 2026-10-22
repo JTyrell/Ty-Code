@@ -57,14 +57,6 @@ const PRIORITY_MODELS: PriorityModelInfo[] = [
     task: 'Fast Development',
     score: 93,
     desc: 'Rapid instruction-following model for multi-turn pair programming.'
-  },
-  {
-    id: 'thinkingmachines/inkling-small:free',
-    name: 'Inkling Small',
-    context: '1M context',
-    task: 'Deep Planning',
-    score: 92,
-    desc: 'Compact thinker for careful multi-step analysis.'
   }
 ];
 

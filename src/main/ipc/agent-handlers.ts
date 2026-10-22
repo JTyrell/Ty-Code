@@ -3,6 +3,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import type { AgentApprovalDecision, AgentMode, AgentSessionSummary, AgentStreamChunk, AgentToolApproval, ChatMessage, IpcResponse, ProposedDiff, ProviderSettings } from '../../preload/types';
 import { getProviderSettings } from './settings-handlers';
+import { seedActiveConfig } from '../agent/agent-config';
 import { AgentEngine } from '../agent/agent-engine';
 import { sessionStore } from '../agent/session-store';
 import { OpenCodeAgentManager } from '../services/orchestration/agent-manager';
@@ -120,6 +121,10 @@ export async function startAgentTask(
     ...(params.providerOverride ? { activeProvider: params.providerOverride as any } : {}),
     ...(params.modelOverride ? { activeModel: params.modelOverride } : {})
   };
+
+  // Seed the main-process active config (single source of truth the gateway
+  // and the agent engine read for routing). No credentials cross this call.
+  seedActiveConfig(effectiveSettings.activeProvider as string, effectiveSettings.activeModel || '');
 
   const useOpenCode = effectiveSettings.activeHarness === 'opencode';
   let tokenCount = 0;
