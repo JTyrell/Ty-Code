@@ -131,9 +131,8 @@ linux:
       arch:
         - x64
   category: Development
-  desktop:
-    MimeType: "inode/directory;"
-    Terminal: "false"
+  mimeTypes:
+    - inode/directory
 
 deb:
   artifactName: Ty-Code-${version}-x64.${ext}

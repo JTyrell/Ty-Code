@@ -111,6 +111,17 @@ export async function runBraveEngineTests(): Promise<{ passed: boolean; details:
     console.log('Search engine used:', searchRes.engine, 'Title:', searchRes.title);
     results.engineSearch = 'PASS';
 
+    console.log('\n--- Step 5: ToolExecutor brave_web_search Integration ---');
+    const { ToolExecutor } = await import('../src/main/agent/tool-executor');
+    const executor = new ToolExecutor(process.cwd());
+    const toolRes = await executor.execute('brave_web_search', { query: 'React state management' });
+    console.log('Tool execution response (preview):', toolRes.output.slice(0, 150) + '...');
+    if (toolRes.isError || !toolRes.output.includes('Search results for "React state management"')) {
+      throw new Error(`Unexpected tool output: ${toolRes.output}`);
+    }
+    results.toolExecutor = 'PASS';
+    console.log('✅ brave_web_search executed through ToolExecutor successfully.');
+
     await braveEngine.close();
     console.log('✅ BraveEngine closed and all temporary profiles cleaned up.');
     results.engineClose = 'PASS';
