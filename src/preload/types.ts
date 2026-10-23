@@ -194,6 +194,31 @@ export interface IpcResponse<T = unknown> {
   error?: string;
 }
 
+// ---------------------------------------------------------------------------
+// Model availability (Provider Series Prompt 1)
+// ---------------------------------------------------------------------------
+
+export type ModelAvailabilityStatus = 'available' | 'key_required' | 'service_unavailable';
+
+export interface AvailableModelConfig {
+  modelId: string;
+  name: string;
+  url: string;
+  requiresKey: boolean;
+  providerId: string;
+  availabilityStatus: ModelAvailabilityStatus;
+  providerName: string;
+  isSelectable: boolean;
+}
+
+export interface ModelAvailabilitySummary {
+  total: number;
+  available: number;
+  locked: number;
+  /** Seconds left on the Community-Key rate-limit back-off (429 retry-after). */
+  communityKeyCooldownSec: number;
+}
+
 /**
  * Masked result of an active provider selection sync. Never carries usable
  * credentials: the renderer only sees a display-safe preview string
@@ -1253,6 +1278,9 @@ export interface ElectronAPI {
   modelRouterGetPreferences?: () => Promise<IpcResponse<RouterUserPreferences>>;
   modelRouterSetPreferences?: (updates: Partial<RouterUserPreferences>) => Promise<IpcResponse<RouterUserPreferences>>;
   modelRouterGetAvailableModels?: () => Promise<IpcResponse<Record<ModelTier, RankedModelCandidate[]>>>;
+  getAvailableModels?: () => Promise<IpcResponse<AvailableModelConfig[]>>;
+  getModelAvailabilitySummary?: () => Promise<IpcResponse<ModelAvailabilitySummary>>;
+  resetModelsAvailabilityCache?: () => Promise<IpcResponse<void>>;
 
   // Autonomous Provider & Model Catalog Verification
   verifyModelCatalog?: () => Promise<IpcResponse<ModelCatalogVerificationSnapshot>>;

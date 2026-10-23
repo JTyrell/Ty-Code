@@ -528,6 +528,9 @@ const api: ElectronAPI = {
   modelRouterGetPreferences: () => ipcRenderer.invoke('model-router:get-preferences'),
   modelRouterSetPreferences: (updates: any) => ipcRenderer.invoke('model-router:set-preferences', updates),
   modelRouterGetAvailableModels: () => ipcRenderer.invoke('model-router:get-available-models'),
+  getAvailableModels: () => ipcRenderer.invoke('models:get-available-models'),
+  getModelAvailabilitySummary: () => ipcRenderer.invoke('models:get-availability-summary'),
+  resetModelsAvailabilityCache: () => ipcRenderer.invoke('models:reset-availability-cache'),
   verifyModelCatalog: () => ipcRenderer.invoke('providers:verify-model-catalog'),
   getModelCatalogVerifications: () => ipcRenderer.invoke('providers:get-model-catalog-verifications'),
   onModelCatalogVerified: (callback: (snapshot: any) => void) => {

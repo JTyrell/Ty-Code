@@ -382,6 +382,18 @@ export async function getVerifiedModels(): Promise<VerifiedModelConfig[]> {
 
   cachedModels = entries;
   cacheTimestamp = Date.now();
+  // ZeroFriction diagnosis (Prompt 3, Step 2): what the catalog actually
+  // contains - includes the community-keyed tier that uses requiresKey=true
+  // but is auto-supplied by the vault, so the plain !requiresKey list would
+  // otherwise hide it.
+  console.log(`[MODELS] Returning ${entries.length} verified models`);
+  console.log(`[MODELS] Free models: ${entries.filter((m) => !m.requiresKey).map((m) => m.modelId).join(', ')}`);
+  console.log(
+    `[MODELS] Community-keyed free (requiresKey but auto-supplied via ty-code-free): ${entries
+      .filter((m) => m.requiresKey && (m.providerId || '').toLowerCase().includes('ty-code-free'))
+      .map((m) => m.modelId)
+      .join(', ')}`
+  );
   return cachedModels;
 }
 

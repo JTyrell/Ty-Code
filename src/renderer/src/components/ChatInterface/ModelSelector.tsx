@@ -22,7 +22,11 @@ import {
   Sliders,
   Layers,
   Compass,
-  ArrowRight
+  ArrowRight,
+  Lock,
+  Search,
+  Monitor,
+  Clock
 } from 'lucide-react';
 import { useChatStore } from '../../state/chat-store';
 import { toast } from '../../state/toast-store';
@@ -32,7 +36,7 @@ import type {
   RoutingPreferenceMode,
   RouterUserPreferences
 } from '../../../../shared/types/model-router';
-import type { ProviderType, ProviderConnectivitySnapshot } from '../../../../preload/types';
+import type { AvailableModelConfig, ModelAvailabilitySummary, ProviderType, ProviderConnectivitySnapshot } from '../../../../preload/types';
 
 export const TIER_LABELS: Record<ModelTier, { name: string; color: string; bg: string; border: string }> = {
   tier_s_reasoning: {
@@ -203,6 +207,13 @@ export const ModelSelector: React.FC = () => {
   const [catalog, setCatalog] = useState<Record<ModelTier, RankedModelCandidate[]>>(FALLBACK_CATALOG);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [connStatus, setConnStatus] = useState<Record<string, ProviderConnectivitySnapshot>>({});
+  // Availability-gated catalog (Provider Series Prompt 1): the picker renders
+  // ONLY entries that are actually usable; locked ones render disabled with a
+  // route to Settings.
+  const [availabilityList, setAvailabilityList] = useState<AvailableModelConfig[] | null>(null);
+  const [availabilitySummary, setAvailabilitySummary] = useState<ModelAvailabilitySummary | null>(null);
+  const [modelQuery, setModelQuery] = useState('');
+  const [lockedTooltipId, setLockedTooltipId] = useState<string | null>(null);
   const [dropdownPosition, setDropdownPosition] = useState<DropdownPosition | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const dropdownMenuRef = useRef<HTMLDivElement>(null);
@@ -379,12 +390,21 @@ export const ModelSelector: React.FC = () => {
           return null;
         };
 
-        const [catalogRes, statusRes] = await Promise.all([
+        const [catalogRes, availRes, summaryRes, statusRes] = await Promise.all([
           window.electronAPI.modelRouterGetAvailableModels(),
+          window.electronAPI.getAvailableModels ? window.electronAPI.getAvailableModels() : Promise.resolve(null),
+          window.electronAPI.getModelAvailabilitySummary ? window.electronAPI.getModelAvailabilitySummary() : Promise.resolve(null),
           fetchConnStatus()
         ]);
         if (catalogRes.success && catalogRes.data) {
           setCatalog(catalogRes.data);
+        }
+        if (availRes && (availRes as any).success && Array.isArray((availRes as any).data)) {
+          setAvailabilityList((availRes as any).data as AvailableModelConfig[]);
+          setLockedTooltipId(null);
+        }
+        if (summaryRes && (summaryRes as any).success && (summaryRes as any).data) {
+          setAvailabilitySummary((summaryRes as any).data as ModelAvailabilitySummary);
         }
         if (statusRes?.success && statusRes.data) {
           setConnStatus(statusRes.data);
@@ -713,175 +733,252 @@ export const ModelSelector: React.FC = () => {
             );
           })()}
 
-          {/* Grouped Models List — first by supply tier (Free / OpenCode / Premium / Local), then capability tier */}
+          {/* Search + Availability-gated list (Provider Series Prompt 1):
+              every row natively verified against keys/services; locked rows cannot be selected. */}
+          <input
+            type="text"
+            id="model-search-input"
+            value={modelQuery}
+            onChange={(e) => setModelQuery(e.target.value)}
+            placeholder="Search models or providers…"
+            style={{
+              boxSizing: 'border-box',
+              width: '100%',
+              padding: '5px 8px',
+              borderRadius: '5px',
+              border: '1px solid var(--border-subtle)',
+              background: 'var(--bg-primary)',
+              color: 'var(--text-primary)',
+              fontSize: '11px',
+              outline: 'none'
+            }}
+          />
+
+          {availabilitySummary && availabilitySummary.communityKeyCooldownSec > 0 && (
+            <div
+              id="community-key-cooldown-chip"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '4px 8px',
+                borderRadius: '6px',
+                fontSize: '9.5px',
+                fontWeight: 600,
+                color: 'var(--accent-amber)',
+                background: 'var(--surface-2)',
+                border: '1px solid var(--border-subtle)'
+              }}
+            >
+              <Clock size={10} style={{ flexShrink: 0 }} />
+              <span>Community Key refresh is rate limited - new keys live again in {Math.ceil(availabilitySummary.communityKeyCooldownSec / 60)} min</span>
+            </div>
+          )}
+
           {(() => {
-            const tiers = Object.keys(catalog) as ModelTier[];
-            const isLocalModel = (m: RankedModelCandidate): boolean =>
-              (m.providerId || '').includes('ollama') || (m.providerName || '').includes('Ollama');
-            const isOpencodeBridgeModel = (m: RankedModelCandidate): boolean =>
-              (m.providerId || '').toLowerCase() === 'opencode-free';
+            const availability = availabilityList ?? [];
+            // Router-catalog enrichment: tier + provenance by model id.
+            const catalogByModelId = new Map<string, RankedModelCandidate>();
+            for (const models of Object.values(catalog)) {
+              for (const c of models || []) catalogByModelId.set(c.modelId, c);
+            }
 
-            const freeByTier = tiers
-              .map((tierKey) => ({ tier: tierKey, models: (catalog[tierKey] || []).filter((m) => m.isFree && !isLocalModel(m) && !isOpencodeBridgeModel(m)) }))
-              .filter((g) => g.models.length > 0);
-            const opencodeByTier = tiers
-              .map((tierKey) => ({ tier: tierKey, models: (catalog[tierKey] || []).filter((m) => isOpencodeBridgeModel(m)) }))
-              .filter((g) => g.models.length > 0);
-            const premiumByTier = tiers
-              .map((tierKey) => ({ tier: tierKey, models: (catalog[tierKey] || []).filter((m) => !m.isFree && !isLocalModel(m) && !isOpencodeBridgeModel(m)) }))
-              .filter((g) => g.models.length > 0);
-            const localByTier = tiers
-              .map((tierKey) => ({ tier: tierKey, models: (catalog[tierKey] || []).filter((m) => isLocalModel(m)) }))
-              .filter((g) => g.models.length > 0);
+            const q = modelQuery.trim().toLowerCase();
+            const matches = (r: AvailableModelConfig): boolean =>
+              !q ||
+              r.name.toLowerCase().includes(q) ||
+              r.modelId.toLowerCase().includes(q) ||
+              (r.providerName || '').toLowerCase().includes(q) ||
+              r.providerId.toLowerCase().includes(q);
 
-            const freeTotal = freeByTier.reduce((n, g) => n + g.models.length, 0);
-            const opencodeTotal = opencodeByTier.reduce((n, g) => n + g.models.length, 0);
-            const premiumTotal = premiumByTier.reduce((n, g) => n + g.models.length, 0);
-            const localTotal = localByTier.reduce((n, g) => n + g.models.length, 0);
-            const premiumConnectedTotal = premiumByTier.reduce((n, g) => n + g.models.filter((m) => isProviderConnected(m.providerId)).length, 0);
+            const isLocalEntry = (r: AvailableModelConfig): boolean =>
+              /https?:\/\/(127\.0\.0\.1|localhost)/i.test(r.url) ||
+              /ollama|vllm|localai|jan-|jan_|llama-cpp|ooba|text-gen|kobold|open-webui|tabbyml|cortex|llamafile|local-model/i.test(r.providerId);
 
-            const renderTierGroup = (tierKey: ModelTier, models: RankedModelCandidate[], groupKey: string) => {
-              if (models.length === 0) return null;
-              const tierInfo = TIER_LABELS[tierKey];
+            const availableRows = availability.filter((r) => matches(r) && r.availabilityStatus === 'available' && !isLocalEntry(r));
+            const lockedRows = availability.filter((r) => matches(r) && r.availabilityStatus !== 'available' && !isLocalEntry(r));
+            const localRows = availability.filter((r) => matches(r) && isLocalEntry(r) && r.availabilityStatus === 'available');
+
+            const toCandidate = (r: AvailableModelConfig): RankedModelCandidate => {
+              const enriched = catalogByModelId.get(r.modelId);
+              return {
+                modelId: r.modelId,
+                modelName: r.name,
+                providerId: r.providerId,
+                providerName: r.providerName,
+                tier: enriched?.tier || 'tier_b_general',
+                isFree: !r.requiresKey,
+                latencyMs: enriched?.latencyMs ?? 0,
+                healthScore: enriched?.healthScore ?? 1,
+                isRateLimited: false,
+                estimatedRemainingTokens: enriched?.estimatedRemainingTokens,
+                compositeRankScore: enriched?.compositeRankScore ?? 100,
+                selectionReason: enriched?.selectionReason || `Verified available via ${r.providerName}`,
+                provenance: enriched?.provenance
+              };
+            };
+
+            const lockReason = (r: AvailableModelConfig): string => {
+              if (r.availabilityStatus === 'key_required') {
+                if (r.providerId === 'ty-code-free' || r.providerId === 'tycode-free') {
+                  return 'Community Key is bootstrapping - retry in a moment, or add your own OpenRouter key in Settings to unlock instantly.';
+                }
+                return `Add ${r.providerName} API key in Settings to unlock`;
+              }
+              if (r.providerId === 'fcc' || r.providerId === 'fcc-proxy') {
+                return 'Start the FCC sidecar in Settings to make this model available.';
+              }
+              return `Start ${r.providerName} locally to make this model available.`;
+            };
+
+            const renderRow = (r: AvailableModelConfig, locked: boolean) => {
+              const rowId = `${r.providerId}::${r.modelId}`;
+              const isSelected = !locked && !isAutoMode && (
+                currentActiveModelId === r.modelId || selectedCandidate?.modelId === r.modelId
+              );
+              const tooltipOpen = locked && lockedTooltipId === rowId;
+
               return (
-                <div key={groupKey} style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                  <div
+                <div key={rowId} id={`model-option-${r.modelId.replace(/[^a-zA-Z0-9_-]/g, '_')}`}
+                  style={{ position: 'relative' }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (locked) {
+                        setLockedTooltipId(tooltipOpen ? null : rowId);
+                        return;
+                      }
+                      void handleSelectModel(toCandidate(r));
+                    }}
                     style={{
                       display: 'flex',
+                      width: '100%',
+                      boxSizing: 'border-box',
                       alignItems: 'center',
                       justifyContent: 'space-between',
-                      padding: '2px 4px',
-                      fontSize: '10px',
-                      fontWeight: 700,
-                      color: tierInfo.color,
-                      borderBottom: '1px solid rgba(255, 255, 255, 0.05)'
+                      padding: '6px 8px',
+                      borderRadius: '5px',
+                      background: isSelected ? 'rgba(56, 189, 248, 0.16)' : 'rgba(255, 255, 255, 0.02)',
+                      border: isSelected ? '1px solid #38bdf8' : '1px solid transparent',
+                      boxShadow: isSelected ? '0 0 10px rgba(56, 189, 248, 0.25)' : 'none',
+                      cursor: locked ? 'help' : 'pointer',
+                      opacity: locked ? 0.75 : 1,
+                      textAlign: 'left',
+                      transition: 'all 0.15s ease'
                     }}
                   >
-                    <span>{tierInfo.name}</span>
-                  </div>
-
-                  {models.map((candidate) => {
-                    const isSelected = !isAutoMode && (
-                      currentActiveModelId === candidate.modelId ||
-                      selectedCandidate?.modelId === candidate.modelId
-                    );
-
-                    return (
-                      <div
-                        key={candidate.modelId}
-                        id={`model-option-${candidate.modelId.replace(/[^a-zA-Z0-9_-]/g, '_')}`}
-                        onClick={() => void handleSelectModel(candidate)}
-                        onMouseEnter={(e) => {
-                          if (!isSelected) (e.currentTarget as HTMLDivElement).style.background = 'rgba(255, 255, 255, 0.05)';
-                        }}
-                        onMouseLeave={(e) => {
-                          if (!isSelected) (e.currentTarget as HTMLDivElement).style.background = 'rgba(255, 255, 255, 0.02)';
-                        }}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          padding: '6px 8px',
-                          borderRadius: '5px',
-                          background: isSelected ? 'rgba(56, 189, 248, 0.16)' : 'rgba(255, 255, 255, 0.02)',
-                          border: isSelected ? '1px solid #38bdf8' : '1px solid transparent',
-                          boxShadow: isSelected ? '0 0 10px rgba(56, 189, 248, 0.25)' : 'none',
-                          cursor: 'pointer',
-                          transition: 'all 0.15s ease'
-                        }}
-                      >
-                        <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
-                            <span
-                              style={{
-                                minWidth: 0,
-                                flex: '1 1 auto',
-                                fontSize: '11px',
-                                fontWeight: isSelected ? 600 : 500,
-                                color: isSelected ? '#ffffff' : 'var(--text-primary)',
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis',
-                                whiteSpace: 'nowrap'
-                              }}
-                            >
-                              {candidate.modelName}
-                            </span>
-                            {candidate.isFree && (
-                              <span
-                                style={{
-                                  flexShrink: 0,
-                                  fontSize: '8px',
-                                  fontWeight: 700,
-                                  padding: '0 4px',
-                                  borderRadius: '2px',
-                                  backgroundColor: 'rgba(16, 185, 129, 0.2)',
-                                  color: '#34d399',
-                                  border: '1px solid rgba(16, 185, 129, 0.4)'
-                                }}
-                              >
-                                FREE
-                              </span>
-                            )}
-                            {candidate.provenance && (
-                              <span
-                                style={{
-                                  flexShrink: 0,
-                                  fontSize: '8px',
-                                  fontWeight: 700,
-                                  padding: '0 4px',
-                                  borderRadius: '2px',
-                                  backgroundColor:
-                                    candidate.provenance === 'FCC'
-                                      ? 'rgba(168, 85, 247, 0.2)'
-                                      : candidate.provenance === 'your key'
-                                      ? 'rgba(56, 189, 248, 0.2)'
-                                      : candidate.provenance === 'anonymous'
-                                      ? 'rgba(16, 185, 129, 0.2)'
-                                      : candidate.provenance === 'subscription'
-                                      ? 'rgba(245, 158, 11, 0.2)'
-                                      : 'rgba(245, 158, 11, 0.2)',
-                                  color:
-                                    candidate.provenance === 'FCC'
-                                      ? '#c084fc'
-                                      : candidate.provenance === 'your key'
-                                      ? '#38bdf8'
-                                      : candidate.provenance === 'anonymous'
-                                      ? '#34d399'
-                                      : candidate.provenance === 'subscription'
-                                      ? '#fbbf24'
-                                      : '#fbbf24',
-                                  border: `1px solid ${
-                                    candidate.provenance === 'FCC'
-                                      ? 'rgba(168, 85, 247, 0.4)'
-                                      : candidate.provenance === 'your key'
-                                      ? 'rgba(56, 189, 248, 0.4)'
-                                      : candidate.provenance === 'anonymous'
-                                      ? 'rgba(16, 185, 129, 0.4)'
-                                      : candidate.provenance === 'subscription'
-                                      ? 'rgba(245, 158, 11, 0.4)'
-                                      : 'rgba(245, 158, 11, 0.4)'
-                                  }`
-                                }}
-                              >
-                                {candidate.provenance === 'subscription'
-                                  ? (candidate.providerId?.includes('copilot') || candidate.modelId?.includes('copilot'))
-                                    ? 'via your Copilot — no extra cost'
-                                    : 'via your subscription — no extra cost'
-                                  : candidate.provenance}
-                              </span>
-                            )}
-                          </div>
-                          <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-                            {(candidate.provenance === 'subscription' || candidate.providerId?.includes('copilot'))
-                              ? 'via your Copilot — no extra cost'
-                              : `via ${candidate.providerName}`}
+                    <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+                        {locked && <Lock size={10} color="var(--text-muted)" style={{ flexShrink: 0 }} />}
+                        <span
+                          style={{
+                            minWidth: 0,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            fontSize: '11px',
+                            fontWeight: isSelected ? 600 : 500,
+                            color: locked ? 'var(--text-muted)' : isSelected ? '#ffffff' : 'var(--text-primary)'
+                          }}
+                        >
+                          {r.name}
+                        </span>
+                        {!locked && !r.requiresKey && (
+                          <span
+                            style={{
+                              flexShrink: 0,
+                              fontSize: '8px',
+                              fontWeight: 700,
+                              padding: '0 4px',
+                              borderRadius: '2px',
+                              backgroundColor: 'rgba(16, 185, 129, 0.2)',
+                              color: '#34d399',
+                              border: '1px solid rgba(16, 185, 129, 0.4)'
+                            }}
+                          >
+                            FREE
                           </span>
-                        </div>
-
-                        {isSelected && <Check size={13} color="#38bdf8" style={{ flexShrink: 0 }} />}
+                        )}
+                        {!locked && r.providerId === 'ty-code-free' && (
+                          <span
+                            style={{
+                              flexShrink: 0,
+                              fontSize: '8px',
+                              fontWeight: 700,
+                              padding: '0 4px',
+                              borderRadius: '2px',
+                              backgroundColor: 'rgba(56, 189, 248, 0.2)',
+                              color: '#38bdf8',
+                              border: '1px solid rgba(56, 189, 248, 0.4)'
+                            }}
+                          >
+                            COMMUNITY
+                          </span>
+                        )}
                       </div>
-                    );
-                  })}
+                      <span style={{ fontSize: '10px', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        via {r.providerName}
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                      {locked && (
+                        <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>
+                          {r.availabilityStatus === 'key_required' ? 'locked' : 'offline'}
+                        </span>
+                      )}
+                      {isSelected && <Check size={13} color="#38bdf8" style={{ flexShrink: 0 }} />}
+                    </div>
+                  </button>
+
+                  {tooltipOpen && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        left: '8px',
+                        right: '8px',
+                        top: 'calc(100% - 2px)',
+                        zIndex: 2100,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '6px',
+                        padding: '8px',
+                        borderRadius: '6px',
+                        background: '#1b1f2b',
+                        border: '1px solid rgba(255, 255, 255, 0.15)',
+                        boxShadow: '0 12px 28px rgba(0, 0, 0, 0.5)'
+                      }}
+                    >
+                      <span style={{ fontSize: '10.5px', color: 'var(--text-primary)' }}>{lockReason(r)}</span>
+                      {r.availabilityStatus === 'key_required' && (
+                        <button
+                          type="button"
+                          id={`btn-unlock-${r.modelId.replace(/[^a-zA-Z0-9_-]/g, '_')}`}
+                          onClick={() => {
+                            useChatStore.getState().openSettings('providers');
+                            setIsOpen(false);
+                          }}
+                          style={{
+                            alignSelf: 'flex-start',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            padding: '4px 8px',
+                            borderRadius: '4px',
+                            border: 'none',
+                            background: '#38bdf8',
+                            color: '#0b1220',
+                            fontSize: '10px',
+                            fontWeight: 700,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          Open Settings
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               );
             };
@@ -890,16 +987,12 @@ export const ModelSelector: React.FC = () => {
               sectionKey: string,
               id: string,
               label: string,
-              count: number,
-              groups: { tier: ModelTier; models: RankedModelCandidate[] }[],
-              headerBg: string,
-              headerBorder: string,
-              labelColor: string,
-              hint?: React.ReactNode
+              rows: AvailableModelConfig[],
+              opts: { bg: string; border: string; labelColor: string; hint?: string; count: number }
             ) => {
-              if (count === 0 && !hint) return null;
+              if (rows.length === 0 && !opts.hint) return null;
               return (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div key={sectionKey} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                   <div
                     id={id}
                     style={{
@@ -908,78 +1001,50 @@ export const ModelSelector: React.FC = () => {
                       gap: '6px',
                       padding: '3px 4px',
                       borderRadius: '4px',
-                      background: headerBg,
-                      border: `1px solid ${headerBorder}`
+                      background: opts.bg,
+                      border: `1px solid ${opts.border}`
                     }}
                   >
                     <span style={{ fontSize: '11px', flexShrink: 0 }}>{label}</span>
-                    <span style={{ marginLeft: 'auto', fontSize: '9px', color: labelColor }}> {count > 0 ? `${count}` : ''}</span>
+                    <span style={{ marginLeft: 'auto', fontSize: '9px', color: opts.labelColor, fontVariantNumeric: 'tabular-nums' }}>
+                      {rows.length > 0 ? `${rows.length}` : ''}
+                    </span>
                   </div>
-                  {hint}
-                  {groups.map((g) => renderTierGroup(g.tier, g.models, `${sectionKey}-${g.tier}`))}
+                  {opts.hint && rows.length === 0 && (
+                    <div style={{ fontSize: '9px', color: 'var(--text-muted)', padding: '0 4px' }}>{opts.hint}</div>
+                  )}
+                  {rows.map((r) => renderRow(r, r.availabilityStatus !== 'available'))}
                 </div>
               );
             };
 
             return (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {/* Ty-Code Free — zero-friction community supply, no key required */}
-                {renderSection(
-                  'free',
-                  'models-group-free',
-                  '⚡ Ty-Code Free (No Key Required)',
-                  freeTotal,
-                  freeByTier,
-                  'rgba(16, 185, 129, 0.08)',
-                  'rgba(16, 185, 129, 0.22)',
-                  'rgba(52, 211, 153, 0.75)'
-                )}
+                {/* ⚡ Available Now — free tier, community-keyed tier and keyed providers with a resolvable key */}
+                {renderSection('available', 'models-group-free', '⚡ Available Now', availableRows, {
+                  count: availableRows.length,
+                  bg: 'rgba(16, 185, 129, 0.08)',
+                  border: 'rgba(16, 185, 129, 0.22)',
+                  labelColor: 'rgba(52, 211, 153, 0.75)',
+                  hint: 'No models are currently usable. Add a provider key in Settings or start a local backend.'
+                })}
 
-                {/* OpenCode Free Tier — free models synced from the user's own OpenCode config, served by the real installed CLI */}
-                {opencodeTotal > 0 && renderSection(
-                  'opencode',
-                  'models-group-opencode',
-                  '⌨ OpenCode Free Tier (via OpenCode CLI)',
-                  opencodeTotal,
-                  opencodeByTier,
-                  'rgba(56, 189, 248, 0.08)',
-                  'rgba(56, 189, 248, 0.22)',
-                  'rgba(125, 211, 252, 0.85)'
-                )}
+                {/* 🔒 Unlock with Key — requires keys or services the user doesn't have yet */}
+                {renderSection('locked', 'models-group-locked', '🔒 Locked (Needs key or service)', lockedRows, {
+                  count: lockedRows.length,
+                  bg: 'rgba(148, 163, 184, 0.06)',
+                  border: 'rgba(148, 163, 184, 0.16)',
+                  labelColor: 'var(--text-muted)',
+                })}
 
-                {/* Premium — unlocked with the One Key (OpenRouter) or a provider's own key */}
-                {renderSection(
-                  'premium',
-                  'models-group-premium',
-                  '🚀 Premium (Requires One Key)',
-                  premiumTotal,
-                  premiumByTier,
-                  'rgba(245, 158, 11, 0.08)',
-                  'rgba(245, 158, 11, 0.22)',
-                  'rgba(251, 191, 36, 0.8)',
-                  premiumTotal > 0 && premiumConnectedTotal === 0 ? (
-                    <div style={{ fontSize: '9px', color: 'var(--text-muted)', padding: '0 4px' }}>
-                      Add your OpenRouter key once in Settings to unlock these; a provider's own key also works.
-                    </div>
-                  ) : undefined
-                )}
-
-                {/* Local — Ollama models running on this machine */}
-                {renderSection(
-                  'local',
-                  'models-group-local',
-                  '💻 Local (Ollama)',
-                  localTotal,
-                  localByTier,
-                  'rgba(148, 163, 184, 0.08)',
-                  'rgba(148, 163, 184, 0.22)',
-                  'rgba(148, 163, 184, 0.8)',
-                  localTotal === 0 ? (
-                    <div style={{ fontSize: '9px', color: 'var(--text-muted)', padding: '0 4px' }}>
-                      Install Ollama to see fully local models here.
-                    </div>
-                  ) : undefined
-                )}
+                {/* 💻 Local — only models whose local backend answered (Ollama etc.) */}
+                {renderSection('local', 'models-group-local', '💻 Local (running backend)', localRows, {
+                  count: localRows.length,
+                  bg: 'rgba(56, 189, 248, 0.08)',
+                  border: 'rgba(56, 189, 248, 0.22)',
+                  labelColor: 'rgba(125, 211, 252, 0.85)',
+                  hint: 'Install + run Ollama (or another local backend) to see local models here.'
+                })}
               </div>
             );
           })()}

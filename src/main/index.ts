@@ -97,6 +97,7 @@ import { moduleRegistry } from './services/module-registry';
 import { mcpManager } from './services/mcp-manager';
 import { freeProviderRegistry } from './services/providers/free-provider-registry';
 import { getVerifiedModels, type VerifiedModelConfig } from './services/verified-models';
+import { getModelsAvailability, getModelAvailabilitySummary, clearAvailabilityCache } from './services/model-availability-manager';
 import type { FreeProvider, FreeProviderId, FreeAuthType, FreeProviderCapabilities } from '../shared/types/free-providers';
 import { modelClassifier } from './services/providers/model-classifier';
 import { providerHealthMonitor } from './services/providers/health-monitor';
@@ -836,6 +837,7 @@ function registerIpcHandlers(): void {
     const result = await saveSettings(updates);
     if (result.success && updates?.telemetry?.enabled === false) await getTelemetryManager().clearData();
     if (result.success && updates?.['lsp.autoStart'] !== undefined) getLspManager(currentWorkspacePath).setAutoStart(updates['lsp.autoStart']);
+    if (result.success) clearAvailabilityCache();
     return result;
   });
 
@@ -860,6 +862,7 @@ function registerIpcHandlers(): void {
       try {
         await saveSettings({ activeProvider: summary.providerId as any, activeModel: summary.modelId });
       } catch {}
+      clearAvailabilityCache();
       return { success: true, data: summary };
     } catch (error: unknown) {
       return { success: false, error: error instanceof Error ? error.message : String(error) };
@@ -1877,6 +1880,33 @@ function registerIpcHandlers(): void {
     } catch (err: unknown) {
       return { success: false, error: err instanceof Error ? err.message : String(err) };
     }
+  });
+
+  // Availability-gated model catalog (Provider Series Prompt 1): every entry
+  // carries availabilityStatus so the picker can hide/lock unusable models.
+  ipcMain.handle('models:get-available-models', async (event) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      const models = await getModelsAvailability();
+      return { success: true, data: models };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('models:get-availability-summary', async (event) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      return { success: true, data: await getModelAvailabilitySummary() };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('models:reset-availability-cache', async (event) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    clearAvailabilityCache();
+    return { success: true };
   });
 
   // Autonomous Provider & Model Catalog Verification

@@ -12,7 +12,8 @@ import {
   HelpCircle,
   ExternalLink,
   Shield,
-  Palette
+  Palette,
+  Check
 } from 'lucide-react';
 import { useWorkspaceStore } from '../state/workspace-store';
 import { useChatStore } from '../state/chat-store';
@@ -22,7 +23,44 @@ import type { AppInfo } from '../../../preload/types';
 
 const appRegion = (region: 'drag' | 'no-drag'): React.CSSProperties => ({ WebkitAppRegion: region } as React.CSSProperties);
 
-export type AppTheme = 'dark' | 'light' | 'high-contrast';
+export type AppTheme =
+  | 'dark' | 'light' | 'high-contrast'
+  | 'obsidian-night' | 'glacial-graphite' | 'sapphire-deep' | 'emerald-deep' | 'amethyst-deep'
+  | 'reuben-ruby' | 'simeon-topaz' | 'levi-emerald' | 'judah-turquoise' | 'dan-sapphire'
+  | 'naphtali-jacynth' | 'gad-agate' | 'asher-beryl' | 'issachar-lapis' | 'zebulun-diamond'
+  | 'joseph-onyx' | 'benjamin-jasper';
+
+export interface AppThemeMeta {
+  id: AppTheme;
+  label: string;
+  group: 'Dark' | 'Light' | 'High contrast';
+  swatch: string;
+}
+
+export const APP_THEMES: AppThemeMeta[] = [
+  { id: 'dark', label: 'Midnight (default)', group: 'Dark', swatch: '#8b5cf6' },
+  { id: 'obsidian-night', label: 'Obsidian Night', group: 'Dark', swatch: '#38bdf8' },
+  { id: 'glacial-graphite', label: 'Glacial Graphite', group: 'Dark', swatch: '#7dd3fc' },
+  { id: 'sapphire-deep', label: 'Sapphire Deep', group: 'Dark', swatch: '#60a5fa' },
+  { id: 'emerald-deep', label: 'Emerald Deep', group: 'Dark', swatch: '#34d399' },
+  { id: 'amethyst-deep', label: 'Amethyst Deep', group: 'Dark', swatch: '#a78bfa' },
+  { id: 'reuben-ruby', label: 'Reuben · Ruby', group: 'Light', swatch: '#9f1239' },
+  { id: 'simeon-topaz', label: 'Simeon · Topaz', group: 'Light', swatch: '#a16207' },
+  { id: 'levi-emerald', label: 'Levi · Emerald', group: 'Light', swatch: '#047857' },
+  { id: 'judah-turquoise', label: 'Judah · Turquoise', group: 'Light', swatch: '#0e7490' },
+  { id: 'dan-sapphire', label: 'Dan · Sapphire', group: 'Light', swatch: '#1d4ed8' },
+  { id: 'naphtali-jacynth', label: 'Naphtali · Jacynth', group: 'Light', swatch: '#6d28d9' },
+  { id: 'gad-agate', label: 'Gad · Agate', group: 'Light', swatch: '#9a4a26' },
+  { id: 'asher-beryl', label: 'Asher · Beryl', group: 'Light', swatch: '#0d9488' },
+  { id: 'issachar-lapis', label: 'Issachar · Lapis', group: 'Light', swatch: '#3730a3' },
+  { id: 'zebulun-diamond', label: 'Zebulun · Diamond', group: 'Light', swatch: '#0284c7' },
+  { id: 'joseph-onyx', label: 'Joseph · Onyx', group: 'Light', swatch: '#1f2937' },
+  { id: 'benjamin-jasper', label: 'Benjamin · Jasper', group: 'Light', swatch: '#9a3412' },
+  { id: 'high-contrast', label: 'High Contrast', group: 'High contrast', swatch: '#ffff00' }
+];
+
+const normalizeAppTheme = (value: string | null): AppTheme =>
+  APP_THEMES.some((t) => t.id === value) ? (value as AppTheme) : 'dark';
 
 // Custom purplish microchip logo matching Ty-Code design language
 const TyCodeMicrochipLogo: React.FC<{ size?: number }> = ({ size = 18 }) => (
@@ -184,8 +222,9 @@ export const TitleBar: React.FC = () => {
   const openUsageDashboard = useUsageDashboardStore((s) => s.openDashboard);
 
   const [theme, setTheme] = useState<AppTheme>(() => {
-    return (localStorage.getItem('ty_claude_theme') as AppTheme) || 'dark';
+    return normalizeAppTheme(localStorage.getItem('ty_claude_theme'));
   });
+  const [themeMenuOpen, setThemeMenuOpen] = useState<boolean>(false);
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
   const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'available' | 'downloading' | 'downloaded'>('idle');
   const [updatePercent, setUpdatePercent] = useState<number>(0);
@@ -200,7 +239,7 @@ export const TitleBar: React.FC = () => {
 
   // Apply theme to body
   useEffect(() => {
-    document.body.classList.remove('theme-dark', 'theme-light', 'theme-high-contrast');
+    for (const t of APP_THEMES) document.body.classList.remove(`theme-${t.id}`);
     document.body.classList.add(`theme-${theme}`);
     localStorage.setItem('ty_claude_theme', theme);
   }, [theme]);
@@ -296,9 +335,17 @@ export const TitleBar: React.FC = () => {
   };
 
   const cycleTheme = () => {
-    const next: AppTheme = theme === 'dark' ? 'light' : theme === 'light' ? 'high-contrast' : 'dark';
+    const idx = APP_THEMES.findIndex((t) => t.id === theme);
+    const next = APP_THEMES[(idx + 1) % APP_THEMES.length].id;
     setTheme(next);
-    toast.info(`Theme set to ${next}`);
+    setThemeMenuOpen(false);
+    toast.info(`Theme set to ${APP_THEMES.find((t) => t.id === next)?.label || next}`);
+  };
+
+  const selectTheme = (id: AppTheme) => {
+    setTheme(id);
+    setThemeMenuOpen(false);
+    toast.info(`Theme set to ${APP_THEMES.find((t) => t.id === id)?.label || id}`);
   };
 
   const handleCheckUpdate = async () => {
@@ -843,16 +890,76 @@ export const TitleBar: React.FC = () => {
                 <FolderOpen size={13} />
                 <span>Quota & Analytics</span>
               </button>
-              <button
-                type="button"
-                onClick={() => { cycleTheme(); }}
-                style={{ width: '100%', background: 'none', border: 'none', padding: '6px 12px', fontSize: '12px', color: 'var(--text-primary, #e2e8f0)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', textAlign: 'left' }}
-                onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--accent-primary, #0284c7)'; e.currentTarget.style.color = '#ffffff'; }}
-                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--text-primary, #e2e8f0)'; }}
-              >
-                <Palette size={13} />
-                <span>Theme: {theme}</span>
-              </button>
+              <div style={{ position: 'relative' }}>
+                <button
+                  type="button"
+                  id="theme-picker-trigger"
+                  onClick={() => { setThemeMenuOpen(!themeMenuOpen); }}
+                  style={{ width: '100%', background: 'none', border: 'none', padding: '6px 12px', fontSize: '12px', color: 'var(--text-primary, #e2e8f0)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', textAlign: 'left' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--accent-primary, #0284c7)'; e.currentTarget.style.color = '#ffffff'; }}
+                  onMouseLeave={(e) => { if (!themeMenuOpen) { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--text-primary, #e2e8f0)'; } else { e.currentTarget.style.backgroundColor = 'var(--bg-active, rgba(255,255,255,0.1))'; e.currentTarget.style.color = 'var(--text-primary, #e2e8f0)'; } }}
+                >
+                  <Palette size={13} />
+                  <span>Theme: {APP_THEMES.find((t) => t.id === theme)?.label || theme}</span>
+                  <ChevronDown size={11} style={{ marginLeft: 'auto', transform: themeMenuOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s ease' }} />
+                </button>
+                {themeMenuOpen && (
+                  <div
+                    id="theme-picker-panel"
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '2px',
+                      maxHeight: '260px',
+                      overflowY: 'auto',
+                      marginTop: '4px',
+                      padding: '4px',
+                      borderRadius: '6px',
+                      background: 'var(--bg-tertiary, #1f2128)',
+                      border: '1px solid var(--border-subtle, rgba(255,255,255,0.08))'
+                    }}
+                  >
+                    {(['Dark', 'Light', 'High contrast'] as const).map((group) => {
+                      const items = APP_THEMES.filter((t) => t.group === group);
+                      if (items.length === 0) return null;
+                      return (
+                        <div key={group} style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                          <div style={{ padding: '4px 8px 2px', fontSize: '9px', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>
+                            {group === 'Light' ? 'Warm pastels (Tribes of Israel gemstones)' : group}
+                          </div>
+                          {items.map((t) => {
+                            const isCurrent = t.id === theme;
+                            return (
+                              <button
+                                key={t.id}
+                                type="button"
+                                id={`theme-option-${t.id}`}
+                                onClick={() => selectTheme(t.id)}
+                                style={{
+                                  width: '100%', background: isCurrent ? 'var(--bg-active, rgba(255,255,255,0.08))' : 'none', border: 'none', padding: '5px 8px', fontSize: '11.5px',
+                                  color: 'var(--text-primary, #e2e8f0)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', textAlign: 'left', borderRadius: '4px'
+                                }}
+                                onMouseEnter={(e) => { if (!isCurrent) { e.currentTarget.style.backgroundColor = 'var(--bg-hover, rgba(255,255,255,0.06))'; } }}
+                                onMouseLeave={(e) => { if (!isCurrent) { e.currentTarget.style.backgroundColor = 'transparent'; } }}
+                              >
+                                <span
+                                  style={{
+                                    width: '12px', height: '12px', borderRadius: '50%', flexShrink: 0,
+                                    background: `linear-gradient(135deg, ${t.swatch} 0%, var(--bg-secondary) 130%)`,
+                                    border: '1px solid var(--border-strong, rgba(255,255,255,0.2))'
+                                  }}
+                                />
+                                <span style={{ flex: 1 }}>{t.label}</span>
+                                {isCurrent && <Check size={12} />}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
               <div style={{ height: '1px', backgroundColor: 'var(--border-subtle, rgba(255, 255, 255, 0.08))', margin: '4px 0' }} />
               <button
                 type="button"

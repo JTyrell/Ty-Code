@@ -17,7 +17,9 @@ function loadAllKeys(): Record<string, string> {
       try {
         const decryptedStr = safeStorage.decryptString(fileBuffer);
         return JSON.parse(decryptedStr);
-      } catch {
+      } catch (err) {
+        // ZeroFriction diagnosis (Prompt 2): surface safeStorage decrypt failures
+        console.warn(`[VAULT] safeStorage decryption FAILED: ${err instanceof Error ? err.message : String(err)}`);
         return {};
       }
     } else {
@@ -35,7 +37,9 @@ export function getAllVaultKeys(): Record<string, string> {
 }
 
 export async function saveKey(providerId: string, key: string): Promise<void> {
+  console.log('[VAULT] Encrypting key with safeStorage...');
   if (!safeStorage.isEncryptionAvailable()) {
+    console.warn('[VAULT] safeStorage encryption FAILED: safeStorage encryption is not available');
     throw new Error('safeStorage encryption is not available');
   }
 
@@ -49,8 +53,14 @@ export async function saveKey(providerId: string, key: string): Promise<void> {
     fs.mkdirSync(dir, { recursive: true });
   }
 
-  const encryptedBuffer = safeStorage.encryptString(JSON.stringify(keys));
-  fs.writeFileSync(filePath, encryptedBuffer);
+  try {
+    const encryptedBuffer = safeStorage.encryptString(JSON.stringify(keys));
+    fs.writeFileSync(filePath, encryptedBuffer);
+  } catch (err) {
+    console.warn(`[VAULT] safeStorage encryption FAILED: ${err instanceof Error ? err.message : String(err)}`);
+    throw err;
+  }
+  console.log('[VAULT] Key saved successfully');
   console.log(`[VAULT] Saved encrypted key for ${normProvider} to ${filePath}`);
 
   // Bi-directional sync: ensure key is also saved in credentialStore
@@ -63,9 +73,15 @@ export async function saveKey(providerId: string, key: string): Promise<void> {
 }
 
 export async function getKey(providerId: string): Promise<string | null> {
+  // ZeroFriction diagnosis (Prompt 2): every decrypt step is logged. Keys are
+  // never printed - only hit/miss outcomes.
+  console.log('[VAULT] Decrypting key from safeStorage...');
   const normProvider = providerId.toLowerCase().trim();
   const keys = loadAllKeys();
-  if (keys[normProvider]) return keys[normProvider];
+  if (keys[normProvider]) {
+    console.log('[VAULT] Key decrypted successfully');
+    return keys[normProvider];
+  }
 
   const aliases = [
     normProvider,
@@ -91,14 +107,20 @@ export async function getKey(providerId: string): Promise<string | null> {
     aliases.push('ty-code-free', 'openrouter', 'openrouter-free');
   }
   for (const alias of aliases) {
-    if (keys[alias]) return keys[alias];
+    if (keys[alias]) {
+      console.log('[VAULT] Key decrypted successfully');
+      return keys[alias];
+    }
   }
 
   try {
     const { credentialStore } = await import('./auth/credential-store');
     for (const alias of aliases) {
       const fromStore = credentialStore.getDecryptedKey(alias);
-      if (fromStore) return fromStore;
+      if (fromStore) {
+        console.log('[VAULT] Key decrypted successfully');
+        return fromStore;
+      }
     }
   } catch {}
 
@@ -106,7 +128,10 @@ export async function getKey(providerId: string): Promise<string | null> {
     const { readStoredCredentials } = await import('../ipc/settings-handlers');
     const { keys: stored } = await readStoredCredentials();
     for (const alias of aliases) {
-      if (stored[alias]) return stored[alias];
+      if (stored[alias]) {
+        console.log('[VAULT] Key decrypted successfully');
+        return stored[alias];
+      }
     }
   } catch {}
 
@@ -150,6 +175,9 @@ let communityKeyCachedAt = 0;
 // user, which is what keeps the free-tier KV budget effectively unbounded.
 let communityKeyExpiresAt = 0;
 let communityKeyInFlight: Promise<string | null> | null = null;
+// Rate-limit back-off: after a 429 from the Worker no further remote fetches
+// run until this timestamp passes (honoring retry-after, capped at 5 minutes).
+let communityKeyRetryNotBefore = 0;
 
 /** Wire contract served by the Ty-Code community Cloudflare Worker. */
 interface CommunityKeyPayload {
@@ -166,13 +194,30 @@ interface CommunityKeyPayload {
  * encryption + credentialStore sync) and mirrored into the memory cache.
  */
 async function fetchCommunityKeyRemote(): Promise<string | null> {
+  if (Date.now() < communityKeyRetryNotBefore) {
+    console.log(`[VAULT] Rate-limit back-off active - skipping remote fetch for another ${Math.ceil((communityKeyRetryNotBefore - Date.now()) / 1000)}s.`);
+    return null;
+  }
+  // ZeroFriction diagnosis (Prompt 2): this log shows the EXACT endpoint being
+  // fetched whenever the encrypted cache produced no key.
+  console.log(`[VAULT] Cache MISS - fetching from Cloudflare endpoint: ${COMMUNITY_KEY_ENDPOINT}`);
   try {
     const response = await fetch(COMMUNITY_KEY_ENDPOINT, {
       method: 'GET',
       headers: { Accept: 'application/json' },
       signal: AbortSignal.timeout(5000)
     });
+    console.log(`[VAULT] Fetch response status: ${response.status}`);
     if (!response.ok) {
+      if (response.status === 429) {
+        const retryAfterHeader = response.headers.get('retry-after');
+        const retryAfterSec = Number.isFinite(Number(retryAfterHeader)) && Number(retryAfterHeader) > 0
+          ? Number(retryAfterHeader)
+          : 60;
+        const cappedMs = Math.min(retryAfterSec, 300) * 1000;
+        communityKeyRetryNotBefore = Date.now() + cappedMs;
+        console.warn(`[VAULT] Community key rate limited (429) - backing off for ${Math.round(cappedMs / 1000)}s (retry-after).`);
+      }
       console.warn(`[VAULT] Community key bootstrap failed (HTTP ${response.status}).`);
       return null;
     }
@@ -182,6 +227,7 @@ async function fetchCommunityKeyRemote(): Promise<string | null> {
       console.warn('[VAULT] Community key payload was empty or malformed.');
       return null;
     }
+    console.log('[VAULT] Fetch succeeded - saving key to safeStorage');
     await saveKey(COMMUNITY_KEY_LABEL, value);
     communityKeyCache = value;
     communityKeyCachedAt = Date.now();
@@ -193,7 +239,7 @@ async function fetchCommunityKeyRemote(): Promise<string | null> {
     console.log('[VAULT] Community key bootstrapped and encrypted via safeStorage.');
     return value;
   } catch (err) {
-    console.warn('[VAULT] Community bootstrap endpoint unreachable:', err instanceof Error ? err.message : err);
+    console.warn(`[VAULT] Fetch FAILED: ${err instanceof Error ? err.message : String(err)}`);
     return null;
   }
 }
@@ -211,6 +257,7 @@ async function fetchCommunityKeyRemote(): Promise<string | null> {
  */
 export async function getCommunityKey(): Promise<string | null> {
   try {
+    console.log('[VAULT] Checking cache for tycode_community_key...');
     const cached = await getKey(COMMUNITY_KEY_LABEL);
     if (cached && cached.trim()) {
       const value = cached.trim();
@@ -221,15 +268,24 @@ export async function getCommunityKey(): Promise<string | null> {
       // cache gets a conservative 24h horizon: at worst one revalidation per
       // user per day - still far inside the free-tier KV write budget.
       if (!communityKeyExpiresAt) communityKeyExpiresAt = Date.now() + 24 * 3_600_000;
+      console.log('[VAULT] Cache HIT - returning cached key');
       return value;
     }
-  } catch {
+  } catch (err) {
     // Vault read failure -> proceed to the remote fetch
+    console.warn(`[VAULT] Cache check FAILED, proceeding to remote fetch: ${err instanceof Error ? err.message : String(err)}`);
   }
-  if (communityKeyInFlight) return communityKeyInFlight;
+  if (communityKeyInFlight) {
+    console.log('[VAULT] Remote fetch already in flight - reusing shared promise');
+    return communityKeyInFlight;
+  }
   communityKeyInFlight = fetchCommunityKeyRemote();
   try {
-    return await communityKeyInFlight;
+    const resolved = await communityKeyInFlight;
+    if (!resolved) {
+      console.log('[VAULT] Returning null - falling back to anonymous tier');
+    }
+    return resolved;
   } finally {
     communityKeyInFlight = null;
   }
@@ -257,13 +313,27 @@ export function hasCommunityKey(): boolean {
 }
 
 /**
+ * Seconds left before the Community-Key remote fetch is allowed again after a
+ * 429 (rate-limit back-off). Zero when the chain is fetchable right now.
+ */
+export function getCommunityKeyCooldownRemainingSec(): number {
+  if (Date.now() >= communityKeyRetryNotBefore) return 0;
+  return Math.ceil((communityKeyRetryNotBefore - Date.now()) / 1000);
+}
+
+/**
  * Fire-and-forget prefetch used at app boot so the first chat message already
  * sees a provisioned Community Key (and the router treats the free tier as
  * available). Never throws; a cold/unreachable backend just leaves the
  * anonymous free pool as the working fallback.
  */
 export function warmUpCommunityKey(): void {
-  if (getCommunityKeyCached()) return;
+  if (getCommunityKeyCached()) {
+    // ZeroFriction diagnosis (Prompt 2): a warm boot skips the whole chain -
+    // make that visible (logging only, resolution behavior unchanged)
+    console.log('[VAULT] Warm boot: community key found in encrypted cache - skipping remote fetch');
+    return;
+  }
   void getCommunityKey().catch(() => undefined);
 }
 

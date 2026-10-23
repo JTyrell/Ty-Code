@@ -220,6 +220,10 @@ export async function sendChatRequest(
     }
   }
 
+  // ZeroFriction diagnosis (Prompt 3): entry logs; keys are never printed.
+  console.log(`[GATEWAY] Request received - provider: ${providerId}, model: ${modelId}`);
+  console.log('[GATEWAY] Checking if provider requires key...');
+
   // OpenCode Free Tier (auto-discovery): entries surfaced from the user's
   // local opencode config are served by the real installed `opencode` CLI via
   // the subprocess bridge. No HTTP request is ever issued for this tier, so
@@ -425,8 +429,11 @@ export async function sendChatRequest(
         // (cache-first, 5s remote timeout). Only when the endpoint is down or
         // offline-first-launch returns null do we degrade to the pure-
         // anonymous free pool instead of demanding user input.
+        console.log('[GATEWAY] No user key found - attempting Community Key fallback');
+        console.log('[GATEWAY] Calling getCommunityKey()...');
         try {
           const community = await getCommunityKey();
+          console.log(`[GATEWAY] Community Key returned: ${community ? 'YES (length: ' + community.length + ')' : 'NO - null'}`);
           if (community) {
             key = community;
             console.log('[GATEWAY] ty-code-free: Community Key resolved via bootstrap.');
@@ -435,6 +442,7 @@ export async function sendChatRequest(
           console.warn('[GATEWAY] Community Key bootstrap error:', err instanceof Error ? err.message : err);
         }
         if (!key) {
+          console.log('[GATEWAY] Community Key FAILED - falling back to anonymous tier');
           console.warn('[GATEWAY] ty-code-free: Community Key unavailable; degrading to anonymous OpenKilo pool.');
           config = { modelId, name: modelId, url: KILO_URL, requiresKey: false, providerId: 'openkilo' };
         }
@@ -461,7 +469,10 @@ export async function sendChatRequest(
         }
         if (!key) {
           try {
+            console.log('[GATEWAY] No user key found - attempting Community Key fallback');
+            console.log('[GATEWAY] Calling getCommunityKey()...');
             const communityKey = await getCommunityKey();
+            console.log(`[GATEWAY] Community Key returned: ${communityKey ? 'YES (length: ' + communityKey.length + ')' : 'NO - null'}`);
             if (communityKey) {
               console.log(`[GATEWAY] ${providerId} has no key configured; routing via Ty-Code Free community bridge`);
               config = {
@@ -508,6 +519,9 @@ export async function sendChatRequest(
       headers['x-api-key'] = key;
       headers['anthropic-version'] = '2023-06-01';
     } else {
+      if (key === getCommunityKeyCached()) {
+        console.log('[GATEWAY] Setting Authorization header with Community Key');
+      }
       headers['Authorization'] = `Bearer ${key}`;
     }
   }
@@ -525,6 +539,7 @@ export async function sendChatRequest(
   const providerDisplay = config.name || providerId;
 
   console.log(`[GATEWAY] Fetching from ${config.url}`);
+  console.log(`[GATEWAY] Request URL: ${config.url}`);
   console.log(`[GATEWAY] Provider: ${providerId}, Model: ${modelId}`);
 
   // Construct payload
@@ -684,6 +699,8 @@ export async function sendChatRequest(
     if (shouldHandoff && usedCommunityKey && (response.status === 401 || response.status === 403)) {
       // The rotating Community Key was rejected: drop the cached card so the
       // next attempt re-bootstraps the current rotation, then fail over.
+      console.log('[GATEWAY] Auth FAILED (401/403) - Community Key may be invalid or expired');
+      console.log('[GATEWAY] Invalidating cached Community Key...');
       console.warn('[GATEWAY] ty-code-free: Community Key rejected; invalidating cache for re-bootstrap.');
       invalidateCommunityKey();
     }
@@ -1759,6 +1776,10 @@ export class ProviderGateway {
     const modelId = candidate.model.id;
     const baseUrl = candidate.customEndpoint || this.getEndpoint(providerId, settings.customEndpoints || {});
 
+    // ZeroFriction diagnosis (Prompt 3): entry logs for the agent streaming path.
+    console.log(`[GATEWAY] Request received - provider: ${providerId}, model: ${modelId}`);
+    console.log('[GATEWAY] Checking if provider requires key...');
+
     // Resolve key at call time via safeStorage decryption; anonymous providers use no key
     let apiKey = '';
     const freeProv = freeProviderRegistry.getProvider(providerId) || freeProviderRegistry.getProvider(`${providerId}-free`);
@@ -1875,9 +1896,16 @@ export class ProviderGateway {
 
       if (!apiKey || !apiKey.trim()) {
         try {
+          // ZeroFriction diagnosis (Prompt 3): the last-chance vault bootstrap.
+          console.log('[GATEWAY] No user key found - attempting Community Key fallback');
+          console.log('[GATEWAY] Calling getCommunityKey()...');
           const community = await getCommunityKey().catch(() => null);
+          console.log(`[GATEWAY] Community Key returned: ${community ? 'YES (length: ' + community.length + ')' : 'NO - null'}`);
           if (community) {
             apiKey = community;
+          }
+          if (!community) {
+            console.log('[GATEWAY] Community Key FAILED - falling back to anonymous tier');
           }
         } catch {}
       }
@@ -1962,7 +1990,13 @@ export class ProviderGateway {
     }
 
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+    if (apiKey) {
+      if (apiKey === getCommunityKeyCached()) {
+        // ZeroFriction diagnosis (Prompt 3): which credential identity is on the wire.
+        console.log('[GATEWAY] Setting Authorization header with Community Key');
+      }
+      headers.Authorization = `Bearer ${apiKey}`;
+    }
     if (candidate.provider.headersFactory) {
       Object.assign(headers, candidate.provider.headersFactory({ apiKey }));
     } else if (providerId === 'fcc-proxy' || providerId === 'openrouter') {
@@ -1996,6 +2030,7 @@ export class ProviderGateway {
       gatewayUrl = 'https://api.kilo.ai/api/gateway/chat/completions';
     }
     console.log('Gateway: Fetching from', gatewayUrl, 'with model', modelId, 'headers', JSON.stringify({ ...headers, ...(headers.Authorization ? { Authorization: 'Bearer ***' } : {}) }));
+    console.log(`[GATEWAY] Request URL: ${gatewayUrl}`);
     try {
       // Add 120s timeout for long streaming responses
       const timeoutSignal = AbortSignal.timeout(120_000);
@@ -2034,6 +2069,12 @@ export class ProviderGateway {
 
     console.log('Gateway: Response status', response.status);
     if (!response.ok) {
+      // ZeroFriction diagnosis (Prompt 3): log-only - no behavior change here.
+      if (apiKey === getCommunityKeyCached() && (response.status === 401 || response.status === 403)) {
+        console.log('[GATEWAY] Auth FAILED (401/403) - Community Key may be invalid or expired');
+        console.log('[GATEWAY] Invalidating cached Community Key...');
+        console.warn('[GATEWAY] ty-code-free: Community Key rejected; invalidating cache for re-bootstrap (LOG ONLY - identity untouched in this path).');
+      }
       const errorText = await response.text();
       console.error('Gateway: Error body', errorText.slice(0, 500));
       let parsedError = errorText;

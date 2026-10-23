@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import hljs from 'highlight.js/lib/core';
 import type { LanguageFn } from 'highlight.js';
@@ -61,6 +61,66 @@ for (const [name, language] of Object.entries(languages)) {
 }
 
 // ---------------------------------------------------------------------------
+// Shared theme-variable style helpers (styles must follow every theme)
+// ---------------------------------------------------------------------------
+const CODE_SHELF_BG = '#0d0e11';
+const CODE_SHELF_HEAD_BG = 'rgba(255, 255, 255, 0.03)';
+
+const codeShelf: React.CSSProperties = {
+  margin: '10px 0',
+  borderRadius: '10px',
+  border: '1px solid var(--border-strong)',
+  background: CODE_SHELF_BG,
+  overflow: 'hidden',
+  fontSize: '11px',
+  boxShadow: '0 1px 3px rgba(0, 0, 0, 0.12)'
+};
+
+const codeShelfHeader: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  padding: '5px 10px',
+  background: CODE_SHELF_HEAD_BG,
+  borderBottom: '1px solid var(--border-strong)',
+  fontSize: '11px',
+  color: 'var(--text-muted)'
+};
+
+const codeShelfLang: React.CSSProperties = {
+  fontFamily: 'var(--font-mono)',
+  fontSize: '10.5px',
+  color: 'var(--text-muted)',
+  letterSpacing: '0.02em'
+};
+
+const codeShelfCopy: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '4px',
+  padding: '2px 7px',
+  borderRadius: '5px',
+  fontSize: '10.5px',
+  color: 'var(--text-muted)',
+  background: 'transparent',
+  border: '1px solid transparent',
+  cursor: 'pointer'
+};
+
+const codeShelfPre: React.CSSProperties = {
+  margin: 0,
+  padding: '12px',
+  overflowX: 'auto',
+  color: 'var(--text-primary)',
+  fontFamily: 'var(--font-mono)',
+  lineHeight: 1.6,
+  fontSize: '11.5px',
+  userSelect: 'text'
+  // note: no bg on pre; the dark shelf bg stays constant in all themes so the
+  // global hljs token palette remains legible in light pastel themes too
+};
+
+// ---------------------------------------------------------------------------
 // Code Block with Copy
 // ---------------------------------------------------------------------------
 interface CodeBlockProps {
@@ -91,19 +151,21 @@ const CodeBlock: React.FC<CodeBlockProps> = ({ language, value }) => {
   };
 
   return (
-    <div className="my-2.5 rounded-lg border border-zinc-800 bg-[#0d0e11] overflow-hidden text-xs">
-      <div className="flex items-center justify-between px-3 py-1.5 bg-zinc-900/70 border-b border-zinc-800/80 text-[11px] text-zinc-400">
-        <span className="font-mono text-zinc-300">{language || 'code'}</span>
+    <div style={codeShelf}>
+      <div style={codeShelfHeader}>
+        <span style={codeShelfLang}>{language || 'code'}</span>
         <button
           type="button"
           onClick={() => void handleCopy()}
-          className="flex items-center gap-1 px-2 py-0.5 rounded text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
+          style={codeShelfCopy}
           title="Copy code block"
+          onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text-primary)'; e.currentTarget.style.background = 'var(--surface-3)'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.color = copied ? 'var(--accent-green)' : 'var(--text-muted)'; e.currentTarget.style.background = 'transparent'; }}
         >
           {copied ? (
             <>
-              <Check size={11} className="text-emerald-400" />
-              <span className="text-emerald-400 font-medium">Copied</span>
+              <Check size={11} style={{ color: 'var(--accent-green)' }} />
+              <span style={{ color: 'var(--accent-green)', fontWeight: 600 }}>Copied</span>
             </>
           ) : (
             <>
@@ -113,9 +175,10 @@ const CodeBlock: React.FC<CodeBlockProps> = ({ language, value }) => {
           )}
         </button>
       </div>
-      <pre className="p-3 overflow-x-auto text-zinc-200 font-mono leading-relaxed text-[11.5px] select-text">
+      <pre style={codeShelfPre}>
         <code
           className={`hljs${highlightLanguage ? ` language-${highlightLanguage}` : ''}`}
+          style={{ background: 'transparent' }}
           dangerouslySetInnerHTML={{ __html: highlighted }}
         />
       </pre>
@@ -134,7 +197,17 @@ const markdownComponents: Components = {
       return <CodeBlock language={language} value={value} />;
     }
     return (
-      <code className="px-1.5 py-0.5 rounded bg-zinc-800/80 text-indigo-300 font-mono text-[11px]" {...props}>
+      <code
+        style={{
+          padding: '1px 6px',
+          borderRadius: '5px',
+          background: 'var(--surface-3)',
+          color: 'var(--accent-primary)',
+          fontFamily: 'var(--font-mono)',
+          fontSize: '11px'
+        }}
+        {...props}
+      >
         {children}
       </code>
     );
@@ -158,15 +231,18 @@ const ToolExecutionBlock: React.FC<ToolBlockProps> = ({ tool }) => {
 
   const argCount = Object.keys(tool.arguments || {}).length;
 
+  const statusColor = isFailed ? 'var(--accent-red)' : isRunning ? 'var(--accent-blue)' : 'var(--accent-green)';
+
   const getToolIcon = (name: string) => {
     const lower = name.toLowerCase();
-    if (lower.includes('grep') || lower.includes('search')) return <Search size={13} className="text-indigo-400 shrink-0" />;
-    if (lower.includes('read') || lower.includes('view')) return <FileText size={13} className="text-cyan-400 shrink-0" />;
-    if (lower.includes('write') || lower.includes('replace') || lower.includes('edit')) return <FileCode size={13} className="text-emerald-400 shrink-0" />;
-    if (lower.includes('command') || lower.includes('terminal') || lower.includes('bash')) return <Terminal size={13} className="text-amber-400 shrink-0" />;
-    if (lower.includes('dir') || lower.includes('tree') || lower.includes('folder')) return <Folder size={13} className="text-blue-400 shrink-0" />;
-    if (lower.includes('presentation')) return <Presentation size={13} className="text-purple-400 shrink-0" />;
-    return <Wrench size={13} className="text-zinc-400 shrink-0" />;
+    const iconStyle = { color: 'var(--accent-cyan)', flexShrink: 0 } as const;
+    if (lower.includes('grep') || lower.includes('search')) return <Search size={13} style={{ ...iconStyle, color: 'var(--accent-primary)' }} />;
+    if (lower.includes('read') || lower.includes('view')) return <FileText size={13} style={iconStyle} />;
+    if (lower.includes('write') || lower.includes('replace') || lower.includes('edit')) return <FileCode size={13} style={{ ...iconStyle, color: 'var(--accent-green)' }} />;
+    if (lower.includes('command') || lower.includes('terminal') || lower.includes('bash')) return <Terminal size={13} style={{ ...iconStyle, color: 'var(--accent-amber)' }} />;
+    if (lower.includes('dir') || lower.includes('tree') || lower.includes('folder')) return <Folder size={13} style={{ ...iconStyle, color: 'var(--accent-blue)' }} />;
+    if (lower.includes('presentation')) return <Presentation size={13} style={{ ...iconStyle, color: 'var(--accent-primary)' }} />;
+    return <Wrench size={13} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />;
   };
 
   const handleCopyOutput = () => {
@@ -179,69 +255,84 @@ const ToolExecutionBlock: React.FC<ToolBlockProps> = ({ tool }) => {
 
   return (
     <div
-      className={`rounded-lg border transition-all my-1.5 overflow-hidden text-xs ${
-        isFailed
-          ? 'border-rose-500/30 bg-rose-500/5'
-          : isRunning
-          ? 'border-indigo-500/30 bg-indigo-500/5'
-          : 'border-zinc-800/80 bg-zinc-900/60 hover:border-zinc-700/80'
-      }`}
+      style={{
+        borderRadius: '10px',
+        border: '1px solid var(--border-subtle)',
+        borderLeft: `3px solid ${statusColor}`,
+        background: 'var(--bg-secondary)',
+        transition: 'all 0.18s ease',
+        margin: '5px 0',
+        overflow: 'hidden',
+        fontSize: '11px'
+      }}
     >
       {/* Header Button: Click to toggle arguments and output */}
       <button
         type="button"
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center justify-between px-3 py-1.5 text-left select-none cursor-pointer hover:bg-white/[0.02] transition-colors"
+        style={{
+          width: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '6px 12px',
+          textAlign: 'left',
+          userSelect: 'none',
+          cursor: 'pointer',
+          background: 'transparent'
+        }}
         aria-expanded={expanded}
+        onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--surface-2)'; }}
+        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
       >
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="text-zinc-400">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+          <span style={{ color: 'var(--text-muted)', display: 'inline-flex' }}>
             {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
           </span>
           {getToolIcon(tool.name)}
-          <span className="font-mono font-medium text-zinc-200 truncate text-[11.5px]">
+          <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '11.5px' }}>
             {tool.name}
           </span>
-          <span className="text-[10px] text-zinc-500 font-mono">
+          <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', flexShrink: 0 }}>
             ({argCount} {argCount === 1 ? 'arg' : 'args'})
           </span>
         </div>
 
-        <div className="flex items-center gap-1.5 shrink-0 ml-2">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0, marginLeft: '8px' }}>
           {isRunning && (
-            <span className="flex items-center gap-1 text-[11px] text-indigo-400 font-medium">
-              <Loader2 size={11} className="animate-spin" />
+            <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: 'var(--accent-blue)', fontWeight: 600 }}>
+              <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} />
               <span>Running</span>
             </span>
           )}
           {isSuccess && (
-            <span className="flex items-center gap-1 text-[11px] text-emerald-400 font-medium">
+            <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: 'var(--accent-green)', fontWeight: 600 }}>
               <Check size={11} />
               <span>Success</span>
             </span>
           )}
           {isFailed && (
-            <span className="flex items-center gap-1 text-[11px] text-rose-400 font-semibold">
+            <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: 'var(--accent-red)', fontWeight: 700 }}>
               <XCircle size={11} />
               <span>Failed</span>
             </span>
           )}
           {tool.status === 'cancelled' && (
-            <span className="text-[11px] text-zinc-500">Stopped</span>
+            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Stopped</span>
           )}
         </div>
       </button>
 
       {/* Collapsible Details: Arguments and Output (Collapsed by Default) */}
       {expanded && (
-        <div className="px-3 pb-2.5 pt-1.5 border-t border-zinc-800/60 flex flex-col gap-2 bg-black/20 text-[11px]">
+        <div style={{ padding: '6px 12px 10px', paddingTop: 6, borderTop: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', gap: '8px', background: 'var(--surface-2)', fontSize: '11px' }}>
           {/* Arguments */}
           {tool.arguments && Object.keys(tool.arguments).length > 0 && (
             <div>
-              <div className="text-[10px] font-semibold tracking-wider uppercase text-zinc-400 mb-1">
+              <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '4px' }}>
                 Input Arguments
               </div>
-              <pre className="p-2 rounded bg-[#0a0b0d] border border-zinc-900 text-zinc-300 font-mono text-[10.5px] max-h-36 overflow-y-auto whitespace-pre-wrap select-text">
+              <pre style={{ margin: 0, padding: '8px', borderRadius: '8px', background: 'var(--bg-primary)', border: '1px solid var(--border-subtle)', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', fontSize: '10.5px', maxHeight: '144px', overflowY: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-word', userSelect: 'text' }}>
                 {JSON.stringify(tool.arguments, null, 2)}
               </pre>
             </div>
@@ -250,26 +341,22 @@ const ToolExecutionBlock: React.FC<ToolBlockProps> = ({ tool }) => {
           {/* Output */}
           {tool.output !== undefined && (
             <div>
-              <div className="flex items-center justify-between text-[10px] font-semibold tracking-wider uppercase mb-1">
-                <span className={isFailed ? 'text-rose-400' : 'text-zinc-400'}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '10px', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '4px' }}>
+                <span style={{ color: isFailed ? 'var(--accent-red)' : 'var(--text-muted)' }}>
                   {isFailed ? 'Error Output' : 'Result Output'}
                 </span>
                 <button
                   type="button"
                   onClick={handleCopyOutput}
-                  className="flex items-center gap-1 text-[10px] text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer"
+                  style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', color: 'var(--text-muted)', background: 'transparent', cursor: 'pointer' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text-primary)'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; }}
                 >
-                  {copied ? <Check size={10} className="text-emerald-400" /> : <Copy size={10} />}
+                  {copied ? <Check size={10} style={{ color: 'var(--accent-green)' }} /> : <Copy size={10} />}
                   <span>{copied ? 'Copied' : 'Copy'}</span>
                 </button>
               </div>
-              <pre
-                className={`p-2 rounded font-mono text-[10.5px] max-h-48 overflow-y-auto whitespace-pre-wrap select-text ${
-                  isFailed
-                    ? 'bg-rose-950/20 border border-rose-900/40 text-rose-200'
-                    : 'bg-[#0a0b0d] border border-zinc-900 text-zinc-300'
-                }`}
-              >
+              <pre style={{ margin: 0, padding: '8px', borderRadius: '8px', fontFamily: 'var(--font-mono)', fontSize: '10.5px', maxHeight: '192px', overflowY: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-word', userSelect: 'text', ...(isFailed ? { background: 'var(--accent-red)', color: '#ffffff', opacity: 0.92 } : { background: 'var(--bg-primary)', border: '1px solid var(--border-subtle)', color: 'var(--text-secondary)' }) }}>
                 {tool.output || '(No output produced)'}
               </pre>
             </div>
@@ -289,21 +376,35 @@ const DiffCard: React.FC<{
   onApply?: () => void;
 }> = ({ diff, onInspect, onApply }) => {
   return (
-    <div className="my-2 rounded-lg border border-zinc-800 bg-zinc-900/70 p-2.5 flex items-center justify-between gap-3 text-xs">
-      <div className="flex items-center gap-2 min-w-0">
-        <FileCode size={13} className="text-indigo-400 shrink-0" />
-        <span className="font-mono text-zinc-200 truncate">{diff.filePath}</span>
-        <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/30 shrink-0">
+    <div style={{
+      margin: '8px 0',
+      borderRadius: '10px',
+      border: '1px solid var(--border-subtle)',
+      background: 'var(--bg-secondary)',
+      padding: '10px',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: '12px',
+      fontSize: '11px',
+      boxShadow: '0 1px 2px rgba(0, 0, 0, 0.08)'
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+        <FileCode size={13} style={{ color: 'var(--accent-primary)', flexShrink: 0 }} />
+        <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{diff.filePath}</span>
+        <span style={{ fontSize: '10px', padding: '2px 6px', borderRadius: '5px', background: 'var(--surface-2)', color: 'var(--accent-amber)', border: '1px solid var(--border-subtle)', flexShrink: 0 }}>
           Ready to review
         </span>
       </div>
 
-      <div className="flex items-center gap-1.5 shrink-0">
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
         {onInspect && (
           <button
             type="button"
             onClick={onInspect}
-            className="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[11px] font-medium transition-colors flex items-center gap-1"
+            style={{ padding: '4px 8px', borderRadius: '6px', background: 'var(--surface-3)', color: 'var(--text-secondary)', fontSize: '11px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px', border: '1px solid var(--border-subtle)' }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-hover)'; e.currentTarget.style.color = 'var(--text-primary)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--surface-3)'; e.currentTarget.style.color = 'var(--text-secondary)'; }}
           >
             <Eye size={11} />
             <span>Inspect</span>
@@ -313,7 +414,9 @@ const DiffCard: React.FC<{
           <button
             type="button"
             onClick={onApply}
-            className="px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-semibold transition-colors flex items-center gap-1"
+            style={{ padding: '4px 8px', borderRadius: '6px', background: 'var(--accent-green)', color: '#ffffff', fontSize: '11px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}
+            onMouseEnter={(e) => { e.currentTarget.style.filter = 'brightness(1.08)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.filter = 'none'; }}
           >
             <Check size={11} />
             <span>Apply</span>
@@ -351,6 +454,10 @@ export const ChatMessageItem: React.FC<ChatMessageProps> = ({
 }) => {
   const [showDetails, setShowDetails] = useState(false);
   const [copiedMessage, setCopiedMessage] = useState(false);
+  // Agent Activity panel: thinking, tool/command use and harness notices live
+  // here, collapsed by default so the main response stays focused.
+  const [activityOpen, setActivityOpen] = useState(false);
+  const wasRunningRef = useRef(false);
 
   const isAssistant = message.role === 'assistant';
   const isUser = message.role === 'user';
@@ -403,6 +510,26 @@ export const ChatMessageItem: React.FC<ChatMessageProps> = ({
     return 'Thinking…';
   }, [message.statusText, currentStatus, toolList, message.content]);
 
+  // Agent activity separation: everything the harness does (reasoning tool
+  // calls and notices) renders inside one collapsible panel. While the task
+  // runs it stays open for live visibility; when the turn completes it
+  // collapses so the model's answer is the only thing in focus.
+  const reasoningWords = useMemo(
+    () => (message.reasoning ? message.reasoning.split(/\s+/).filter(Boolean).length : 0),
+    [message.reasoning]
+  );
+  const activitySteps = toolList.length + (reasoningWords > 0 ? 1 : 0);
+  const runningToolLabel = useMemo(() => {
+    const running = toolList.find((t) => t.status === 'running');
+    return running ? `Running ${running.name}…` : null;
+  }, [toolList]);
+
+  useEffect(() => {
+    if (Boolean(isRunning) && !wasRunningRef.current) setActivityOpen(true);
+    if (!isRunning && wasRunningRef.current) setActivityOpen(false);
+    wasRunningRef.current = Boolean(isRunning);
+  }, [isRunning]);
+
   const handleCopyMessage = async () => {
     if (message.content) {
       await navigator.clipboard.writeText(message.content);
@@ -416,22 +543,33 @@ export const ChatMessageItem: React.FC<ChatMessageProps> = ({
   // -------------------------------------------------------------------------
   if (isUser) {
     return (
-      <article className="flex flex-col items-end my-2 px-1">
-        <div className="max-w-[88%] rounded-2xl rounded-br-sm bg-gradient-to-br from-indigo-600 to-indigo-700 text-white px-3.5 py-2.5 text-xs shadow-md shadow-indigo-950/20 leading-relaxed select-text">
+      <article style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', margin: '8px 0', padding: '0 4px' }}>
+        <div style={{
+          maxWidth: '88%',
+          borderRadius: '16px',
+          borderTopRightRadius: '5px',
+          background: 'linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-primary-hover) 100%)',
+          color: '#ffffff',
+          padding: '10px 14px',
+          fontSize: '12px',
+          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.18)',
+          lineHeight: 1.6,
+          userSelect: 'text'
+        }}>
           {/* Attached images */}
           {Array.isArray(message.images) && message.images.length > 0 && (
-            <div className="flex gap-2 mb-2 flex-wrap">
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '8px', flexWrap: 'wrap' }}>
               {message.images.map((src, idx) => (
                 <img
                   key={idx}
                   src={src}
                   alt={`Pasted image ${idx + 1}`}
-                  className="w-16 h-16 object-cover rounded-lg border border-white/20"
+                  style={{ width: '64px', height: '64px', objectFit: 'cover', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.25)' }}
                 />
               ))}
             </div>
           )}
-          <div className="whitespace-pre-wrap">{message.content}</div>
+          <div style={{ whiteSpace: 'pre-wrap' }}>{message.content}</div>
         </div>
       </article>
     );
@@ -446,24 +584,24 @@ export const ChatMessageItem: React.FC<ChatMessageProps> = ({
       const snippetMatch = message.content.match(/```\n([\s\S]*?)\n```/);
       const snippet = snippetMatch ? snippetMatch[1] : '';
       return (
-        <details className="my-1.5 max-w-[94%] rounded-lg border border-purple-500/30 bg-purple-500/10 overflow-hidden text-xs">
-          <summary className="flex items-center gap-2 px-3 py-1.5 cursor-pointer text-purple-300 font-medium select-none list-none">
-            <Presentation size={12} className="text-purple-400 shrink-0" />
-            <span className="truncate">M3E Canvas updated: {action}</span>
-            <ChevronDown size={12} className="ml-auto text-purple-400 shrink-0" />
+        <details style={{ margin: '6px 0', maxWidth: '94%', borderRadius: '10px', border: '1px solid var(--border-subtle)', background: 'var(--surface-2)', overflow: 'hidden', fontSize: '11px' }}>
+          <summary style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 12px', cursor: 'pointer', color: 'var(--accent-primary)', fontWeight: 600, userSelect: 'none', listStyle: 'none' }}>
+            <Presentation size={12} style={{ flexShrink: 0 }} />
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>M3E Canvas updated: {action}</span>
+            <ChevronDown size={12} style={{ marginLeft: 'auto', flexShrink: 0 }} />
           </summary>
-          <div className="p-2.5 border-t border-purple-500/20 flex flex-col gap-2">
+          <div style={{ padding: '10px', borderTop: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
             <button
               type="button"
               onClick={() => {
                 void (window as any).electronAPI?.focusCanvasWindow?.().catch(() => undefined);
               }}
-              className="self-start flex items-center gap-1.5 px-2.5 py-1 rounded bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/40 text-purple-200 text-[11px] font-semibold transition-colors cursor-pointer"
+              style={{ alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 10px', borderRadius: '6px', background: 'var(--accent-primary)', color: '#ffffff', fontSize: '11px', fontWeight: 700 }}
             >
               <span>View in Canvas</span>
             </button>
             {snippet && (
-              <pre className="p-2 rounded bg-black/60 border border-white/10 text-emerald-300 font-mono text-[10px] max-h-36 overflow-auto">
+              <pre style={{ margin: 0, padding: '8px', borderRadius: '8px', background: 'var(--bg-primary)', border: '1px solid var(--border-subtle)', color: 'var(--accent-green)', fontFamily: 'var(--font-mono)', fontSize: '10px', maxHeight: '144px', overflow: 'auto' }}>
                 {snippet}
               </pre>
             )}
@@ -473,9 +611,9 @@ export const ChatMessageItem: React.FC<ChatMessageProps> = ({
     }
 
     return (
-      <div className="my-1.5 flex justify-center px-2">
-        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-medium bg-zinc-900/80 border border-zinc-800 text-zinc-400">
-          <Info size={11} className="text-zinc-500" />
+      <div style={{ margin: '6px 0', display: 'flex', justifyContent: 'center', padding: '0 8px' }}>
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '4px 12px', borderRadius: '999px', fontSize: '11px', fontWeight: 500, background: 'var(--surface-2)', border: '1px solid var(--border-subtle)', color: 'var(--text-muted)' }}>
+          <Info size={11} />
           <span>{message.content}</span>
         </div>
       </div>
@@ -486,31 +624,38 @@ export const ChatMessageItem: React.FC<ChatMessageProps> = ({
   // Render: UNIFIED ASSISTANT MESSAGE
   // -------------------------------------------------------------------------
   return (
-    <article className="my-2.5 flex flex-col w-full text-zinc-200">
-      <div className="rounded-2xl rounded-bl-sm border border-zinc-800/80 bg-[#15171b] p-3.5 shadow-sm">
+    <article style={{ margin: '10px 0', display: 'flex', flexDirection: 'column', width: '100%', color: 'var(--text-secondary)' }}>
+      <div style={{
+        borderRadius: '16px',
+        borderBottomLeftRadius: '5px',
+        border: '1px solid var(--border-subtle)',
+        background: 'var(--bg-secondary)',
+        padding: '14px',
+        boxShadow: '0 1px 2px rgba(0, 0, 0, 0.08)'
+      }}>
         {/* Assistant Header: Avatar + Model identity & Cached/Failover indicators */}
-        <div className="flex items-center justify-between gap-2 mb-2.5 pb-1.5 border-b border-zinc-800/40 text-[11px] text-zinc-400">
-          <div className="flex items-center gap-2">
-            <div className="w-5 h-5 rounded-md bg-gradient-to-br from-indigo-500/20 to-purple-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 shadow-sm">
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '10px', paddingBottom: '6px', borderBottom: '1px solid var(--border-subtle)', fontSize: '11px', color: 'var(--text-muted)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+            <div style={{ width: '20px', height: '20px', borderRadius: '6px', background: 'var(--surface-3)', border: '1px solid var(--border-strong)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent-primary)', flexShrink: 0, boxShadow: '0 0 8px rgba(0,0,0,0.12)' }}>
               <Sparkles size={11} />
             </div>
-            <span className="font-semibold text-zinc-200 text-xs">Ty-Code Assistant</span>
+            <span style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '12px' }}>Ty-Code Assistant</span>
             {message.metadata?.modelId && (
-              <span className="text-[10px] text-zinc-500 font-mono hidden sm:inline">
+              <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 • {message.metadata.modelId}
               </span>
             )}
           </div>
 
-          <div className="flex items-center gap-2">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
             {message.isCached && (
-              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-sky-500/10 text-sky-400 border border-sky-500/30">
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '2px 6px', borderRadius: '5px', fontSize: '10px', fontWeight: 600, background: 'var(--surface-2)', color: 'var(--accent-cyan)', border: '1px solid var(--border-subtle)' }}>
                 <Zap size={9} />
                 cached
               </span>
             )}
             {message.failoverNotice && (
-              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/30">
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '2px 6px', borderRadius: '5px', fontSize: '10px', fontWeight: 600, background: 'var(--surface-2)', color: 'var(--accent-amber)', border: '1px solid var(--border-subtle)' }}>
                 <Clock size={9} />
                 <span>{message.failoverNotice}</span>
               </span>
@@ -518,49 +663,102 @@ export const ChatMessageItem: React.FC<ChatMessageProps> = ({
           </div>
         </div>
 
-        {/* 1. THINKING STATE: Clean, Shimmering Indicator (Tailwind shimmer + pulse) */}
+        {/* 1. THINKING STATE: Clean, Shimmering Indicator */}
         {isThinking && (
-          <div className="relative overflow-hidden rounded-lg bg-zinc-900/80 border border-indigo-500/30 px-3 py-2 my-2 flex items-center gap-2.5 shadow-inner">
+          <div style={{ position: 'relative', overflow: 'hidden', borderRadius: '10px', background: 'var(--surface-2)', border: '1px solid var(--border-subtle)', borderLeft: '3px solid var(--accent-primary)', padding: '8px 12px', margin: '8px 0', display: 'flex', alignItems: 'center', gap: '10px' }}>
             {/* Shimmer gradient overlay */}
-            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/[0.07] to-transparent animate-[shimmer_2s_infinite]" />
-            <div className="w-2 h-2 rounded-full bg-indigo-500 animate-ping shrink-0" />
-            <span className="text-xs font-medium text-zinc-200 animate-pulse truncate select-none">
+            <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.08), transparent)', animation: 'shimmer 2s infinite', pointerEvents: 'none' }} />
+            <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--accent-primary)', opacity: 0.7, flexShrink: 0, animation: 'ping 1.2s cubic-bezier(0, 0, 0.2, 1) infinite' }} />
+            <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)', animation: 'pulse 1.5s ease-in-out infinite', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', userSelect: 'none' }}>
               {thinkingLabel}
             </span>
           </div>
         )}
 
-        {/* 2. REASONING PROCESS (Collapsible, subtle, clean) */}
-        {message.reasoning && (
-          <details className="group my-2 rounded-lg border border-zinc-800/80 bg-zinc-950/40 overflow-hidden text-xs">
-            <summary className="flex items-center justify-between px-3 py-1.5 cursor-pointer text-zinc-400 hover:text-zinc-200 transition-colors select-none font-medium">
-              <div className="flex items-center gap-1.5">
-                <Sparkles size={12} className="text-indigo-400" />
-                <span>Thought Process</span>
-                <span className="text-[10px] text-zinc-500 font-mono">
-                  ({message.reasoning.split(/\s+/).filter(Boolean).length} words)
+        {/* 2. AGENT ACTIVITY: the harness work (thinking, summarized thinking,
+            tool use, command execution, notices) is fully separated from the
+            user-facing response. Collapsed once the turn completes; toggle
+            manually at any time. */}
+        {activitySteps > 0 && (
+          <div style={{ margin: '8px 0', borderRadius: '10px', border: '1px solid var(--border-subtle)', background: 'var(--bg-primary)', overflow: 'hidden', fontSize: '11px' }}>
+            <button
+              type="button"
+              onClick={() => setActivityOpen(!activityOpen)}
+              style={{
+                display: 'flex',
+                width: '100%',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '6px 12px',
+                cursor: 'pointer',
+                color: 'var(--text-muted)',
+                background: 'transparent',
+                textAlign: 'left',
+                userSelect: 'none'
+              }}
+              title="Toggle agent activity: thinking, tool use, command execution"
+            >
+              <Bot size={12} style={{ color: 'var(--accent-primary)', flexShrink: 0 }} />
+              <span style={{ fontWeight: 600 }}>Agent Activity</span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                {reasoningWords > 0 && <span>thought {reasoningWords}w</span>}
+                {toolList.length > 0 && (
+                  <span>
+                    {toolList.length} tool{toolList.length === 1 ? '' : 's'}
+                  </span>
+                )}
+              </span>
+              {runningToolLabel && (
+                <span style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: '4px', fontSize: '10px', fontWeight: 600, color: 'var(--accent-primary)' }}>
+                  <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--accent-primary)', opacity: 0.7, animation: 'ping 1.2s cubic-bezier(0, 0, 0.2, 1) infinite' }} />
+                  {runningToolLabel}
                 </span>
-              </div>
-              <ChevronDown size={12} className="transition-transform group-open:rotate-180 text-zinc-500" />
-            </summary>
-            <div className="px-3 pb-3 pt-1 border-t border-zinc-850 text-zinc-300 font-mono text-[11px] leading-relaxed max-h-56 overflow-y-auto whitespace-pre-wrap select-text">
-              {message.reasoning}
-            </div>
-          </details>
-        )}
+              )}
+              <ChevronDown
+                size={12}
+                style={{ marginLeft: 'auto', transition: 'transform 0.18s ease', color: 'var(--text-muted)', flexShrink: 0, transform: activityOpen ? 'rotate(180deg)' : 'none' }}
+              />
+            </button>
 
-        {/* 3. COLLAPSIBLE TOOL EXECUTION BLOCKS */}
-        {toolList.length > 0 && (
-          <div className="my-2 space-y-1">
-            {toolList.map((tool) => (
-              <ToolExecutionBlock key={tool.id} tool={tool} />
-            ))}
+            {activityOpen && (
+              <div style={{ padding: '6px 8px 8px', paddingTop: 6, display: 'flex', flexDirection: 'column', gap: '6px', borderTop: '1px solid var(--border-subtle)' }}>
+                {/* Thought process (live reasoning + summarized thinking) */}
+                {message.reasoning && (
+                  <details style={{ borderRadius: '8px', border: '1px solid var(--border-subtle)', background: 'var(--surface-2)', overflow: 'hidden', fontSize: '11px' }}>
+                    <summary style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 12px', cursor: 'pointer', color: 'var(--text-secondary)', fontWeight: 600, userSelect: 'none', listStyle: 'none' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Sparkles size={12} style={{ color: 'var(--accent-primary)' }} />
+                        <span>Thought Process</span>
+                        <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>({reasoningWords} words)</span>
+                      </div>
+                      <ChevronDown size={12} style={{ color: 'var(--text-muted)' }} />
+                    </summary>
+                    <div style={{ padding: '6px 12px 12px', borderTop: '1px solid var(--border-subtle)', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', fontSize: '11px', lineHeight: 1.65, maxHeight: '224px', overflowY: 'auto', whiteSpace: 'pre-wrap', userSelect: 'text' }}>
+                      {message.reasoning}
+                    </div>
+                  </details>
+                )}
+
+                {/* Tool use / command execution records */}
+                {toolList.map((tool) => (
+                  <ToolExecutionBlock key={tool.id} tool={tool} />
+                ))}
+
+                {/* Harness notices (failover announcements) */}
+                {message.failoverNotice && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 12px', borderRadius: '8px', border: '1px solid var(--border-subtle)', borderLeft: '3px solid var(--accent-amber)', background: 'var(--surface-2)', fontSize: '11px', color: 'var(--accent-amber)' }}>
+                    <Clock size={11} style={{ flexShrink: 0 }} />
+                    <span>{message.failoverNotice}</span>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
-        {/* 4. PROPOSED DIFFS */}
+        {/* 3. PROPOSED DIFFS */}
         {message.proposedDiffs && message.proposedDiffs.length > 0 && (
-          <div className="my-2 space-y-1.5">
+          <div style={{ margin: '8px 0', display: 'flex', flexDirection: 'column', gap: '6px' }}>
             {message.proposedDiffs.map((diff) => (
               <DiffCard
                 key={diff.id}
@@ -572,78 +770,70 @@ export const ChatMessageItem: React.FC<ChatMessageProps> = ({
           </div>
         )}
 
-        {/* 5. MAIN TEXT RESPONSE (Markdown Content) */}
+        {/* 4. MAIN TEXT RESPONSE (Markdown Content) */}
         {message.content ? (
-          <div className="text-xs leading-relaxed text-zinc-100 select-text">
+          <div style={{ fontSize: '12px', lineHeight: 1.7, color: 'var(--text-primary)', userSelect: 'text' }}>
             <ReactMarkdown components={markdownComponents}>{message.content}</ReactMarkdown>
           </div>
         ) : null}
 
-        {/* 6. ERROR CARD */}
+        {/* 5. ERROR CARD */}
         {message.errorCard && (
-          <div className="my-2">
+          <div style={{ margin: '8px 0' }}>
             <ChatErrorCard errorCard={message.errorCard} onRetry={onRetryError} />
           </div>
         )}
 
-        {/* 7. BOTTOM ACTIONS & HIDDEN METADATA DETAILS */}
-        <div className="flex items-center justify-between gap-2 mt-3 pt-2 border-t border-zinc-800/40 text-[11px] text-zinc-500">
+        {/* 6. BOTTOM ACTIONS & HIDDEN METADATA DETAILS */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginTop: '12px', paddingTop: '8px', borderTop: '1px solid var(--border-subtle)', fontSize: '11px', color: 'var(--text-muted)' }}>
           {/* Left: Metadata Details Toggle (Prompt/Response token counts hidden by default) */}
-          <div className="relative">
+          <div style={{ position: 'relative' }}>
             <button
               type="button"
               onClick={() => setShowDetails(!showDetails)}
-              className="flex items-center gap-1 text-[10px] text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer"
+              style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', color: 'var(--text-muted)', background: 'transparent', cursor: 'pointer' }}
               title="Toggle execution & token telemetry details"
+              onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text-primary)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; }}
             >
               <Info size={11} />
               <span>Details</span>
-              <ChevronDown size={10} className={`transition-transform ${showDetails ? 'rotate-180' : ''}`} />
+              <ChevronDown size={10} style={{ transition: 'transform 0.18s ease', transform: showDetails ? 'rotate(180deg)' : 'none' }} />
             </button>
 
             {showDetails && (
-              <div className="absolute left-0 bottom-6 z-20 w-64 p-2.5 rounded-lg border border-zinc-800 bg-[#0f1013] shadow-xl text-[10.5px] text-zinc-400 space-y-1 select-text">
-                <div className="font-semibold text-zinc-200 border-b border-zinc-800/80 pb-1 mb-1">
+              <div style={{ position: 'absolute', left: 0, bottom: '24px', zIndex: 20, width: '256px', padding: '10px', borderRadius: '10px', border: '1px solid var(--border-strong)', background: 'var(--bg-secondary)', boxShadow: '0 10px 28px rgba(0, 0, 0, 0.35)', fontSize: '10.5px', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '4px', userSelect: 'text' }}>
+                <div style={{ fontWeight: 700, color: 'var(--text-primary)', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '4px', marginBottom: '4px' }}>
                   Message Telemetry
                 </div>
-                <div className="flex justify-between">
-                  <span>Provider:</span>
-                  <span className="font-mono text-zinc-300">{message.metadata?.providerId || 'default'}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Model:</span>
-                  <span className="font-mono text-zinc-300">{message.metadata?.modelId || 'default'}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Stream Events:</span>
-                  <span className="font-mono text-zinc-300">{message.metadata?.streamEventCount ?? 0}</span>
-                </div>
-                {message.content && (
-                  <div className="flex justify-between">
-                    <span>Est. Response Tokens:</span>
-                    <span className="font-mono text-zinc-300">~{Math.round(message.content.length / 4)}</span>
+                {[
+                  ['Provider', String(message.metadata?.providerId || 'default')],
+                  ['Model', String(message.metadata?.modelId || 'default')],
+                  ['Stream Events', String(message.metadata?.streamEventCount ?? 0)],
+                  ...(message.content ? [['Est. Response Tokens', `~${Math.round(message.content.length / 4)}`]] : []),
+                  ...(toolList.length > 0 ? [['Tools Executed', String(toolList.length)]] : [])
+                ].map(([label, value]) => (
+                  <div key={label} style={{ display: 'flex', justifyContent: 'space-between', gap: '10px' }}>
+                    <span>{label}:</span>
+                    <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{value}</span>
                   </div>
-                )}
-                {toolList.length > 0 && (
-                  <div className="flex justify-between">
-                    <span>Tools Executed:</span>
-                    <span className="font-mono text-zinc-300">{toolList.length}</span>
-                  </div>
-                )}
+                ))}
               </div>
             )}
           </div>
 
           {/* Right: Quick actions (Copy, Regenerate) */}
-          <div className="flex items-center gap-2">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             {message.content && (
               <button
                 type="button"
                 onClick={handleCopyMessage}
-                className="flex items-center gap-1 text-[10px] text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer"
+                style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', color: 'var(--text-muted)', background: 'transparent', cursor: 'pointer' }}
                 title="Copy response"
+                onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text-primary)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.color = copiedMessage ? 'var(--accent-green)' : 'var(--text-muted)'; }}
               >
-                {copiedMessage ? <Check size={11} className="text-emerald-400" /> : <Copy size={11} />}
+                {copiedMessage ? <Check size={11} style={{ color: 'var(--accent-green)' }} /> : <Copy size={11} />}
                 <span>{copiedMessage ? 'Copied' : 'Copy'}</span>
               </button>
             )}
@@ -652,8 +842,10 @@ export const ChatMessageItem: React.FC<ChatMessageProps> = ({
               <button
                 type="button"
                 onClick={onRegenerate}
-                className="flex items-center gap-1 text-[10px] text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer"
+                style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', color: 'var(--text-muted)', background: 'transparent', cursor: 'pointer' }}
                 title="Regenerate last response"
+                onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text-primary)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; }}
               >
                 <RotateCcw size={11} />
                 <span>Regenerate</span>

@@ -107,7 +107,7 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({ activeTab, onTabChange
       style={{
         width: '46px',
         height: '100%',
-        backgroundColor: '#18191e',
+        backgroundColor: 'var(--bg-secondary)',
         borderRight: '1px solid var(--border-subtle)',
         display: 'flex',
         flexDirection: 'column',
@@ -154,7 +154,7 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({ activeTab, onTabChange
                     top: '2px',
                     right: '2px',
                     backgroundColor: 'var(--accent-primary)',
-                    color: '#fff',
+                    color: 'var(--text-primary)',
                     borderRadius: '10px',
                     fontSize: '9px',
                     fontWeight: 700,

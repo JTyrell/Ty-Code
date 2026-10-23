@@ -519,8 +519,8 @@
 .presentation-preview-card {
   margin: 8px 0 4px;
   padding: 12px 14px;
-  background: linear-gradient(135deg, rgba(14, 165, 233, 0.08) 0%, rgba(15, 23, 42, 0.75) 100%);
-  border: 1px solid rgba(56, 189, 248, 0.35);
+  background: linear-gradient(135deg, var(--surface-2) 0%, var(--bg-secondary) 100%);
+  border: 1px solid var(--border-strong);
   border-radius: 8px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
   display: flex;
@@ -549,9 +549,9 @@
 .presentation-card-count {
   font-size: 10px;
   font-weight: 600;
-  color: #fff;
-  background: rgba(56, 189, 248, 0.2);
-  border: 1px solid rgba(56, 189, 248, 0.4);
+  color: var(--accent-cyan);
+  background: var(--surface-2);
+  border: 1px solid var(--border-subtle);
   padding: 2px 8px;
   border-radius: 12px;
 }
@@ -605,7 +605,7 @@
 .presentation-card-outline {
   margin-top: 4px;
   font-size: 11px;
-  background: rgba(0, 0, 0, 0.25);
+  background: var(--surface-2);
   border: 1px solid var(--border-subtle);
   border-radius: 4px;
   padding: 6px 8px;
@@ -646,7 +646,7 @@
   align-items: center;
   gap: 6px;
   padding: 5px 12px;
-  background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+  background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-primary-hover) 100%);
   color: #ffffff;
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 5px;
@@ -685,9 +685,9 @@
 .chat-error-card {
   margin: 6px 0 10px;
   padding: 12px 14px;
-  background: rgba(239, 68, 68, 0.08);
-  border: 1px solid rgba(239, 68, 68, 0.35);
-  border-left: 3px solid #ef4444;
+  background: var(--surface-2);
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--accent-red);
   border-radius: 6px;
   display: flex;
   flex-direction: column;
@@ -708,7 +708,7 @@
 }
 
 .chat-error-icon {
-  color: #ef4444;
+  color: var(--accent-red);
   flex-shrink: 0;
 }
 
@@ -716,7 +716,7 @@
   font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 700;
-  color: #ef4444;
+  color: var(--accent-red);
   letter-spacing: 0.03em;
 }
 
@@ -724,7 +724,7 @@
   font-family: var(--font-mono);
   font-size: 10px;
   color: var(--text-muted);
-  background: rgba(0, 0, 0, 0.25);
+  background: var(--surface-3);
   padding: 1px 6px;
   border-radius: 3px;
   border: 1px solid var(--border-subtle);
@@ -751,10 +751,10 @@
   font-size: 11px;
   line-height: 1.4;
   color: var(--accent-amber);
-  background: rgba(245, 158, 11, 0.08);
+  background: var(--surface-2);
   padding: 6px 8px;
   border-radius: 4px;
-  border: 1px solid rgba(245, 158, 11, 0.2);
+  border: 1px solid var(--border-subtle);
 }
 
 .chat-remedy-icon {
@@ -791,14 +791,13 @@
 }
 
 .chat-error-btn-primary {
-  background: rgba(239, 68, 68, 0.2);
-  color: #fca5a5;
-  border: 1px solid rgba(239, 68, 68, 0.4);
+  background: var(--accent-red);
+  color: #ffffff;
+  border: 1px solid transparent;
 }
 
 .chat-error-btn-primary:hover {
-  background: rgba(239, 68, 68, 0.3);
-  color: #fff;
+  filter: brightness(1.12);
 }
 
 .chat-error-btn-secondary {
@@ -815,27 +814,27 @@
 .chat-error-btn-external {
   background: transparent;
   color: var(--accent-cyan);
-  border: 1px solid rgba(56, 189, 248, 0.3);
+  border: 1px solid var(--border-subtle);
 }
 
 .chat-error-btn-external:hover {
-  background: rgba(56, 189, 248, 0.1);
-  color: #fff;
+  background: var(--surface-2);
+  color: var(--accent-cyan);
 }
 
 /* Connect Provider Card */
 .chat-error-card.is-connect-provider {
-  background: linear-gradient(135deg, rgba(56, 189, 248, 0.08) 0%, rgba(139, 92, 246, 0.06) 100%);
-  border: 1px solid rgba(56, 189, 248, 0.35);
-  border-left: 3px solid #38bdf8;
+  background: var(--surface-2);
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--accent-blue);
 }
 
 .chat-error-card.is-connect-provider .chat-error-code {
-  color: #38bdf8;
+  color: var(--accent-blue);
 }
 
 .chat-error-icon-key {
-  color: #38bdf8;
+  color: var(--accent-blue);
   flex-shrink: 0;
 }
 
@@ -843,8 +842,8 @@
   font-size: 10px;
   padding: 2px 7px;
   border-radius: 4px;
-  background: rgba(56, 189, 248, 0.15);
-  color: #38bdf8;
+  background: var(--surface-2);
+  color: var(--accent-blue);
   font-weight: 600;
   letter-spacing: 0.02em;
 }
@@ -873,19 +872,17 @@
 }
 
 .chat-error-key-input:focus {
-  border-color: #38bdf8;
-  box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.3);
+  border-color: var(--accent-primary);
 }
 
 .chat-error-btn-success {
-  background: rgba(34, 197, 94, 0.2);
-  color: #86efac;
-  border: 1px solid rgba(34, 197, 94, 0.4);
+  background: var(--accent-green);
+  color: #ffffff;
+  border: 1px solid transparent;
 }
 
 .chat-error-btn-success:hover {
-  background: rgba(34, 197, 94, 0.3);
-  color: #fff;
+  filter: brightness(1.12);
 }
 
 .chat-error-helper-links {
@@ -901,7 +898,7 @@
   border: none;
   padding: 0;
   font-size: 10px;
-  color: #38bdf8;
+  color: var(--accent-cyan);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -911,7 +908,7 @@
 }
 
 .chat-error-link-btn:hover {
-  color: #7dd3fc;
+  color: var(--accent-primary);
 }
 
 .chat-error-separator {
@@ -921,16 +918,16 @@
 
 /* Network Blocked Card */
 .chat-error-card.is-network-blocked {
-  background: rgba(239, 68, 68, 0.08);
-  border: 1px solid rgba(239, 68, 68, 0.35);
-  border-left: 3px solid #ef4444;
+  background: var(--surface-2);
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--accent-red);
 }
 
 /* Rate Limited & Quota Exceeded Card */
 .chat-error-card.is-rate-limited {
-  background: rgba(245, 158, 11, 0.08);
-  border: 1px solid rgba(245, 158, 11, 0.35);
-  border-left: 3px solid #f59e0b;
+  background: var(--surface-2);
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--accent-amber);
 }
 
 .chat-error-timer {
@@ -940,8 +937,8 @@
   font-size: 10px;
   padding: 2px 7px;
   border-radius: 4px;
-  background: rgba(245, 158, 11, 0.15);
-  color: #f59e0b;
+  background: var(--surface-2);
+  color: var(--accent-amber);
   font-weight: 600;
   font-family: var(--font-mono, monospace);
 }
@@ -986,9 +983,9 @@
 
 /* Provider Down / Unavailable Card */
 .chat-error-card.is-provider-down {
-  background: rgba(239, 68, 68, 0.08);
-  border: 1px solid rgba(239, 68, 68, 0.35);
-  border-left: 3px solid #ef4444;
+  background: var(--surface-2);
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--accent-red);
 }
 
 .chat-error-autoretry-label {

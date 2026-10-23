@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Search,
   Check,
@@ -7,7 +7,8 @@ import {
   Cpu,
   RefreshCw,
   Gift,
-  HelpCircle
+  HelpCircle,
+  Lock
 } from 'lucide-react';
 import type { DiscoveredModel } from '../../../../preload/types';
 
@@ -32,6 +33,23 @@ export const ModelSelectorDropdown: React.FC<ModelSelectorDropdownProps> = ({
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<ModelCategoryFilter>('All');
+  // Availability overlay (Provider Series Prompt 1 sync): rows the manager
+  // flags as locked are not selectable; rows unknown to the manager (fresh
+  // provider discovery) stay selectable.
+  const [availabilityMap, setAvailabilityMap] = useState<Map<string, 'available' | 'key_required' | 'service_unavailable'> | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (window.electronAPI.getAvailableModels?.() ?? Promise.resolve(null)).then((res: any) => {
+      if (cancelled || !res?.success || !Array.isArray(res.data)) return;
+      const map = new Map<string, 'available' | 'key_required' | 'service_unavailable'>();
+      for (const entry of res.data as Array<{ modelId: string; availabilityStatus: 'available' | 'key_required' | 'service_unavailable' }>) {
+        if (entry.modelId) map.set(entry.modelId, entry.availabilityStatus);
+      }
+      setAvailabilityMap(map);
+    });
+    return () => { cancelled = true; };
+  }, []);
 
   const safeModels = Array.isArray(models) ? models : [];
 
