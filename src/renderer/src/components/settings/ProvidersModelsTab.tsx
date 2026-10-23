@@ -230,6 +230,7 @@ export function ProvidersModelsTab({ onOpenApiKeys, onOpenByok, onOpenProviderSe
   const activeModelId = useSettingsStore((s) => s.activeModelId);
   const setActiveProvider = useSettingsStore((s) => s.setActiveProvider);
   const setActiveModel = useSettingsStore((s) => s.setActiveModel);
+  const communityKeyStatus = useSettingsStore((s) => s.communityKeyStatus);
 
   const refreshCatalog = useCallback(async () => {
     setLoading(true);
@@ -415,6 +416,28 @@ export function ProvidersModelsTab({ onOpenApiKeys, onOpenByok, onOpenProviderSe
                 <Sparkles size={18} color="#818cf8" />
                 AI Providers &amp; Models
               </h3>
+              {communityKeyStatus === 'degraded' && (
+                <span
+                  id="chip-community-key-degraded-settings"
+                  className="bg-yellow-500/10 text-yellow-400 border border-yellow-500/30 text-[10px] px-2 py-0.5 rounded-full"
+                  title="Free Tier Rate Limited (Using Anonymous Fallback)"
+                  style={{
+                    backgroundColor: 'rgba(234, 179, 8, 0.1)',
+                    color: '#facc15',
+                    border: '1px solid rgba(234, 179, 8, 0.3)',
+                    fontSize: '10px',
+                    padding: '2px 8px',
+                    borderRadius: '9999px',
+                    whiteSpace: 'nowrap',
+                    fontWeight: 500,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}
+                >
+                  ⚠️ Free Tier Rate Limited (Using Anonymous Fallback)
+                </span>
+              )}
               <span className="pm-hero-badge">
                 <span
                   id="gateway-status-dot"

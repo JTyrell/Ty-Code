@@ -30,6 +30,7 @@ import { getCredentialStorageStatusResponse, getSettings, getSettingsLayer, getS
 import { setActiveAgentConfig } from './agent/agent-config';
 import { settingsManager } from './services/settings-manager';
 import { startAgentTask, stopAgentTask, respondAgentApproval, applyDiff, handleUserApproveDiff } from './ipc/agent-handlers';
+import { chatLatencyTracker } from './providers/provider-gateway';
 import {
   runCommand, getAvailableShells, spawnPtySession, attachPty, writePty,
   resizePty, syncPtyCwd, killPty, cleanupAllPtys, resolvePtyApproval, executePtyCommand
@@ -130,7 +131,7 @@ import { diagnosticsHealthMonitor } from './services/diagnostics/health-monitor'
 import { connectivityTracer } from './services/diagnostics/connectivity-tracer';
 import { providerOAuth } from './services/auth/provider-oauth';
 import { usageLedger } from './services/usage/ledger';
-import { saveKey, getKey, testKey, warmUpCommunityKey, revalidateCommunityKey, getCommunityKeyCached, hasCommunityKey } from './services/credential-vault';
+import { saveKey, getKey, testKey, warmUpCommunityKey, revalidateCommunityKey, getCommunityKeyCached, hasCommunityKey, getCommunityKeyStatus } from './services/credential-vault';
 import { initiateCopilotDeviceFlow, pollCopilotToken } from './services/auth/subscription-auth';
 import { canvasSyncManager } from './services/canvas-sync-manager';
 import { canvasAgentEngine, type CanvasAgentGenerationResult } from './agent/canvas-agent-engine';
@@ -871,6 +872,14 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle('agent:start-task', async (_event, params) => {
+    const h2 = performance.timeOrigin + performance.now();
+    const taskId = params?.taskId || `task_${Date.now()}`;
+    chatLatencyTracker.setActiveTaskId(taskId);
+    if (params?.clientSentAt) {
+      chatLatencyTracker.recordH1(taskId, params.clientSentAt);
+    }
+    chatLatencyTracker.recordH2(taskId, h2);
+
     console.log('Main: Received task', { taskId: params?.taskId, promptLen: params?.prompt?.length, agentMode: params?.agentMode });
     if (!mainWindow) return { success: false, error: 'No main window' };
     if (params?.traceId) {
@@ -893,6 +902,11 @@ function registerIpcHandlers(): void {
   ipcMain.handle('user_approve_diff', (_event, payload: { approvalId?: string; diffId?: string; approved?: boolean } | boolean) => handleUserApproveDiff(payload));
   ipcMain.handle('pty:resolve-approval', (_event, payload: { approvalId: string; approved: boolean }) => resolvePtyApproval(payload.approvalId, payload.approved));
   ipcMain.handle('agent:apply-diff', (_event, diff: ProposedDiff) => applyDiff(currentWorkspacePath, diff));
+  ipcMain.on('perf:report-h5', (_event, data: { taskId: string; h5: number }) => {
+    if (data?.taskId) {
+      chatLatencyTracker.recordH5(data.taskId, data.h5);
+    }
+  });
 
   // Agent State Management
   ipcMain.handle('agent:get-todos', () => {
@@ -1943,6 +1957,19 @@ function registerIpcHandlers(): void {
     if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
     clearAvailabilityCache();
     return { success: true };
+  });
+
+  ipcMain.handle('community-key:get-status', async () => {
+    return { success: true, data: { status: getCommunityKeyStatus() } };
+  });
+
+  ipcMain.on('community-key:status-changed', (eventOrPayload: any, maybePayload?: any) => {
+    const payload = (maybePayload !== undefined ? maybePayload : eventOrPayload) || { status: 'degraded' };
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
+        win.webContents.send('community-key:status-changed', payload);
+      }
+    }
   });
 
   // Autonomous Provider & Model Catalog Verification

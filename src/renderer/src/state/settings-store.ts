@@ -16,9 +16,12 @@ import type { ActiveProviderConfigSummary, ProviderType } from '../../../preload
  * replies with masked summaries (e.g. "sk-ant-••••1234").
  */
 
+export type CommunityKeyStatus = 'active' | 'degraded' | 'missing';
+
 interface SettingsStoreState {
   activeProviderId: string;
   activeModelId: string;
+  communityKeyStatus: CommunityKeyStatus;
   /** Set once the persisted selection has been read at boot. */
   hydrated: boolean;
   syncing: boolean;
@@ -27,6 +30,7 @@ interface SettingsStoreState {
   hydrate: () => Promise<void>;
   setActiveProvider: (providerId: string, modelId?: string) => void;
   setActiveModel: (modelId: string) => void;
+  setCommunityKeyStatus: (status: CommunityKeyStatus) => void;
 }
 
 export const TY_CODE_FREE_PROVIDER = 'ty-code-free';
@@ -34,7 +38,8 @@ export const TY_CODE_FREE_MODEL = 'google/gemma-4-31b-it:free';
 
 const DEFAULTS = {
   activeProviderId: TY_CODE_FREE_PROVIDER,
-  activeModelId: TY_CODE_FREE_MODEL
+  activeModelId: TY_CODE_FREE_MODEL,
+  communityKeyStatus: 'active' as CommunityKeyStatus
 };
 
 function configSignature(providerId: string, modelId: string): string {
@@ -44,12 +49,19 @@ function configSignature(providerId: string, modelId: string): string {
 export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
   activeProviderId: DEFAULTS.activeProviderId,
   activeModelId: DEFAULTS.activeModelId,
+  communityKeyStatus: DEFAULTS.communityKeyStatus,
   hydrated: false,
   syncing: false,
   lastSyncError: '',
 
   hydrate: async () => {
     try {
+      if (window.electronAPI?.getCommunityKeyStatus) {
+        const statusRes = await window.electronAPI.getCommunityKeyStatus();
+        if (statusRes?.success && statusRes.data?.status) {
+          set({ communityKeyStatus: statusRes.data.status });
+        }
+      }
       const response = await window.electronAPI.getSettings();
       if (response.success && response.data) {
         set({
@@ -77,8 +89,28 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
       activeModelId: modelId,
       activeProviderId: get().activeProviderId || DEFAULTS.activeProviderId
     });
+  },
+
+  setCommunityKeyStatus: (status) => {
+    set({ communityKeyStatus: status });
   }
 }));
+
+if (typeof window !== 'undefined' && window.electronAPI?.onCommunityKeyStatusChanged) {
+  window.electronAPI.onCommunityKeyStatusChanged((data) => {
+    if (data?.status) {
+      useSettingsStore.setState({ communityKeyStatus: data.status });
+    }
+  });
+
+  if (window.electronAPI?.getCommunityKeyStatus) {
+    void window.electronAPI.getCommunityKeyStatus().then((res) => {
+      if (res?.success && res.data?.status) {
+        useSettingsStore.setState({ communityKeyStatus: res.data.status });
+      }
+    }).catch(() => undefined);
+  }
+}
 
 let lastSyncedSignature = '';
 let syncInFlight = false;

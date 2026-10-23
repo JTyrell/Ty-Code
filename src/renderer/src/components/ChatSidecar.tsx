@@ -19,6 +19,7 @@ import { useChatStore, groupMessagesByTask } from '../state/chat-store';
 import { useWorkspaceStore } from '../state/workspace-store';
 import { usePairProgrammingStore } from '../state/pair-programming-store';
 import { useOnboardingStore } from '../state/onboarding-store';
+import { useSettingsStore } from '../state/settings-store';
 import { ModelSelector } from './ChatInterface/ModelSelector';
 import { ProviderSetupCard } from './ProviderSetupCard';
 import { ChatErrorCard } from './ChatErrorCard';
@@ -1070,12 +1071,33 @@ export const ChatSidecar: React.FC = () => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const feedRef = useRef<HTMLDivElement>(null);
   const userAtBottomRef = useRef(true);
-  const { messages, isRunning, currentStatus, currentThought, streamingText, pendingApproval, sendMessage, stopTask, respondToApproval, clearChat, agentMode, setAgentMode, draftPrompt, setDraftPrompt, activeErrorCard, dismissErrorCard, contextTokens, recentSessions, pendingResume, loadRecentSessions, acceptSessionResume, dismissSessionResume } = useChatStore();
+  const { messages, isRunning, currentTaskId, currentStatus, currentThought, streamingText, pendingApproval, sendMessage, stopTask, respondToApproval, clearChat, agentMode, setAgentMode, draftPrompt, setDraftPrompt, activeErrorCard, dismissErrorCard, contextTokens, recentSessions, pendingResume, loadRecentSessions, acceptSessionResume, dismissSessionResume } = useChatStore();
   const { isPairActive, suggestions, togglePairMode, dismissSuggestion, clearSuggestions } = usePairProgrammingStore();
+  const communityKeyStatus = useSettingsStore((s) => s.communityKeyStatus);
   const [approvalSending, setApprovalSending] = useState(false);
   const { workspacePath, activeTabPath, openTabs, openDiffReview, applyDiff } = useWorkspaceStore();
   const activeTab = openTabs.find((tab) => tab.path === activeTabPath);
   const groupedMessages = useMemo(() => groupMessagesByTask(messages), [messages]);
+
+  // Diagnostic Telemetry: Track H5 (Renderer Flush - first token painted to DOM)
+  const reportedH5TaskRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!currentTaskId) {
+      reportedH5TaskRef.current = null;
+      return;
+    }
+    const hasTokens = (streamingText && streamingText.length > 0) || messages.some((m) => m.taskId === currentTaskId && m.role === 'assistant' && (m.content.length > 0 || (m.toolExecutions && m.toolExecutions.length > 0)));
+    if (hasTokens && reportedH5TaskRef.current !== currentTaskId) {
+      reportedH5TaskRef.current = currentTaskId;
+      const targetTaskId = currentTaskId;
+      window.requestAnimationFrame(() => {
+        setTimeout(() => {
+          const h5 = performance.timeOrigin + performance.now();
+          window.electronAPI?.perfReportH5?.({ taskId: targetTaskId, h5 });
+        }, 0);
+      });
+    }
+  }, [streamingText, messages, currentTaskId]);
   const lastAssistantId = [...groupedMessages].reverse().find((message) => message.role === 'assistant')?.id;
   const lastUserMessage = [...groupedMessages].reverse().find((message) => message.role === 'user');
 
@@ -1205,14 +1227,16 @@ export const ChatSidecar: React.FC = () => {
     return () => unsub?.();
   }, []);
 
-  const sendPrompt = (prompt: string, appendUserMessage = true, images?: string[]) => {
+  const sendPrompt = (prompt: string, appendUserMessage = true, images?: string[], clientSentAt?: number) => {
     userAtBottomRef.current = true;
-    console.log('UI: Sending prompt', prompt);
-    void sendMessage(prompt, workspacePath, activeTab?.path, activeTab?.content, appendUserMessage, undefined, images);
+    const h1 = clientSentAt ?? (performance.timeOrigin + performance.now());
+    console.log('UI: Sending prompt', prompt, 'H1:', h1);
+    void sendMessage(prompt, workspacePath, activeTab?.path, activeTab?.content, appendUserMessage, { clientSentAt: h1 }, images);
   };
   const handleSubmit = (event?: React.FormEvent) => {
     event?.preventDefault();
     if (isRunning) return;
+    const h1 = performance.timeOrigin + performance.now();
     const attachments = useChatInputStore.getState().attachments;
     const media = attachments.filter((attachment) => attachment.type === 'media');
     const contextParts = attachments
@@ -1226,15 +1250,16 @@ export const ChatSidecar: React.FC = () => {
     historyIndexRef.current = -1;
     useChatInputStore.getState().clearAttachments();
     setInput('');
-    sendPrompt(composedPrompt, true, images);
+    sendPrompt(composedPrompt, true, images, h1);
   };
   const handleRegenerate = () => {
     if (isRunning) {
       void stopTask();
     }
+    const h1 = performance.timeOrigin + performance.now();
     const promptToRetry = lastUserMessage?.content || input.trim();
     if (promptToRetry) {
-      sendPrompt(promptToRetry, !lastUserMessage, Array.isArray(lastUserMessage?.images) && lastUserMessage.images.length > 0 ? [...lastUserMessage.images] : undefined);
+      sendPrompt(promptToRetry, !lastUserMessage, Array.isArray(lastUserMessage?.images) && lastUserMessage.images.length > 0 ? [...lastUserMessage.images] : undefined, h1);
     } else {
       inputRef.current?.focus();
     }
@@ -1342,7 +1367,30 @@ export const ChatSidecar: React.FC = () => {
               <span>Plan</span>
             </button>
           </div>
-          <div className="chat-header-model">
+          <div className="chat-header-model" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            {communityKeyStatus === 'degraded' && (
+              <span
+                id="chip-community-key-degraded-chat"
+                className="bg-yellow-500/10 text-yellow-400 border border-yellow-500/30 text-[10px] px-2 py-0.5 rounded-full"
+                title="Free Tier Rate Limited (Using Anonymous Fallback)"
+                style={{
+                  backgroundColor: 'rgba(234, 179, 8, 0.1)',
+                  color: '#facc15',
+                  border: '1px solid rgba(234, 179, 8, 0.3)',
+                  fontSize: '10px',
+                  padding: '2px 8px',
+                  borderRadius: '9999px',
+                  whiteSpace: 'nowrap',
+                  fontWeight: 500,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  flexShrink: 0
+                }}
+              >
+                ⚠️ Free Tier Rate Limited (Using Anonymous Fallback)
+              </span>
+            )}
             <ModelSelector />
           </div>
         </div>
@@ -1455,12 +1503,14 @@ export const ChatSidecar: React.FC = () => {
 
         {groupedMessages.map((message) => {
           const isLastAssistant = message.id === lastAssistantId;
+          const isStreaming = isLastAssistant && (message.isStreaming ?? isRunning);
           return (
             <ChatMessageItem
               key={message.id}
               message={message}
               isLastAssistant={isLastAssistant}
               isRunning={isRunning}
+              isStreaming={isStreaming}
               currentStatus={currentStatus}
               contextTokens={contextTokens}
               onRegenerate={handleRegenerate}

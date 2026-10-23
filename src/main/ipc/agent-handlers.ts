@@ -84,6 +84,7 @@ function cancelTaskApprovals(taskId: string): void {
 }
 
 import { connectivityTracer } from '../services/diagnostics/connectivity-tracer';
+import { chatLatencyTracker } from '../providers/provider-gateway';
 
 export async function startAgentTask(
   mainWindow: BrowserWindow,
@@ -102,9 +103,14 @@ export async function startAgentTask(
     providerOverride?: string;
     modelOverride?: string;
     resumeSessionId?: string;
+    clientSentAt?: number;
   }
 ): Promise<IpcResponse<string>> {
   const taskId = params.taskId || `task_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  chatLatencyTracker.setActiveTaskId(taskId);
+  if (params.clientSentAt) {
+    chatLatencyTracker.recordH1(taskId, params.clientSentAt);
+  }
   const abortController = new AbortController();
   const task: ActiveTask = { controller: abortController, window: mainWindow, finished: false };
   activeTasks.set(taskId, task);
@@ -128,100 +134,132 @@ export async function startAgentTask(
 
   const useOpenCode = effectiveSettings.activeHarness === 'opencode';
   let tokenCount = 0;
+  let batchBuffer: AgentStreamChunk[] = [];
+  let batchTimer: NodeJS.Timeout | null = null;
+
+  const flushBatch = () => {
+    if (batchTimer) {
+      clearTimeout(batchTimer);
+      batchTimer = null;
+    }
+    if (batchBuffer.length === 0) return;
+    if (mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) {
+      batchBuffer = [];
+      return;
+    }
+    const batch = batchBuffer;
+    batchBuffer = [];
+    mainWindow.webContents.send('agent:stream-batch', batch);
+  };
+
+  const scheduleFlush = () => {
+    if (!batchTimer) {
+      batchTimer = setTimeout(() => {
+        batchTimer = null;
+        flushBatch();
+      }, 16);
+    }
+  };
+
   const emit = (chunk: AgentStreamChunk) => {
     if (task.finished || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) return;
-    mainWindow.webContents.send('agent:stream', { ...chunk, taskId } satisfies AgentStreamChunk);
 
-    // Fine-grained validated stream events
-    switch (chunk.type) {
-      case 'token':
-        mainWindow.webContents.send('agent:stream-token', {
-          taskId,
-          token: chunk.content || ''
-        });
-        break;
-      case 'thought':
-        mainWindow.webContents.send('agent:reasoning-token', {
-          taskId,
-          token: chunk.content || ''
-        });
-        break;
-      case 'tool_call':
-        if (chunk.toolCall) {
-          mainWindow.webContents.send('agent:tool-start', {
-            taskId,
-            toolCall: chunk.toolCall
-          });
-        }
-        break;
-      case 'tool_result':
-        if (chunk.toolResult) {
-          mainWindow.webContents.send('agent:tool-result', {
-            taskId,
-            toolResult: chunk.toolResult
-          });
-        }
-        break;
-      case 'diff':
-        if (chunk.diff) {
-          mainWindow.webContents.send('agent:diff-proposed', {
-            taskId,
-            diff: chunk.diff
-          });
-        }
-        break;
-      case 'approval_request':
-        if (chunk.approvalRequest?.reviewDiff) {
-          mainWindow.webContents.send('agent:diff-proposed', {
-            taskId,
-            diff: chunk.approvalRequest.reviewDiff
-          });
-        }
-        break;
-      case 'done':
-        mainWindow.webContents.send('agent:done', {
-          taskId,
-          cancelled: false
-        });
-        break;
-      case 'cancelled':
-        mainWindow.webContents.send('agent:done', {
-          taskId,
-          cancelled: true
-        });
-        break;
-      case 'error': {
-        const classified = classifyDiagnosticError(effectiveSettings.activeProvider, chunk.error || 'Agent error');
-        mainWindow.webContents.send('agent:error', {
-          taskId,
-          error: chunk.error || 'Agent execution failed',
-          errorCard: {
-            taxonomyCode: classified.code,
-            message: classified.humanMessage,
-            remedy: classified.remedy,
-            actionUrl: classified.actionUrl,
-            actionLabel: classified.actionLabel,
-            suggestedFallback: classified.suggestedFallback,
-            retryAfterSec: classified.retryAfterSec,
-            providerId: effectiveSettings.activeProvider
+    const chunkWithTask: AgentStreamChunk = { ...chunk, taskId };
+
+    if (chunk.type === 'token') {
+      if (params.traceId) {
+        tokenCount++;
+        connectivityTracer.recordHop(params.traceId, 'H8', {
+          status: 'PASS',
+          payloadSize: chunk.content?.length || 0,
+          metadata: {
+            tokensForwardedCount: tokenCount,
+            lastChunkSnippet: chunk.content?.slice(0, 30)
           }
         });
-        break;
+      }
+      batchBuffer.push(chunkWithTask);
+      scheduleFlush();
+    } else if (chunk.type === 'thought') {
+      batchBuffer.push(chunkWithTask);
+      scheduleFlush();
+    } else {
+      // High-priority state transition (tool_call, tool_result, diff, status, approval_request, done, cancelled, error, agent_state)
+      // Flush previous buffered tokens and this state event immediately so event order is strictly preserved
+      batchBuffer.push(chunkWithTask);
+      flushBatch();
+
+      // Also trigger fine-grained validated stream events
+      switch (chunk.type) {
+        case 'tool_call':
+          if (chunk.toolCall) {
+            mainWindow.webContents.send('agent:tool-start', {
+              taskId,
+              toolCall: chunk.toolCall
+            });
+          }
+          break;
+        case 'tool_result':
+          if (chunk.toolResult) {
+            mainWindow.webContents.send('agent:tool-result', {
+              taskId,
+              toolResult: chunk.toolResult
+            });
+          }
+          break;
+        case 'diff':
+          if (chunk.diff) {
+            mainWindow.webContents.send('agent:diff-proposed', {
+              taskId,
+              diff: chunk.diff
+            });
+          }
+          break;
+        case 'approval_request':
+          if (chunk.approvalRequest?.reviewDiff) {
+            mainWindow.webContents.send('agent:diff-proposed', {
+              taskId,
+              diff: chunk.approvalRequest.reviewDiff
+            });
+          }
+          break;
+        case 'done':
+          mainWindow.webContents.send('agent:done', {
+            taskId,
+            cancelled: false
+          });
+          break;
+        case 'cancelled':
+          mainWindow.webContents.send('agent:done', {
+            taskId,
+            cancelled: true
+          });
+          break;
+        case 'error': {
+          const classified = classifyDiagnosticError(effectiveSettings.activeProvider, chunk.error || 'Agent error');
+          mainWindow.webContents.send('agent:error', {
+            taskId,
+            error: chunk.error || 'Agent execution failed',
+            errorCard: {
+              taxonomyCode: classified.code,
+              message: classified.humanMessage,
+              remedy: classified.remedy,
+              actionUrl: classified.actionUrl,
+              actionLabel: classified.actionLabel,
+              suggestedFallback: classified.suggestedFallback,
+              retryAfterSec: classified.retryAfterSec,
+              providerId: effectiveSettings.activeProvider
+            }
+          });
+          break;
+        }
       }
     }
 
-    if (params.traceId && chunk.type === 'token') {
-      tokenCount++;
-      connectivityTracer.recordHop(params.traceId, 'H8', {
-        status: 'PASS',
-        payloadSize: chunk.content?.length || 0,
-        metadata: {
-          tokensForwardedCount: tokenCount,
-          lastChunkSnippet: chunk.content?.slice(0, 30)
-        }
-      });
+    if (chunk.type === 'done' || chunk.type === 'cancelled' || chunk.type === 'error') {
+      task.finished = true;
+      flushBatch();
     }
-    if (chunk.type === 'done' || chunk.type === 'cancelled' || chunk.type === 'error') task.finished = true;
   };
 
   void (async () => {
@@ -289,6 +327,7 @@ export function stopAgentTask(taskId: string): IpcResponse<void> {
   if (!task) return { success: false, error: 'Task not found or already completed' };
   task.controller.abort();
   if (!task.finished && !task.window.isDestroyed() && !task.window.webContents.isDestroyed()) {
+    task.window.webContents.send('agent:stream-batch', [{ type: 'cancelled', taskId } satisfies AgentStreamChunk]);
     task.window.webContents.send('agent:stream', { type: 'cancelled', taskId } satisfies AgentStreamChunk);
     task.window.webContents.send('agent:done', { taskId, cancelled: true });
   }

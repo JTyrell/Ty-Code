@@ -29,6 +29,7 @@ import {
   Clock
 } from 'lucide-react';
 import { useChatStore } from '../../state/chat-store';
+import { useSettingsStore } from '../../state/settings-store';
 import { toast } from '../../state/toast-store';
 import type {
   ModelTier,
@@ -202,6 +203,7 @@ interface DropdownPosition {
 
 export const ModelSelector: React.FC = () => {
   const { settings, saveSettings } = useChatStore();
+  const communityKeyStatus = useSettingsStore((s) => s.communityKeyStatus);
   const [isOpen, setIsOpen] = useState(false);
   const [routingMode, setRoutingMode] = useState<RoutingPreferenceMode>('auto');
   const [catalog, setCatalog] = useState<Record<ModelTier, RankedModelCandidate[]>>(FALLBACK_CATALOG);
@@ -669,6 +671,29 @@ export const ModelSelector: React.FC = () => {
             gap: '8px'
           }}
         >
+          {communityKeyStatus === 'degraded' && (
+            <div
+              id="chip-community-key-degraded-model-selector"
+              className="bg-yellow-500/10 text-yellow-400 border border-yellow-500/30 text-[10px] px-2 py-0.5 rounded-full"
+              style={{
+                backgroundColor: 'rgba(234, 179, 8, 0.1)',
+                color: '#facc15',
+                border: '1px solid rgba(234, 179, 8, 0.3)',
+                fontSize: '10px',
+                padding: '3px 8px',
+                borderRadius: '9999px',
+                textAlign: 'center',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '4px',
+                lineHeight: '1.2'
+              }}
+            >
+              ⚠️ Free Tier Rate Limited (Using Anonymous Fallback)
+            </div>
+          )}
+
           {/* Mode Selector Segmented Control */}
           <div
             style={{

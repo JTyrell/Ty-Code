@@ -84,6 +84,11 @@ const api: ElectronAPI = {
     ipcRenderer.on('agent:stream', listener);
     return () => ipcRenderer.removeListener('agent:stream', listener);
   },
+  onAgentStreamBatch: (callback) => {
+    const listener = (_event: IpcRendererEvent, chunks: AgentStreamChunk[]) => callback(chunks);
+    ipcRenderer.on('agent:stream-batch', listener);
+    return () => ipcRenderer.removeListener('agent:stream-batch', listener);
+  },
   onAgentStreamToken: (callback) => {
     const listener = (_event: IpcRendererEvent, payload: any) => callback(payload);
     ipcRenderer.on('agent:stream-token', listener);
@@ -118,6 +123,9 @@ const api: ElectronAPI = {
     const listener = (_event: IpcRendererEvent, payload: any) => callback(payload);
     ipcRenderer.on('agent:error', listener);
     return () => ipcRenderer.removeListener('agent:error', listener);
+  },
+  perfReportH5: (data: { taskId: string; h5: number }) => {
+    ipcRenderer.send('perf:report-h5', data);
   },
   applyDiff: (diff: ProposedDiff) => ipcRenderer.invoke('agent:apply-diff', diff),
   resolvePtyApproval: (approvalId: string, approved: boolean) => ipcRenderer.invoke('pty:resolve-approval', { approvalId, approved }),
@@ -551,6 +559,12 @@ const api: ElectronAPI = {
   getAvailableModels: () => ipcRenderer.invoke('models:get-available-models'),
   getModelAvailabilitySummary: () => ipcRenderer.invoke('models:get-availability-summary'),
   resetModelsAvailabilityCache: () => ipcRenderer.invoke('models:reset-availability-cache'),
+  getCommunityKeyStatus: () => ipcRenderer.invoke('community-key:get-status'),
+  onCommunityKeyStatusChanged: (callback: (data: any) => void) => {
+    const listener = (_event: any, data: any) => callback(data);
+    ipcRenderer.on('community-key:status-changed', listener);
+    return () => ipcRenderer.removeListener('community-key:status-changed', listener);
+  },
   verifyModelCatalog: () => ipcRenderer.invoke('providers:verify-model-catalog'),
   getModelCatalogVerifications: () => ipcRenderer.invoke('providers:get-model-catalog-verifications'),
   onModelCatalogVerified: (callback: (snapshot: any) => void) => {

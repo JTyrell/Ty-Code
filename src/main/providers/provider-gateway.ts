@@ -22,7 +22,7 @@ import { providerHealthMonitor } from '../services/providers/health-monitor';
 import { readStoredCredentials } from '../ipc/settings-handlers';
 import { keyDetector } from '../services/providers/key-detector';
 
-import { getKey, getCommunityKey, warmUpCommunityKey, getCommunityKeyCached, hasCommunityKey, invalidateCommunityKey } from '../services/credential-vault';
+import { getKey, getCommunityKey, warmUpCommunityKey, getCommunityKeyCached, hasCommunityKey, invalidateCommunityKey, emitCommunityKeyStatus } from '../services/credential-vault';
 import { getVerifiedModels, type VerifiedModelConfig } from '../services/verified-models';
 import { fetchFCCCatalog, canFccServeCompletions } from '../services/fcc-catalog-sync';
 import { opencodeBridge, buildBridgePromptFromMessages } from '../services/opencode-bridge';
@@ -32,6 +32,141 @@ const OPENCODE_FREE_PROTOCOL = 'opencode-cli://';
 import { BrowserWindow } from 'electron';
 import { DEFAULT_PRESET_MODELS } from '../../preload/preset-models';
 export { DEFAULT_PRESET_MODELS, getVerifiedModels, type VerifiedModelConfig };
+
+/**
+ * End-to-End Chat Latency Tracker (Diagnostic Telemetry)
+ * Measures H1 (Renderer Send) -> H2 (IPC Bridge) -> H3 (Gateway Adapter) ->
+ * H4 (Network TTFT) -> H5 (Renderer Flush), calculating TTFT, IPC Overhead, and UI Render Lag.
+ */
+interface TaskHopTimings {
+  taskId: string;
+  h1?: number; // Renderer Send
+  h2?: number; // IPC Bridge
+  h3?: number; // Gateway Adapter
+  h4?: number; // Network TTFT
+  h5?: number; // Renderer Flush
+  tokenCount: number;
+  streamStartTime?: number;
+  streamEndTime?: number;
+  summaryLogged?: boolean;
+}
+
+export class ChatLatencyTracker {
+  private tasks = new Map<string, TaskHopTimings>();
+  private activeTaskId: string | null = null;
+
+  public now(): number {
+    return performance.timeOrigin + performance.now();
+  }
+
+  public setActiveTaskId(taskId: string): void {
+    this.activeTaskId = taskId;
+  }
+
+  public getActiveTaskId(): string | null {
+    return this.activeTaskId;
+  }
+
+  private getOrCreate(taskId: string): TaskHopTimings {
+    let entry = this.tasks.get(taskId);
+    if (!entry) {
+      entry = { taskId, tokenCount: 0 };
+      this.tasks.set(taskId, entry);
+    }
+    return entry;
+  }
+
+  public recordH1(taskId: string, timestamp?: number): void {
+    const entry = this.getOrCreate(taskId);
+    if (entry.h1 !== undefined) return;
+    const t = timestamp ?? this.now();
+    entry.h1 = t;
+    console.log(`[PERF] [H1] Renderer Send: Task ${taskId} at ${t.toFixed(2)}ms`);
+  }
+
+  public recordH2(taskId: string, timestamp?: number): void {
+    const entry = this.getOrCreate(taskId);
+    if (entry.h2 !== undefined) return;
+    const t = timestamp ?? this.now();
+    entry.h2 = t;
+    const ipcOverhead = entry.h1 !== undefined ? Math.max(0, t - entry.h1) : 0;
+    console.log(`[PERF] [H2] IPC Bridge: Task ${taskId} received at ${t.toFixed(2)}ms | IPC Overhead=${ipcOverhead.toFixed(2)}ms`);
+  }
+
+  public recordH3(taskId: string, timestamp?: number): void {
+    const entry = this.getOrCreate(taskId);
+    if (entry.h3 !== undefined) return;
+    const t = timestamp ?? this.now();
+    entry.h3 = t;
+    console.log(`[PERF] [H3] Gateway Adapter: Dispatching fetch for task ${taskId} at ${t.toFixed(2)}ms`);
+  }
+
+  public recordH4(taskId: string, timestamp?: number): void {
+    const entry = this.getOrCreate(taskId);
+    if (entry.h4 !== undefined) return;
+    const t = timestamp ?? this.now();
+    entry.h4 = t;
+    entry.streamStartTime = t;
+    const ttft = entry.h1 !== undefined ? Math.max(0, t - entry.h1) : 0;
+    console.log(`[PERF] [H4] Network TTFT: First chunk received for task ${taskId} at ${t.toFixed(2)}ms | TTFT=${ttft.toFixed(2)}ms`);
+  }
+
+  public recordH5(taskId: string, timestamp?: number): void {
+    const entry = this.getOrCreate(taskId);
+    if (entry.h5 !== undefined) return;
+    const t = timestamp ?? this.now();
+    entry.h5 = t;
+    const uiLag = entry.h4 !== undefined ? Math.max(0, t - entry.h4) : 0;
+    console.log(`[PERF] [H5] Renderer Flush: First token painted for task ${taskId} at ${t.toFixed(2)}ms | UI Render Lag=${uiLag.toFixed(2)}ms`);
+    if (entry.streamEndTime && !entry.summaryLogged) {
+      this.outputSummary(taskId);
+    }
+  }
+
+  public recordToken(taskId: string, _token?: string): void {
+    const entry = this.getOrCreate(taskId);
+    entry.tokenCount += 1;
+  }
+
+  public recordStreamEnd(taskId: string): void {
+    const entry = this.getOrCreate(taskId);
+    entry.streamEndTime = this.now();
+    if (entry.h5 !== undefined) {
+      this.outputSummary(taskId);
+    } else {
+      setTimeout(() => {
+        if (!entry.summaryLogged) {
+          this.outputSummary(taskId);
+        }
+      }, 150);
+    }
+  }
+
+  public outputSummary(taskId: string): void {
+    const entry = this.tasks.get(taskId);
+    if (!entry || entry.summaryLogged) return;
+    entry.summaryLogged = true;
+
+    const h1 = entry.h1 ?? entry.h2 ?? this.now();
+    const h2 = entry.h2 ?? h1;
+    const h4 = entry.h4 ?? entry.h3 ?? h2;
+    const h5 = entry.h5 ?? h4;
+
+    const ttft = Math.max(0, Math.round((h4 - h1) * 10) / 10);
+    const ipc = Math.max(0, Math.round((h2 - h1) * 10) / 10);
+    const uiLag = Math.max(0, Math.round((h5 - h4) * 10) / 10);
+
+    const count = entry.tokenCount;
+    const streamDurationSec = entry.streamStartTime && entry.streamEndTime
+      ? Math.max(0.001, (entry.streamEndTime - entry.streamStartTime) / 1000)
+      : 1;
+    const tps = Math.round((count / streamDurationSec) * 10) / 10;
+
+    console.log(`[PERF] Task ${taskId}: TTFT=${ttft}ms | IPC=${ipc}ms | UI_Lag=${uiLag}ms | Total_Tokens=${count} | Tokens_Per_Sec=${tps}`);
+  }
+}
+
+export const chatLatencyTracker = new ChatLatencyTracker();
 
 /**
  * Direct Multi-Provider Gateway with Vault Integration (KeyHarvest-3)
@@ -193,8 +328,11 @@ export async function sendChatRequest(
   onHandoff?: (info: { fromProvider: string; toProvider: string; toModel: string }) => void,
   onReasoning?: (thought: string) => void,
   tools?: GatewayToolSchema[],
-  onToolCalls?: (calls: GatewayToolCall[]) => void
+  onToolCalls?: (calls: GatewayToolCall[]) => void,
+  taskId?: string
 ): Promise<string> {
+  const currentTaskId = taskId || chatLatencyTracker.getActiveTaskId() || `task_${Date.now()}`;
+  chatLatencyTracker.setActiveTaskId(currentTaskId);
   // Fall back to the active selection when a caller omits provider/model so
   // untargeted gateway calls still route to the user's chosen supply.
   const overrideCfg = gatewayActiveOverride;
@@ -444,6 +582,7 @@ export async function sendChatRequest(
         if (!key) {
           console.log('[GATEWAY] Community Key FAILED - falling back to anonymous tier');
           console.warn('[GATEWAY] ty-code-free: Community Key unavailable; degrading to anonymous OpenKilo pool.');
+          emitCommunityKeyStatus('degraded');
           config = { modelId, name: modelId, url: KILO_URL, requiresKey: false, providerId: 'openkilo' };
         }
       } else {
@@ -489,6 +628,7 @@ export async function sendChatRequest(
           }
 
           if (!key) {
+            emitCommunityKeyStatus('degraded');
             console.log(`[GATEWAY] ${providerId} has no key configured; falling back to anonymous OpenKilo pool`);
             const isKiloSupported = (modelId || '').includes(':free') || (modelId || '').includes('/free');
             const fallbackModel = isKiloSupported ? modelId : 'kilo-auto/free';
@@ -683,6 +823,9 @@ export async function sendChatRequest(
       ? AbortSignal.any([abortSignal, timeoutSignal])
       : timeoutSignal;
     
+    // Record H3 (Gateway Adapter): right before fetch() is called to the LLM provider
+    chatLatencyTracker.recordH3(currentTaskId);
+
     const response = await fetch(config.url, {
       method: 'POST',
       headers,
@@ -737,7 +880,8 @@ export async function sendChatRequest(
             onHandoff,
             onReasoning,
             tools,
-            onToolCalls
+            onToolCalls,
+            currentTaskId
           );
         } else {
           throw new Error(`[GATEWAY] All providers failed. Maximum handoffs reached.`);
@@ -770,7 +914,7 @@ export async function sendChatRequest(
           return m;
         });
         console.log('[GATEWAY] Reasoning content required: sanitizing history and retrying once.');
-        return await sendChatRequest(providerId, modelId, sanitized, stream, apiKey, onToken, handoffCount, abortSignal, onHandoff, onReasoning, tools, onToolCalls);
+        return await sendChatRequest(providerId, modelId, sanitized, stream, apiKey, onToken, handoffCount, abortSignal, onHandoff, onReasoning, tools, onToolCalls, currentTaskId);
       }
       throw new Error(`[GATEWAY] ${providerDisplay} API error (${response.status}): ${parsedMsg}`);
     }
@@ -782,6 +926,8 @@ export async function sendChatRequest(
 
   if (!stream) {
     const data: any = await response.json();
+    // Record H4 (Network TTFT) for non-streaming response
+    chatLatencyTracker.recordH4(currentTaskId);
     const text = data.choices?.[0]?.message?.content || data.content?.[0]?.text || '';
     // Non-stream structured tool calls (OpenAI shape + Anthropic tool_use blocks)
     const messageToolCalls = data.choices?.[0]?.message?.tool_calls;
@@ -813,18 +959,27 @@ export async function sendChatRequest(
       if (onReasoning) onReasoning(embeddedReasoning);
     }
     if (onToken) onToken(text);
+    chatLatencyTracker.recordToken(currentTaskId, text);
     providerHealthMonitor.recordRequestOutcome(config.providerId || providerId, true, Math.max(1, Date.now() - requestStartMs));
     flushToolCalls();
+    chatLatencyTracker.recordStreamEnd(currentTaskId);
     return text;
   }
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder('utf-8');
     let buffer = '';
+    let isFirstChunk = true;
 
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
+
+      if (isFirstChunk) {
+        isFirstChunk = false;
+        // Record H4 (Network TTFT): when the very first byte/chunk is received from the LLM
+        chatLatencyTracker.recordH4(currentTaskId);
+      }
 
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split('\n');
@@ -888,6 +1043,7 @@ export async function sendChatRequest(
               if (onToken) {
                 onToken(token);
               }
+              chatLatencyTracker.recordToken(currentTaskId, token);
             }
           } catch (parseErr) {
             console.warn('[GATEWAY] SSE chunk parse skipped:', parseErr instanceof Error ? parseErr.message : parseErr);
@@ -914,6 +1070,7 @@ export async function sendChatRequest(
             if (token) {
               fullText += token;
               if (onToken) onToken(token);
+              chatLatencyTracker.recordToken(currentTaskId, token);
             }
           } catch {}
         }
@@ -977,12 +1134,14 @@ export async function sendChatRequest(
           }
           console.log(`[GATEWAY] FCC non-SSE stream normalized (${salvageable.length} line(s), structured=${structured}).`);
           if (onToken) onToken(salvagedContent);
+          chatLatencyTracker.recordToken(currentTaskId, salvagedContent);
         }
       }
     }
 
     providerHealthMonitor.recordRequestOutcome(config.providerId || providerId, true, Math.max(1, Date.now() - requestStartMs));
     flushToolCalls();
+    chatLatencyTracker.recordStreamEnd(currentTaskId);
     return fullText;
   } catch (err: any) {
     console.error('[GATEWAY] Exact Node.js fetch error:', err);
@@ -1029,12 +1188,15 @@ export async function sendChatRequest(
           onHandoff,
           onReasoning,
           tools,
-          onToolCalls
+          onToolCalls,
+          currentTaskId
         );
       } else {
+        chatLatencyTracker.recordStreamEnd(currentTaskId);
         throw new Error(`[GATEWAY] All providers failed. Maximum handoffs reached.`);
       }
     }
+    chatLatencyTracker.recordStreamEnd(currentTaskId);
     throw err;
   }
 }

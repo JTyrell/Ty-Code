@@ -6,7 +6,8 @@
  * user is actively working on (mirrors what the Explorer shows).
  */
 
-import fs from 'node:fs';
+import fs from 'node:fs/promises';
+import type { Dirent, Stats } from 'node:fs';
 import path from 'node:path';
 
 const IGNORED_DIR_NAMES = new Set([
@@ -62,18 +63,18 @@ export interface WorkspaceFileContext {
   truncated: boolean;
 }
 
-function sortDirEntries(entries: fs.Dirent[]): fs.Dirent[] {
+function sortDirEntries(entries: Dirent[]): Dirent[] {
   return entries
     .filter((entry) => (entry.isDirectory() && !IGNORED_DIR_NAMES.has(entry.name)) ||
       (entry.isFile() && !IGNORED_FILE_NAMES.has(entry.name) && !entry.name.startsWith('.')))
     .sort((a, b) => (a.isDirectory() === b.isDirectory() ? a.name.localeCompare(b.name, 'en', { numeric: true, sensitivity: 'base' }) : a.isDirectory() ? -1 : 1));
 }
 
-function buildTree(rootPath: string, dirPath: string, depth: number, lines: string[], prefix: string): void {
+async function buildTree(rootPath: string, dirPath: string, depth: number, lines: string[], prefix: string): Promise<void> {
   if (depth > TREE_MAX_DEPTH || lines.length >= SUMMARY_MAX_LINES) return;
-  let entries: fs.Dirent[];
+  let entries: Dirent[];
   try {
-    entries = sortDirEntries(fs.readdirSync(dirPath, { withFileTypes: true }));
+    entries = sortDirEntries(await fs.readdir(dirPath, { withFileTypes: true }));
   } catch {
     return;
   }
@@ -91,21 +92,21 @@ function buildTree(rootPath: string, dirPath: string, depth: number, lines: stri
     const relPath = path.relative(rootPath, fullPath).replace(/\\/g, '/');
     if (entry.isDirectory()) {
       lines.push(`${prefix}${entry.name}/`);
-      buildTree(rootPath, fullPath, depth + 1, lines, `${prefix}    `);
+      await buildTree(rootPath, fullPath, depth + 1, lines, `${prefix}    `);
     } else {
       lines.push(`${prefix}${entry.name}${relPath ? `  -> ${relPath}` : ''}`);
     }
   }
 }
 
-function countFiles(rootPath: string): { files: number; dirs: number } {
+async function countFiles(rootPath: string): Promise<{ files: number; dirs: number }> {
   let files = 0;
   let dirs = 0;
-  const walk = (dirPath: string, depth: number): void => {
+  const walk = async (dirPath: string, depth: number): Promise<void> => {
     if (depth > TREE_MAX_DEPTH) return;
-    let entries: fs.Dirent[];
+    let entries: Dirent[];
     try {
-      entries = fs.readdirSync(dirPath, { withFileTypes: true });
+      entries = await fs.readdir(dirPath, { withFileTypes: true });
     } catch {
       return;
     }
@@ -114,13 +115,13 @@ function countFiles(rootPath: string): { files: number; dirs: number } {
       if (entry.isDirectory()) {
         if (IGNORED_DIR_NAMES.has(entry.name)) continue;
         dirs++;
-        walk(full, depth + 1);
+        await walk(full, depth + 1);
       } else if (entry.isFile() && !IGNORED_FILE_NAMES.has(entry.name)) {
         files++;
       }
     }
   };
-  walk(rootPath, 0);
+  await walk(rootPath, 0);
   return { files, dirs };
 }
 
@@ -128,19 +129,19 @@ function countFiles(rootPath: string): { files: number; dirs: number } {
  * Concise tree-shaped summary of the workspace root, used directly inside the
  * agent system prompt. Always resolves to a usable string (never throws).
  */
-export function getWorkspaceSummary(rootPath: string): string {
+export async function getWorkspaceSummary(rootPath: string): Promise<string> {
   if (!rootPath || rootPath.trim().length === 0) {
     return '(workspace path is not set — ask the user to open a folder in the Explorer)';
   }
   let resolved: string;
   try {
-    resolved = fs.realpathSync(rootPath);
+    resolved = await fs.realpath(rootPath);
   } catch {
     return `(workspace directory is not accessible: ${rootPath})`;
   }
-  let stats: fs.Stats;
+  let stats: Stats;
   try {
-    stats = fs.statSync(resolved);
+    stats = await fs.stat(resolved);
   } catch {
     return `(workspace directory is not accessible: ${rootPath})`;
   }
@@ -149,12 +150,12 @@ export function getWorkspaceSummary(rootPath: string): string {
   }
 
   const projectName = path.basename(resolved);
-  const rootEntries = sortDirEntries(fs.readdirSync(resolved, { withFileTypes: true }));
-  const { files, dirs } = countFiles(resolved);
+  const rootEntries = sortDirEntries(await fs.readdir(resolved, { withFileTypes: true }).catch(() => []));
+  const { files, dirs } = await countFiles(resolved);
 
   const lines: string[] = [];
   lines.push(`${projectName}/  (${rootEntries.filter((e) => e.isDirectory()).length} top-level folders, ${rootEntries.filter((e) => e.isFile()).length} top-level files; ~${files} files / ${dirs} subfolders sampled to depth ${TREE_MAX_DEPTH})`);
-  buildTree(resolved, resolved, 0, lines, '');
+  await buildTree(resolved, resolved, 0, lines, '');
 
   const summary = lines.join('\n');
   console.log(`[WORKSPACE-CTX] summary for ${resolved}: ${lines.length} lines, ${summary.length} chars`);
@@ -187,22 +188,22 @@ const MAX_OPEN_FILES = 6;
  * injection. `openFilePaths` are workspace-relative or absolute paths; the
  * `activeFilePath` param allows the engine to describe which file has focus.
  */
-export function getOpenFilesContent(
+export async function getOpenFilesContent(
   rootPath: string,
   openFilePaths: string[],
   activeFilePath?: string
-): WorkspaceFileContext[] {
+): Promise<WorkspaceFileContext[]> {
   const results: WorkspaceFileContext[] = [];
   const unique = Array.from(new Set(openFilePaths.filter(Boolean))).slice(0, MAX_OPEN_FILES);
   for (const relPath of unique) {
     const absPath = path.isAbsolute(relPath) ? relPath : path.join(rootPath, relPath);
     let content = '';
     try {
-      const stats = fs.statSync(absPath);
+      const stats = await fs.stat(absPath);
       if (!stats.isFile() || stats.size > 2 * 1024 * 1024) continue;
       const ext = fileExtension(absPath);
       if (!TEXT_EXTENSIONS.has(ext) && ext !== '') continue;
-      content = fs.readFileSync(absPath, 'utf8');
+      content = await fs.readFile(absPath, 'utf8');
     } catch {
       continue;
     }

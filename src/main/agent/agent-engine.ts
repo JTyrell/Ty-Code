@@ -93,6 +93,34 @@ async function pickNextAgentProvider(
   }
 }
 
+/**
+ * Resolves the active model's maximum context window in tokens.
+ * Accurately determines capacity limits so the 85% Auto-Compaction
+ * threshold triggers correctly for all model tiers (8k, 32k, 64k, 128k, 200k, 1M).
+ */
+async function resolveModelContextLimit(providerId: string, modelId: string): Promise<number> {
+  try {
+    const models = await getVerifiedModels();
+    const match = models.find((m) =>
+      m.modelId.toLowerCase() === modelId.toLowerCase() &&
+      (!providerId || m.providerId.toLowerCase() === providerId.toLowerCase())
+    ) || models.find((m) => m.modelId.toLowerCase() === modelId.toLowerCase());
+    if (match && typeof (match as any).contextWindow === 'number' && (match as any).contextWindow > 0) {
+      return (match as any).contextWindow;
+    }
+  } catch {}
+
+  const lower = (modelId || '').toLowerCase();
+  if (lower.includes('1m') || lower.includes('gemini-1.5') || lower.includes('gemini-2.0') || lower.includes('gemini-2.5')) return 1_048_576;
+  if (lower.includes('claude-3') || lower.includes('claude-3-5') || lower.includes('claude-3-7') || lower.includes('sonnet') || lower.includes('opus')) return 200_000;
+  if (lower.includes('llama-3.3') || lower.includes('llama-3.1') || lower.includes('gpt-4o') || lower.includes('o1') || lower.includes('o3') || lower.includes('gpt-4-turbo')) return 128_000;
+  if (lower.includes('deepseek-r1') || lower.includes('deepseek-v3')) return 64_000;
+  if (lower.includes('qwen-2.5-coder')) return 32_768;
+  if (lower.includes('llama-3-8b') || lower.includes('mistral-7b')) return 8_192;
+
+  return MODEL_CONTEXT_LIMIT;
+}
+
 export class AgentEngine {
   private toolExecutor: ToolExecutor;
   private securityPolicy: SecurityPolicyEngine;
@@ -304,10 +332,10 @@ export class AgentEngine {
       parameters: t.function.parameters
     }));
 
-    // Workspace ground-truth
-    const workspaceSummary = getWorkspaceSummary(workspacePath);
+    // Workspace ground-truth (asynchronous, non-blocking)
+    const workspaceSummary = await getWorkspaceSummary(workspacePath);
     const openFilePaths = params.openFilePaths?.length ? params.openFilePaths : activeFilePath ? [activeFilePath] : [];
-    const openFiles = getOpenFilesContent(workspacePath, openFilePaths, activeFilePath);
+    const openFiles = await getOpenFilesContent(workspacePath, openFilePaths, activeFilePath);
     const workspaceContextBlock = buildWorkspaceContextBlock({
       rootPath: workspacePath,
       workspaceSummary,
@@ -430,6 +458,8 @@ export class AgentEngine {
         onChunk({ type: 'cancelled' });
         return;
       }
+      // Yield to the Node.js event loop between ReAct iterations to keep IPC and UI non-blocking
+      await new Promise<void>((resolve) => setImmediate(resolve));
       try {
         console.log(`[AGENT] Iteration ${stateManager.iterationCount + 1}/${stateManager.maxIterations} — mode: ${stateManager.currentMode}`);
 
@@ -483,10 +513,12 @@ export class AgentEngine {
           console.log(`[AGENT] Provider: ${activeProvider}, Model: ${activeModel}`);
         }
 
-        // 1. Compact context when the estimated token budget crosses the model limit
+        // 1. Compact context when the estimated token budget crosses 85% capacity of the model limit
+        const activeModelLimit = await resolveModelContextLimit(activeProvider, activeModel);
         const preCompactTokens = estimateContextTokens(messages);
         stateManager.updateTokenUsage(preCompactTokens);
-        if (shouldCompact(messages, MODEL_CONTEXT_LIMIT)) {
+        if (shouldCompact(messages, activeModelLimit)) {
+          console.log(`[AGENT] Context at ${preCompactTokens}/${activeModelLimit} tokens (${Math.round((preCompactTokens / activeModelLimit) * 100)}% capacity). Triggering auto-compaction pass.`);
           onChunk({ type: 'status', content: 'Compacting context…' });
           let summary = '';
           try {
@@ -546,7 +578,8 @@ export class AgentEngine {
           toolSchemas,
           (calls: GatewayToolCall[]) => {
             structuredCalls.push(...calls);
-          }
+          },
+          params.taskId
         );
         agentObservability.recordEvent({
           type: 'llm_call',
@@ -676,6 +709,8 @@ export class AgentEngine {
 
         // Execute tool calls
         for (const toolCall of toolCallsToExecute) {
+          // Yield to the event loop between tool executions to prevent event loop starvation
+          await new Promise<void>((resolve) => setImmediate(resolve));
           approvalState.userApproved = false;
           if (abortSignal?.aborted) {
             onChunk({ type: 'cancelled' });

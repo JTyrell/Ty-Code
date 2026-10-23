@@ -39,6 +39,7 @@ import {
 } from 'lucide-react';
 import type { ChatMessage, ProposedDiff, ToolExecutionRecord } from '../../../preload/types';
 import { ChatErrorCard } from './ChatErrorCard';
+import { MessageRenderer } from './chat/MessageRenderer';
 
 // ---------------------------------------------------------------------------
 // Syntax Highlighting setup
@@ -440,6 +441,7 @@ export interface ChatMessageProps {
   onInspectDiff?: (diff: ProposedDiff) => void;
   onApplyDiff?: (diff: ProposedDiff) => void;
   onRetryError?: () => void;
+  isStreaming?: boolean;
 }
 
 export const ChatMessageItem: React.FC<ChatMessageProps> = ({
@@ -450,7 +452,8 @@ export const ChatMessageItem: React.FC<ChatMessageProps> = ({
   onRegenerate,
   onInspectDiff,
   onApplyDiff,
-  onRetryError
+  onRetryError,
+  isStreaming: propIsStreaming
 }) => {
   const [showDetails, setShowDetails] = useState(false);
   const [copiedMessage, setCopiedMessage] = useState(false);
@@ -462,6 +465,7 @@ export const ChatMessageItem: React.FC<ChatMessageProps> = ({
   const isAssistant = message.role === 'assistant';
   const isUser = message.role === 'user';
   const isSystem = message.role === 'system';
+  const isStreaming = propIsStreaming ?? Boolean(message.isStreaming ?? (isLastAssistant && isRunning));
 
   // Normalize tools: extract from toolExecutions or legacy toolCall/toolCalls
   const toolList: ToolExecutionRecord[] = useMemo(() => {
@@ -770,11 +774,9 @@ export const ChatMessageItem: React.FC<ChatMessageProps> = ({
           </div>
         )}
 
-        {/* 4. MAIN TEXT RESPONSE (Markdown Content) */}
+        {/* 4. MAIN TEXT RESPONSE (Deferred Markdown / Plain Stream via MessageRenderer) */}
         {message.content ? (
-          <div style={{ fontSize: '12px', lineHeight: 1.7, color: 'var(--text-primary)', userSelect: 'text' }}>
-            <ReactMarkdown components={markdownComponents}>{message.content}</ReactMarkdown>
-          </div>
+          <MessageRenderer content={message.content} isStreaming={isStreaming} />
         ) : null}
 
         {/* 5. ERROR CARD */}

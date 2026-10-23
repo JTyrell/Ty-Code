@@ -1,4 +1,4 @@
-import { safeStorage, app } from 'electron';
+import { safeStorage, app, ipcMain, BrowserWindow } from 'electron';
 import fs from 'fs';
 import path from 'path';
 
@@ -175,9 +175,33 @@ let communityKeyCachedAt = 0;
 // user, which is what keeps the free-tier KV budget effectively unbounded.
 let communityKeyExpiresAt = 0;
 let communityKeyInFlight: Promise<string | null> | null = null;
+export type CommunityKeyStatus = 'active' | 'degraded' | 'missing';
+let currentCommunityKeyStatus: CommunityKeyStatus = 'active';
+
 // Rate-limit back-off: after a 429 from the Worker no further remote fetches
-// run until this timestamp passes (honoring retry-after, capped at 5 minutes).
+// run until this timestamp passes (honoring retry-after from Cloudflare Worker, default 600s).
 let communityKeyRetryNotBefore = 0;
+
+export function getCommunityKeyStatus(): CommunityKeyStatus {
+  if (Date.now() < communityKeyRetryNotBefore) {
+    return 'degraded';
+  }
+  return currentCommunityKeyStatus;
+}
+
+export function emitCommunityKeyStatus(status: CommunityKeyStatus): void {
+  currentCommunityKeyStatus = status;
+  try {
+    ipcMain.emit('community-key:status-changed', { status });
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
+        win.webContents.send('community-key:status-changed', { status });
+      }
+    }
+  } catch {
+    // Non-blocking in headless/test environments
+  }
+}
 
 /** Wire contract served by the Ty-Code community Cloudflare Worker. */
 interface CommunityKeyPayload {
@@ -196,6 +220,7 @@ interface CommunityKeyPayload {
 async function fetchCommunityKeyRemote(): Promise<string | null> {
   if (Date.now() < communityKeyRetryNotBefore) {
     console.log(`[VAULT] Rate-limit back-off active - skipping remote fetch for another ${Math.ceil((communityKeyRetryNotBefore - Date.now()) / 1000)}s.`);
+    emitCommunityKeyStatus('degraded');
     return null;
   }
   // ZeroFriction diagnosis (Prompt 2): this log shows the EXACT endpoint being
@@ -211,20 +236,23 @@ async function fetchCommunityKeyRemote(): Promise<string | null> {
     if (!response.ok) {
       if (response.status === 429) {
         const retryAfterHeader = response.headers.get('retry-after');
-        const retryAfterSec = Number.isFinite(Number(retryAfterHeader)) && Number(retryAfterHeader) > 0
-          ? Number(retryAfterHeader)
-          : 60;
-        const cappedMs = Math.min(retryAfterSec, 300) * 1000;
-        communityKeyRetryNotBefore = Date.now() + cappedMs;
-        console.warn(`[VAULT] Community key rate limited (429) - backing off for ${Math.round(cappedMs / 1000)}s (retry-after).`);
+        const parsedSec = retryAfterHeader ? parseInt(retryAfterHeader, 10) : NaN;
+        const retryAfterSeconds = Number.isFinite(parsedSec) && parsedSec > 0 ? parsedSec : 600;
+        communityKeyRetryNotBefore = Date.now() + (retryAfterSeconds * 1000);
+        console.log(`[VAULT] 429 Rate Limited. Cooldown active until ${new Date(communityKeyRetryNotBefore).toISOString()}`);
+        console.warn(`[VAULT] 429 Rate Limited. Cooldown active until ${new Date(communityKeyRetryNotBefore).toISOString()}`);
+        emitCommunityKeyStatus('degraded');
+        return null;
       }
       console.warn(`[VAULT] Community key bootstrap failed (HTTP ${response.status}).`);
+      emitCommunityKeyStatus('degraded');
       return null;
     }
     const data = (await response.json().catch(() => undefined)) as CommunityKeyPayload | undefined;
     const value = String(data?.key || data?.token || '').trim();
     if (value.length < 8 || value.length > 256) {
       console.warn('[VAULT] Community key payload was empty or malformed.');
+      emitCommunityKeyStatus('degraded');
       return null;
     }
     console.log('[VAULT] Fetch succeeded - saving key to safeStorage');
@@ -237,9 +265,11 @@ async function fetchCommunityKeyRemote(): Promise<string | null> {
         ? exp
         : Date.now() + 24 * 3_600_000;
     console.log('[VAULT] Community key bootstrapped and encrypted via safeStorage.');
+    emitCommunityKeyStatus('active');
     return value;
   } catch (err) {
     console.warn(`[VAULT] Fetch FAILED: ${err instanceof Error ? err.message : String(err)}`);
+    emitCommunityKeyStatus('degraded');
     return null;
   }
 }
@@ -256,6 +286,12 @@ async function fetchCommunityKeyRemote(): Promise<string | null> {
  *      null - never throws, the app calls never crash on this path.
  */
 export async function getCommunityKey(): Promise<string | null> {
+  // Cooldown guard: prevent unnecessary network calls while Cloudflare rate limit is active
+  if (Date.now() < communityKeyRetryNotBefore) {
+    emitCommunityKeyStatus('degraded');
+    return null;
+  }
+
   try {
     console.log('[VAULT] Checking cache for tycode_community_key...');
     const cached = await getKey(COMMUNITY_KEY_LABEL);
@@ -269,6 +305,7 @@ export async function getCommunityKey(): Promise<string | null> {
       // user per day - still far inside the free-tier KV write budget.
       if (!communityKeyExpiresAt) communityKeyExpiresAt = Date.now() + 24 * 3_600_000;
       console.log('[VAULT] Cache HIT - returning cached key');
+      emitCommunityKeyStatus('active');
       return value;
     }
   } catch (err) {
@@ -284,6 +321,9 @@ export async function getCommunityKey(): Promise<string | null> {
     const resolved = await communityKeyInFlight;
     if (!resolved) {
       console.log('[VAULT] Returning null - falling back to anonymous tier');
+      emitCommunityKeyStatus('degraded');
+    } else {
+      emitCommunityKeyStatus('active');
     }
     return resolved;
   } finally {

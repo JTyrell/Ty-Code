@@ -487,6 +487,7 @@ export interface ChatMessage {
   metadata?: AssistantStreamMetadata;
   isCached?: boolean;
   failoverNotice?: string;
+  isStreaming?: boolean;
   timestamp: number;
 }
 
@@ -932,12 +933,14 @@ export interface ElectronAPI {
     modelOverride?: string;
     skills?: SkillDefinition[];
     resumeSessionId?: string;
+    clientSentAt?: number;
   }) => Promise<IpcResponse<string>>;
   stopAgentTask: (taskId: string) => Promise<IpcResponse<void>>;
   respondAgentApproval: (approvalId: string, approved: boolean, feedback?: string) => Promise<IpcResponse<void>>;
   sendApprovalResponse: (approvalId: string, response: 'APPROVED' | 'REVISED', feedback?: string) => Promise<IpcResponse<void>>;
   userApproveDiff?: (payload: { approvalId?: string; diffId?: string; approved?: boolean } | boolean) => Promise<IpcResponse<void>>;
   onAgentStream: (callback: (chunk: AgentStreamChunk) => void) => () => void;
+  onAgentStreamBatch?: (callback: (chunks: AgentStreamChunk[]) => void) => () => void;
   onAgentStreamToken?: (callback: (payload: AgentStreamTokenPayload) => void) => () => void;
   onAgentReasoningToken?: (callback: (payload: AgentReasoningTokenPayload) => void) => () => void;
   onAgentToolStart?: (callback: (payload: AgentToolStartPayload) => void) => () => void;
@@ -945,6 +948,7 @@ export interface ElectronAPI {
   onAgentDiffProposed?: (callback: (payload: AgentDiffProposedPayload) => void) => () => void;
   onAgentDone?: (callback: (payload: AgentDonePayload) => void) => () => void;
   onAgentError?: (callback: (payload: AgentErrorPayload) => void) => () => void;
+  perfReportH5?: (data: { taskId: string; h5: number }) => void;
   applyDiff: (diff: ProposedDiff) => Promise<IpcResponse<void>>;
   getAgentTodos: () => Promise<IpcResponse<AgentTodoItem[]>>;
   setAgentMode: (mode: 'plan' | 'execute' | 'hybrid') => Promise<IpcResponse<void>>;
@@ -1306,6 +1310,8 @@ export interface ElectronAPI {
   getAvailableModels?: () => Promise<IpcResponse<AvailableModelConfig[]>>;
   getModelAvailabilitySummary?: () => Promise<IpcResponse<ModelAvailabilitySummary>>;
   resetModelsAvailabilityCache?: () => Promise<IpcResponse<void>>;
+  getCommunityKeyStatus?: () => Promise<IpcResponse<{ status: 'active' | 'degraded' | 'missing' }>>;
+  onCommunityKeyStatusChanged?: (callback: (data: { status: 'active' | 'degraded' | 'missing' }) => void) => () => void;
 
   // Autonomous Provider & Model Catalog Verification
   verifyModelCatalog?: () => Promise<IpcResponse<ModelCatalogVerificationSnapshot>>;

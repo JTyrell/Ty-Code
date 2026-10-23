@@ -15,6 +15,7 @@ import { useGitStore } from './git-store';
 interface ChatState {
   messages: ChatMessage[];
   isRunning: boolean;
+  isStreaming: boolean;
   currentTaskId: string | null;
   pendingApproval: AgentToolApproval | null;
   currentStatus: string;
@@ -41,7 +42,7 @@ interface ChatState {
     activeFilePath?: string,
     activeFileContent?: string,
     appendUserMessage?: boolean,
-    traceOptions?: { traceId?: string; providerOverride?: string; modelOverride?: string },
+    traceOptions?: { traceId?: string; providerOverride?: string; modelOverride?: string; clientSentAt?: number },
     images?: string[]
   ) => Promise<void>;
   stopTask: () => Promise<void>;
@@ -435,7 +436,7 @@ export function savePersistedChat(messages: ChatMessage[]): void {
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
-  messages: loadPersistedChat(), isRunning: false, currentTaskId: null, pendingApproval: null, currentStatus: '', currentThought: '', streamingText: '',
+  messages: loadPersistedChat(), isRunning: false, isStreaming: false, currentTaskId: null, pendingApproval: null, currentStatus: '', currentThought: '', streamingText: '',
   activeErrorCard: null,
   dismissErrorCard: () => set({ activeErrorCard: null }),
   setActiveErrorCard: (card: ChatErrorCard | null) => set({ activeErrorCard: card }),
@@ -583,6 +584,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       toolExecutions: [],
       proposedDiffs: [],
       statusText: 'Analyzing workspace…',
+      isStreaming: true,
       metadata: {
         source: 'provider-stream',
         providerId: currentTaskProviderId,
@@ -597,6 +599,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         ? [...currentMessages, userMessage, initialAssistantMessage]
         : [...regeneratedMessages, initialAssistantMessage],
       isRunning: true,
+      isStreaming: true,
       currentTaskId: taskId,
       pendingApproval: null,
       currentStatus: 'Analyzing workspace…',
@@ -620,12 +623,171 @@ export const useChatStore = create<ChatState>((set, get) => ({
       });
     }
 
+    // ------------------------------------------------------------------
+    // Double-Buffer Token & Reasoning Flushing (Prompt 2: 24ms batching)
+    // ------------------------------------------------------------------
+    let tokenBuffer = '';
+    let isFlushing = false;
+    let flushTimer: ReturnType<typeof setTimeout> | null = null;
+    let flushRaf: number | null = null;
+    let lastFlushTime = 0;
+    const FLUSH_INTERVAL_MS = 24;
+
+    const flushTokenBuffer = () => {
+      if (flushTimer) {
+        clearTimeout(flushTimer);
+        flushTimer = null;
+      }
+      if (flushRaf) {
+        cancelAnimationFrame(flushRaf);
+        flushRaf = null;
+      }
+      if (!tokenBuffer) {
+        isFlushing = false;
+        return;
+      }
+      const batch = tokenBuffer;
+      tokenBuffer = '';
+      lastFlushTime = performance.now();
+      isFlushing = false;
+
+      set((state) => ({
+        streamingText: state.streamingText + batch,
+        contextTokens: state.contextTokens + Math.ceil(batch.length / 4),
+        messages: state.messages.map((m) =>
+          m.taskId === taskId
+            ? {
+                ...m,
+                content: m.content + batch,
+                statusText: '',
+                isStreaming: true,
+                metadata: m.metadata
+                  ? { ...m.metadata, streamEventCount: currentTaskStreamEvents }
+                  : {
+                      source: 'provider-stream',
+                      providerId: currentTaskProviderId,
+                      modelId: currentTaskModelId,
+                      streamEventCount: currentTaskStreamEvents
+                    }
+              }
+            : m
+        )
+      }));
+    };
+
+    const scheduleTokenFlush = () => {
+      if (isFlushing) return;
+      isFlushing = true;
+
+      const elapsed = performance.now() - lastFlushTime;
+      const waitTime = Math.max(0, FLUSH_INTERVAL_MS - elapsed);
+
+      if (waitTime === 0) {
+        flushRaf = requestAnimationFrame(() => {
+          flushRaf = null;
+          flushTokenBuffer();
+        });
+      } else {
+        flushTimer = setTimeout(() => {
+          flushTimer = null;
+          flushRaf = requestAnimationFrame(() => {
+            flushRaf = null;
+            flushTokenBuffer();
+          });
+        }, waitTime);
+      }
+    };
+
+    let reasoningBuffer = '';
+    let isReasoningFlushing = false;
+    let reasoningTimer: ReturnType<typeof setTimeout> | null = null;
+    let reasoningRaf: number | null = null;
+    let lastReasoningFlushTime = 0;
+
+    const flushReasoningBuffer = () => {
+      if (reasoningTimer) {
+        clearTimeout(reasoningTimer);
+        reasoningTimer = null;
+      }
+      if (reasoningRaf) {
+        cancelAnimationFrame(reasoningRaf);
+        reasoningRaf = null;
+      }
+      if (!reasoningBuffer) {
+        isReasoningFlushing = false;
+        return;
+      }
+      const batch = reasoningBuffer;
+      reasoningBuffer = '';
+      lastReasoningFlushTime = performance.now();
+      isReasoningFlushing = false;
+
+      set((state) => ({
+        currentThought: state.currentThought + batch,
+        messages: state.messages.map((m) =>
+          m.taskId === taskId ? { ...m, reasoning: (m.reasoning || '') + batch } : m
+        )
+      }));
+    };
+
+    const scheduleReasoningFlush = () => {
+      if (isReasoningFlushing) return;
+      isReasoningFlushing = true;
+
+      const elapsed = performance.now() - lastReasoningFlushTime;
+      const waitTime = Math.max(0, FLUSH_INTERVAL_MS - elapsed);
+
+      if (waitTime === 0) {
+        reasoningRaf = requestAnimationFrame(() => {
+          reasoningRaf = null;
+          flushReasoningBuffer();
+        });
+      } else {
+        reasoningTimer = setTimeout(() => {
+          reasoningTimer = null;
+          reasoningRaf = requestAnimationFrame(() => {
+            reasoningRaf = null;
+            flushReasoningBuffer();
+          });
+        }, waitTime);
+      }
+    };
+
     const finishTask = (status = '') => {
+      flushTokenBuffer();
+      flushReasoningBuffer();
+      if (flushTimer) {
+        clearTimeout(flushTimer);
+        flushTimer = null;
+      }
+      if (flushRaf) {
+        cancelAnimationFrame(flushRaf);
+        flushRaf = null;
+      }
+      if (reasoningTimer) {
+        clearTimeout(reasoningTimer);
+        reasoningTimer = null;
+      }
+      if (reasoningRaf) {
+        cancelAnimationFrame(reasoningRaf);
+        reasoningRaf = null;
+      }
       activeStreamDisposables.forEach((dispose) => {
         try { dispose(); } catch {}
       });
       activeStreamDisposables = [];
-      set({ isRunning: false, currentTaskId: null, pendingApproval: null, currentStatus: status, streamingText: '', currentThought: '' });
+      set((state) => ({
+        isRunning: false,
+        isStreaming: false,
+        currentTaskId: null,
+        pendingApproval: null,
+        currentStatus: status,
+        streamingText: '',
+        currentThought: '',
+        messages: state.messages.map((m) =>
+          m.taskId === taskId ? { ...m, isStreaming: false, statusText: '' } : m
+        )
+      }));
     };
 
     activeStreamDisposables.forEach((dispose) => {
@@ -633,50 +795,70 @@ export const useChatStore = create<ChatState>((set, get) => ({
     });
     activeStreamDisposables = [];
 
-    // 1. Zod-validated token stream
+    // 0. High-performance batch stream listener (Prompt 3: 16ms IPC batching)
+    if (window.electronAPI.onAgentStreamBatch) {
+      activeStreamDisposables.push(window.electronAPI.onAgentStreamBatch((chunks) => {
+        if (!Array.isArray(chunks) || chunks.length === 0) return;
+        let hasNewTokens = false;
+        let hasNewReasoning = false;
+
+        for (const chunk of chunks) {
+          if (chunk.taskId !== taskId || get().currentTaskId !== taskId) continue;
+          currentTaskStreamEvents++;
+
+          if (chunk.type === 'token') {
+            if (currentTaskStreamEvents === 1) {
+              requestAnimationFrame(() => {
+                setTimeout(() => {
+                  const h5 = performance.timeOrigin + performance.now();
+                  window.electronAPI.perfReportH5?.({ taskId, h5 });
+                }, 0);
+              });
+            }
+            tokenBuffer += chunk.content || '';
+            hasNewTokens = true;
+          } else if (chunk.type === 'thought') {
+            reasoningBuffer += chunk.content || '';
+            hasNewReasoning = true;
+          }
+        }
+
+        if (hasNewTokens) {
+          scheduleTokenFlush();
+        }
+        if (hasNewReasoning) {
+          scheduleReasoningFlush();
+        }
+      }));
+    }
+
+    // 1. Zod-validated token stream (fallback if non-batched)
     if (window.electronAPI.onAgentStreamToken) {
       activeStreamDisposables.push(window.electronAPI.onAgentStreamToken((raw) => {
         const parsed = AgentStreamTokenPayloadSchema.safeParse(raw);
         if (!parsed.success || parsed.data.taskId !== taskId || get().currentTaskId !== taskId) return;
         currentTaskStreamEvents++;
-        set((state) => ({
-          streamingText: state.streamingText + parsed.data.token,
-          contextTokens: state.contextTokens + Math.ceil(parsed.data.token.length / 4),
-          messages: state.messages.map((m) =>
-            m.taskId === taskId
-              ? {
-                  ...m,
-                  content: m.content + parsed.data.token,
-                  statusText: '',
-                  metadata: m.metadata
-                    ? { ...m.metadata, streamEventCount: currentTaskStreamEvents }
-                    : {
-                        source: 'provider-stream',
-                        providerId: currentTaskProviderId,
-                        modelId: currentTaskModelId,
-                        streamEventCount: currentTaskStreamEvents
-                      }
-                }
-              : m
-          )
-        }));
+        if (currentTaskStreamEvents === 1) {
+          requestAnimationFrame(() => {
+            setTimeout(() => {
+              const h5 = performance.timeOrigin + performance.now();
+              window.electronAPI.perfReportH5?.({ taskId, h5 });
+            }, 0);
+          });
+        }
+        tokenBuffer += parsed.data.token;
+        scheduleTokenFlush();
       }));
     }
 
-    // 2. Zod-validated reasoning stream
+    // 2. Zod-validated reasoning stream (batched via double-buffer)
     if (window.electronAPI.onAgentReasoningToken) {
       activeStreamDisposables.push(window.electronAPI.onAgentReasoningToken((raw) => {
         const parsed = AgentReasoningTokenPayloadSchema.safeParse(raw);
         if (!parsed.success || parsed.data.taskId !== taskId || get().currentTaskId !== taskId) return;
         currentTaskStreamEvents++;
-        set((state) => ({
-          currentThought: state.currentThought + parsed.data.token,
-          messages: state.messages.map((m) =>
-            m.taskId === taskId
-              ? { ...m, reasoning: (m.reasoning || '') + parsed.data.token }
-              : m
-          )
-        }));
+        reasoningBuffer += parsed.data.token;
+        scheduleReasoningFlush();
       }));
     }
 
@@ -764,12 +946,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
       activeStreamDisposables.push(window.electronAPI.onAgentDone((raw) => {
         const parsed = AgentDonePayloadSchema.safeParse(raw);
         if (!parsed.success || parsed.data.taskId !== taskId || get().currentTaskId !== taskId) return;
+        flushTokenBuffer();
+        flushReasoningBuffer();
         const state = get();
         if (parsed.data.cancelled) {
           const cancelledMessages = cancelRunningTools(state.messages);
           set({
+            isStreaming: false,
             messages: cancelledMessages.map((m) =>
-              m.taskId === taskId ? { ...m, statusText: '' } : m
+              m.taskId === taskId ? { ...m, isStreaming: false, statusText: '' } : m
             )
           });
           finishTask('Task stopped.');
@@ -779,6 +964,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
             if (m.taskId !== taskId) return m;
             return {
               ...m,
+              isStreaming: false,
               statusText: '',
               metadata: {
                 source: 'provider-stream' as const,
@@ -788,7 +974,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
               }
             };
           });
-          set({ messages });
+          set({ messages, isStreaming: false });
           const lastMessage = messages.find((m) => m.taskId === taskId);
           if (lastMessage && lastMessage.role === 'assistant') syncMessageToCanvas(lastMessage);
           if (traceOptions?.traceId && window.electronAPI?.recordTraceHop) {
@@ -912,36 +1098,28 @@ export const useChatStore = create<ChatState>((set, get) => ({
       activeStreamDisposables.push(window.electronAPI.onOpenCodeStream((chunk) => {
         if (get().currentTaskId !== taskId) return;
         currentTaskStreamEvents++;
-        set((state) => ({
-          streamingText: state.streamingText + chunk,
-          contextTokens: state.contextTokens + Math.ceil(chunk.length / 4),
-          messages: state.messages.map((m) =>
-            m.taskId === taskId
-              ? {
-                  ...m,
-                  content: m.content + chunk,
-                  statusText: '',
-                  metadata: m.metadata
-                    ? { ...m.metadata, streamEventCount: currentTaskStreamEvents }
-                    : {
-                        source: 'provider-stream' as const,
-                        providerId: currentTaskProviderId,
-                        modelId: currentTaskModelId,
-                        streamEventCount: currentTaskStreamEvents
-                      }
-                }
-              : m
-          )
-        }));
+        if (currentTaskStreamEvents === 1) {
+          requestAnimationFrame(() => {
+            setTimeout(() => {
+              const h5 = performance.timeOrigin + performance.now();
+              window.electronAPI.perfReportH5?.({ taskId, h5 });
+            }, 0);
+          });
+        }
+        tokenBuffer += chunk;
+        scheduleTokenFlush();
       }));
       if (window.electronAPI.onOpenCodeDone) {
         activeStreamDisposables.push(window.electronAPI.onOpenCodeDone((payload) => {
           if (get().currentTaskId !== taskId) return;
           openCodeBridgeRouteActive = false;
+          flushTokenBuffer();
+          flushReasoningBuffer();
           const messages = get().messages.map((m) =>
             m.taskId === taskId
               ? {
                   ...m,
+                  isStreaming: false,
                   statusText: '',
                   metadata: {
                     source: 'provider-stream' as const,
@@ -952,7 +1130,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 }
               : m
           );
-          set({ messages });
+          set({ messages, isStreaming: false });
           const lastMessage = messages.find((m) => m.taskId === taskId);
           if (lastMessage && lastMessage.role === 'assistant') syncMessageToCanvas(lastMessage);
           finishTask(payload?.stopped ? 'Task stopped.' : '');
@@ -1010,6 +1188,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         agentMode: get().agentMode,
         activeFilePath,
         activeFileContent,
+        clientSentAt: traceOptions?.clientSentAt ?? (performance.timeOrigin + performance.now()),
         ...(pendingResume ? { resumeSessionId: pendingResume.sessionId } : {})
       });
       if (get().currentTaskId !== taskId) return;
