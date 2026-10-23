@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { useChatStore } from '../state/chat-store';
 import { useGitStore } from '../state/git-store';
+import { useDebuggerStore } from '../state/debugger-store';
 
 import React, { useRef, useCallback } from 'react';
 import { FileCheck } from 'lucide-react';
@@ -30,6 +31,7 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({ activeTab, onTabChange
   const toggleTerminal = useChatStore((s) => s.toggleTerminal);
   const isTerminalOpen = useChatStore((s) => s.isTerminalOpen);
   const status = useGitStore((s) => s.status);
+  const isDebuggerPoppedOut = useDebuggerStore((s) => s.isPopOutMode);
 
   // Prefetch on intent: hover/focus for 150ms triggers dynamic import during idle
   const prefetchTimerRef = useRef<number | null>(null);
@@ -93,7 +95,7 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({ activeTab, onTabChange
       badge: totalChanges > 0 ? totalChanges : undefined
     },
     { id: 'code-review', label: 'AI Code Review', icon: <FileCheck size={18} /> },
-    { id: 'debugger', label: 'Omni-Debugger (Diagnostics & Arch)', icon: <Bug size={18} /> },
+    { id: 'debugger', label: 'Omni-Debugger (Dedicated Diagnostics Window)', icon: <Bug size={18} /> },
     { id: 'ui-sketcher', label: 'UI Sketcher', icon: <Palette size={18} /> },
     { id: 'extensions', label: 'Extensions', icon: <Boxes size={18} /> },
     { id: 'skills', label: 'Capabilities', icon: <Sparkles size={18} /> },
@@ -118,7 +120,12 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({ activeTab, onTabChange
       {/* Top Main Navigation */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%', alignItems: 'center' }}>
         {navItems.map((item) => {
-          const isActive = isLeftPanelOpen && activeTab === item.id && item.id !== 'ui-sketcher';
+          const isActive =
+            item.id === 'debugger'
+              ? isDebuggerPoppedOut
+              : item.id === 'ui-sketcher'
+              ? false
+              : isLeftPanelOpen && activeTab === item.id;
           return (
             <div key={item.id} style={{ position: 'relative' }}>
               <button

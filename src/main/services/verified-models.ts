@@ -13,6 +13,9 @@
  *  5. Ty-Code Free community tier (ZeroFriction-1): baked, zero-user-input.
  *  6. Native preconfigured providers.
  *  7. Local Ollama models detected on this machine.
+ *  8. OpenCode free tier (auto-discovery): free models read from the user's
+ *     local `~/.config/opencode/*.json` config, served by the installed
+ *     `opencode` CLI through the subprocess bridge (never HTTP).
  *
  * Entries are deduped per provider+model. The cache has a 60s TTL so newly
  * synced FCC / Kilo / OpenCode models appear without restarting the app.
@@ -23,6 +26,11 @@ import { getAllPreconfiguredProviders } from '../config/provider-registry';
 import { fccCatalogSync } from './fcc/catalog-sync';
 import { fetchFCCCatalog } from './fcc-catalog-sync';
 import { OPENKILO_CURATED_FREE_MODELS } from './orchestration/openkilo-provider';
+import { discoverOpenCodeFreeModels } from './opencode-config-manager';
+
+/** Pseudo-endpoint for OpenCode CLI-bridged models; never dialled via HTTP. */
+export const OPENCODE_BRIDGE_URL = 'opencode-cli://bridge/chat/completions';
+export const OPENCODE_FREE_PROVIDER_ID = 'opencode-free';
 
 export interface VerifiedModelConfig {
   modelId: string;
@@ -315,6 +323,34 @@ export async function getVerifiedModels(): Promise<VerifiedModelConfig[]> {
     const key = `${(model.providerId || '').toLowerCase()}::${model.modelId}`;
     if (merged.has(key)) continue;
     merged.set(key, model);
+  }
+
+  // OpenCode free tier (auto-discovery): free models present in the user's
+  // local opencode config, served by the real installed CLI through the
+  // subprocess bridge. Only ids that exist BOTH in the config AND when the
+  // CLI is actually runnable are surfaced — nothing is invented. Ids already
+  // covered by another provider (FCC community pool, Ollama, …) stay with
+  // their first source, so a synced id never double-lists in the UI. The
+  // availability check is the expensive part (one cached subprocess probe),
+  // so discovery is only touched when the CLI may still be missing.
+  const opencodeFreeIds = await discoverOpenCodeFreeModels().catch(() => [] as string[]);
+  if (opencodeFreeIds.length > 0) {
+    const { opencodeBridge } = await import('./opencode-bridge');
+    const cliAvailable = await opencodeBridge.isCliAvailable();
+    if (cliAvailable) {
+      const presentModelIds = new Set([...merged.values()].map((m) => m.modelId));
+      for (const modelId of opencodeFreeIds) {
+        if (!modelId || presentModelIds.has(modelId)) continue;
+        presentModelIds.add(modelId);
+        merged.set(`${OPENCODE_FREE_PROVIDER_ID}::${modelId}`, {
+          modelId,
+          name: modelId,
+          url: OPENCODE_BRIDGE_URL,
+          requiresKey: false,
+          providerId: OPENCODE_FREE_PROVIDER_ID
+        });
+      }
+    }
   }
 
   // Apply live catalog corrections: strip models no longer offered, update

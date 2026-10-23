@@ -55,7 +55,7 @@ export type TrustedSenderCheck = (event: IpcMainInvokeEvent) => boolean;
 export class DebuggerSyncManager {
   private activeFile: string | null = null;
   private analysisResults: AnalysisResult[] = [];
-  private isPopOutMode = false;
+  private isPopOutMode = true;
   private selectedRole: AnalysisRole = 'dev';
   private updatedAt = Date.now();
   private windowResolver: (() => WebContents[]) | null = null;

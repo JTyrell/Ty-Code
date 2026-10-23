@@ -106,6 +106,9 @@ export interface ValidationResult {
 let currentTaskStreamEvents = 0;
 let currentTaskProviderId = 'default';
 let currentTaskModelId = 'default';
+// Prompt 3: true while the active task streams through the dedicated OpenCode
+// CLI bridge channel (so Stop also kills the subprocess, not just the agent).
+let openCodeBridgeRouteActive = false;
 
 export function validateAssistantMessage(
   message: ChatMessage,
@@ -865,6 +868,133 @@ export const useChatStore = create<ChatState>((set, get) => ({
         set({ pendingApproval: chunk.approvalRequest, currentStatus: 'Waiting for your approval…' });
       }
     }));
+
+    // ------------------------------------------------------------------
+    // OpenCode Free Tier (Prompt 3): when the chat's active provider is the
+    // opencode-free CLI bridge, stream the reply through the dedicated bridge
+    // channel instead of the agent pipeline — no tooling or status frames,
+    // just raw markdown that renders in the exact same assistant bubble as
+    // every standard response.
+    // ------------------------------------------------------------------
+    if (
+      (currentTaskProviderId || '').toLowerCase() === 'opencode-free' &&
+      window.electronAPI.sendOpenCodeMessage &&
+      window.electronAPI.onOpenCodeStream
+    ) {
+      openCodeBridgeRouteActive = true;
+      const bridgeErrorCard = (messageText: string): ChatErrorCard => {
+        const notInstalled = /not installed|not found/i.test(messageText);
+        return {
+          taxonomyCode: notInstalled ? 'CONFIG_MISSING' : 'NETWORK_BLOCKED',
+          message: messageText,
+          remedy: notInstalled
+            ? 'Install the OpenCode CLI (npm install -g @opencode-ai/cli) and run `opencode` once to sync its free model config.'
+            : 'Check your OpenCode config file and connectivity, then retry.',
+          actionLabel: 'Retry',
+          actionUrl: 'ty-code://action/retry',
+          providerId: currentTaskProviderId
+        };
+      };
+      const applyBridgeError = (messageText: string): void => {
+        const card = bridgeErrorCard(messageText);
+        const content = `**[${card.taxonomyCode}]** ${card.message}\n\n*Remediation:* ${card.remedy}`;
+        set({
+          activeErrorCard: card,
+          messages: get().messages.map((m) =>
+            m.taskId === taskId
+              ? { ...m, errorCard: card, content: m.content || content, statusText: '' }
+              : m
+          )
+        });
+        finishTask('Task failed.');
+      };
+
+      activeStreamDisposables.push(window.electronAPI.onOpenCodeStream((chunk) => {
+        if (get().currentTaskId !== taskId) return;
+        currentTaskStreamEvents++;
+        set((state) => ({
+          streamingText: state.streamingText + chunk,
+          contextTokens: state.contextTokens + Math.ceil(chunk.length / 4),
+          messages: state.messages.map((m) =>
+            m.taskId === taskId
+              ? {
+                  ...m,
+                  content: m.content + chunk,
+                  statusText: '',
+                  metadata: m.metadata
+                    ? { ...m.metadata, streamEventCount: currentTaskStreamEvents }
+                    : {
+                        source: 'provider-stream' as const,
+                        providerId: currentTaskProviderId,
+                        modelId: currentTaskModelId,
+                        streamEventCount: currentTaskStreamEvents
+                      }
+                }
+              : m
+          )
+        }));
+      }));
+      if (window.electronAPI.onOpenCodeDone) {
+        activeStreamDisposables.push(window.electronAPI.onOpenCodeDone((payload) => {
+          if (get().currentTaskId !== taskId) return;
+          openCodeBridgeRouteActive = false;
+          const messages = get().messages.map((m) =>
+            m.taskId === taskId
+              ? {
+                  ...m,
+                  statusText: '',
+                  metadata: {
+                    source: 'provider-stream' as const,
+                    providerId: currentTaskProviderId,
+                    modelId: currentTaskModelId,
+                    streamEventCount: Math.max(1, currentTaskStreamEvents)
+                  }
+                }
+              : m
+          );
+          set({ messages });
+          const lastMessage = messages.find((m) => m.taskId === taskId);
+          if (lastMessage && lastMessage.role === 'assistant') syncMessageToCanvas(lastMessage);
+          finishTask(payload?.stopped ? 'Task stopped.' : '');
+        }));
+      }
+      if (window.electronAPI.onOpenCodeError) {
+        activeStreamDisposables.push(window.electronAPI.onOpenCodeError((payload) => {
+          if (get().currentTaskId !== taskId) return;
+          openCodeBridgeRouteActive = false;
+          applyBridgeError(payload?.message || 'The OpenCode CLI could not complete the request.');
+        }));
+      }
+
+      try {
+        const bridgeHistory = [...requestHistory, userMessage]
+          .filter((m) => m.role === 'user' || m.role === 'assistant')
+          .slice(-10)
+          .map((m) => ({ role: m.role, content: m.content }));
+        const response = await window.electronAPI.sendOpenCodeMessage({
+          modelId: currentTaskModelId,
+          prompt,
+          messages: bridgeHistory
+        });
+        if (get().currentTaskId !== taskId) return;
+        if (!response.success) {
+          openCodeBridgeRouteActive = false;
+          applyBridgeError(response.error || 'The OpenCode bridge could not start the request.');
+          if (traceOptions?.traceId && window.electronAPI?.recordTraceHop) {
+            window.electronAPI.recordTraceHop(traceOptions.traceId, 'H2', {
+              status: 'FAIL',
+              error: response.error || 'OpenCode bridge rejected the request'
+            });
+          }
+        }
+      } catch (err: unknown) {
+        if (get().currentTaskId !== taskId) return;
+        openCodeBridgeRouteActive = false;
+        applyBridgeError(err instanceof Error ? err.message : String(err));
+      }
+      return;
+    }
+
     try {
       const pendingResume = get().pendingResume;
       if (pendingResume) set({ pendingResume: null });
@@ -959,6 +1089,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
     activeStreamUnsubscribe?.();
     activeStreamUnsubscribe = null;
     set({ messages, isRunning: false, currentTaskId: null, pendingApproval: null, currentStatus: 'Stopping task…', streamingText: '', currentThought: '' });
+    // OpenCode bridge runs: also kill the opencode subprocess itself.
+    if (openCodeBridgeRouteActive && window.electronAPI.stopOpenCodeProcess) {
+      openCodeBridgeRouteActive = false;
+      try { await window.electronAPI.stopOpenCodeProcess(); }
+      catch (err) { console.error('Failed to stop OpenCode process:', err); }
+      finally { set({ currentStatus: 'Task stopped.' }); }
+      return;
+    }
     try { await window.electronAPI.stopAgentTask(taskId); }
     catch (err) { console.error('Failed to stop agent task:', err); }
     finally { set({ currentStatus: 'Task stopped.' }); }
@@ -968,6 +1106,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const taskId = get().currentTaskId;
     activeStreamUnsubscribe?.();
     activeStreamUnsubscribe = null;
+    if (openCodeBridgeRouteActive && window.electronAPI.stopOpenCodeProcess) {
+      openCodeBridgeRouteActive = false;
+      window.electronAPI.stopOpenCodeProcess().catch(() => undefined);
+    }
     if (taskId) void window.electronAPI.stopAgentTask(taskId);
     set({ messages: [], isRunning: false, currentTaskId: null, pendingApproval: null, streamingText: '', currentThought: '', currentStatus: '', contextTokens: 1200, activeErrorCard: null });
   },

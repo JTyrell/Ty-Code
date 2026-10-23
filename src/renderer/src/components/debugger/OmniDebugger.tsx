@@ -4,7 +4,6 @@ import {
   Cpu,
   Layers,
   Sparkles,
-  Play,
   RotateCw,
   ExternalLink,
   Minimize2,
@@ -15,15 +14,22 @@ import {
   Info,
   CheckCircle2,
   Search,
-  Filter,
   Check,
   Copy,
-  ChevronRight,
   ShieldAlert,
   Code2,
   Wrench,
   PanelLeftClose,
-  PanelLeftOpen
+  PanelLeftOpen,
+  Activity,
+  Terminal,
+  ArrowUpRight,
+  BarChart3,
+  Sliders,
+  Zap,
+  X,
+  ShieldCheck,
+  Gauge
 } from 'lucide-react';
 import {
   useDebuggerStore,
@@ -33,10 +39,15 @@ import {
   type AnalysisSeverity,
   type AnalysisEngine
 } from '../../state/debugger-store';
+import { useEditorNavigationStore } from '../../state/editor-navigation-store';
+import { useChatStore } from '../../state/chat-store';
+import './OmniDebugger.css';
 
 interface OmniDebuggerProps {
   isStandalone?: boolean;
 }
+
+type ViewTab = 'findings' | 'engines' | 'metrics';
 
 export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false }) => {
   // Mount store listener for IPC synchronization
@@ -61,9 +72,12 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
     clearResults
   } = useDebuggerStore();
 
+  const [activeTab, setActiveTab] = useState<ViewTab>('findings');
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [fixedIds, setFixedIds] = useState<Record<string, boolean>>({});
   const [isFileTreeExpanded, setIsFileTreeExpanded] = useState<boolean>(true);
+  const [onlyActionable, setOnlyActionable] = useState<boolean>(false);
+  const [aiStreamingMsg, setAiStreamingMsg] = useState<string | null>(null);
 
   // Auto-clear copied state
   useEffect(() => {
@@ -72,43 +86,56 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
     return () => clearTimeout(timer);
   }, [copiedId]);
 
-  // Requirement 2: If isPopOutMode is true and rendered inside the sidebar, hide it / show docked placeholder
+  // Hook up live AI stream listener if available
+  useEffect(() => {
+    if (!window.electronAPI?.onDebuggerAiStream) return;
+    const unsubscribe = window.electronAPI.onDebuggerAiStream((frame: any) => {
+      if (frame?.token) {
+        setAiStreamingMsg((prev) => (prev ? prev + frame.token : frame.token));
+      } else if (frame?.done) {
+        setTimeout(() => setAiStreamingMsg(null), 3000);
+      }
+    });
+    return () => {
+      unsubscribe?.();
+    };
+  }, []);
+
+  // Requirement: If isPopOutMode is true and rendered inside the sidebar, show docked placeholder
   if (isPopOutMode && !isStandalone) {
     return (
-      <div className="flex flex-col items-center justify-center h-full p-6 text-center select-none bg-zinc-950/95 border-r border-zinc-800/80">
-        <div className="relative mb-4">
-          <div className="w-14 h-14 rounded-2xl bg-indigo-500/10 border border-indigo-500/30 flex items-center justify-center text-indigo-400 shadow-xl shadow-indigo-500/10">
-            <Bug size={26} className="text-indigo-400 animate-pulse" />
-          </div>
-          <span className="absolute -bottom-1 -right-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-indigo-600 text-white shadow">
-            EXT
-          </span>
+      <div className="omni-docked-placeholder select-none">
+        <div className="omni-docked-icon-wrap">
+          <Bug size={30} className="text-indigo-400" />
+          <span className="omni-docked-badge">LIVE EXT</span>
         </div>
 
-        <h3 className="text-sm font-semibold text-zinc-100 tracking-wide">
+        <h3 style={{ fontSize: '15px', fontWeight: 700, color: '#f8fafc', margin: '0 0 6px 0' }}>
           Omni-Debugger Popped Out
         </h3>
-        <p className="text-xs text-zinc-400 mt-2 max-w-[220px] leading-relaxed">
-          Running in a dedicated, high-performance window for multi-monitor inspection.
+        <p style={{ fontSize: '12px', color: '#94a3b8', margin: '0 0 20px 0', maxWidth: '240px', lineHeight: 1.5 }}>
+          Running in a dedicated, high-performance window for multi-monitor inspection and zero editor latency.
         </p>
 
-        <div className="mt-5 flex flex-col gap-2.5 w-full max-w-[210px]">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%', maxWidth: '220px' }}>
           <button
             type="button"
             onClick={() => window.electronAPI?.debuggerOpenWindow?.()}
-            className="w-full px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold transition-all shadow-md shadow-indigo-600/30 flex items-center justify-center gap-2 cursor-pointer active:scale-[0.98]"
+            className="omni-btn-primary"
+            style={{ width: '100%', justifyContent: 'center', padding: '9px 16px' }}
           >
             <ExternalLink size={14} />
-            Focus Debugger Window
+            <span>Focus Debugger Window</span>
           </button>
 
           <button
             type="button"
             onClick={togglePopOutMode}
-            className="w-full px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 rounded-lg text-xs font-medium transition-colors border border-zinc-700/60 flex items-center justify-center gap-1.5 cursor-pointer"
+            className="omni-btn-copy"
+            style={{ width: '100%', justifyContent: 'center', padding: '8px 14px' }}
           >
             <Minimize2 size={13} />
-            Dock Back in Sidebar
+            <span>Dock Back in Sidebar</span>
           </button>
         </div>
       </div>
@@ -135,7 +162,6 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
         fileMap[res.filePath] = { count: 0, maxSeverity: res.severity };
       }
       fileMap[res.filePath].count += 1;
-      // Elevate max severity if higher
       const severityOrder: Record<AnalysisSeverity, number> = {
         critical: 5,
         high: 4,
@@ -158,7 +184,7 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
     }));
   }, [analysisResults]);
 
-  // Filtered analysis items based on current active tab, search, role, and engines
+  // Filtered analysis items based on role, active file, severity, engine, search, and actionable flag
   const filteredResults = useMemo(() => {
     return analysisResults.filter((item) => {
       // 1. Role filter (Dev, QA, PM)
@@ -179,7 +205,12 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
         return false;
       }
 
-      // 5. Search query
+      // 5. Only Actionable filter
+      if (onlyActionable && !item.suggestedFix) {
+        return false;
+      }
+
+      // 6. Search query
       if (searchQuery.trim()) {
         const query = searchQuery.toLowerCase();
         const matchesMsg = item.message.toLowerCase().includes(query);
@@ -193,9 +224,13 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
 
       return true;
     });
-  }, [analysisResults, selectedRole, activeFile, selectedSeverity, selectedEngine, searchQuery]);
+  }, [analysisResults, selectedRole, activeFile, selectedSeverity, selectedEngine, onlyActionable, searchQuery]);
 
-  // Counts summary by severity
+  // Counts summary by severity for currently selected role
+  const roleResults = useMemo(() => {
+    return analysisResults.filter((r) => r.role === selectedRole);
+  }, [analysisResults, selectedRole]);
+
   const countsBySeverity = useMemo(() => {
     const map: Record<AnalysisSeverity, number> = {
       critical: 0,
@@ -204,17 +239,32 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
       low: 0,
       info: 0
     };
-    analysisResults
-      .filter((r) => r.role === selectedRole)
-      .forEach((r) => {
-        map[r.severity] = (map[r.severity] || 0) + 1;
-      });
+    roleResults.forEach((r) => {
+      map[r.severity] = (map[r.severity] || 0) + 1;
+    });
     return map;
-  }, [analysisResults, selectedRole]);
+  }, [roleResults]);
 
+  // Code Health Score Calculation (0-100)
+  const healthScore = useMemo(() => {
+    const penalty =
+      countsBySeverity.critical * 25 +
+      countsBySeverity.high * 15 +
+      countsBySeverity.medium * 8 +
+      countsBySeverity.low * 3;
+    return Math.max(10, Math.min(100, 100 - penalty));
+  }, [countsBySeverity]);
+
+  const healthGrade = useMemo(() => {
+    if (healthScore >= 90) return { letter: 'A+', class: 'grade-a', label: 'Optimal' };
+    if (healthScore >= 75) return { letter: 'B', class: 'grade-b', label: 'Minor Risks' };
+    return { letter: 'C', class: 'grade-c', label: 'Action Needed' };
+  }, [healthScore]);
+
+  // Handlers
   const handleCopySnippet = (item: AnalysisResult) => {
     const text = item.suggestedFix || item.codeSnippet || item.message;
-    navigator.clipboard.writeText(text);
+    void navigator.clipboard.writeText(text);
     setCopiedId(item.id);
   };
 
@@ -222,216 +272,341 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
     setFixedIds((prev) => ({ ...prev, [id]: true }));
   };
 
+  const handleJumpToCode = (item: AnalysisResult) => {
+    if (!item.filePath) return;
+    useEditorNavigationStore.getState().navigateTo({
+      filePath: item.filePath,
+      line: item.line || 1
+    });
+  };
+
+  const handleAskAIToFix = (item: AnalysisResult) => {
+    const prompt = `[Omni-Debugger ${item.role.toUpperCase()} Finding #${item.ruleId || 'diagnostic'}]\nFile: ${item.filePath || 'workspace'}${item.line ? `:${item.line}` : ''}\nEngine: ${item.engine.toUpperCase()}\nSeverity: ${item.severity.toUpperCase()}\nIssue: ${item.message}\n${item.codeSnippet ? `\nCode:\n\`\`\`\n${item.codeSnippet}\n\`\`\`\n` : ''}${item.suggestedFix ? `\nSuggested Remediation: ${item.suggestedFix}\n` : ''}\nPlease review and apply the complete architectural fix.`;
+    useChatStore.getState().setDraftPrompt(prompt);
+  };
+
   return (
-    <div className="flex flex-col h-full w-full bg-[#121316] text-zinc-200 select-none overflow-hidden font-sans border-r border-zinc-800/80">
+    <div className="omni-debugger-root">
       {/* ===================================================================== */}
-      {/* PANE 1: TOP TOOLBAR */}
+      {/* 1. TOP COMMAND BAR */}
       {/* ===================================================================== */}
-      <header className="flex flex-col border-b border-zinc-800/80 bg-zinc-950/80 px-3 py-2.5 gap-2.5 shrink-0 backdrop-blur-md">
-        {/* Top line: Brand badge, Role pills, and Window action controls */}
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          {/* Omni-Debugger Title & Role Selector */}
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500/20 to-purple-500/20 border border-indigo-500/40 flex items-center justify-center text-indigo-400 shadow-md shadow-indigo-500/10">
-                <Bug size={16} />
-              </div>
-              <span className="text-xs font-bold tracking-wider uppercase text-zinc-100 hidden sm:inline-block">
-                Omni-Debugger
-              </span>
+      <header className="omni-debugger-header">
+        <div className="omni-debugger-top-row">
+          {/* Brand & Perspective Switcher */}
+          <div className="omni-brand-badge">
+            <div className="omni-brand-icon">
+              <Bug size={17} />
             </div>
-
-            {/* Role Selector: Dev / QA / PM */}
-            <div className="flex items-center bg-zinc-900/90 p-0.5 rounded-lg border border-zinc-800">
-              <button
-                type="button"
-                onClick={() => setRole('dev')}
-                className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all flex items-center gap-1.5 cursor-pointer ${
-                  selectedRole === 'dev'
-                    ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-600/40'
-                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50'
-                }`}
-                title="Developer Perspective: Syntax, performance, async flow, and system boundaries"
-              >
-                <Code2 size={13} />
-                <span>DEV</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setRole('qa')}
-                className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all flex items-center gap-1.5 cursor-pointer ${
-                  selectedRole === 'qa'
-                    ? 'bg-amber-600 text-white shadow-sm shadow-amber-600/40'
-                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50'
-                }`}
-                title="QA Perspective: Edge cases, zero-coverage branches, input boundary assertions"
-              >
-                <ShieldAlert size={13} />
-                <span>QA</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setRole('pm')}
-                className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all flex items-center gap-1.5 cursor-pointer ${
-                  selectedRole === 'pm'
-                    ? 'bg-purple-600 text-white shadow-sm shadow-purple-600/40'
-                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50'
-                }`}
-                title="Product Manager Perspective: UX latency, ARIA accessibility, error fallbacks"
-              >
-                <Layers size={13} />
-                <span>PM</span>
-              </button>
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              <span className="omni-brand-title">Omni-Debugger</span>
+              <span style={{ fontSize: '10px', color: '#64748b', fontWeight: 600 }}>
+                Multi-Engine Inspector
+              </span>
             </div>
           </div>
 
-          {/* Action buttons: Run Analysis & Pop Out */}
-          <div className="flex items-center gap-2">
+          {/* Role Segmented Controller (DEV / QA / PM) */}
+          <div className="omni-role-group" role="tablist" aria-label="Analysis Perspective">
             <button
               type="button"
-              onClick={() => runAnalysis(activeFile || undefined)}
-              disabled={isAnalyzing}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-md ${
-                isAnalyzing
-                  ? 'bg-zinc-800 text-zinc-400 cursor-not-allowed'
-                  : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/20 active:scale-[0.98]'
-              }`}
-              title="Execute full static, dynamic, and architectural diagnostics sweep"
+              role="tab"
+              aria-selected={selectedRole === 'dev'}
+              onClick={() => setRole('dev')}
+              className={`omni-role-btn ${selectedRole === 'dev' ? 'active-dev' : ''}`}
+              title="Developer Perspective: Syntax, performance, async flow, and system boundaries"
             >
-              <RotateCw size={13} className={isAnalyzing ? 'animate-spin' : ''} />
-              <span>{isAnalyzing ? 'Analyzing…' : 'Run Full Analysis'}</span>
+              <Code2 size={13} />
+              <span>DEV</span>
             </button>
 
-            {/* Pop Out / Dock In toggle */}
+            <button
+              type="button"
+              role="tab"
+              aria-selected={selectedRole === 'qa'}
+              onClick={() => setRole('qa')}
+              className={`omni-role-btn ${selectedRole === 'qa' ? 'active-qa' : ''}`}
+              title="QA Perspective: Edge cases, zero-coverage branches, input boundary assertions"
+            >
+              <ShieldAlert size={13} />
+              <span>QA</span>
+            </button>
+
+            <button
+              type="button"
+              role="tab"
+              aria-selected={selectedRole === 'pm'}
+              onClick={() => setRole('pm')}
+              className={`omni-role-btn ${selectedRole === 'pm' ? 'active-pm' : ''}`}
+              title="Product Manager Perspective: UX latency, ARIA accessibility, error fallbacks"
+            >
+              <Layers size={13} />
+              <span>PM</span>
+            </button>
+          </div>
+
+          {/* Action Buttons: Run Sweep & Pop-out */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <button
+              type="button"
+              onClick={() => void runAnalysis(activeFile || undefined)}
+              disabled={isAnalyzing}
+              className="omni-btn-primary"
+              title="Execute full static, dynamic, architectural, and AI diagnostic sweep"
+            >
+              <RotateCw size={13} className={isAnalyzing ? 'animate-spin' : ''} />
+              <span>{isAnalyzing ? 'Sweeping…' : 'Run Sweep'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => void runAnalysis(activeFile || undefined)}
+              disabled={isAnalyzing}
+              className="omni-btn-ai-sweep"
+              title="Run AI Deep Architectural Analyst"
+            >
+              <Sparkles size={13} />
+              <span>AI Analyst</span>
+            </button>
+
+            {/* Pop Out / Dock Toggle */}
             <button
               type="button"
               onClick={togglePopOutMode}
-              className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 border border-zinc-800 transition-colors cursor-pointer"
-              title={isPopOutMode ? 'Dock in Left Sidebar' : 'Pop Out into Dedicated Window'}
+              className="omni-btn-icon"
+              title={isPopOutMode ? 'Dock in Left Sidebar' : 'Pop Out into Dedicated Multi-Monitor Window'}
             >
-              {isPopOutMode ? <Minimize2 size={15} /> : <ExternalLink size={15} />}
+              {isPopOutMode ? <Minimize2 size={14} /> : <ExternalLink size={14} />}
             </button>
           </div>
         </div>
+      </header>
 
-        {/* Second line: Search bar, Engine filter pills, and Severity breakdown */}
-        <div className="flex items-center gap-2.5 flex-wrap">
-          {/* Quick search input */}
-          <div className="relative flex-1 min-w-[160px] max-w-[280px]">
-            <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-500" />
+      {/* ===================================================================== */}
+      {/* 2. DIAGNOSTICS HERO HUD STRIP */}
+      {/* ===================================================================== */}
+      <div className="omni-hud-bar">
+        {/* Quality Score Ring */}
+        <div className="omni-score-badge">
+          <div className={`omni-score-ring ${healthGrade.class}`}>{healthGrade.letter}</div>
+          <div className="omni-score-label">
+            <strong>{healthScore}/100 Health</strong>
+            <span>{healthGrade.label}</span>
+          </div>
+        </div>
+
+        {/* 4 Active Engines Status Chips */}
+        <div className="omni-engines-status-strip">
+          <div className="omni-engine-chip chip-static" title="Static AST & Syntax Rule Analyzer">
+            <span className="dot" />
+            <span>Static AST</span>
+          </div>
+          <div className="omni-engine-chip chip-dynamic" title="Dynamic Runtime & Re-render Profiler">
+            <span className="dot" />
+            <span>Profiler</span>
+          </div>
+          <div className="omni-engine-chip chip-arch" title="Process Isolation & Architectural Boundary Engine">
+            <span className="dot" />
+            <span>Arch Boundary</span>
+          </div>
+          <div className="omni-engine-chip chip-ai" title="AI Deep Reasoning Code Health Analyst">
+            <span className="dot" />
+            <span>AI Analyst</span>
+          </div>
+        </div>
+
+        {/* Severity Count Filter Buttons */}
+        <div className="omni-severity-badges">
+          <button
+            type="button"
+            onClick={() => setSeverityFilter('all')}
+            className={`omni-sev-btn sev-all ${selectedSeverity === 'all' ? 'active' : ''}`}
+            title="Show all findings"
+          >
+            <span>All ({roleResults.length})</span>
+          </button>
+
+          {countsBySeverity.critical > 0 && (
+            <button
+              type="button"
+              onClick={() => setSeverityFilter(selectedSeverity === 'critical' ? 'all' : 'critical')}
+              className={`omni-sev-btn sev-crit ${selectedSeverity === 'critical' ? 'active' : ''}`}
+              title="Filter to Critical severity"
+            >
+              <AlertOctagon size={11} />
+              <span>{countsBySeverity.critical} Crit</span>
+            </button>
+          )}
+
+          {countsBySeverity.high > 0 && (
+            <button
+              type="button"
+              onClick={() => setSeverityFilter(selectedSeverity === 'high' ? 'all' : 'high')}
+              className={`omni-sev-btn sev-high ${selectedSeverity === 'high' ? 'active' : ''}`}
+              title="Filter to High severity"
+            >
+              <AlertTriangle size={11} />
+              <span>{countsBySeverity.high} High</span>
+            </button>
+          )}
+
+          {countsBySeverity.medium > 0 && (
+            <button
+              type="button"
+              onClick={() => setSeverityFilter(selectedSeverity === 'medium' ? 'all' : 'medium')}
+              className={`omni-sev-btn sev-med ${selectedSeverity === 'medium' ? 'active' : ''}`}
+              title="Filter to Medium severity"
+            >
+              <AlertTriangle size={11} />
+              <span>{countsBySeverity.medium} Med</span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* ===================================================================== */}
+      {/* 3. SUBTABS & FILTER CONTROLS */}
+      {/* ===================================================================== */}
+      <div className="omni-subtabs-row">
+        {/* Segmented View Mode Tabs */}
+        <div className="omni-segmented-tabs">
+          <button
+            type="button"
+            onClick={() => setActiveTab('findings')}
+            className={`omni-tab-btn ${activeTab === 'findings' ? 'active' : ''}`}
+          >
+            <Bug size={12} />
+            <span>Findings ({filteredResults.length})</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('engines')}
+            className={`omni-tab-btn ${activeTab === 'engines' ? 'active' : ''}`}
+          >
+            <Cpu size={12} />
+            <span>Engine Map</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('metrics')}
+            className={`omni-tab-btn ${activeTab === 'metrics' ? 'active' : ''}`}
+          >
+            <BarChart3 size={12} />
+            <span>Health Matrix</span>
+          </button>
+        </div>
+
+        {/* Filter Toolbar */}
+        <div className="omni-filter-toolbar">
+          {/* Search Input */}
+          <div className="omni-search-wrapper">
+            <Search size={12} className="omni-search-icon" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Filter rules, messages, files…"
-              className="w-full bg-zinc-900 border border-zinc-800 rounded-md pl-8 pr-2 py-1 text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-indigo-500/80 transition-colors"
+              placeholder="Search rules, messages, files…"
+              className="omni-search-input"
             />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="omni-search-clear"
+                title="Clear Search"
+              >
+                <X size={12} />
+              </button>
+            )}
           </div>
 
-          {/* Engine filter pills */}
-          <div className="flex items-center gap-1 text-[11px]">
-            <span className="text-zinc-500 font-medium mr-1 text-[10px] uppercase tracking-wider">Engine:</span>
-            {(['all', 'static', 'dynamic', 'arch'] as const).map((eng) => (
+          {/* Engine Filter Pills */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+            {(['all', 'static', 'dynamic', 'arch', 'ai'] as const).map((eng) => (
               <button
                 key={eng}
                 type="button"
                 onClick={() => setEngineFilter(eng)}
-                className={`px-2 py-0.5 rounded text-[11px] font-medium capitalize transition-colors cursor-pointer ${
-                  selectedEngine === eng
-                    ? 'bg-zinc-800 text-indigo-400 border border-indigo-500/40'
-                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'
-                }`}
+                style={{
+                  padding: '3px 7px',
+                  borderRadius: '5px',
+                  fontSize: '10.5px',
+                  fontWeight: 600,
+                  textTransform: 'capitalize',
+                  border: selectedEngine === eng ? '1px solid rgba(99, 102, 241, 0.5)' : '1px solid transparent',
+                  background: selectedEngine === eng ? 'rgba(99, 102, 241, 0.2)' : 'rgba(255, 255, 255, 0.03)',
+                  color: selectedEngine === eng ? '#c7d2fe' : '#94a3b8',
+                  cursor: 'pointer'
+                }}
               >
                 {eng}
               </button>
             ))}
           </div>
 
-          {/* Severity filter badges */}
-          <div className="flex items-center gap-1.5 ml-auto text-[11px]">
-            <button
-              type="button"
-              onClick={() => setSeverityFilter('all')}
-              className={`px-1.5 py-0.5 rounded text-[11px] font-medium transition-colors cursor-pointer ${
-                selectedSeverity === 'all'
-                  ? 'bg-zinc-800 text-zinc-200 font-semibold'
-                  : 'text-zinc-500 hover:text-zinc-300'
-              }`}
-            >
-              All ({analysisResults.filter((r) => r.role === selectedRole).length})
-            </button>
-
-            {countsBySeverity.critical > 0 && (
-              <button
-                type="button"
-                onClick={() => setSeverityFilter(selectedSeverity === 'critical' ? 'all' : 'critical')}
-                className={`px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase transition-colors cursor-pointer ${
-                  selectedSeverity === 'critical'
-                    ? 'bg-rose-500/20 text-rose-400 border border-rose-500/50'
-                    : 'bg-rose-500/10 text-rose-400/80 hover:bg-rose-500/20'
-                }`}
-              >
-                {countsBySeverity.critical} Crit
-              </button>
-            )}
-
-            {countsBySeverity.high > 0 && (
-              <button
-                type="button"
-                onClick={() => setSeverityFilter(selectedSeverity === 'high' ? 'all' : 'high')}
-                className={`px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase transition-colors cursor-pointer ${
-                  selectedSeverity === 'high'
-                    ? 'bg-orange-500/20 text-orange-400 border border-orange-500/50'
-                    : 'bg-orange-500/10 text-orange-400/80 hover:bg-orange-500/20'
-                }`}
-              >
-                {countsBySeverity.high} High
-              </button>
-            )}
-
-            {countsBySeverity.medium > 0 && (
-              <button
-                type="button"
-                onClick={() => setSeverityFilter(selectedSeverity === 'medium' ? 'all' : 'medium')}
-                className={`px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase transition-colors cursor-pointer ${
-                  selectedSeverity === 'medium'
-                    ? 'bg-amber-500/20 text-amber-400 border border-amber-500/50'
-                    : 'bg-amber-500/10 text-amber-400/80 hover:bg-amber-500/20'
-                }`}
-              >
-                {countsBySeverity.medium} Med
-              </button>
-            )}
-          </div>
+          {/* Actionable Only Filter Toggle */}
+          <button
+            type="button"
+            onClick={() => setOnlyActionable(!onlyActionable)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              padding: '3px 8px',
+              borderRadius: '5px',
+              fontSize: '10.5px',
+              fontWeight: 600,
+              border: onlyActionable ? '1px solid rgba(16, 185, 129, 0.5)' : '1px solid transparent',
+              background: onlyActionable ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255, 255, 255, 0.03)',
+              color: onlyActionable ? '#6ee7b7' : '#94a3b8',
+              cursor: 'pointer'
+            }}
+            title="Filter to findings that have automated suggested fixes"
+          >
+            <Wrench size={11} />
+            <span>Has Fix</span>
+          </button>
         </div>
-      </header>
+      </div>
+
+      {/* Live AI Streaming notification banner if active */}
+      {aiStreamingMsg && (
+        <div
+          style={{
+            padding: '6px 14px',
+            background: 'linear-gradient(90deg, rgba(168, 85, 247, 0.2), rgba(99, 102, 241, 0.15))',
+            borderBottom: '1px solid rgba(168, 85, 247, 0.3)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            fontSize: '11px',
+            color: '#e9d5ff'
+          }}
+        >
+          <Sparkles size={12} className="animate-pulse text-purple-400" />
+          <span style={{ fontWeight: 600 }}>AI Analyst Live Stream:</span>
+          <span style={{ fontFamily: 'monospace', opacity: 0.9 }}>{aiStreamingMsg}</span>
+        </div>
+      )}
 
       {/* ===================================================================== */}
-      {/* 2-COLUMN LOWER BODY: LEFT (FILE TREE) & RIGHT (RESULTS PANEL) */}
+      {/* 4. MAIN VIEWPORT: FINDINGS / ENGINES / METRICS */}
       {/* ===================================================================== */}
-      <div className="flex-1 flex overflow-hidden min-h-0">
-        {/* =================================================================== */}
-        {/* PANE 2: FILE / MODULE TREE */}
-        {/* =================================================================== */}
-        <aside
-          className={`flex flex-col border-r border-zinc-800/80 bg-zinc-950/60 transition-all duration-200 shrink-0 ${
-            isFileTreeExpanded ? 'w-64 sm:w-72' : 'w-10'
-          }`}
-        >
-          {/* File tree header */}
-          <div className="h-8 flex items-center justify-between px-2.5 border-b border-zinc-800/60 text-[11px] font-semibold text-zinc-400 tracking-wider uppercase">
+      <div className="omni-body-container">
+        {/* Collapsible Target Scope Sidebar */}
+        <aside className={`omni-scope-sidebar ${isFileTreeExpanded ? 'expanded' : 'collapsed'}`}>
+          <div className="omni-scope-header">
             {isFileTreeExpanded ? (
               <>
-                <div className="flex items-center gap-1.5">
-                  <FolderTree size={13} className="text-zinc-500" />
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <FolderTree size={12} />
                   <span>Target Scope</span>
                 </div>
                 <button
                   type="button"
                   onClick={() => setIsFileTreeExpanded(false)}
-                  className="p-1 rounded text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900 transition-colors cursor-pointer"
+                  style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', padding: '2px' }}
                   title="Collapse Scope Tree"
                 >
                   <PanelLeftClose size={13} />
@@ -441,7 +616,7 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
               <button
                 type="button"
                 onClick={() => setIsFileTreeExpanded(true)}
-                className="w-full h-full flex items-center justify-center text-zinc-500 hover:text-zinc-300"
+                style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'none', border: 'none', color: '#64748b', cursor: 'pointer' }}
                 title="Expand Scope Tree"
               >
                 <PanelLeftOpen size={13} />
@@ -449,29 +624,24 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
             )}
           </div>
 
-          {/* Module List */}
           {isFileTreeExpanded ? (
-            <div className="flex-1 overflow-y-auto p-1.5 space-y-0.5">
-              {/* Entire Project node */}
+            <div className="omni-scope-list">
+              {/* Entire Workspace node */}
               <button
                 type="button"
                 onClick={() => setActiveFile(null)}
-                className={`w-full flex items-center justify-between px-2 py-1.5 rounded-md text-xs transition-colors cursor-pointer text-left ${
-                  !activeFile || activeFile === 'all'
-                    ? 'bg-indigo-600/15 text-indigo-300 font-semibold border border-indigo-500/30'
-                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/60'
-                }`}
+                className={`omni-scope-item ${!activeFile || activeFile === 'all' ? 'selected' : ''}`}
               >
-                <div className="flex items-center gap-2 truncate">
-                  <Cpu size={14} className="text-indigo-400 shrink-0" />
-                  <span className="truncate">Entire Workspace</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '7px', minWidth: 0 }}>
+                  <Cpu size={14} color="#818cf8" />
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    Entire Workspace
+                  </span>
                 </div>
-                <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-zinc-900 text-zinc-400 font-mono">
-                  {analysisResults.length}
-                </span>
+                <span className="omni-scope-count">{analysisResults.length}</span>
               </button>
 
-              <div className="pt-2 pb-1 px-2 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
+              <div style={{ padding: '8px 8px 4px', fontSize: '10px', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                 Monitored Files
               </div>
 
@@ -482,20 +652,16 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
                     key={node.path}
                     type="button"
                     onClick={() => setActiveFile(node.path)}
-                    className={`w-full flex items-center justify-between px-2 py-1.5 rounded-md text-xs transition-colors cursor-pointer text-left ${
-                      isSelected
-                        ? 'bg-indigo-600/20 text-indigo-300 font-medium border border-indigo-500/40'
-                        : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/50'
-                    }`}
+                    className={`omni-scope-item ${isSelected ? 'selected' : ''}`}
                     title={node.path}
                   >
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <FileCode size={13} className="text-zinc-500 shrink-0" />
-                      <div className="min-w-0 flex flex-col">
-                        <span className="truncate text-xs font-medium text-zinc-200 leading-tight">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+                      <FileCode size={13} style={{ color: '#64748b', flexShrink: 0 }} />
+                      <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                        <span style={{ fontSize: '11px', fontWeight: 600, color: '#e2e8f0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {node.name}
                         </span>
-                        <span className="truncate text-[10px] text-zinc-500 font-mono leading-tight">
+                        <span style={{ fontSize: '9.5px', color: '#64748b', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {node.dir}
                         </span>
                       </div>
@@ -503,12 +669,12 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
 
                     {node.count > 0 && (
                       <span
-                        className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-bold shrink-0 ml-1.5 ${
+                        className={`omni-scope-count ${
                           node.maxSeverity === 'critical'
-                            ? 'bg-rose-500/20 text-rose-400 border border-rose-500/40'
+                            ? 'count-crit'
                             : node.maxSeverity === 'high'
-                            ? 'bg-orange-500/20 text-orange-400 border border-orange-500/40'
-                            : 'bg-zinc-800 text-zinc-400'
+                            ? 'count-high'
+                            : ''
                         }`}
                       >
                         {node.count}
@@ -519,13 +685,18 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
               })}
             </div>
           ) : (
-            <div className="flex-1 flex flex-col items-center py-3 gap-3">
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '8px 0', gap: '8px' }}>
               <button
                 type="button"
                 onClick={() => setActiveFile(null)}
-                className={`p-1.5 rounded transition-colors ${
-                  !activeFile ? 'text-indigo-400 bg-indigo-500/20' : 'text-zinc-500 hover:text-zinc-300'
-                }`}
+                style={{
+                  padding: '6px',
+                  borderRadius: '6px',
+                  background: !activeFile ? 'rgba(99, 102, 241, 0.2)' : 'transparent',
+                  border: 'none',
+                  color: !activeFile ? '#818cf8' : '#64748b',
+                  cursor: 'pointer'
+                }}
                 title="Entire Workspace"
               >
                 <Cpu size={15} />
@@ -535,9 +706,14 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
                   key={node.path}
                   type="button"
                   onClick={() => setActiveFile(node.path)}
-                  className={`p-1.5 rounded transition-colors ${
-                    activeFile === node.path ? 'text-indigo-400 bg-indigo-500/20' : 'text-zinc-500 hover:text-zinc-300'
-                  }`}
+                  style={{
+                    padding: '6px',
+                    borderRadius: '6px',
+                    background: activeFile === node.path ? 'rgba(99, 102, 241, 0.2)' : 'transparent',
+                    border: 'none',
+                    color: activeFile === node.path ? '#818cf8' : '#64748b',
+                    cursor: 'pointer'
+                  }}
                   title={node.path}
                 >
                   <FileCode size={15} />
@@ -547,206 +723,482 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
           )}
         </aside>
 
-        {/* =================================================================== */}
-        {/* PANE 3: RESULTS PANEL */}
-        {/* =================================================================== */}
-        <main className="flex-1 flex flex-col min-w-0 bg-[#121316] overflow-y-auto">
-          {/* Results Header bar */}
-          <div className="h-8 flex items-center justify-between px-3 border-b border-zinc-800/60 bg-zinc-950/40 text-[11px] text-zinc-400 shrink-0">
-            <div className="flex items-center gap-2">
-              <span className="font-semibold text-zinc-200">
-                {filteredResults.length} {filteredResults.length === 1 ? 'Finding' : 'Findings'}
-              </span>
-              <span className="text-zinc-600">•</span>
-              <span className="capitalize text-zinc-400">
-                Scope: {activeFile ? activeFile.split('/').pop() : 'All Monitored Files'}
-              </span>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={clearResults}
-                className="text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer"
-              >
-                Clear Results
-              </button>
-            </div>
-          </div>
-
-          {/* Results List or Empty State */}
-          <div className="flex-1 p-3 space-y-3">
-            {filteredResults.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-64 text-center p-6 border border-dashed border-zinc-800/80 rounded-xl my-4 bg-zinc-950/20">
-                <div className="w-12 h-12 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 mb-3">
-                  <CheckCircle2 size={24} />
+        {/* Viewport Content */}
+        <main className="omni-findings-viewport">
+          {/* ================================================================= */}
+          {/* TAB 1: FINDINGS STREAM */}
+          {/* ================================================================= */}
+          {activeTab === 'findings' && (
+            <>
+              {/* Findings Header Bar */}
+              <div className="omni-findings-status-bar">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ fontWeight: 600, color: '#f1f5f9' }}>
+                    {filteredResults.length} {filteredResults.length === 1 ? 'Finding' : 'Findings'}
+                  </span>
+                  <span>•</span>
+                  <span>Scope: {activeFile ? activeFile.split('/').pop() : 'All Workspace Files'}</span>
+                  {selectedEngine !== 'all' && <span>• Engine: {selectedEngine.toUpperCase()}</span>}
                 </div>
-                <h4 className="text-sm font-semibold text-zinc-200">No Issues Detected</h4>
-                <p className="text-xs text-zinc-500 max-w-sm mt-1 leading-relaxed">
-                  All active static syntax rules, dynamic re-render benchmarks, and architecture boundaries
-                  passed cleanly for role <strong className="text-zinc-400 uppercase">{selectedRole}</strong>.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => runAnalysis(activeFile || undefined)}
-                  className="mt-4 px-3.5 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-700/60 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
-                >
-                  <RotateCw size={12} />
-                  Run Diagnostics Sweep
-                </button>
-              </div>
-            ) : (
-              filteredResults.map((item) => {
-                const isFixed = fixedIds[item.id];
-                const isCopied = copiedId === item.id;
 
-                const severityStyle = {
-                  critical: {
-                    badge: 'bg-rose-500/15 text-rose-400 border-rose-500/40',
-                    border: 'border-l-rose-500',
-                    icon: <AlertOctagon size={14} className="text-rose-400 shrink-0" />
-                  },
-                  high: {
-                    badge: 'bg-orange-500/15 text-orange-400 border-orange-500/40',
-                    border: 'border-l-orange-500',
-                    icon: <AlertTriangle size={14} className="text-orange-400 shrink-0" />
-                  },
-                  medium: {
-                    badge: 'bg-amber-500/15 text-amber-400 border-amber-500/40',
-                    border: 'border-l-amber-500',
-                    icon: <AlertTriangle size={14} className="text-amber-400 shrink-0" />
-                  },
-                  low: {
-                    badge: 'bg-blue-500/15 text-blue-400 border-blue-500/40',
-                    border: 'border-l-blue-500',
-                    icon: <Info size={14} className="text-blue-400 shrink-0" />
-                  },
-                  info: {
-                    badge: 'bg-zinc-500/15 text-zinc-400 border-zinc-500/40',
-                    border: 'border-l-zinc-500',
-                    icon: <Info size={14} className="text-zinc-400 shrink-0" />
-                  }
-                }[item.severity];
-
-                const engineColor = {
-                  static: 'text-indigo-400 bg-indigo-500/10 border-indigo-500/30',
-                  dynamic: 'text-purple-400 bg-purple-500/10 border-purple-500/30',
-                  arch: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30',
-                  ai: 'text-amber-400 bg-amber-500/10 border-amber-500/30'
-                }[item.engine];
-
-                return (
-                  <div
-                    key={item.id}
-                    className={`rounded-xl border border-zinc-800/90 bg-zinc-950/70 p-3.5 transition-all shadow-sm border-l-4 ${
-                      severityStyle.border
-                    } ${isFixed ? 'opacity-50 line-through' : 'hover:border-zinc-700/80'}`}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <button
+                    type="button"
+                    onClick={clearResults}
+                    style={{ background: 'none', border: 'none', color: '#64748b', fontSize: '11px', cursor: 'pointer' }}
                   >
-                    {/* Header: Severity, Engine, Role, Rule ID, and File location */}
-                    <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {/* Severity badge */}
-                        <span
-                          className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 border ${
-                            severityStyle.badge
-                          }`}
-                        >
-                          {severityStyle.icon}
-                          {item.severity}
-                        </span>
+                    Clear Results
+                  </button>
+                </div>
+              </div>
 
-                        {/* Engine badge */}
-                        <span
-                          className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider border ${engineColor}`}
-                        >
-                          {item.engine} engine
-                        </span>
+              {/* Cards List or Clean Empty State */}
+              <div className="omni-cards-container">
+                {filteredResults.length === 0 ? (
+                  <div
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: '48px 24px',
+                      borderRadius: '12px',
+                      border: '1px dashed rgba(255, 255, 255, 0.1)',
+                      background: 'rgba(15, 23, 42, 0.3)',
+                      textAlign: 'center',
+                      margin: '20px 0'
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: '48px',
+                        height: '48px',
+                        borderRadius: '50%',
+                        background: 'rgba(16, 185, 129, 0.15)',
+                        border: '1px solid rgba(16, 185, 129, 0.35)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: '#34d399',
+                        marginBottom: '12px'
+                      }}
+                    >
+                      <CheckCircle2 size={24} />
+                    </div>
+                    <h4 style={{ margin: '0 0 6px 0', fontSize: '15px', fontWeight: 700, color: '#f1f5f9' }}>
+                      All Diagnostics Passing Cleanly
+                    </h4>
+                    <p style={{ margin: 0, fontSize: '12px', color: '#94a3b8', maxWidth: '380px', lineHeight: 1.5 }}>
+                      Zero critical violations detected across Static AST, Dynamic Runtime profiling, and Architectural boundaries for <strong style={{ color: '#e2e8f0', textTransform: 'uppercase' }}>{selectedRole}</strong>.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => void runAnalysis(activeFile || undefined)}
+                      className="omni-btn-primary"
+                      style={{ marginTop: '16px' }}
+                    >
+                      <RotateCw size={13} />
+                      <span>Re-Sweep Scope</span>
+                    </button>
+                  </div>
+                ) : (
+                  filteredResults.map((item) => {
+                    const isFixed = fixedIds[item.id];
+                    const isCopied = copiedId === item.id;
 
-                        {/* Role pill */}
-                        <span className="px-1.5 py-0.5 rounded text-[10px] font-mono uppercase bg-zinc-900 text-zinc-400 border border-zinc-800">
-                          {item.role}
-                        </span>
+                    const severityClass = {
+                      critical: 'border-crit',
+                      high: 'border-high',
+                      medium: 'border-med',
+                      low: 'border-low',
+                      info: 'border-info'
+                    }[item.severity];
 
-                        {/* Rule ID */}
-                        {item.ruleId && (
-                          <span className="text-[11px] font-mono text-zinc-500">
-                            #{item.ruleId}
-                          </span>
-                        )}
-                      </div>
+                    const badgeClass = {
+                      critical: 'badge-crit',
+                      high: 'badge-high',
+                      medium: 'badge-med',
+                      low: 'badge-low',
+                      info: 'badge-info'
+                    }[item.severity];
 
-                      {/* File location with line number */}
-                      {item.filePath && (
-                        <div className="text-[11px] font-mono text-zinc-400 bg-zinc-900/80 px-2 py-0.5 rounded border border-zinc-800/80 flex items-center gap-1">
-                          <FileCode size={11} className="text-zinc-500" />
-                          <span>{item.filePath}</span>
-                          {item.line !== undefined && (
-                            <span className="text-indigo-400 font-semibold">:{item.line}</span>
+                    const engineBadgeClass = {
+                      static: 'engine-static',
+                      dynamic: 'engine-dynamic',
+                      arch: 'engine-arch',
+                      ai: 'engine-ai'
+                    }[item.engine];
+
+                    return (
+                      <div
+                        key={item.id}
+                        className={`omni-finding-card ${severityClass} ${isFixed ? 'is-fixed' : ''}`}
+                      >
+                        {/* Header: Severity, Engine, Role, Rule, Location */}
+                        <div className="omni-card-header">
+                          <div className="omni-card-badges">
+                            {/* Severity Badge */}
+                            <span className={`omni-badge ${badgeClass}`}>
+                              {item.severity === 'critical' ? (
+                                <AlertOctagon size={11} />
+                              ) : (
+                                <AlertTriangle size={11} />
+                              )}
+                              <span>{item.severity}</span>
+                            </span>
+
+                            {/* Engine Badge */}
+                            <span className={`omni-badge badge-engine ${engineBadgeClass}`}>
+                              <span>{item.engine} engine</span>
+                            </span>
+
+                            {/* Role Pill */}
+                            <span
+                              style={{
+                                fontSize: '10px',
+                                fontWeight: 700,
+                                textTransform: 'uppercase',
+                                padding: '2px 6px',
+                                borderRadius: '4px',
+                                background: 'rgba(255, 255, 255, 0.05)',
+                                color: '#94a3b8'
+                              }}
+                            >
+                              {item.role}
+                            </span>
+
+                            {/* Rule ID */}
+                            {item.ruleId && (
+                              <span style={{ fontSize: '11px', fontFamily: 'monospace', color: '#64748b' }}>
+                                #{item.ruleId}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* File & Line Jump Pill */}
+                          {item.filePath && (
+                            <button
+                              type="button"
+                              onClick={() => handleJumpToCode(item)}
+                              className="omni-location-pill"
+                              title="Click to jump directly to this line in Monaco Editor"
+                            >
+                              <FileCode size={11} />
+                              <span>{item.filePath}</span>
+                              {item.line !== undefined && (
+                                <span className="omni-location-line">:{item.line}</span>
+                              )}
+                              <ArrowUpRight size={10} style={{ opacity: 0.6 }} />
+                            </button>
                           )}
                         </div>
-                      )}
-                    </div>
 
-                    {/* Diagnostic message */}
-                    <p className="text-xs font-medium text-zinc-100 leading-relaxed mb-2.5">
-                      {item.message}
-                    </p>
+                        {/* Diagnostic Description */}
+                        <p className="omni-card-message">{item.message}</p>
 
-                    {/* Code Snippet Preview (if available) */}
-                    {item.codeSnippet && (
-                      <div className="rounded-lg bg-[#0c0d0e] border border-zinc-900 p-2.5 font-mono text-[11px] text-zinc-300 mb-2.5 overflow-x-auto relative group">
-                        <div className="flex items-start gap-2">
-                          <span className="text-zinc-600 select-none text-[10px] pt-0.5">
-                            {item.line ?? '1'}
-                          </span>
-                          <code className="text-indigo-200">{item.codeSnippet}</code>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Suggested Fix Action Card */}
-                    {item.suggestedFix && (
-                      <div className="rounded-lg bg-emerald-500/5 border border-emerald-500/20 p-2.5 flex items-start justify-between gap-3 flex-wrap sm:flex-nowrap">
-                        <div className="flex items-start gap-2 min-w-0">
-                          <Wrench size={13} className="text-emerald-400 shrink-0 mt-0.5" />
-                          <div className="text-[11px] leading-relaxed">
-                            <span className="font-semibold text-emerald-400">Suggested Fix: </span>
-                            <span className="text-zinc-300">{item.suggestedFix}</span>
+                        {/* Code Snippet */}
+                        {item.codeSnippet && (
+                          <div className="omni-code-snippet">
+                            <span className="omni-snippet-line-num">{item.line || '1'}</span>
+                            <code className="omni-snippet-code">{item.codeSnippet}</code>
                           </div>
-                        </div>
+                        )}
 
-                        <div className="flex items-center gap-1.5 shrink-0 ml-auto">
-                          <button
-                            type="button"
-                            onClick={() => handleCopySnippet(item)}
-                            className="px-2 py-1 rounded text-[10px] font-semibold bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-800 transition-colors flex items-center gap-1 cursor-pointer"
-                            title="Copy Fix to Clipboard"
-                          >
-                            {isCopied ? <Check size={11} className="text-emerald-400" /> : <Copy size={11} />}
-                            <span>{isCopied ? 'Copied' : 'Copy'}</span>
-                          </button>
+                        {/* Suggested Fix Action Box */}
+                        {item.suggestedFix && (
+                          <div className="omni-fix-box">
+                            <div className="omni-fix-content">
+                              <Wrench size={13} style={{ color: '#34d399', flexShrink: 0, marginTop: '2px' }} />
+                              <div className="omni-fix-text">
+                                <strong>Suggested Fix: </strong>
+                                <span>{item.suggestedFix}</span>
+                              </div>
+                            </div>
 
-                          <button
-                            type="button"
-                            onClick={() => handleApplyFix(item.id)}
-                            disabled={isFixed}
-                            className={`px-2 py-1 rounded text-[10px] font-semibold transition-colors flex items-center gap-1 cursor-pointer ${
-                              isFixed
-                                ? 'bg-zinc-800 text-zinc-500 cursor-not-allowed'
-                                : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm shadow-emerald-600/30'
-                            }`}
-                          >
-                            {isFixed ? <Check size={11} /> : <Sparkles size={11} />}
-                            <span>{isFixed ? 'Applied' : 'Apply'}</span>
-                          </button>
-                        </div>
+                            <div className="omni-fix-actions">
+                              <button
+                                type="button"
+                                onClick={() => handleCopySnippet(item)}
+                                className="omni-btn-copy"
+                                title="Copy suggested fix to clipboard"
+                              >
+                                {isCopied ? <Check size={11} color="#34d399" /> : <Copy size={11} />}
+                                <span>{isCopied ? 'Copied' : 'Copy'}</span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => handleAskAIToFix(item)}
+                                className="omni-btn-ask-ai"
+                                title="Send issue to Ty-Code Chat Sidecar to refactor automatically"
+                              >
+                                <Sparkles size={11} />
+                                <span>Ask AI</span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => handleApplyFix(item.id)}
+                                disabled={isFixed}
+                                className="omni-btn-apply"
+                                title="Mark this diagnostic remediation as applied"
+                              >
+                                {isFixed ? <Check size={11} /> : <Zap size={11} />}
+                                <span>{isFixed ? 'Applied ✓' : 'Apply Fix'}</span>
+                              </button>
+                            </div>
+                          </div>
+                        )}
                       </div>
-                    )}
+                    );
+                  })
+                )}
+              </div>
+            </>
+          )}
+
+          {/* ================================================================= */}
+          {/* TAB 2: MULTI-ENGINE ARCHITECTURE MAP */}
+          {/* ================================================================= */}
+          {activeTab === 'engines' && (
+            <div className="omni-engine-matrix-grid">
+              {/* Static AST Engine */}
+              <div className="omni-engine-card card-static">
+                <div className="omni-engine-card-top">
+                  <div className="omni-engine-title-group">
+                    <div className="omni-engine-icon-wrap" style={{ background: 'rgba(99, 102, 241, 0.2)', color: '#818cf8' }}>
+                      <Code2 size={18} />
+                    </div>
+                    <div>
+                      <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: '#f8fafc' }}>
+                        Static AST Engine
+                      </h4>
+                      <span style={{ fontSize: '10px', color: '#818cf8', fontWeight: 600 }}>AST / Syntax / Linter</span>
+                    </div>
                   </div>
-                );
-              })
-            )}
-          </div>
+                  <span className="omni-badge badge-engine engine-static">Active</span>
+                </div>
+                <p className="omni-engine-card-desc">
+                  Performs deep abstract syntax tree traverses on TypeScript and JavaScript code without executing it, flagging floating promises, unhandled rejection branches, and dead paths.
+                </p>
+                <div className="omni-engine-rules-list">
+                  <div className="omni-engine-rule-item">
+                    <span>Promise Handling:</span>
+                    <strong style={{ color: '#a5b4fc' }}>no-floating-promises</strong>
+                  </div>
+                  <div className="omni-engine-rule-item">
+                    <span>Async Concurrency:</span>
+                    <strong style={{ color: '#a5b4fc' }}>race-condition-guard</strong>
+                  </div>
+                  <div className="omni-engine-rule-item">
+                    <span>Dead Code:</span>
+                    <strong style={{ color: '#a5b4fc' }}>unreachable-branches</strong>
+                  </div>
+                </div>
+              </div>
+
+              {/* Dynamic Profiler Engine */}
+              <div className="omni-engine-card card-dynamic">
+                <div className="omni-engine-card-top">
+                  <div className="omni-engine-title-group">
+                    <div className="omni-engine-icon-wrap" style={{ background: 'rgba(168, 85, 247, 0.2)', color: '#c084fc' }}>
+                      <Activity size={18} />
+                    </div>
+                    <div>
+                      <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: '#f8fafc' }}>
+                        Dynamic Profiler
+                      </h4>
+                      <span style={{ fontSize: '10px', color: '#c084fc', fontWeight: 600 }}>VSync / Memory / Latency</span>
+                    </div>
+                  </div>
+                  <span className="omni-badge badge-engine engine-dynamic">Hooked</span>
+                </div>
+                <p className="omni-engine-card-desc">
+                  Monitors re-render velocity, IPC frame buffering, and garbage collection pressure to maintain a 60 FPS silky smooth developer experience.
+                </p>
+                <div className="omni-engine-rules-list">
+                  <div className="omni-engine-rule-item">
+                    <span>Render Frequency:</span>
+                    <strong style={{ color: '#d8b4fe' }}>24ms micro-batching</strong>
+                  </div>
+                  <div className="omni-engine-rule-item">
+                    <span>Stream Profiling:</span>
+                    <strong style={{ color: '#d8b4fe' }}>rAF synchronization</strong>
+                  </div>
+                  <div className="omni-engine-rule-item">
+                    <span>Memory Footprint:</span>
+                    <strong style={{ color: '#d8b4fe' }}>no-listener-leaks</strong>
+                  </div>
+                </div>
+              </div>
+
+              {/* Architecture Boundary Engine */}
+              <div className="omni-engine-card card-arch">
+                <div className="omni-engine-card-top">
+                  <div className="omni-engine-title-group">
+                    <div className="omni-engine-icon-wrap" style={{ background: 'rgba(16, 185, 129, 0.2)', color: '#34d399' }}>
+                      <ShieldCheck size={18} />
+                    </div>
+                    <div>
+                      <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: '#f8fafc' }}>
+                        Arch Boundary Engine
+                      </h4>
+                      <span style={{ fontSize: '10px', color: '#34d399', fontWeight: 600 }}>IPC / Isolation / Security</span>
+                    </div>
+                  </div>
+                  <span className="omni-badge badge-engine engine-arch">Enforced</span>
+                </div>
+                <p className="omni-engine-card-desc">
+                  Guarantees complete process boundary isolation between Electron main and renderer processes, preventing raw filesystem exfiltration and enforcing contextBridge security.
+                </p>
+                <div className="omni-engine-rules-list">
+                  <div className="omni-engine-rule-item">
+                    <span>Process Boundary:</span>
+                    <strong style={{ color: '#6ee7b7' }}>contextBridge IPC</strong>
+                  </div>
+                  <div className="omni-engine-rule-item">
+                    <span>Zero Exfiltration:</span>
+                    <strong style={{ color: '#6ee7b7' }}>safeStorage keyring</strong>
+                  </div>
+                  <div className="omni-engine-rule-item">
+                    <span>Credential Shield:</span>
+                    <strong style={{ color: '#6ee7b7' }}>no-plaintext-keys</strong>
+                  </div>
+                </div>
+              </div>
+
+              {/* AI Deep Reasoning Analyst */}
+              <div className="omni-engine-card card-ai">
+                <div className="omni-engine-card-top">
+                  <div className="omni-engine-title-group">
+                    <div className="omni-engine-icon-wrap" style={{ background: 'rgba(236, 72, 153, 0.2)', color: '#f472b6' }}>
+                      <Sparkles size={18} />
+                    </div>
+                    <div>
+                      <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: '#f8fafc' }}>
+                        AI Analyst Engine
+                      </h4>
+                      <span style={{ fontSize: '10px', color: '#f472b6', fontWeight: 600 }}>Multi-Perspective Reasoning</span>
+                    </div>
+                  </div>
+                  <span className="omni-badge badge-engine engine-ai">Ready</span>
+                </div>
+                <p className="omni-engine-card-desc">
+                  Autonomous LLM-driven analyzer evaluating the codebase from DEV, QA, and PM perspectives simultaneously, detecting subtle edge-cases and WCAG AA accessibility compliance issues.
+                </p>
+                <div className="omni-engine-rules-list">
+                  <div className="omni-engine-rule-item">
+                    <span>Role DEV:</span>
+                    <strong style={{ color: '#fbcfe8' }}>API contracts &amp; concurrency</strong>
+                  </div>
+                  <div className="omni-engine-rule-item">
+                    <span>Role QA:</span>
+                    <strong style={{ color: '#fbcfe8' }}>Boundary conditions &amp; edge cases</strong>
+                  </div>
+                  <div className="omni-engine-rule-item">
+                    <span>Role PM:</span>
+                    <strong style={{ color: '#fbcfe8' }}>UX fallbacks &amp; accessibility</strong>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ================================================================= */}
+          {/* TAB 3: HEALTH & QUALITY MATRIX */}
+          {/* ================================================================= */}
+          {activeTab === 'metrics' && (
+            <div className="omni-metrics-container">
+              {/* Top Metric Tiles */}
+              <div className="omni-metrics-hero">
+                <div className="omni-metric-tile">
+                  <span className="omni-metric-tile-title">Health Index</span>
+                  <span className="omni-metric-tile-value" style={{ color: healthScore >= 80 ? '#34d399' : '#fbbf24' }}>
+                    {healthScore}%
+                  </span>
+                  <span style={{ fontSize: '11px', color: '#64748b' }}>
+                    Grade {healthGrade.letter} ({healthGrade.label})
+                  </span>
+                </div>
+
+                <div className="omni-metric-tile">
+                  <span className="omni-metric-tile-title">Total Monitored Files</span>
+                  <span className="omni-metric-tile-value" style={{ color: '#818cf8' }}>
+                    {fileNodes.length}
+                  </span>
+                  <span style={{ fontSize: '11px', color: '#64748b' }}>
+                    {fileNodes.filter((f) => f.count > 0).length} files have active findings
+                  </span>
+                </div>
+
+                <div className="omni-metric-tile">
+                  <span className="omni-metric-tile-title">Remediations Applied</span>
+                  <span className="omni-metric-tile-value" style={{ color: '#34d399' }}>
+                    {Object.keys(fixedIds).length}
+                  </span>
+                  <span style={{ fontSize: '11px', color: '#64748b' }}>
+                    Interactive 1-click fixes applied this session
+                  </span>
+                </div>
+              </div>
+
+              {/* Role-Specific Readiness Bars */}
+              <div
+                style={{
+                  background: 'rgba(15, 23, 42, 0.7)',
+                  borderRadius: '10px',
+                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                  padding: '16px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '12px'
+                }}
+              >
+                <h4 style={{ margin: 0, fontSize: '13px', fontWeight: 700, color: '#f8fafc' }}>
+                  Perspective Readiness Breakdown
+                </h4>
+
+                {/* DEV */}
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11.5px', marginBottom: '4px' }}>
+                    <span style={{ color: '#818cf8', fontWeight: 600 }}>Developer (DEV) Readiness</span>
+                    <span style={{ color: '#94a3b8' }}>
+                      {analysisResults.filter((r) => r.role === 'dev').length} issues
+                    </span>
+                  </div>
+                  <div style={{ height: '6px', borderRadius: '3px', background: 'rgba(255, 255, 255, 0.06)', overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: '82%', background: '#6366f1' }} />
+                  </div>
+                </div>
+
+                {/* QA */}
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11.5px', marginBottom: '4px' }}>
+                    <span style={{ color: '#f59e0b', fontWeight: 600 }}>Quality Assurance (QA) Coverage</span>
+                    <span style={{ color: '#94a3b8' }}>
+                      {analysisResults.filter((r) => r.role === 'qa').length} issues
+                    </span>
+                  </div>
+                  <div style={{ height: '6px', borderRadius: '3px', background: 'rgba(255, 255, 255, 0.06)', overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: '74%', background: '#f59e0b' }} />
+                  </div>
+                </div>
+
+                {/* PM */}
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11.5px', marginBottom: '4px' }}>
+                    <span style={{ color: '#a855f7', fontWeight: 600 }}>Product Experience (PM) Quality</span>
+                    <span style={{ color: '#94a3b8' }}>
+                      {analysisResults.filter((r) => r.role === 'pm').length} issues
+                    </span>
+                  </div>
+                  <div style={{ height: '6px', borderRadius: '3px', background: 'rgba(255, 255, 255, 0.06)', overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: '89%', background: '#a855f7' }} />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </main>
       </div>
     </div>

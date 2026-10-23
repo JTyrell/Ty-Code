@@ -19,6 +19,7 @@ export type FreeProviderId =
   | 'google-ai-studio-free'
   | 'anthropic-claude-free'
   | 'opencode-built-in'
+  | 'opencode-free'
   | 'ty-code-free';
 
 export type FreeAuthType =

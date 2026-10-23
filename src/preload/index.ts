@@ -651,6 +651,34 @@ const api: ElectronAPI = {
   onboardingSaveState: (updates: any) => ipcRenderer.invoke('onboarding:save-state', updates),
 
   getVerifiedModels: () => ipcRenderer.invoke('get-verified-models'),
+  saveOpenCodeApiKey: (provider: string, key: string) => ipcRenderer.invoke('opencode:save-api-key', provider, key),
+  getOpenCodeKeyStatus: () => ipcRenderer.invoke('opencode:get-key-status'),
+
+  // OpenCode Free Tier chat bridge (Prompt 3): dedicated stream + stop channel
+  sendOpenCodeMessage: (payload: { modelId: string; prompt?: string; messages?: Array<{ role: string; content: string }> }) =>
+    ipcRenderer.invoke('opencode:send-message', payload),
+  onOpenCodeStream: (callback: (chunk: string) => void) => {
+    const listener = (_event: unknown, chunk: string) => callback(chunk);
+    ipcRenderer.on('opencode:stream', listener);
+    return () => {
+      ipcRenderer.removeListener('opencode:stream', listener);
+    };
+  },
+  onOpenCodeDone: (callback: (payload?: { stopped?: boolean }) => void) => {
+    const listener = (_event: unknown, payload?: { stopped?: boolean }) => callback(payload);
+    ipcRenderer.on('opencode:done', listener);
+    return () => {
+      ipcRenderer.removeListener('opencode:done', listener);
+    };
+  },
+  onOpenCodeError: (callback: (payload: { message: string }) => void) => {
+    const listener = (_event: unknown, payload: { message: string }) => callback(payload);
+    ipcRenderer.on('opencode:error', listener);
+    return () => {
+      ipcRenderer.removeListener('opencode:error', listener);
+    };
+  },
+  stopOpenCodeProcess: () => ipcRenderer.invoke('opencode:stop-process'),
   testVerifiedApi: (data: { modelId: string; prompt: string; apiKey?: string }) => 
     ipcRenderer.invoke('test-verified-api', data),
   onVerifiedApiChunk: (cb: (chunk: string) => void) => 

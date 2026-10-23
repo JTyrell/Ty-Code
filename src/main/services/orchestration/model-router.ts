@@ -173,7 +173,8 @@ export class ModelRouter {
   private static providerDisplayName(providerId: string): string {
     switch ((providerId || '').toLowerCase()) {
       case 'openkilo': case 'openkilo-free': return 'OpenKilo';
-      case 'opencode': case 'opencode-free': return 'OpenCode Zen';
+      case 'opencode': return 'OpenCode Zen';
+      case 'opencode-free': return 'OpenCode (CLI)';
       case 'openrouter': case 'openrouter-free': return 'OpenRouter';
       case 'ty-code-free': case 'tycode-free': return 'Ty-Code Free';
       case 'groq': case 'groq-free': return 'Groq';
@@ -549,10 +550,23 @@ export class ModelRouter {
 export const modelRouter = ModelRouter.getInstance();
 
 /**
- * FCC free-default policy: a model is routable by default only when it is free
- * (anonymous gateway / :free pool / baked supply) or the provider holds its own
- * credentials (BYOK). Borrowed credentials from another provider never qualify.
+ * FCC free-default policy: a model is routable by default only when it is truly keyless
+ * (OpenKilo anonymous gateway / Ty-Code Free community tier / local Ollama / OpenCode CLI bridge)
+ * or the provider holds its own credentials (BYOK). Borrowed credentials from another provider never qualify.
  */
 function filterRoutableFreeFirst(pool: ModelCatalogEntry[]): ModelCatalogEntry[] {
-  return pool.filter((entry) => entry.isFree || providerHasOwnKey(entry.providerId));
+  return pool.filter((entry) => {
+    const p = (entry.providerId || '').toLowerCase().trim();
+    if (
+      p === 'openkilo' ||
+      p === 'openkilo-free' ||
+      p === 'ty-code-free' ||
+      p === 'tycode-free' ||
+      p === 'ollama' ||
+      p === 'opencode-free'
+    ) {
+      return true;
+    }
+    return providerHasOwnKey(entry.providerId);
+  });
 }

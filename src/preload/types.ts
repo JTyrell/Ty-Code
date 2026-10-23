@@ -1236,6 +1236,17 @@ export interface ElectronAPI {
   opencodeGetServiceStatus?: () => Promise<IpcResponse<OpenCodeServiceStatusData>>;
   opencodeRefreshStandardSupply?: () => Promise<IpcResponse<OpenCodeServiceStatusData>>;
 
+  // Manual key configuration for OpenCode's premium models (vault + config injection)
+  saveOpenCodeApiKey?: (provider: string, key: string) => Promise<IpcResponse<OpenCodeApiKeySaveResult>>;
+  getOpenCodeKeyStatus?: () => Promise<IpcResponse<OpenCodeKeyStatus[]>>;
+
+  // OpenCode Free Tier chat bridge (direct CLI subprocess streaming)
+  sendOpenCodeMessage?: (payload: OpenCodeChatPayload) => Promise<IpcResponse<boolean>>;
+  onOpenCodeStream?: (callback: (chunk: string) => void) => () => void;
+  onOpenCodeDone?: (callback: (payload?: { stopped?: boolean }) => void) => () => void;
+  onOpenCodeError?: (callback: (payload: { message: string }) => void) => () => void;
+  stopOpenCodeProcess?: () => Promise<IpcResponse<boolean>>;
+
   // Phase 6.4: Intelligent Model Router
   modelRouterClassifyTask?: (prompt: string) => Promise<IpcResponse<TaskClassificationResult>>;
   modelRouterSelectModel?: (prompt: string, overridePreferences?: Partial<RouterUserPreferences>) => Promise<IpcResponse<ModelRoutingDecision>>;
@@ -1521,6 +1532,29 @@ export interface OpenCodeServiceStatusData {
   catalogEnabled: boolean;
   lastError: string | null;
   lastCheckedAt: number | null;
+}
+
+// Manual key configuration for OpenCode's premium models. Booleans only —
+// plaintext keys never cross the IPC boundary back to the renderer.
+export interface OpenCodeApiKeySaveResult {
+  provider: string;
+  vaultStored: boolean;
+  configUpdated: boolean;
+  configPath: string | null;
+  message?: string;
+}
+
+export interface OpenCodeKeyStatus {
+  provider: string;
+  vaultConfigured: boolean;
+  opencodeConfigured: boolean;
+}
+
+export interface OpenCodeChatPayload {
+  modelId: string;
+  prompt?: string;
+  /** Chat history (user/assistant turns) flattened on the main-process side. */
+  messages?: Array<{ role: string; content: string }>;
 }
 
 // Omni-Debugger: Multi-Engine Diagnostic & Architecture Inspector

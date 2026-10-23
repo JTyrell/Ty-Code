@@ -133,7 +133,7 @@ export const INITIAL_ANALYSIS_RESULTS: AnalysisResult[] = [
 export const useDebuggerStore = create<DebuggerState>((set, get) => ({
   activeFile: 'src/main/agent/agent-engine.ts',
   analysisResults: INITIAL_ANALYSIS_RESULTS,
-  isPopOutMode: false,
+  isPopOutMode: true,
   selectedRole: 'dev',
   selectedSeverity: 'all',
   selectedEngine: 'all',

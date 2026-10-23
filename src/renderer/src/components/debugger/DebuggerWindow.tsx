@@ -113,55 +113,197 @@ export const DebuggerWindow: React.FC = () => {
   const totalFindings = analysisResults.filter((r) => r.role === selectedRole).length;
 
   return (
-    <div className="flex flex-col w-screen h-screen bg-[#121316] text-zinc-200 overflow-hidden select-none">
+    <div
+      className="omni-window-root"
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        width: '100vw',
+        height: '100vh',
+        background: '#090d16',
+        color: '#e2e8f0',
+        overflow: 'hidden',
+        userSelect: 'none'
+      }}
+    >
       {/* Pop-Out Window Title Bar with Window Controls */}
       <header
+        className="omni-window-titlebar"
         style={{
-          height: '32px',
-          minHeight: '32px',
-          backgroundColor: '#0c0d0f',
-          borderBottom: '1px solid #27272a',
+          height: '35px',
+          minHeight: '35px',
+          maxHeight: '35px',
+          boxSizing: 'border-box',
+          backgroundColor: '#0c101c',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
           display: 'flex',
+          flexDirection: 'row',
           alignItems: 'center',
           justifyContent: 'space-between',
-          paddingLeft: isMac ? '76px' : '10px',
+          paddingLeft: isMac ? '76px' : '12px',
           paddingRight: 0,
+          flexShrink: 0,
           ...appRegion('drag')
         }}
       >
         {/* Left Titlebar Brand */}
-        <div className="flex items-center gap-2">
-          <div className="w-4 h-4 rounded bg-indigo-500/20 border border-indigo-500/40 flex items-center justify-center text-indigo-400">
-            <Bug size={11} />
+        <div
+          className="omni-window-titlebar-left"
+          style={{
+            display: 'flex',
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: '8px',
+            height: '100%',
+            flexShrink: 0,
+            minWidth: 0
+          }}
+        >
+          <div
+            className="omni-window-brand-icon"
+            style={{
+              width: '20px',
+              height: '20px',
+              borderRadius: '5px',
+              background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.3) 0%, rgba(168, 85, 247, 0.22) 100%)',
+              border: '1px solid rgba(129, 140, 248, 0.45)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#a5b4fc',
+              boxShadow: '0 0 10px rgba(99, 102, 241, 0.25)',
+              flexShrink: 0
+            }}
+          >
+            <Bug size={12} />
           </div>
-          <span className="text-[11px] font-semibold text-zinc-300 tracking-wide">
-            Ty-Code • Omni-Debugger
-          </span>
-          <span className="text-[10px] px-1.5 py-0.2 rounded-full uppercase font-bold tracking-wider bg-zinc-800 text-zinc-400 font-mono">
+
+          <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: '6px' }}>
+            <span style={{ fontSize: '12px', fontWeight: 600, color: '#f8fafc', letterSpacing: '-0.01em', whiteSpace: 'nowrap' }}>
+              <span style={{ color: '#818cf8', fontWeight: 700 }}>Ty-Code</span>
+              <span style={{ color: '#64748b', margin: '0 5px' }}>•</span>
+              Omni-Debugger
+            </span>
+          </div>
+
+          <span
+            className="omni-window-mode-pill"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              fontSize: '9.5px',
+              padding: '1px 7px',
+              borderRadius: '4px',
+              textTransform: 'uppercase',
+              fontWeight: 700,
+              fontFamily: 'monospace',
+              letterSpacing: '0.04em',
+              whiteSpace: 'nowrap',
+              background:
+                selectedRole === 'dev'
+                  ? 'rgba(99, 102, 241, 0.16)'
+                  : selectedRole === 'qa'
+                  ? 'rgba(245, 158, 11, 0.16)'
+                  : 'rgba(168, 85, 247, 0.16)',
+              color:
+                selectedRole === 'dev'
+                  ? '#a5b4fc'
+                  : selectedRole === 'qa'
+                  ? '#fcd34d'
+                  : '#d8b4fe',
+              border:
+                selectedRole === 'dev'
+                  ? '1px solid rgba(99, 102, 241, 0.35)'
+                  : selectedRole === 'qa'
+                  ? '1px solid rgba(245, 158, 11, 0.35)'
+                  : '1px solid rgba(168, 85, 247, 0.35)'
+            }}
+          >
+            <span
+              style={{
+                width: '5px',
+                height: '5px',
+                borderRadius: '50%',
+                background:
+                  selectedRole === 'dev'
+                    ? '#818cf8'
+                    : selectedRole === 'qa'
+                    ? '#fbbf24'
+                    : '#c084fc'
+              }}
+            />
             {selectedRole} Mode
           </span>
-          <span className="text-[10px] text-zinc-500">
+
+          <span
+            className="omni-window-findings-badge"
+            style={{
+              fontSize: '11px',
+              color: '#64748b',
+              fontFamily: 'monospace',
+              whiteSpace: 'nowrap'
+            }}
+          >
             ({totalFindings} findings)
           </span>
         </div>
 
-        {/* Center / Right Titlebar Controls */}
-        <div className="flex items-center h-full">
+        {/* Center Draggable Spacer */}
+        <div style={{ flex: 1, height: '100%', minWidth: '16px', ...appRegion('drag') }} />
+
+        {/* Right Titlebar Controls */}
+        <div
+          className="omni-window-titlebar-right"
+          style={{
+            display: 'flex',
+            flexDirection: 'row',
+            alignItems: 'center',
+            height: '100%',
+            flexShrink: 0
+          }}
+        >
           {/* Dock back into sidebar button */}
           <button
             type="button"
             onClick={togglePopOutMode}
-            className="px-2 py-1 mr-2 rounded text-[11px] font-medium text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors flex items-center gap-1"
-            style={appRegion('no-drag')}
+            className="omni-window-dock-btn"
+            style={{
+              display: 'flex',
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '3px 9px',
+              marginRight: '8px',
+              borderRadius: '5px',
+              fontSize: '11px',
+              fontWeight: 500,
+              color: '#cbd5e1',
+              background: 'rgba(255, 255, 255, 0.05)',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+              transition: 'all 120ms ease',
+              ...appRegion('no-drag')
+            }}
             title="Dock debugger back into the main IDE sidebar"
           >
-            <Minimize2 size={12} />
-            <span className="hidden sm:inline">Dock to Sidebar</span>
+            <Minimize2 size={12} color="#94a3b8" />
+            <span>Dock to Sidebar</span>
           </button>
 
           {/* Window Caption Buttons (Windows/Linux) */}
           {!isMac && (
-            <div style={{ display: 'flex', height: '100%' }}>
+            <div
+              className="omni-window-caption-controls"
+              style={{
+                display: 'flex',
+                flexDirection: 'row',
+                alignItems: 'center',
+                height: '100%',
+                ...appRegion('no-drag')
+              }}
+            >
               <WindowControlButton
                 onClick={() => window.electronAPI?.minimizeWindow?.()}
                 title="Minimize"
@@ -189,7 +331,16 @@ export const DebuggerWindow: React.FC = () => {
       </header>
 
       {/* Main OmniDebugger Viewport */}
-      <div className="flex-1 overflow-hidden">
+      <div
+        className="omni-window-content"
+        style={{
+          flex: 1,
+          height: 'calc(100vh - 35px)',
+          overflow: 'hidden',
+          display: 'flex',
+          flexDirection: 'column'
+        }}
+      >
         <OmniDebugger isStandalone={true} />
       </div>
     </div>

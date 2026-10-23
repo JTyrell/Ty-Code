@@ -25,6 +25,7 @@ import { transitionProfiler } from './services/perf/transition-profiler';
 import { useChatStore } from './state/chat-store';
 import { useWorkspaceStore } from './state/workspace-store';
 import { useEditorNavigationStore } from './state/editor-navigation-store';
+import { useDebuggerStore } from './state/debugger-store';
 
 import { Palette } from 'lucide-react';
 import { SketcherWindow } from './components/SketcherWindow';
@@ -63,6 +64,17 @@ const MainWorkbench: React.FC = () => {
   const setWorkspacePath = useWorkspaceStore((s) => s.setWorkspacePath);
   const setFileTree = useWorkspaceStore((s) => s.setFileTree);
   const navigateTo = useEditorNavigationStore((state) => state.navigateTo);
+  const isPopOutMode = useDebuggerStore((s) => s.isPopOutMode);
+  const prevPopOutRef = useRef(isPopOutMode);
+
+  useEffect(() => {
+    // If user docked it back from popout window, bring it into the sidebar
+    if (prevPopOutRef.current && !isPopOutMode) {
+      setActivityTab('debugger');
+      setLeftWidth((lw) => (lw > 0 ? lw : Math.max(lastLeftWidthRef.current, 360)));
+    }
+    prevPopOutRef.current = isPopOutMode;
+  }, [isPopOutMode]);
 
   // Measure panel transitions and promote tasks on demand
   const handleTabChange = useCallback((tab: ActivityTab) => {
@@ -74,8 +86,13 @@ const MainWorkbench: React.FC = () => {
     }
 
     if (tab === 'debugger') {
-      setActivityTab('debugger');
-      setLeftWidth((lw) => (lw > 0 ? lw : Math.max(lastLeftWidthRef.current, 360)));
+      if (window.electronAPI?.debuggerOpenWindow) {
+        window.electronAPI.debuggerOpenWindow().catch(console.error);
+        useDebuggerStore.setState({ isPopOutMode: true });
+      } else {
+        setActivityTab('debugger');
+        setLeftWidth((lw) => (lw > 0 ? lw : Math.max(lastLeftWidthRef.current, 360)));
+      }
       return;
     }
 

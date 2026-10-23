@@ -106,6 +106,11 @@ import { readStoredCredentials, encryptSecret, decryptSecret } from './ipc/setti
 import type { CustomProviderConfig, StoredKeySummary } from '../shared/types/byok';
 import { opencodeIntegration } from './services/providers/opencode-integration';
 import { opencodeFreeDetector } from './services/providers/opencode-free-detector';
+import { saveOpenCodeApiKey, getOpenCodeKeyStatus, discoverOpenCodeFreeModels } from './services/opencode-config-manager';
+import { opencodeBridge, buildBridgePromptFromMessages } from './services/opencode-bridge';
+
+/** Active chat bridge run (Prompt 3): only one opencode child at a time. */
+let opencodeChatAbort: AbortController | null = null;
 import type { AgentFramework } from '../shared/types/opencode-sync';
 import { taskClassifier } from './services/orchestration/task-classifier';
 import { userPreferences } from './services/orchestration/user-preferences';
@@ -1715,6 +1720,112 @@ function registerIpcHandlers(): void {
     } catch (err: unknown) {
       return { success: false, error: err instanceof Error ? err.message : String(err) };
     }
+  });
+
+  // Manual key configuration for OpenCode's premium models. The key is stored
+  // encrypted (safeStorage vault) and injected into the user's OpenCode config
+  // file inside the main process — the response carries booleans only, the
+  // plaintext never round-trips back here again.
+  ipcMain.handle('opencode:save-api-key', async (event, providerName: string, apiKey: string) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      const result = await saveOpenCodeApiKey(String(providerName || ''), String(apiKey || ''));
+      const landed = result.vaultStored || result.configUpdated;
+      return {
+        success: landed,
+        data: result,
+        error: landed ? undefined : (result.message || 'The key could not be stored.')
+      };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('opencode:get-key-status', async (event) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      const statuses = await getOpenCodeKeyStatus();
+      return { success: true, data: statuses };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  // Chat Sidecar → OpenCode bridge (Prompt 3). One renderer message drives one
+  // bridge run; every stdout chunk is piped back on 'opencode:stream'. At most
+  // one bridge chat run is active — a new send pre-aborts the previous child.
+  ipcMain.handle('opencode:send-message', async (event, payload: { modelId?: string; prompt?: string; messages?: Array<{ role: string; content: string }> }) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      const modelId = String(payload?.modelId || '').trim();
+      if (!modelId) return { success: false, error: 'No OpenCode model selected.' };
+
+      // Honesty guard: the bridge only serves models that genuinely exist in
+      // the user's OpenCode config — never invented ones.
+      const discovered = await discoverOpenCodeFreeModels().catch(() => [] as string[]);
+      if (discovered.length === 0) {
+        return { success: false, error: 'Your OpenCode config lists no free models — run `opencode` once to sync its config first.' };
+      }
+      if (!discovered.includes(modelId)) {
+        return { success: false, error: `Model "${modelId}" is not present in your OpenCode config.` };
+      }
+
+      const hasMessages = Array.isArray(payload?.messages) && payload.messages.length > 0;
+      const promptText = hasMessages
+        ? buildBridgePromptFromMessages(payload!.messages!)
+        : buildBridgePromptFromMessages([{ role: 'user', content: String(payload?.prompt || '') }]);
+      if (!promptText.trim()) {
+        return { success: false, error: 'Nothing to send — the prompt is empty.' };
+      }
+
+      if (opencodeChatAbort) {
+        try { opencodeChatAbort.abort(); } catch { /* previous child already gone */ }
+      }
+      const controller = new AbortController();
+      opencodeChatAbort = controller;
+      const sender = event.sender;
+      let sentTerminal = false;
+      const finish = (stopped: boolean) => {
+        if (sentTerminal || sender.isDestroyed()) return;
+        sentTerminal = true;
+        sender.send('opencode:done', { stopped });
+      };
+
+      void (async () => {
+        let streamedError: string | null = null;
+        try {
+          for await (const chunk of opencodeBridge.executePrompt(promptText, modelId, undefined, { abortSignal: controller.signal })) {
+            if (sender.isDestroyed()) break;
+            if (chunk) sender.send('opencode:stream', chunk);
+          }
+        } catch (err: unknown) {
+          streamedError = err instanceof Error ? err.message : String(err);
+        }
+        if (!sender.isDestroyed()) {
+          if (streamedError) {
+            sentTerminal = true;
+            sender.send('opencode:error', { message: streamedError });
+          } else {
+            finish(controller.signal.aborted);
+          }
+        }
+        if (opencodeChatAbort === controller) opencodeChatAbort = null;
+      })();
+
+      return { success: true, data: true };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('opencode:stop-process', async (event) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    if (opencodeChatAbort) {
+      try { opencodeChatAbort.abort(); } catch { /* child already gone */ }
+      opencodeChatAbort = null;
+      return { success: true, data: true };
+    }
+    return { success: true, data: false };
   });
 
   // Phase 6.4: Intelligent Model Router

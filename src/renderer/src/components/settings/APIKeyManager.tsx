@@ -37,8 +37,17 @@ import {
 } from 'lucide-react';
 import type { DetectedApiKey, StoredKeySummary } from '../../../../shared/types/byok';
 import type { CredentialStorageStatus, ProviderType } from '../../../../preload/types';
+import type { OpenCodeKeyStatus } from '../../../../preload/types';
 import { useChatStore } from '../../state/chat-store';
 import { useOnboardingStore } from '../../state/onboarding-store';
+import { toast } from '../../state/toast-store';
+
+/** Manual key configuration targets for OpenCode's premium models (Prompt 2). */
+const OPENCODE_PREMIUM_PROVIDERS: Array<{ id: string; name: string; placeholder: string }> = [
+  { id: 'openai', name: 'OpenAI', placeholder: 'sk-...' },
+  { id: 'anthropic', name: 'Anthropic', placeholder: 'sk-ant-...' },
+  { id: 'google', name: 'Google (Gemini)', placeholder: 'AIza...' }
+];
 
 export interface APIKeyManagerProps {
   onRefreshStoredKeys?: () => Promise<void>;
@@ -65,6 +74,10 @@ export const APIKeyManager: React.FC<APIKeyManagerProps> = ({
   const [premiumKeyInput, setPremiumKeyInput] = useState('');
   const [premiumSaving, setPremiumSaving] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  // OpenCode Premium Providers section (Prompt 2)
+  const [opencodeKeyInputs, setOpencodeKeyInputs] = useState<Record<string, string>>({});
+  const [opencodeSaving, setOpencodeSaving] = useState<Record<string, boolean>>({});
+  const [opencodeStatuses, setOpencodeStatuses] = useState<Record<string, OpenCodeKeyStatus>>({});
 
   // Load initial state
   useEffect(() => {
@@ -94,6 +107,16 @@ export const APIKeyManager: React.FC<APIKeyManagerProps> = ({
         const detectRes = await window.electronAPI.byokDetectKeys();
         if (detectRes.success && detectRes.data) {
           setDetectedKeys(detectRes.data);
+        }
+      }
+
+      // 4. OpenCode premium key status (booleans only — never plaintext)
+      if (window.electronAPI.getOpenCodeKeyStatus) {
+        const opencodeRes = await window.electronAPI.getOpenCodeKeyStatus();
+        if (opencodeRes.success && opencodeRes.data) {
+          const next: Record<string, OpenCodeKeyStatus> = {};
+          for (const status of opencodeRes.data) next[status.provider] = status;
+          setOpencodeStatuses(next);
         }
       }
     } catch (err: unknown) {
@@ -139,9 +162,47 @@ export const APIKeyManager: React.FC<APIKeyManagerProps> = ({
     }
   };
 
+  // OpenCode Premium Providers (Prompt 2): persist the key encrypted in the
+  // safeStorage vault and inject it into the user's OpenCode config. The IPC
+  // response is booleans only — the plaintext key is never sent back here.
+  const handleSaveOpenCodeKey = async (providerId: string) => {
+    const key = (opencodeKeyInputs[providerId] || '').trim();
+    if (!key || key.length < 8) {
+      toast.error('Enter a valid API key first', `The ${providerId} key looks too short — nothing was stored.`);
+      return;
+    }
+    if (!window.electronAPI.saveOpenCodeApiKey) {
+      toast.error('Save unavailable', 'This build does not expose the OpenCode key bridge.');
+      return;
+    }
+    setOpencodeSaving((prev) => ({ ...prev, [providerId]: true }));
+    try {
+      const res = await window.electronAPI.saveOpenCodeApiKey(providerId, key);
+      const data = res.success ? res.data : undefined;
+      if (data?.configUpdated) {
+        toast.success('Key saved and synced to OpenCode config.');
+        setOpencodeKeyInputs((prev) => ({ ...prev, [providerId]: '' }));
+      } else if (data?.vaultStored) {
+        toast.warning(
+          'Key stored in the Ty-Code vault, but the OpenCode config was not updated',
+          data.message || 'The config file may be read-only or protected.'
+        );
+        setOpencodeKeyInputs((prev) => ({ ...prev, [providerId]: '' }));
+      } else {
+        toast.error('Could not save key', res.error || data?.message || 'Nothing was stored.');
+      }
+      await refreshAll();
+      if (onRefreshStoredKeys) await onRefreshStoredKeys();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      toast.error('Could not save key', message);
+    } finally {
+      setOpencodeSaving((prev) => ({ ...prev, [providerId]: false }));
+    }
+  };
+
   // Toggle Reveal Key
-  const handleToggleReveal = async (providerId: string) => {
-    if (revealedKeys[providerId]) {
+  const handleToggleReveal = async (providerId: string) => {    if (revealedKeys[providerId]) {
       // Hide
       setRevealedKeys((prev) => {
         const next = { ...prev };
@@ -657,6 +718,134 @@ export const APIKeyManager: React.FC<APIKeyManagerProps> = ({
             </a>
           </div>
         </div>
+      </div>
+
+      {/* ============================================================ */}
+      {/* OPENCODE PREMIUM PROVIDERS (manual key configuration)        */}
+      {/* ============================================================ */}
+      <div
+        id="opencode-premium-section"
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '12px',
+          padding: '16px',
+          borderRadius: '10px',
+          background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.08) 0%, rgba(30, 41, 59, 0.2) 100%)',
+          border: '1px solid rgba(56, 189, 248, 0.28)'
+        }}
+      >
+        <div>
+          <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Terminal size={15} color="#7dd3fc" />
+            OpenCode Premium Providers
+          </h3>
+          <p style={{ margin: '3px 0 0 0', fontSize: '11px', color: '#94a3b8', lineHeight: 1.55 }}>
+            Paid models served by your installed opencode CLI. Saving stores the key encrypted with safeStorage in
+            Ty-Code&apos;s vault and syncs it into your local OpenCode config file. Keys are never shown or sent back
+            after saving.
+          </p>
+        </div>
+
+        {OPENCODE_PREMIUM_PROVIDERS.map((provider) => {
+          const status = opencodeStatuses[provider.id];
+          const synced = Boolean(status?.vaultConfigured || status?.opencodeConfigured);
+          const saving = Boolean(opencodeSaving[provider.id]);
+          return (
+            <div
+              key={provider.id}
+              id={`opencode-provider-${provider.id}`}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                padding: '10px 12px',
+                borderRadius: '8px',
+                background: 'rgba(15, 23, 42, 0.55)',
+                border: synced ? '1px solid rgba(56, 189, 248, 0.35)' : '1px solid rgba(255, 255, 255, 0.08)'
+              }}
+            >
+              <div style={{ minWidth: '150px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '12.5px', fontWeight: 600, color: '#f8fafc' }}>{provider.name}</span>
+                  {synced && (
+                    <span
+                      id={`opencode-synced-badge-${provider.id}`}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        padding: '1px 7px',
+                        borderRadius: '10px',
+                        background: 'rgba(16, 185, 129, 0.16)',
+                        color: '#34d399',
+                        fontSize: '9.5px',
+                        fontWeight: 700,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.4px'
+                      }}
+                    >
+                      <CheckCircle2 size={10} />
+                      Synced
+                    </span>
+                  )}
+                </div>
+                {status && !status.opencodeConfigured && status.vaultConfigured && (
+                  <span style={{ display: 'block', marginTop: '2px', fontSize: '10px', color: '#fbbf24' }}>
+                    Vault only — config write pending
+                  </span>
+                )}
+              </div>
+
+              <input
+                type="password"
+                id={`input-opencode-key-${provider.id}`}
+                placeholder={provider.placeholder}
+                value={opencodeKeyInputs[provider.id] || ''}
+                onChange={(e) => setOpencodeKeyInputs((prev) => ({ ...prev, [provider.id]: e.target.value }))}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') void handleSaveOpenCodeKey(provider.id);
+                }}
+                autoComplete="off"
+                style={{
+                  flex: 1,
+                  minWidth: '180px',
+                  padding: '7px 10px',
+                  borderRadius: '6px',
+                  border: '1px solid rgba(56, 189, 248, 0.3)',
+                  background: 'rgba(15, 23, 42, 0.7)',
+                  color: '#f8fafc',
+                  fontSize: '12px',
+                  fontFamily: 'monospace'
+                }}
+              />
+
+              <button
+                type="button"
+                id={`btn-save-opencode-${provider.id}`}
+                disabled={saving}
+                onClick={() => void handleSaveOpenCodeKey(provider.id)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  padding: '7px 14px',
+                  borderRadius: '6px',
+                  background: 'var(--accent-primary)',
+                  border: 'none',
+                  color: '#ffffff',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  cursor: saving ? 'wait' : 'pointer',
+                  flexShrink: 0
+                }}
+              >
+                <Lock size={12} />
+                {saving ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          );
+        })}
       </div>
 
       {/* Advanced: auto-detection, direct provider keys and stored-key management */}

@@ -49,7 +49,8 @@ const ANONYMOUS_PROVIDERS = new Set([
   'openkilo-free',
   'kilo',
   'ollama',
-  'fcc-proxy'
+  'fcc-proxy',
+  'opencode-free'
 ]);
 
 let currentAgentConfig: ActiveAgentConfig = {

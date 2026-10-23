@@ -25,6 +25,9 @@ import { keyDetector } from '../services/providers/key-detector';
 import { getKey, getCommunityKey, warmUpCommunityKey, getCommunityKeyCached, hasCommunityKey, invalidateCommunityKey } from '../services/credential-vault';
 import { getVerifiedModels, type VerifiedModelConfig } from '../services/verified-models';
 import { fetchFCCCatalog, canFccServeCompletions } from '../services/fcc-catalog-sync';
+import { opencodeBridge, buildBridgePromptFromMessages } from '../services/opencode-bridge';
+
+const OPENCODE_FREE_PROTOCOL = 'opencode-cli://';
 
 import { BrowserWindow } from 'electron';
 import { DEFAULT_PRESET_MODELS } from '../../preload/preset-models';
@@ -130,6 +133,54 @@ async function resolveOpenRouterKey(): Promise<string | undefined> {
   return undefined;
 }
 
+/**
+ * Executes a chat completion through the local opencode CLI bridge and maps
+ * stdout chunks to the caller's onToken listener (final text is returned so
+ * direct callers get the same string contract as HTTP providers).
+ */
+async function runOpenCodeBridge(
+  modelId: string,
+  messages: any[],
+  onToken?: (chunk: string) => void,
+  abortSignal?: AbortSignal
+): Promise<string> {
+  console.log(`[OPENCODE-BRIDGE] executing via local opencode CLI: model=${modelId}`);
+  // Keys the user saved for premium providers (vault, safeStorage) are passed
+  // to the CLI via its environment — never on the argv line.
+  let bridgeKey: string | undefined;
+  try {
+    const modelPrefix = (modelId || '').split('/')[0].toLowerCase().trim();
+    if (modelPrefix) {
+      const stored = await getKey(modelPrefix).catch(() => undefined);
+      if (stored && stored.trim()) bridgeKey = stored.trim();
+    }
+  } catch {
+    bridgeKey = undefined;
+  }
+  const bridgeParts: string[] = [];
+  try {
+    for await (const chunk of opencodeBridge.executePrompt(
+      buildBridgePromptFromMessages(messages),
+      modelId,
+      bridgeKey,
+      { abortSignal }
+    )) {
+      if (!chunk) continue;
+      bridgeParts.push(chunk);
+      try {
+        onToken?.(chunk);
+      } catch {
+        // Downstream listener failures must never break the bridge stream.
+      }
+    }
+  } catch (err: unknown) {
+    const messageText = err instanceof Error ? err.message : String(err);
+    console.warn(`[OPENCODE-BRIDGE] failed for ${modelId}: ${messageText}`);
+    throw err instanceof Error ? err : new Error(messageText);
+  }
+  return bridgeParts.join('');
+}
+
 export async function sendChatRequest(
   providerId: string,
   modelId: string,
@@ -167,6 +218,14 @@ export async function sendChatRequest(
     } catch {
       // Warm-up failure is fine: the stream path re-resolves lazily.
     }
+  }
+
+  // OpenCode Free Tier (auto-discovery): entries surfaced from the user's
+  // local opencode config are served by the real installed `opencode` CLI via
+  // the subprocess bridge. No HTTP request is ever issued for this tier, so
+  // resolve the bridge result right away — the config lookup below is skipped.
+  if ((providerId || '').toLowerCase().trim() === 'opencode-free') {
+    return await runOpenCodeBridge(modelId, messages, onToken, abortSignal);
   }
   // FCC Free Tier: the 'fcc' provider id hydrates the FCC supply layer through
   // the dynamic catalog; the 'anthropic-claude-free' binding normalizes to
@@ -262,9 +321,16 @@ export async function sendChatRequest(
       config = { modelId, name: modelId, url: 'https://api.deepseek.com/chat/completions', requiresKey: true, providerId: 'deepseek' };
     } else if (norm === 'qwen' || norm === 'alibaba') {
       config = { modelId, name: modelId, url: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions', requiresKey: true, providerId: 'alibaba' };
-    } else {
-      throw new Error('Unverified model or provider requested');
-    }
+  } else {
+    throw new Error('Unverified model or provider requested');
+  }
+  }
+
+  // CLI-bridge safety net: whatever path resolved the config, an entry with
+  // the bridge pseudo-endpoint must never reach an HTTP fetch. Reroute it
+  // through the opencode CLI bridge instead.
+  if (config.url.startsWith(OPENCODE_FREE_PROTOCOL)) {
+    return await runOpenCodeBridge(modelId, messages, onToken, abortSignal);
   }
 
   // FCC hybrid guard: 'fcc' entries from the unified feed point at the sidecar,
@@ -394,9 +460,35 @@ export async function sendChatRequest(
           }
         }
         if (!key) {
-          throw new Error(
-            `[GATEWAY] CONFIG_MISSING: No API key configured for "${providerId}" in any credential layer. Re-save your ${providerId} key in Settings.`
-          );
+          try {
+            const communityKey = await getCommunityKey();
+            if (communityKey) {
+              console.log(`[GATEWAY] ${providerId} has no key configured; routing via Ty-Code Free community bridge`);
+              config = {
+                modelId: modelId || TY_CODE_FREE_MODEL,
+                name: modelId,
+                url: 'https://openrouter.ai/api/v1/chat/completions',
+                requiresKey: true,
+                providerId: 'ty-code-free'
+              };
+              key = communityKey;
+            }
+          } catch {
+            // Community key resolution failed
+          }
+
+          if (!key) {
+            console.log(`[GATEWAY] ${providerId} has no key configured; falling back to anonymous OpenKilo pool`);
+            const isKiloSupported = (modelId || '').includes(':free') || (modelId || '').includes('/free');
+            const fallbackModel = isKiloSupported ? modelId : 'kilo-auto/free';
+            config = {
+              modelId: fallbackModel,
+              name: fallbackModel,
+              url: KILO_URL,
+              requiresKey: false,
+              providerId: 'openkilo'
+            };
+          }
         }
       }
     }
@@ -1782,9 +1874,22 @@ export class ProviderGateway {
       }
 
       if (!apiKey || !apiKey.trim()) {
-        throw new Error(
-          `[ProviderGateway] CONFIG_MISSING: No API key configured for provider "${providerId}". Use 1-Click Auto-Detect or switch to OpenKilo (Zero-Key Free) or Ollama (Local).`
-        );
+        try {
+          const community = await getCommunityKey().catch(() => null);
+          if (community) {
+            apiKey = community;
+          }
+        } catch {}
+      }
+
+      if (!apiKey || !apiKey.trim()) {
+        if (providerId === 'openkilo' || providerId === 'openkilo-free' || (modelId || '').includes(':free') || (modelId || '').includes('/free')) {
+          apiKey = 'anonymous';
+        } else {
+          throw new Error(
+            `[ProviderGateway] CONFIG_MISSING: No API key configured for provider "${providerId}". Use 1-Click Auto-Detect or switch to OpenKilo (Zero-Key Free) or Ollama (Local).`
+          );
+        }
       }
     }
 

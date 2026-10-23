@@ -208,29 +208,51 @@ export const ModelSelector: React.FC = () => {
   const dropdownMenuRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
 
-  const activeModelId = settings?.activeModel || 'kilo-auto/free';
-  const isAutoBinding = !settings?.activeProvider || settings.activeProvider === 'auto';
-  const activeProvider = isAutoBinding ? 'auto' : settings.activeProvider;
+  const [selectedCandidate, setSelectedCandidate] = useState<RankedModelCandidate | null>(null);
 
-  // Determine active tier based on active model
-  const activeTier: ModelTier = isAutoBinding
-    ? 'tier_b_general'
-    : (() => {
-        for (const [tier, models] of Object.entries(catalog) as [ModelTier, RankedModelCandidate[]][]) {
-          if (models.some((m) => m.modelId === activeModelId || activeModelId.includes(m.modelId))) {
-            return tier;
-          }
+  // Sync selectedCandidate when settings.activeModel changes
+  useEffect(() => {
+    if (settings?.activeModel) {
+      for (const models of Object.values(catalog)) {
+        const found = models.find((m) => m.modelId === settings.activeModel);
+        if (found) {
+          setSelectedCandidate(found);
+          return;
         }
-        if (activeModelId.includes('r1') || activeModelId.includes('o1')) return 'tier_s_reasoning';
-        if (activeModelId.includes('coder') || activeModelId.includes('code') || activeModelId.includes('sonnet')) return 'tier_a_coding';
-        if (activeModelId.includes('8b') || activeModelId.includes('flash')) return 'tier_c_fast';
+      }
+    } else if (settings?.activeProvider === 'auto' || !settings?.activeProvider) {
+      setSelectedCandidate(null);
+    }
+  }, [settings?.activeModel, settings?.activeProvider, catalog]);
+
+  const currentActiveModelId = selectedCandidate?.modelId || settings?.activeModel || '';
+  const activeModelId = currentActiveModelId || 'Auto';
+  const isAutoMode = routingMode === 'auto' && (!selectedCandidate && (!settings?.activeModel || settings?.activeProvider === 'auto'));
+
+  // Find candidate in catalog if available
+  const matchedCandidate = (() => {
+    if (selectedCandidate) return selectedCandidate;
+    if (!currentActiveModelId) return null;
+    for (const models of Object.values(catalog)) {
+      const found = models.find((m) => m.modelId === currentActiveModelId);
+      if (found) return found;
+    }
+    return null;
+  })();
+
+  const activeTier: ModelTier = isAutoMode
+    ? 'tier_b_general'
+    : (matchedCandidate?.tier || (() => {
+        if (currentActiveModelId.includes('r1') || currentActiveModelId.includes('o1')) return 'tier_s_reasoning';
+        if (currentActiveModelId.includes('coder') || currentActiveModelId.includes('code') || currentActiveModelId.includes('sonnet')) return 'tier_a_coding';
+        if (currentActiveModelId.includes('8b') || currentActiveModelId.includes('flash')) return 'tier_c_fast';
         return 'tier_b_general';
-      })();
+      })());
 
   const currentTierInfo = TIER_LABELS[activeTier] || TIER_LABELS.tier_a_coding;
-  const modelShortName = isAutoBinding
+  const modelShortName = isAutoMode
     ? 'Auto'
-    : activeModelId.split('/').pop()?.replace(':free', '') || activeModelId;
+    : matchedCandidate?.modelName || (currentActiveModelId.split('/').pop()?.replace(':free', '') || currentActiveModelId || 'Auto');
 
   // Load preferences and available models from main process
   useEffect(() => {
@@ -406,6 +428,9 @@ export const ModelSelector: React.FC = () => {
   };
 
   const handleSelectModel = async (candidate: RankedModelCandidate) => {
+    setSelectedCandidate(candidate);
+    setRoutingMode('manual');
+
     // Preserve conversation context: DO NOT clear messages, simply switch active model in settings
     const stripped = candidate.providerId.replace(/-free$/, '');
     const targetProvider = ((stripped === 'opencode-built-in' ? 'opencode' : stripped) || 'openkilo') as ProviderType;
@@ -424,8 +449,7 @@ export const ModelSelector: React.FC = () => {
       activeProvider: targetProvider
     });
 
-    if (routingMode !== 'manual') {
-      setRoutingMode('manual');
+    try {
       if (window.electronAPI?.modelRouterSetPreferences) {
         await window.electronAPI.modelRouterSetPreferences({
           mode: 'manual',
@@ -433,20 +457,43 @@ export const ModelSelector: React.FC = () => {
           manualProviderId: candidate.providerId
         });
       }
-    }
+    } catch {}
+
+    try {
+      if (window.electronAPI?.updateActiveProviderConfig) {
+        await window.electronAPI.updateActiveProviderConfig({
+          providerId: targetProvider,
+          modelId: candidate.modelId
+        });
+      }
+    } catch {}
 
     setIsOpen(false);
     toast.success('Model Switched', `Now chatting with ${candidate.modelName} (${TIER_LABELS[candidate.tier].name})`);
   };
 
   const handleSelectAuto = async () => {
+    setSelectedCandidate(null);
+    setRoutingMode('auto');
+
     // Return to the "Auto" binding: FCC decides the concrete free provider/model
     // per request (free-first, key-safe handoff). No manual override left behind.
     await saveSettings({ activeModel: '', activeProvider: 'auto' });
-    if (window.electronAPI?.modelRouterSetPreferences) {
-      await window.electronAPI.modelRouterSetPreferences({ mode: 'auto' });
-    }
-    setRoutingMode('auto');
+    try {
+      if (window.electronAPI?.modelRouterSetPreferences) {
+        await window.electronAPI.modelRouterSetPreferences({ mode: 'auto' });
+      }
+    } catch {}
+
+    try {
+      if (window.electronAPI?.updateActiveProviderConfig) {
+        await window.electronAPI.updateActiveProviderConfig({
+          providerId: 'auto',
+          modelId: ''
+        });
+      }
+    } catch {}
+
     setIsOpen(false);
     toast.success('Auto Enabled', 'FCC will route each message to the best managed free model');
   };
@@ -507,7 +554,7 @@ export const ModelSelector: React.FC = () => {
         <span
           className="chat-model-selector-name"
           style={{
-            maxWidth: '75px',
+            maxWidth: '120px',
             minWidth: 0,
             overflow: 'hidden',
             textOverflow: 'ellipsis',
@@ -632,7 +679,7 @@ export const ModelSelector: React.FC = () => {
 
           {/* Auto (FCC decides) — the managed free-supply binding */}
           {(() => {
-            const isAutoSelected = isAutoBinding && routingMode === 'auto';
+            const isAutoSelected = isAutoMode;
             return (
               <div
                 id="model-option-auto"
@@ -643,42 +690,52 @@ export const ModelSelector: React.FC = () => {
                   justifyContent: 'space-between',
                   padding: '6px 8px',
                   borderRadius: '5px',
-                  background: isAutoSelected ? 'rgba(56, 189, 248, 0.12)' : 'rgba(56, 189, 248, 0.04)',
-                  border: isAutoSelected ? '1px solid rgba(56, 189, 248, 0.3)' : '1px solid rgba(56, 189, 248, 0.15)',
+                  background: isAutoSelected ? 'rgba(56, 189, 248, 0.16)' : 'rgba(56, 189, 248, 0.04)',
+                  border: isAutoSelected ? '1px solid #38bdf8' : '1px solid rgba(56, 189, 248, 0.15)',
+                  boxShadow: isAutoSelected ? '0 0 10px rgba(56, 189, 248, 0.25)' : 'none',
                   cursor: 'pointer',
                   transition: 'background 0.12s ease'
                 }}
-                onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = isAutoSelected ? 'rgba(56, 189, 248, 0.12)' : 'rgba(56, 189, 248, 0.1)'; }}
-                onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = isAutoSelected ? 'rgba(56, 189, 248, 0.12)' : 'rgba(56, 189, 248, 0.04)'; }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = isAutoSelected ? 'rgba(56, 189, 248, 0.16)' : 'rgba(56, 189, 248, 0.1)'; }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = isAutoSelected ? 'rgba(56, 189, 248, 0.16)' : 'rgba(56, 189, 248, 0.04)'; }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
                   <Sparkles size={11} color="#38bdf8" style={{ flexShrink: 0 }} />
                   <span style={{ fontSize: '11px', fontWeight: 600, color: '#ffffff' }}>Auto (FCC decides)</span>
                 </div>
-                <span style={{ fontSize: '9px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-                  Best free model per message
-                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ fontSize: '9px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                    Best free model per message
+                  </span>
+                  {isAutoSelected && <Check size={13} color="#38bdf8" style={{ flexShrink: 0 }} />}
+                </div>
               </div>
             );
           })()}
 
-          {/* Grouped Models List — first by supply tier (Free / Premium / Local), then capability tier */}
+          {/* Grouped Models List — first by supply tier (Free / OpenCode / Premium / Local), then capability tier */}
           {(() => {
             const tiers = Object.keys(catalog) as ModelTier[];
             const isLocalModel = (m: RankedModelCandidate): boolean =>
               (m.providerId || '').includes('ollama') || (m.providerName || '').includes('Ollama');
+            const isOpencodeBridgeModel = (m: RankedModelCandidate): boolean =>
+              (m.providerId || '').toLowerCase() === 'opencode-free';
 
             const freeByTier = tiers
-              .map((tierKey) => ({ tier: tierKey, models: (catalog[tierKey] || []).filter((m) => m.isFree && !isLocalModel(m)) }))
+              .map((tierKey) => ({ tier: tierKey, models: (catalog[tierKey] || []).filter((m) => m.isFree && !isLocalModel(m) && !isOpencodeBridgeModel(m)) }))
+              .filter((g) => g.models.length > 0);
+            const opencodeByTier = tiers
+              .map((tierKey) => ({ tier: tierKey, models: (catalog[tierKey] || []).filter((m) => isOpencodeBridgeModel(m)) }))
               .filter((g) => g.models.length > 0);
             const premiumByTier = tiers
-              .map((tierKey) => ({ tier: tierKey, models: (catalog[tierKey] || []).filter((m) => !m.isFree && !isLocalModel(m)) }))
+              .map((tierKey) => ({ tier: tierKey, models: (catalog[tierKey] || []).filter((m) => !m.isFree && !isLocalModel(m) && !isOpencodeBridgeModel(m)) }))
               .filter((g) => g.models.length > 0);
             const localByTier = tiers
               .map((tierKey) => ({ tier: tierKey, models: (catalog[tierKey] || []).filter((m) => isLocalModel(m)) }))
               .filter((g) => g.models.length > 0);
 
             const freeTotal = freeByTier.reduce((n, g) => n + g.models.length, 0);
+            const opencodeTotal = opencodeByTier.reduce((n, g) => n + g.models.length, 0);
             const premiumTotal = premiumByTier.reduce((n, g) => n + g.models.length, 0);
             const localTotal = localByTier.reduce((n, g) => n + g.models.length, 0);
             const premiumConnectedTotal = premiumByTier.reduce((n, g) => n + g.models.filter((m) => isProviderConnected(m.providerId)).length, 0);
@@ -704,7 +761,10 @@ export const ModelSelector: React.FC = () => {
                   </div>
 
                   {models.map((candidate) => {
-                    const isSelected = activeModelId === candidate.modelId || activeModelId.includes(candidate.modelId);
+                    const isSelected = !isAutoMode && (
+                      currentActiveModelId === candidate.modelId ||
+                      selectedCandidate?.modelId === candidate.modelId
+                    );
 
                     return (
                       <div
@@ -723,8 +783,9 @@ export const ModelSelector: React.FC = () => {
                           justifyContent: 'space-between',
                           padding: '6px 8px',
                           borderRadius: '5px',
-                          background: isSelected ? 'rgba(56, 189, 248, 0.12)' : 'rgba(255, 255, 255, 0.02)',
-                          border: isSelected ? '1px solid rgba(56, 189, 248, 0.3)' : '1px solid transparent',
+                          background: isSelected ? 'rgba(56, 189, 248, 0.16)' : 'rgba(255, 255, 255, 0.02)',
+                          border: isSelected ? '1px solid #38bdf8' : '1px solid transparent',
+                          boxShadow: isSelected ? '0 0 10px rgba(56, 189, 248, 0.25)' : 'none',
                           cursor: 'pointer',
                           transition: 'all 0.15s ease'
                         }}
@@ -872,6 +933,18 @@ export const ModelSelector: React.FC = () => {
                   'rgba(16, 185, 129, 0.08)',
                   'rgba(16, 185, 129, 0.22)',
                   'rgba(52, 211, 153, 0.75)'
+                )}
+
+                {/* OpenCode Free Tier — free models synced from the user's own OpenCode config, served by the real installed CLI */}
+                {opencodeTotal > 0 && renderSection(
+                  'opencode',
+                  'models-group-opencode',
+                  '⌨ OpenCode Free Tier (via OpenCode CLI)',
+                  opencodeTotal,
+                  opencodeByTier,
+                  'rgba(56, 189, 248, 0.08)',
+                  'rgba(56, 189, 248, 0.22)',
+                  'rgba(125, 211, 252, 0.85)'
                 )}
 
                 {/* Premium — unlocked with the One Key (OpenRouter) or a provider's own key */}

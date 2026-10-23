@@ -3,6 +3,7 @@ import {
   Zap,
   Rocket,
   Laptop,
+  Terminal,
   ChevronDown,
   ChevronRight,
   Check,
@@ -37,7 +38,7 @@ interface ProvidersModelsTabProps {
 }
 
 interface CatalogSection {
-  id: 'free' | 'premium' | 'local';
+  id: 'free' | 'opencode' | 'premium' | 'local';
   title: string;
   subtitle: string;
   models: CatalogModel[];
@@ -53,6 +54,7 @@ const PROVIDER_TAG_LABELS: Record<string, string> = {
   ollama: 'Ollama (local)',
   'fcc-proxy': 'FCC Proxy',
   opencode: 'OpenCode Zen',
+  'opencode-free': 'OpenCode (CLI)',
   groq: 'Groq',
   'google-ai-studio': 'Google AI Studio',
   'anthropic-claude-free': 'FCC Claude Free'
@@ -219,6 +221,7 @@ export function ProvidersModelsTab({ onOpenApiKeys, onOpenByok, onOpenProviderSe
   const [activeFilter, setActiveFilter] = useState<'all' | 'free' | 'premium' | 'local' | 'reasoning' | 'coding'>('all');
   const [openSections, setOpenSections] = useState<Record<CatalogSection['id'], boolean>>({
     free: true,
+    opencode: true,
     premium: true,
     local: true
   });
@@ -253,13 +256,16 @@ export function ProvidersModelsTab({ onOpenApiKeys, onOpenByok, onOpenProviderSe
 
   const sections: CatalogSection[] = useMemo(() => {
     if (!catalog) return [];
+    const isOpencodeEntry = (m: CatalogModel): boolean => m.providerId === 'opencode-free';
     const isFreeEntry = (m: CatalogModel): boolean =>
-      m.providerId === TY_CODE_FREE_PROVIDER ||
+      !isOpencodeEntry(m) &&
+      (m.providerId === TY_CODE_FREE_PROVIDER ||
       (m.modelId.endsWith(':free') && m.providerId.startsWith('openrouter')) ||
-      (!m.requiresKey && m.providerId !== 'ollama');
+      (!m.requiresKey && m.providerId !== 'ollama'));
     const free = catalog.models.filter(isFreeEntry);
+    const opencode = catalog.models.filter(isOpencodeEntry);
     const local = catalog.models.filter((m) => m.providerId === 'ollama');
-    const freeOrLocalIds = new Set([...free, ...local].map((m) => m.modelId + '|' + m.providerId));
+    const freeOrLocalIds = new Set([...free, ...opencode, ...local].map((m) => m.modelId + '|' + m.providerId));
     const premium = catalog.models.filter((m) => {
       const key = `${m.modelId}|${m.providerId}`;
       return !freeOrLocalIds.has(key) && !key.includes('|ollama');
@@ -275,6 +281,16 @@ export function ProvidersModelsTab({ onOpenApiKeys, onOpenByok, onOpenProviderSe
           ? { label: 'Active & Ready', tone: 'green' }
           : { label: 'Provisioning Community Key...', tone: 'amber' }
       },
+      // CLI-bridged models only survive into the catalog when the user's real
+      // opencode config lists free models AND the CLI is actually runnable —
+      // so an empty section means "not present", never "failed".
+      ...(opencode.length > 0 ? [{
+        id: 'opencode' as const,
+        title: '⚡ OpenCode Free Tier (via OpenCode CLI)',
+        subtitle: 'Free models synced from your local OpenCode config, served by your installed opencode CLI bridge.',
+        models: opencode,
+        badge: { label: 'CLI Detected', tone: 'blue' as const }
+      }] : []),
       {
         id: 'premium',
         title: 'Premium (One-Key Access)',
@@ -357,8 +373,8 @@ export function ProvidersModelsTab({ onOpenApiKeys, onOpenByok, onOpenProviderSe
   // Filter models based on search query & active category filter
   const filterModels = (models: CatalogModel[], sectionId: CatalogSection['id']) => {
     return models.filter((m) => {
-      // Category filter
-      if (activeFilter === 'free' && sectionId !== 'free') return false;
+      // Category filter ('free' covers every zero-key supply, incl. the CLI bridge)
+      if (activeFilter === 'free' && sectionId !== 'free' && sectionId !== 'opencode') return false;
       if (activeFilter === 'premium' && sectionId !== 'premium') return false;
       if (activeFilter === 'local' && sectionId !== 'local') return false;
       if (activeFilter === 'reasoning') {
@@ -601,6 +617,10 @@ export function ProvidersModelsTab({ onOpenApiKeys, onOpenByok, onOpenProviderSe
             <div className="pm-section-icon" style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#34d399' }}>
               <Zap size={15} />
             </div>
+          ) : section.id === 'opencode' ? (
+            <div className="pm-section-icon" style={{ background: 'rgba(56, 189, 248, 0.15)', color: '#7dd3fc' }}>
+              <Terminal size={15} />
+            </div>
           ) : section.id === 'premium' ? (
             <div className="pm-section-icon" style={{ background: 'rgba(139, 92, 246, 0.15)', color: '#a78bfa' }}>
               <Rocket size={15} />
@@ -629,7 +649,9 @@ export function ProvidersModelsTab({ onOpenApiKeys, onOpenByok, onOpenProviderSe
                         ? 'pm-badge-green'
                         : section.badge.tone === 'amber'
                           ? 'pm-badge-amber'
-                          : 'pm-badge-zinc'
+                          : section.badge.tone === 'blue'
+                            ? 'pm-section-badge-blue'
+                            : 'pm-badge-zinc'
                     }`}
                   >
                     {section.badge.label}
