@@ -10,29 +10,45 @@
 
 import type { OpenCodeConfig, OpenCodeFreeTierSummary, OpenCodeProviderConfig } from '../../../shared/types/opencode-sync';
 import type { DiscoveredModel } from '../../../preload/types';
+import { exportBakedExpectations } from '../verified-models';
+
+/**
+ * OpenRouter free lineup shared verbatim with the gateway's live-verified
+ * catalog (single source of truth). This replaces the retired hand-curated
+ * list (deepseek/qwen/inkling/xingchen slugs are 404 upstream and must not
+ * reappear here without a fresh live probe).
+ */
+let cachedLiveFreeOpenRouter: string[] | null = null;
+function liveOpenCodeOpenRouterFreeModels(): string[] {
+  if (cachedLiveFreeOpenRouter) return cachedLiveFreeOpenRouter;
+  try {
+    const grouped = exportBakedExpectations();
+    const merged = new Set<string>();
+    for (const pid of ['ty-code-free', 'openrouter', 'openrouter-free']) {
+      for (const model of grouped[pid] || []) {
+        if (model.modelId.endsWith(':free')) merged.add(model.modelId);
+      }
+    }
+    cachedLiveFreeOpenRouter = Array.from(merged);
+  } catch {
+    cachedLiveFreeOpenRouter = [];
+  }
+  return cachedLiveFreeOpenRouter;
+}
 
 export const OPENCODE_CURATED_FREE_MODELS: Record<string, string[]> = {
-  openrouter: [
-    'nvidia/nemotron-3-ultra-550b-a55b:free',
-    'google/gemma-4-31b-it:free',
-    'dots-studio/dots-3-note-preview:free',
-    'cohere/north-mini-code:free',
-    'nvidia/nemotron-3.5-lightning:free'
-  ],
+  openrouter: liveOpenCodeOpenRouterFreeModels(),
+  // Both verified live at Groq (community-key era probes, 200 OK).
   groq: [
     'llama-3.3-70b-versatile',
     'llama-3.1-8b-instant'
   ],
-  gemini: [
-    'gemini-2.0-flash-exp',
-    'gemini-1.5-flash',
-    'gemini-1.5-pro'
-  ],
-  copilot: [
-    'claude-3.5-sonnet',
-    'gpt-4o',
-    'o1-mini'
-  ]
+  // Google's free tier roster rotates per key/region: nothing is claimed from
+  // Ty-Code. geminiFreeModels reflects ONLY what the user's OpenCode config
+  // actually lists. (gemini-1.5-* retired upstream; o1-mini retired from
+  // Copilot — neither is baked anywhere anymore.)
+  gemini: [],
+  copilot: []
 };
 
 export class OpenCodeFreeDetector {
@@ -141,7 +157,11 @@ export class OpenCodeFreeDetector {
     if (hasOllama) {
       summary.hasOllamaLocal = true;
       const configuredModels = (allProviders.ollama as OpenCodeProviderConfig)?.models || [];
-      summary.ollamaModels = configuredModels.length > 0 ? configuredModels : ['qwen2.5-coder:latest', 'llama3:latest'];
+      // Report ONLY what OpenCode actually configures: inventing default
+      // model names misrepresented machines without those images.
+      summary.ollamaModels = configuredModels.filter(
+        (m) => typeof m === 'string' && m.trim()
+      );
     }
 
     // 6. Check Custom Free Providers
@@ -154,11 +174,11 @@ export class OpenCodeFreeDetector {
       }
     }
 
-    // Calculate total free models found
+    // Calculate total free models found. Copilot/Gemini contribute only when
+    // the user's OpenCode config actually lists models; no baked pretenders.
     summary.totalFreeModels =
       (summary.hasOpenRouterFree ? summary.openRouterFreeModels.length : 0) +
       (summary.hasGroqFree ? summary.groqFreeModels.length : 0) +
-      (summary.hasCopilotFree ? OPENCODE_CURATED_FREE_MODELS.copilot.length : 0) +
       (summary.hasGeminiFree ? summary.geminiFreeModels.length : 0) +
       (summary.hasOllamaLocal ? summary.ollamaModels.length : 0) +
       summary.customFreeProviders.length;

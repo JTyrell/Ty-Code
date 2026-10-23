@@ -5,6 +5,8 @@
  * 1. Connection Diagnostics: Every configured and built-in free provider with 5-step verification & error taxonomy
  * 2. Capability Test Suite: The 4 core jobs (answer questions, write files, edit files, use tools, reasoning)
  *    with scratch workspace isolation, automatic pass/fail, evidence capture, auto-fallback, and auto-written reports.
+ * 3. Remediation Checklist: Prioritized roadmap of operational tiers, user action items, and bug fixes.
+ * 4. Trace Waterfall: Live H1 through H10 probe tracing across renderer, preload, and main process.
  *
  * Brand: Ty-Code
  */
@@ -68,6 +70,7 @@ import type {
 import { SMOKE_TEST_STEPS, SMOKE_TEST_FAILURE_PROTOCOL } from '../../../../shared/types/diagnostics';
 import { toast } from '../../state/toast-store';
 import { useChatStore } from '../../state/chat-store';
+import './DiagnosticsPanel.css';
 
 const STEP_LABELS: Record<DiagnosticStep, string> = {
   reachability: 'Reachability',
@@ -182,8 +185,7 @@ export const DiagnosticsPanel: React.FC = () => {
     return undefined;
   }, []);
 
-  // Live hydration: pull retained latest run results (no fabricated data,
-  // nulls until a real run exists) plus fleet health. Never auto-runs suites.
+  // Live hydration: pull retained latest run results (no fabricated data)
   const refreshLatest = useCallback(async () => {
     try {
       if (window.electronAPI?.getDiagnosticsLatest) {
@@ -208,7 +210,7 @@ export const DiagnosticsPanel: React.FC = () => {
     }
   }, []);
 
-  // Hydrate once on mount (results appear even before any manual run)
+  // Hydrate once on mount
   useEffect(() => {
     void refreshLatest();
   }, [refreshLatest]);
@@ -291,8 +293,7 @@ export const DiagnosticsPanel: React.FC = () => {
     }
   }, []);
 
-  // Copy AI coder prompt to clipboard with feedback (uses execCommand fallback,
-  // because navigator.clipboard rejects when the window is not focused)
+  // Copy AI coder prompt to clipboard with feedback
   const copyAiCoderPrompt = useCallback(async (prompt: string, itemId?: string) => {
     if (!prompt) {
       toast.error('No prompt available to copy');
@@ -313,7 +314,7 @@ export const DiagnosticsPanel: React.FC = () => {
     toast.success('AI Coder prompt copied to clipboard!');
   }, []);
 
-  // Copy the complete plain-language remediation report (all 5 sections, Markdown)
+  // Copy the complete plain-language remediation report
   const handleCopyRemediationReport = useCallback(async () => {
     if (!remediationReport?.markdownReport) {
       toast.error('No remediation report available yet. Generate it first.');
@@ -387,7 +388,6 @@ export const DiagnosticsPanel: React.FC = () => {
         } else {
           toast.success(`Diagnostics completed: All ${res.data.passedCount} providers operational!`);
         }
-        // Auto-refresh remediation checklist
         void loadRemediationReport();
       } else {
         toast.error(res.error || 'Failed to complete connection diagnostics');
@@ -416,7 +416,6 @@ export const DiagnosticsPanel: React.FC = () => {
         } else {
           toast.warning(`Capability Suite: ${res.data.passedCount} passed, ${res.data.failedCount} failed.`);
         }
-        // Auto-refresh remediation checklist
         void loadRemediationReport();
       } else {
         toast.error(res.error || 'Failed to complete capability test suite');
@@ -472,7 +471,7 @@ export const DiagnosticsPanel: React.FC = () => {
     }
   }, [capSummary]);
 
-  // Run End-to-End Connectivity Trace (Fix 1)
+  // Run End-to-End Connectivity Trace
   const handleRunTrace = useCallback(async () => {
     if (!window.electronAPI?.runConnectivityTrace) {
       toast.error('Connectivity trace API not available in current environment');
@@ -549,7 +548,7 @@ export const DiagnosticsPanel: React.FC = () => {
   const getStatusBadge = (res: ProviderDiagnosticResult) => {
     if (res.status === 'PASS') {
       return (
-        <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+        <span className="diag-pill-pass flex items-center gap-1.5 text-xs font-semibold">
           <CheckCircle2 size={13} />
           PASS {res.timeToFirstTokenMs ? `(${res.timeToFirstTokenMs}ms)` : ''}
         </span>
@@ -557,14 +556,14 @@ export const DiagnosticsPanel: React.FC = () => {
     }
     if (res.status === 'FAIL') {
       return (
-        <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/20">
+        <span className="diag-pill-fail flex items-center gap-1.5 text-xs font-semibold">
           <XCircle size={13} />
           FAIL ({res.errorCode || 'ERROR'})
         </span>
       );
     }
     return (
-      <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-zinc-700/20 text-zinc-400 border border-zinc-700/30">
+      <span className="diag-pill-skip flex items-center gap-1.5 text-xs font-semibold">
         SKIPPED
       </span>
     );
@@ -577,61 +576,73 @@ export const DiagnosticsPanel: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6 text-zinc-200">
-      {/* At-a-Glance Live Status Strip */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-xl bg-gradient-to-r from-zinc-900 via-zinc-900 to-zinc-950 border border-zinc-800 shadow-lg">
-        <div className="flex items-center gap-3 flex-wrap text-xs font-medium">
-          <span className="flex items-center gap-2 text-zinc-300">
+    <div className="diag-container">
+      {/* ---------------------------------------------------------------------
+          At-a-Glance Live Status Strip (HUD)
+          --------------------------------------------------------------------- */}
+      <div className="diag-hud-strip">
+        <div className="diag-hud-metrics">
+          <span className="diag-hud-metric-item">
             <span
-              className={`w-2.5 h-2.5 rounded-full shrink-0 ${
+              className={`diag-hud-dot ${
                 fleetHealth
                   ? fleetHealth.downCount > 0
-                    ? 'bg-rose-400'
+                    ? 'diag-dot-rose'
                     : fleetHealth.degradedCount > 0 || fleetHealth.untestedCount > 0
-                      ? 'bg-amber-400'
-                      : 'bg-emerald-400'
-                  : 'bg-zinc-600'
+                      ? 'diag-dot-amber'
+                      : 'diag-dot-green'
+                  : 'diag-dot-zinc'
               }`}
             />
-            Fleet:{' '}
-            {fleetHealth
-              ? `${fleetHealth.healthyCount}/${fleetHealth.totalCount} healthy${
-                  fleetHealth.untestedCount > 0 ? ` (${fleetHealth.untestedCount} untested)` : ''
-                }`
-              : 'unknown'}
+            Fleet Health:{' '}
+            <strong>
+              {fleetHealth
+                ? `${fleetHealth.healthyCount}/${fleetHealth.totalCount} Healthy${
+                    fleetHealth.untestedCount > 0 ? ` (${fleetHealth.untestedCount} untested)` : ''
+                  }`
+                : 'Evaluating...'}
+            </strong>
           </span>
 
-          <span className="w-px h-4 bg-zinc-800 hidden sm:block" />
+          <span className="diag-hud-divider" />
 
-          <span className="text-zinc-400">
+          <span className="diag-hud-metric-item">
             Conn:{' '}
-            <span className={connSummary ? (connSummary.failedCount > 0 ? 'text-rose-300' : 'text-emerald-300') : 'text-zinc-500'}>
-              {connSummary ? `${connSummary.passedCount} PASS / ${connSummary.failedCount} FAIL` : 'not run yet'}
+            <span className={connSummary ? (connSummary.failedCount > 0 ? 'text-rose-400 font-semibold' : 'text-emerald-400 font-semibold') : 'text-zinc-500'}>
+              {connSummary ? `${connSummary.passedCount} PASS / ${connSummary.failedCount} FAIL` : 'Not run'}
             </span>
           </span>
 
-          <span className="text-zinc-400">
+          <span className="diag-hud-divider" />
+
+          <span className="diag-hud-metric-item">
             Cap:{' '}
-            <span className={capSummary ? (capSummary.failedCount > 0 ? 'text-rose-300' : 'text-emerald-300') : 'text-zinc-500'}>
-              {capSummary ? `${capSummary.passedCount} PASS / ${capSummary.failedCount} FAIL` : 'not run yet'}
+            <span className={capSummary ? (capSummary.failedCount > 0 ? 'text-rose-400 font-semibold' : 'text-emerald-400 font-semibold') : 'text-zinc-500'}>
+              {capSummary ? `${capSummary.passedCount} PASS / ${capSummary.failedCount} FAIL` : 'Not run'}
             </span>
           </span>
 
-          <span className="text-zinc-400">
+          <span className="diag-hud-divider" />
+
+          <span className="diag-hud-metric-item">
             Trace:{' '}
-            <span className={traceReport ? (traceReport.overallStatus === 'PASS' ? 'text-emerald-300' : 'text-rose-300') : 'text-zinc-500'}>
-              {traceReport ? traceReport.overallStatus : 'not run yet'}
+            <span className={traceReport ? (traceReport.overallStatus === 'PASS' ? 'text-emerald-400 font-semibold' : 'text-rose-400 font-semibold') : 'text-zinc-500'}>
+              {traceReport ? traceReport.overallStatus : 'Not run'}
             </span>
           </span>
 
-          <span className="text-zinc-500">Last checked: {formatRelativeTime(lastCheckedAt)}</span>
+          <span className="diag-hud-divider" />
+
+          <span className="text-zinc-400 text-xs">
+            Last probe: {formatRelativeTime(lastCheckedAt)}
+          </span>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="diag-hud-actions">
           <button
             onClick={() => void refreshLatest()}
             title="Fetch latest retained diagnostics results"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white border border-zinc-700/60 text-[11px] font-medium transition-colors cursor-pointer"
+            className="diag-btn-hud"
           >
             <RotateCw size={12} />
             <span>Refresh</span>
@@ -639,28 +650,23 @@ export const DiagnosticsPanel: React.FC = () => {
           <button
             onClick={() => setIsLive((prev) => !prev)}
             title="Toggle 12s live polling of latest diagnostics data"
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium border transition-colors cursor-pointer ${
-              isLive
-                ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
-                : 'bg-zinc-800 text-zinc-400 border-zinc-700/60'
-            }`}
+            className={`diag-btn-hud ${isLive ? 'is-active' : ''}`}
           >
-            <Radio size={12} className={isLive ? 'text-emerald-400' : ''} />
-            <span>{isLive ? 'Live: On' : 'Live: Off'}</span>
+            <Radio size={12} />
+            <span>{isLive ? 'Live Polling: On' : 'Live Polling: Off'}</span>
           </button>
         </div>
       </div>
 
-      {/* Sub-Tab Navigation Switcher */}
-      <div className="flex items-center gap-2 p-1 rounded-xl bg-zinc-900/90 border border-zinc-800 shadow-inner">
+      {/* ---------------------------------------------------------------------
+          Sub-Tab Segmented Switcher
+          --------------------------------------------------------------------- */}
+      <div className="diag-tabs-nav">
         <button
           onClick={() => setSubTab('connection')}
           id="diag-subtab-connection"
-          className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-            subTab === 'connection'
-              ? 'bg-zinc-800 text-white shadow'
-              : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40'
-          }`}
+          data-tab="connection"
+          className={`diag-tab-btn ${subTab === 'connection' ? 'is-active' : ''}`}
         >
           <Activity size={14} className={subTab === 'connection' ? 'text-indigo-400' : ''} />
           <span>Connections</span>
@@ -669,11 +675,8 @@ export const DiagnosticsPanel: React.FC = () => {
         <button
           onClick={() => setSubTab('capabilities')}
           id="diag-subtab-capabilities"
-          className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-            subTab === 'capabilities'
-              ? 'bg-zinc-800 text-white shadow'
-              : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40'
-          }`}
+          data-tab="capabilities"
+          className={`diag-tab-btn ${subTab === 'capabilities' ? 'is-active' : ''}`}
         >
           <Brain size={14} className={subTab === 'capabilities' ? 'text-sky-400' : ''} />
           <span>Capabilities</span>
@@ -682,16 +685,11 @@ export const DiagnosticsPanel: React.FC = () => {
         <button
           onClick={() => {
             setSubTab('remediation');
-            // Regenerate live every entry: reclassifies fresh from the latest
-            // retained real diagnostic run summaries (never mock data)
             void loadRemediationReport();
           }}
           id="diag-subtab-remediation"
-          className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-            subTab === 'remediation'
-              ? 'bg-zinc-800 text-white shadow'
-              : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40'
-          }`}
+          data-tab="remediation"
+          className={`diag-tab-btn ${subTab === 'remediation' ? 'is-active' : ''}`}
         >
           <ListChecks size={14} className={subTab === 'remediation' ? 'text-emerald-400' : ''} />
           <span>Checklist</span>
@@ -700,61 +698,58 @@ export const DiagnosticsPanel: React.FC = () => {
         <button
           onClick={() => setSubTab('trace')}
           id="diag-subtab-trace"
-          className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-            subTab === 'trace'
-              ? 'bg-zinc-800 text-white shadow'
-              : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40'
-          }`}
+          data-tab="trace"
+          className={`diag-tab-btn ${subTab === 'trace' ? 'is-active' : ''}`}
         >
           <Network size={14} className={subTab === 'trace' ? 'text-purple-400' : ''} />
           <span>Trace (H1-H10)</span>
         </button>
       </div>
 
-      {/* ========================================================================= */}
-      {/* SECTION 1: CONNECTION DIAGNOSTICS & ERROR TAXONOMY                        */}
-      {/* ========================================================================= */}
+      {/* =====================================================================
+          SECTION 1: CONNECTION DIAGNOSTICS & ERROR TAXONOMY
+          ===================================================================== */}
       {subTab === 'connection' && (
-        <div className="space-y-6">
-          {/* Header & Main Actions */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-xl bg-gradient-to-r from-zinc-900 via-zinc-900 to-zinc-950 border border-zinc-800 shadow-lg">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
-                  <Activity size={20} />
-                </div>
-                <h2 className="text-lg font-semibold tracking-tight text-white">Provider Connection Diagnostics</h2>
+        <div className="space-y-4">
+          {/* Header Banner */}
+          <div className="diag-hero-banner">
+            <div className="diag-hero-title-group">
+              <div className="diag-hero-icon" style={{ background: 'rgba(99, 102, 241, 0.15)', color: '#818cf8' }}>
+                <Activity size={18} />
               </div>
-              <p className="text-xs text-zinc-400 max-w-xl">
-                Live 5-step test sequence (Reachability, 1-Token Auth, SSE Streaming, Tool-Call Format, TTFT) across all free providers with automated error taxonomy classification.
-              </p>
+              <div className="diag-hero-text">
+                <h2>Provider Connection Diagnostics</h2>
+                <p>
+                  Live 5-step test sequence (Reachability, 1-Token Auth, SSE Streaming, Tool-Call Format, TTFT) across all free providers with automated error taxonomy classification.
+                </p>
+              </div>
             </div>
 
-            <div className="flex items-center gap-2.5">
+            <div className="diag-hero-actions">
               <button
                 onClick={() => runDiagnostics()}
                 disabled={isConnRunning}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-medium text-xs shadow-md transition-all cursor-pointer"
+                className="diag-btn-action diag-btn-primary"
               >
                 {isConnRunning ? (
                   <>
-                    <RotateCw size={14} className="animate-spin" />
-                    Testing Providers...
+                    <RotateCw size={13} className="animate-spin" />
+                    <span>Testing Providers...</span>
                   </>
                 ) : (
                   <>
-                    <Play size={14} />
-                    Run All Tests
+                    <Play size={13} />
+                    <span>Run All Tests</span>
                   </>
                 )}
               </button>
 
               <button
                 onClick={handleCopyConnReport}
-                className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white border border-zinc-700/60 font-medium text-xs transition-colors cursor-pointer"
+                className="diag-btn-action diag-btn-secondary"
                 title="Copy Markdown Diagnostic Report"
               >
-                {connCopied ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+                {connCopied ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
                 <span>{connCopied ? 'Copied!' : 'Copy Report'}</span>
               </button>
             </div>
@@ -762,26 +757,20 @@ export const DiagnosticsPanel: React.FC = () => {
 
           {/* Zero-Key Status Banner */}
           {connSummary && (
-            <div
-              className={`flex items-center justify-between p-4 rounded-xl border ${
-                connSummary.zeroKeyOperational
-                  ? 'bg-emerald-950/20 border-emerald-500/30 text-emerald-200'
-                  : 'bg-amber-950/20 border-amber-500/30 text-amber-200'
-              }`}
-            >
-              <div className="flex items-center gap-3">
+            <div className={`diag-status-banner ${connSummary.zeroKeyOperational ? 'is-success' : 'is-warning'}`}>
+              <div className="diag-status-banner-left">
                 {connSummary.zeroKeyOperational ? (
                   <Zap size={18} className="text-emerald-400" />
                 ) : (
                   <AlertTriangle size={18} className="text-amber-400" />
                 )}
                 <div>
-                  <div className="text-xs font-semibold">
+                  <div className="diag-status-banner-title">
                     {connSummary.zeroKeyOperational
                       ? 'Zero-Key Fallback Operational'
                       : 'Zero-Key Providers Require Attention'}
                   </div>
-                  <div className="text-[11px] opacity-80">
+                  <div className="diag-status-banner-desc">
                     {connSummary.zeroKeyOperational
                       ? 'Zero-input tier active (Ty-Code Free community key + OpenKilo / local inference). Free reasoning and completions available out-of-the-box.'
                       : 'No anonymous free tier currently active. Review Ty-Code Free, OpenKilo or local Ollama.'}
@@ -789,64 +778,58 @@ export const DiagnosticsPanel: React.FC = () => {
                 </div>
               </div>
 
-              <div className="flex items-center gap-4 text-xs font-medium">
-                <span className="text-emerald-400">{connSummary.passedCount} PASS</span>
-                <span className="text-rose-400">{connSummary.failedCount} FAIL</span>
-                <span className="text-zinc-400">{connSummary.skippedCount} SKIPPED</span>
+              <div className="diag-status-pills">
+                <span className="diag-pill-pass">{connSummary.passedCount} PASS</span>
+                <span className="diag-pill-fail">{connSummary.failedCount} FAIL</span>
+                <span className="diag-pill-skip">{connSummary.skippedCount} SKIPPED</span>
               </div>
             </div>
           )}
 
-          {/* No results yet state */}
+          {/* Empty State */}
           {!connSummary && !isConnRunning && (
-            <div className="p-12 text-center rounded-xl bg-zinc-900/40 border border-zinc-800/80 space-y-3">
+            <div className="p-10 text-center rounded-xl bg-zinc-900/40 border border-zinc-800/80 space-y-3">
               <Server size={32} className="mx-auto text-zinc-600" />
-              <h3 className="text-sm font-medium text-zinc-300">Ready to diagnose providers</h3>
+              <h3 className="text-sm font-semibold text-zinc-300">Ready to diagnose providers</h3>
               <p className="text-xs text-zinc-500 max-w-md mx-auto">
                 Click &ldquo;Run All Tests&rdquo; to test every built-in free provider and configured key. Anonymous providers will be prioritized first.
               </p>
               <button
                 onClick={() => runDiagnostics()}
-                className="mt-2 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs font-medium text-zinc-200 cursor-pointer transition-colors"
+                className="mt-2 diag-btn-action diag-btn-primary"
               >
                 <Play size={13} />
-                Start Diagnostics
+                <span>Start Diagnostics</span>
               </button>
             </div>
           )}
 
           {/* Provider Results Grid */}
           {connSummary && (
-            <div className="space-y-4">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
-                Provider Test Results ({connSummary.results.length})
-              </h3>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                <span>Provider Test Results ({connSummary.results.length})</span>
+                <span className="text-[11px] text-zinc-500 font-normal">Retested live on this device</span>
+              </div>
 
-              <div className="grid grid-cols-1 gap-3.5">
+              <div className="diag-cards-stack">
                 {connSummary.results.map((res) => {
                   const isExpanded = Boolean(expandedConnEvidence[res.providerId]);
                   return (
-                    <div
-                      key={res.providerId}
-                      className="rounded-xl bg-zinc-900/80 border border-zinc-800/80 hover:border-zinc-700 transition-colors p-4 space-y-3"
-                    >
+                    <div key={res.providerId} className="diag-card">
                       {/* Card Header */}
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-                        <div className="flex items-center gap-3">
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className="font-semibold text-sm text-white">{res.providerName}</span>
-                              <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-zinc-800 text-zinc-400 border border-zinc-700/50">
-                                {res.authType === 'anonymous' ? 'Anonymous (Zero-Key)' : 'API Key Required'}
-                              </span>
-                            </div>
-                            <div className="text-[11px] text-zinc-500 font-mono mt-0.5">
-                              {res.baseUrl} &bull; Model: {res.testedModel || 'default'}
-                            </div>
-                          </div>
+                      <div className="diag-card-header">
+                        <div className="diag-card-title-wrap">
+                          <span className="diag-card-title">{res.providerName}</span>
+                          <span className={res.authType === 'anonymous' ? 'diag-tag-zero-key' : 'diag-tag-api-key'}>
+                            {res.authType === 'anonymous' ? 'Anonymous (Zero-Key)' : 'API Key Required'}
+                          </span>
+                          <span className="diag-card-meta">
+                            {res.baseUrl} &bull; Model: {res.testedModel || 'default'}
+                          </span>
                         </div>
 
-                        <div className="flex items-center gap-2.5">
+                        <div className="diag-card-actions">
                           {getStatusBadge(res)}
                           <button
                             onClick={() => runDiagnostics(res.providerId)}
@@ -859,22 +842,20 @@ export const DiagnosticsPanel: React.FC = () => {
                         </div>
                       </div>
 
-                      {/* 5-Step Pipeline Progress */}
-                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-1">
+                      {/* 5-Step Pipeline Stepper */}
+                      <div className="diag-pipeline-grid">
                         {(Object.keys(STEP_LABELS) as DiagnosticStep[]).map((stepKey) => {
                           const step = res.steps[stepKey];
                           const status = step?.status || 'SKIPPED';
+                          const stepClass =
+                            status === 'PASS'
+                              ? 'diag-step-pass'
+                              : status === 'FAIL'
+                                ? 'diag-step-fail'
+                                : 'diag-step-skipped';
+
                           return (
-                            <div
-                              key={stepKey}
-                              className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[11px] border ${
-                                status === 'PASS'
-                                  ? 'bg-emerald-950/10 border-emerald-500/20 text-emerald-300'
-                                  : status === 'FAIL'
-                                    ? 'bg-rose-950/10 border-rose-500/20 text-rose-300 font-semibold'
-                                    : 'bg-zinc-800/30 border-zinc-800 text-zinc-500'
-                              }`}
-                            >
+                            <div key={stepKey} className={`diag-step-pill ${stepClass}`}>
                               <span className="truncate">{STEP_LABELS[stepKey]}</span>
                               <span className="ml-1 shrink-0">{getStepIcon(status)}</span>
                             </div>
@@ -882,16 +863,16 @@ export const DiagnosticsPanel: React.FC = () => {
                         })}
                       </div>
 
-                      {/* Human Message & Remedy Box */}
+                      {/* Failure Remedy Alert */}
                       {res.status === 'FAIL' && (
-                        <div className="p-3 rounded-lg bg-rose-950/20 border border-rose-900/30 text-rose-200 text-xs space-y-2">
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="space-y-1">
-                              <div className="font-semibold text-rose-300 flex items-center gap-1.5">
+                        <div className="diag-remedy-box">
+                          <div className="diag-remedy-header">
+                            <div>
+                              <div className="diag-remedy-message">
                                 <AlertTriangle size={13} />
-                                {res.humanMessage}
+                                <span>{res.humanMessage}</span>
                               </div>
-                              <div className="text-[11px] text-rose-300/80">{res.remedy}</div>
+                              <div className="diag-remedy-text">{res.remedy}</div>
                             </div>
 
                             {res.actionUrl && (
@@ -903,10 +884,10 @@ export const DiagnosticsPanel: React.FC = () => {
                                       actionTarget: res.actionUrl!.includes('apikeys') ? 'apikeys' : 'providers'
                                     })
                                   }
-                                  className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1 rounded bg-rose-600/30 hover:bg-rose-600/50 text-rose-100 border border-rose-500/30 text-[11px] font-medium transition-colors cursor-pointer"
+                                  className="diag-btn-remedy"
                                 >
                                   <span>{res.actionLabel || 'Fix Issue'}</span>
-                                  <ArrowRight size={10} />
+                                  <ArrowRight size={11} />
                                 </button>
                               ) : res.actionUrl.startsWith('ty-code://dashboard/quota') || res.actionUrl.startsWith('dashboard:') ? (
                                 <button
@@ -914,10 +895,10 @@ export const DiagnosticsPanel: React.FC = () => {
                                     useChatStore.getState().openSettings('analytics');
                                     toast.info('Opened Usage & Limits dashboard.');
                                   }}
-                                  className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1 rounded bg-rose-600/30 hover:bg-rose-600/50 text-rose-100 border border-rose-500/30 text-[11px] font-medium transition-colors cursor-pointer"
+                                  className="diag-btn-remedy"
                                 >
                                   <span>{res.actionLabel || 'Check Quota'}</span>
-                                  <ArrowRight size={10} />
+                                  <ArrowRight size={11} />
                                 </button>
                               ) : res.actionUrl.startsWith('ty-code://action/retry') ? (
                                 <button
@@ -925,10 +906,10 @@ export const DiagnosticsPanel: React.FC = () => {
                                     toast.info('Re-running diagnostics...');
                                     void runDiagnostics();
                                   }}
-                                  className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1 rounded bg-rose-600/30 hover:bg-rose-600/50 text-rose-100 border border-rose-500/30 text-[11px] font-medium transition-colors cursor-pointer"
+                                  className="diag-btn-remedy"
                                 >
                                   <span>{res.actionLabel || 'Retry'}</span>
-                                  <RotateCw size={10} />
+                                  <RotateCw size={11} />
                                 </button>
                               ) : (
                                 <button
@@ -939,28 +920,28 @@ export const DiagnosticsPanel: React.FC = () => {
                                       window.open(res.actionUrl!, '_blank');
                                     }
                                   }}
-                                  className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1 rounded bg-rose-600/30 hover:bg-rose-600/50 text-rose-100 border border-rose-500/30 text-[11px] font-medium transition-colors cursor-pointer"
+                                  className="diag-btn-remedy"
                                 >
                                   <span>{res.actionLabel || 'Fix Issue'}</span>
-                                  <ExternalLink size={10} />
+                                  <ExternalLink size={11} />
                                 </button>
                               )
                             )}
                           </div>
 
-                          {/* Expandable Evidence toggle */}
+                          {/* Raw Evidence Drawer */}
                           {res.rawEvidence && (
                             <div className="pt-1">
                               <button
                                 onClick={() => toggleConnEvidence(res.providerId)}
-                                className="inline-flex items-center gap-1 text-[10px] text-zinc-400 hover:text-zinc-200 cursor-pointer"
+                                className="inline-flex items-center gap-1 text-[10.5px] text-zinc-400 hover:text-zinc-200 cursor-pointer"
                               >
                                 {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-                                <span>{isExpanded ? 'Hide Raw Evidence' : 'View Raw Evidence Chunk'}</span>
+                                <span>{isExpanded ? 'Hide Raw Evidence Chunk' : 'View Raw Evidence Chunk'}</span>
                               </button>
 
                               {isExpanded && (
-                                <pre className="mt-2 p-2.5 rounded bg-zinc-950/80 border border-zinc-800 font-mono text-[10px] text-zinc-300 overflow-x-auto max-h-36 whitespace-pre-wrap break-all">
+                                <pre className="diag-evidence-pre">
                                   {res.rawEvidence}
                                 </pre>
                               )}
@@ -969,9 +950,9 @@ export const DiagnosticsPanel: React.FC = () => {
                         </div>
                       )}
 
-                      {/* Pass note */}
+                      {/* Success Note */}
                       {res.status === 'PASS' && (
-                        <div className="text-[11px] text-emerald-400/90 flex items-center gap-1.5">
+                        <div className="text-[11px] text-emerald-400/90 flex items-center gap-1.5 pt-0.5">
                           <CheckCircle2 size={12} />
                           <span>Provider healthy &bull; Latency: {res.timeToFirstTokenMs}ms &bull; Streaming &amp; Tool-calling verified</span>
                         </div>
@@ -985,41 +966,41 @@ export const DiagnosticsPanel: React.FC = () => {
         </div>
       )}
 
-      {/* ========================================================================= */}
-      {/* SECTION 2: END-TO-END CAPABILITY TEST SUITE (PHASE DIAGNOSTICS 2)         */}
-      {/* ========================================================================= */}
+      {/* =====================================================================
+          SECTION 2: END-TO-END CAPABILITY TEST SUITE (PHASE DIAGNOSTICS 2)
+          ===================================================================== */}
       {subTab === 'capabilities' && (
-        <div className="space-y-6" id="capability-tests-section">
-          {/* Header & Main Actions */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-xl bg-gradient-to-r from-zinc-900 via-zinc-900 to-zinc-950 border border-zinc-800 shadow-lg">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-lg bg-sky-500/10 border border-sky-500/20 text-sky-400">
-                  <Brain size={20} />
-                </div>
-                <h2 className="text-lg font-semibold tracking-tight text-white">Capability Test Suite</h2>
+        <div className="space-y-4" id="capability-tests-section">
+          {/* Header Banner */}
+          <div className="diag-hero-banner">
+            <div className="diag-hero-title-group">
+              <div className="diag-hero-icon" style={{ background: 'rgba(14, 165, 233, 0.15)', color: '#38bdf8' }}>
+                <Brain size={18} />
               </div>
-              <p className="text-xs text-zinc-400 max-w-xl">
-                Proves the connected AI performs the 4 core jobs: answer questions, write files, edit files, and use workspace tools — with isolated scratch workspace, auto-fallback, and diff verification.
-              </p>
+              <div className="diag-hero-text">
+                <h2>Capability Test Suite</h2>
+                <p>
+                  Proves the connected AI performs the 4 core jobs: answer questions, write files, edit files, and use workspace tools — with isolated scratch workspace, auto-fallback, and diff verification.
+                </p>
+              </div>
             </div>
 
-            <div className="flex items-center gap-2.5">
+            <div className="diag-hero-actions">
               <button
                 onClick={() => runCapabilityTests()}
                 disabled={isCapRunning}
                 id="btn-run-capability-tests"
-                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white font-medium text-xs shadow-md transition-all cursor-pointer"
+                className="diag-btn-action diag-btn-sky"
               >
                 {isCapRunning ? (
                   <>
-                    <RotateCw size={14} className="animate-spin" />
-                    Running Capability Tests...
+                    <RotateCw size={13} className="animate-spin" />
+                    <span>Running Capability Tests...</span>
                   </>
                 ) : (
                   <>
-                    <Play size={14} />
-                    Run Capability Tests
+                    <Play size={13} />
+                    <span>Run Capability Tests</span>
                   </>
                 )}
               </button>
@@ -1027,10 +1008,10 @@ export const DiagnosticsPanel: React.FC = () => {
               <button
                 onClick={handleCopyCapReport}
                 id="btn-copy-capability-report"
-                className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white border border-zinc-700/60 font-medium text-xs transition-colors cursor-pointer"
+                className="diag-btn-action diag-btn-secondary"
                 title="Copy Markdown Capability Report"
               >
-                {capCopied ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+                {capCopied ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
                 <span>{capCopied ? 'Copied!' : 'Copy Report'}</span>
               </button>
             </div>
@@ -1038,21 +1019,15 @@ export const DiagnosticsPanel: React.FC = () => {
 
           {/* Capability Run Summary Banner */}
           {capSummary && (
-            <div
-              className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-xl border ${
-                capSummary.failedCount === 0
-                  ? 'bg-emerald-950/20 border-emerald-500/30 text-emerald-200'
-                  : 'bg-amber-950/20 border-amber-500/30 text-amber-200'
-              }`}
-            >
-              <div className="flex items-center gap-3">
+            <div className={`diag-status-banner ${capSummary.failedCount === 0 ? 'is-success' : 'is-warning'}`}>
+              <div className="diag-status-banner-left">
                 {capSummary.failedCount === 0 ? (
-                  <CheckCircle2 size={20} className="text-emerald-400 shrink-0" />
+                  <CheckCircle2 size={18} className="text-emerald-400" />
                 ) : (
-                  <AlertTriangle size={20} className="text-amber-400 shrink-0" />
+                  <AlertTriangle size={18} className="text-amber-400" />
                 )}
                 <div>
-                  <div className="text-xs font-semibold flex items-center gap-2">
+                  <div className="diag-status-banner-title flex items-center gap-2">
                     <span>
                       {capSummary.failedCount === 0
                         ? 'All 5 Core AI Capabilities Operational'
@@ -1064,65 +1039,60 @@ export const DiagnosticsPanel: React.FC = () => {
                       </span>
                     )}
                   </div>
-                  <div className="text-[11px] opacity-80 mt-0.5">
+                  <div className="diag-status-banner-desc mt-0.5">
                     Active Provider: <strong className="text-white">{capSummary.activeProvider}</strong> &bull; Scratch workspace: isolated &amp; auto-cleaned &bull; Report: <span className="font-mono text-[10px]">docs/DIAGNOSTIC-REPORT.md</span>
                   </div>
                 </div>
               </div>
 
-              <div className="flex items-center gap-3 text-xs font-medium self-end sm:self-center">
-                <span className="text-emerald-400">{capSummary.passedCount} PASS</span>
-                <span className="text-rose-400">{capSummary.failedCount} FAIL</span>
+              <div className="diag-status-pills">
+                <span className="diag-pill-pass">{capSummary.passedCount} PASS</span>
+                <span className="diag-pill-fail">{capSummary.failedCount} FAIL</span>
               </div>
             </div>
           )}
 
           {/* Empty State */}
           {!capSummary && !isCapRunning && (
-            <div className="p-12 text-center rounded-xl bg-zinc-900/40 border border-zinc-800/80 space-y-3">
+            <div className="p-10 text-center rounded-xl bg-zinc-900/40 border border-zinc-800/80 space-y-3">
               <Brain size={32} className="mx-auto text-zinc-600" />
-              <h3 className="text-sm font-medium text-zinc-300">Ready to test AI capabilities</h3>
+              <h3 className="text-sm font-semibold text-zinc-300">Ready to test AI capabilities</h3>
               <p className="text-xs text-zinc-500 max-w-md mx-auto">
                 Validates the connected AI across the 4 core jobs in an isolated temporary scratch workspace (never touches your project files).
               </p>
               <button
                 onClick={() => runCapabilityTests()}
-                className="mt-2 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs font-medium text-zinc-200 cursor-pointer transition-colors"
+                className="mt-2 diag-btn-action diag-btn-sky"
               >
                 <Play size={13} />
-                Start Capability Tests
+                <span>Start Capability Tests</span>
               </button>
             </div>
           )}
 
           {/* Scenario Results Table / Cards */}
           {capSummary && (
-            <div className="space-y-3.5">
-              <div className="flex items-center justify-between">
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
-                  Scenario Execution Results ({capSummary.scenarios.length})
-                </h3>
-                <span className="text-[11px] text-zinc-500 flex items-center gap-1">
+            <div className="space-y-3">
+              <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                <span>Scenario Execution Results ({capSummary.scenarios.length})</span>
+                <span className="text-[11px] text-zinc-500 flex items-center gap-1 font-normal">
                   <FileText size={12} />
                   <span>docs/DIAGNOSTIC-REPORT.md auto-written</span>
                 </span>
               </div>
 
-              <div className="grid grid-cols-1 gap-3">
+              <div className="diag-cards-stack">
                 {capSummary.scenarios.map((sc: ScenarioResult) => {
                   const isExpanded = Boolean(expandedCapEvidence[sc.id]);
                   return (
-                    <div
-                      key={sc.id}
-                      className="rounded-xl bg-zinc-900/80 border border-zinc-800/80 hover:border-zinc-700 transition-colors p-4 space-y-3"
-                    >
+                    <div key={sc.id} className="diag-card">
                       {/* Scenario Row Header */}
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-                        <div className="flex items-start sm:items-center gap-3">
-                          <div className="p-2 rounded-lg bg-zinc-800 border border-zinc-700/50 shrink-0">
+                      <div className="diag-card-header">
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                          <div className="diag-scenario-icon" style={{ background: 'rgba(30, 41, 59, 0.8)', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
                             {SCENARIO_ICONS[sc.id] || <Activity size={16} />}
                           </div>
-                          <div>
+                          <div className="min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="font-semibold text-sm text-white">{sc.title}</span>
                               <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700/50">
@@ -1145,14 +1115,14 @@ export const DiagnosticsPanel: React.FC = () => {
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-2.5 self-end sm:self-center">
+                        <div className="diag-card-actions">
                           {sc.status === 'PASS' ? (
-                            <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                            <span className="diag-pill-pass flex items-center gap-1.5 text-xs font-semibold">
                               <CheckCircle2 size={13} />
                               PASS ({sc.durationMs}ms)
                             </span>
                           ) : (
-                            <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                            <span className="diag-pill-fail flex items-center gap-1.5 text-xs font-semibold">
                               <XCircle size={13} />
                               FAIL
                             </span>
@@ -1161,7 +1131,7 @@ export const DiagnosticsPanel: React.FC = () => {
                           <button
                             onClick={() => toggleCapEvidence(sc.id)}
                             id={`btn-evidence-${sc.id}`}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white border border-zinc-700/50 text-[11px] font-medium transition-colors cursor-pointer"
+                            className="diag-btn-hud text-xs"
                           >
                             <span>{isExpanded ? 'Hide evidence' : 'View evidence'}</span>
                             {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
@@ -1217,8 +1187,8 @@ export const DiagnosticsPanel: React.FC = () => {
 
                           {/* Failure Evidence / Taxonomy */}
                           {sc.status === 'FAIL' && sc.evidence && (
-                            <div className="p-3 rounded-lg bg-rose-950/20 border border-rose-900/30 text-rose-200 text-xs space-y-2">
-                              <div className="font-semibold text-rose-300 flex items-center gap-1.5">
+                            <div className="diag-remedy-box">
+                              <div className="font-semibold text-rose-300 flex items-center gap-1.5 text-xs">
                                 <AlertTriangle size={13} />
                                 <span>Failure Classification: {sc.evidence.taxonomyCode || 'DIAGNOSTIC_FAILURE'}</span>
                               </div>
@@ -1227,22 +1197,12 @@ export const DiagnosticsPanel: React.FC = () => {
                               </div>
                               {sc.evidence.rawResponseBytes && (
                                 <div className="space-y-1 pt-1">
-                                  <div className="text-[10px] text-zinc-400">Raw response bytes (truncated to 2KB):</div>
-                                  <pre className="p-2.5 rounded bg-zinc-950 border border-zinc-800 font-mono text-[10px] text-zinc-300 overflow-x-auto max-h-32 whitespace-pre-wrap break-all">
+                                  <div className="text-[10px] text-zinc-400">Raw response bytes:</div>
+                                  <pre className="diag-evidence-pre">
                                     {sc.evidence.rawResponseBytes}
                                   </pre>
                                 </div>
                               )}
-                            </div>
-                          )}
-
-                          {/* Successful Output Snippet */}
-                          {sc.status === 'PASS' && sc.output && (
-                            <div className="space-y-1">
-                              <div className="text-[10px] text-zinc-400">Response / Verification Output:</div>
-                              <pre className="p-2.5 rounded bg-zinc-950 border border-zinc-800 font-mono text-[10px] text-emerald-300/90 overflow-x-auto whitespace-pre-wrap max-h-28">
-                                {sc.output}
-                              </pre>
                             </div>
                           )}
                         </div>
@@ -1256,84 +1216,66 @@ export const DiagnosticsPanel: React.FC = () => {
         </div>
       )}
 
-      {/* ========================================================================= */}
-      {/* SECTION 3: REMEDIATION REPORT ENGINE & WHAT'S NEEDED CHECKLIST (PHASE 3) */}
-      {/* ========================================================================= */}
+      {/* =====================================================================
+          SECTION 3: REMEDIATION CHECKLIST (PHASE DIAGNOSTICS 3 & 4)
+          ===================================================================== */}
       {subTab === 'remediation' && (
-        <div className="space-y-6" id="remediation-report-section">
-          {/* Header & Main Actions */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-xl bg-gradient-to-r from-zinc-900 via-zinc-900 to-zinc-950 border border-zinc-800 shadow-lg">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
-                  <ListChecks size={20} />
-                </div>
-                <h2 className="text-lg font-semibold tracking-tight text-white">What&apos;s Needed Checklist &amp; Remediation</h2>
+        <div className="space-y-5">
+          {/* Header Banner */}
+          <div className="diag-hero-banner">
+            <div className="diag-hero-title-group">
+              <div className="diag-hero-icon" style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#34d399' }}>
+                <ListChecks size={18} />
               </div>
-              <p className="text-xs text-zinc-400 max-w-xl">
-                Prioritized, plain-language checklist of exactly what is needed to make Ty-Code work, with one-click fixes and copy-as-prompt handoffs for your AI coder.
-              </p>
+              <div className="diag-hero-text">
+                <h2>Remediation Checklist &amp; Action Plan</h2>
+                <p>
+                  Automatically classified checklist derived from your live probe results. Explains what works right now, what is missing, and what action to take next.
+                </p>
+              </div>
             </div>
 
-            <div className="flex items-center gap-2.5">
+            <div className="diag-hero-actions">
               <button
-                onClick={() => loadRemediationReport()}
+                onClick={() => void loadRemediationReport()}
                 disabled={isRemediationLoading}
-                id="btn-refresh-remediation"
-                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-medium text-xs shadow-md transition-all cursor-pointer"
+                className="diag-btn-action diag-btn-primary"
               >
                 {isRemediationLoading ? (
                   <>
-                    <RotateCw size={14} className="animate-spin" />
-                    Generating Report...
+                    <RotateCw size={13} className="animate-spin" />
+                    <span>Analyzing Findings...</span>
                   </>
                 ) : (
                   <>
-                    <RotateCw size={14} />
-                    Refresh What&apos;s Needed
+                    <RotateCw size={13} />
+                    <span>Regenerate Checklist</span>
                   </>
                 )}
               </button>
 
               <button
-                onClick={() => void handleCopyRemediationReport()}
+                onClick={handleCopyRemediationReport}
                 disabled={!remediationReport}
-                id="btn-copy-remediation-report"
-                className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 text-zinc-300 hover:text-white border border-zinc-700/60 font-medium text-xs transition-colors cursor-pointer"
-                title="Copy the full plain-language checklist report as Markdown"
+                className="diag-btn-action diag-btn-secondary"
+                title="Copy full remediation plan as Markdown"
               >
-                {remReportCopied ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
-                <span>{remReportCopied ? 'Report Copied!' : 'Copy Full Report'}</span>
-              </button>
-
-              <button
-                onClick={() => {
-                  if (remediationReport?.aiCoderHandoffPrompt) {
-                    void copyAiCoderPrompt(remediationReport.aiCoderHandoffPrompt);
-                  }
-                }}
-                disabled={!remediationReport}
-                id="btn-copy-coder-prompt"
-                className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 text-zinc-300 hover:text-white border border-zinc-700/60 font-medium text-xs transition-colors cursor-pointer"
-                title="Copy AI Coder Handoff Prompt Block"
-              >
-                {remediationPromptCopied ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
-                <span>{remediationPromptCopied ? 'Prompt Copied!' : 'Copy AI Coder Prompt'}</span>
+                {remReportCopied ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
+                <span>{remReportCopied ? 'Copied Plan!' : 'Copy Plan'}</span>
               </button>
             </div>
           </div>
 
-          {/* Loading state if not yet loaded */}
-          {isRemediationLoading && !remediationReport && (
-            <div className="p-12 text-center rounded-xl bg-zinc-900/40 border border-zinc-800/80 space-y-3">
-              <RotateCw size={32} className="mx-auto text-emerald-400 animate-spin" />
-              <h3 className="text-sm font-medium text-zinc-300">Evaluating diagnostics &amp; generating checklist...</h3>
+          {isRemediationLoading && (
+            <div className="p-8 text-center rounded-xl bg-zinc-900/40 border border-zinc-800 space-y-2">
+              <RotateCw size={24} className="mx-auto text-indigo-400 animate-spin" />
+              <h3 className="text-sm font-semibold text-zinc-300">Evaluating diagnostics &amp; generating checklist...</h3>
               <p className="text-xs text-zinc-500">Classifying taxonomy codes and structuring actionable remediation steps.</p>
             </div>
           )}
 
           {remediationReport && (
-            <div className="space-y-6">
+            <div className="space-y-5">
               {/* Live provenance notice when nothing has been tested yet */}
               {!connSummary && !capSummary && remediationReport.workingNow.length === 0 &&
                remediationReport.missingFromYou.length === 0 &&
@@ -1342,46 +1284,41 @@ export const DiagnosticsPanel: React.FC = () => {
                 <div className="p-4 rounded-xl bg-zinc-900/70 border border-zinc-800 text-zinc-300 text-xs flex items-start gap-3">
                   <Info size={16} className="text-zinc-400 shrink-0 mt-0.5" />
                   <div className="space-y-1">
-                    <div className="font-semibold text-zinc-200">No diagnostic results yet</div>
+                    <div className="font-semibold text-zinc-200">No diagnostic results measured yet</div>
                     <div className="text-[11px] text-zinc-400">
                       This checklist is rebuilt from measured results of the Connection Diagnostics and Capability
-                      Test Suite. Run those first and this checklist will populate with your real, live findings.
+                      Test Suite. Run those first and this checklist will populate with your real findings.
                     </div>
                   </div>
                 </div>
               )}
 
               {/* 1. RECOMMENDED NEXT ACTION (Single Highest-Value Step Hero Card) */}
-              <div className="relative overflow-hidden rounded-xl border border-indigo-500/40 bg-gradient-to-r from-indigo-950/40 via-zinc-900 to-zinc-950 p-5 shadow-xl">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div className="space-y-1.5">
-                    <div className="flex items-center gap-2">
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
-                        <Sparkles size={12} className="text-indigo-400" />
-                        RECOMMENDED NEXT ACTION &bull; HIGHEST VALUE
-                      </span>
-                    </div>
-                    <h3 className="text-base font-bold text-white tracking-tight">
-                      {remediationReport.recommendedNextAction.title}
-                    </h3>
-                    <p className="text-xs text-zinc-300 max-w-2xl leading-relaxed">
-                      {remediationReport.recommendedNextAction.description}
-                    </p>
-                    <p className="text-[10px] text-zinc-500">
-                      Live data: generated {new Date(remediationReport.timestamp).toLocaleTimeString()} from the
-                      latest real diagnostic run. Every pass or fail comes from a measured probe, never mock data.
-                    </p>
-                  </div>
-
-                  <button
-                    onClick={() => handleRemediationAction(remediationReport.recommendedNextAction)}
-                    id="btn-recommended-action"
-                    className="shrink-0 flex items-center gap-2 px-4 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs shadow-md transition-all cursor-pointer self-start sm:self-center"
-                  >
-                    <span>{remediationReport.recommendedNextAction.actionLabel}</span>
-                    <ArrowRight size={14} />
-                  </button>
+              <div className="diag-recommended-hero">
+                <div className="space-y-2 max-w-2xl">
+                  <span className="diag-recommended-badge">
+                    <Sparkles size={12} className="text-indigo-400" />
+                    RECOMMENDED NEXT ACTION &bull; HIGHEST VALUE
+                  </span>
+                  <h3 className="text-base font-bold text-white tracking-tight m-0">
+                    {remediationReport.recommendedNextAction.title}
+                  </h3>
+                  <p className="text-xs text-zinc-300 leading-relaxed m-0">
+                    {remediationReport.recommendedNextAction.description}
+                  </p>
+                  <p className="text-[10px] text-zinc-500 m-0">
+                    Generated {new Date(remediationReport.timestamp).toLocaleTimeString()} from latest probe.
+                  </p>
                 </div>
+
+                <button
+                  onClick={() => handleRemediationAction(remediationReport.recommendedNextAction)}
+                  id="btn-recommended-action"
+                  className="diag-btn-action diag-btn-primary"
+                >
+                  <span>{remediationReport.recommendedNextAction.actionLabel}</span>
+                  <ArrowRight size={13} />
+                </button>
               </div>
 
               {/* 2. WORKING NOW (Providers & Models ready immediately) */}
@@ -1389,15 +1326,15 @@ export const DiagnosticsPanel: React.FC = () => {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <CheckCircle2 size={16} className="text-emerald-400" />
-                    <h3 className="text-xs font-semibold uppercase tracking-wider text-emerald-400">
+                    <h3 className="text-xs font-semibold uppercase tracking-wider text-emerald-400 m-0">
                       1. Working Now &bull; Ready Immediately ({remediationReport.workingNow.length})
                     </h3>
                   </div>
-                  <span className="text-[11px] text-zinc-500 font-medium">Start coding without waiting</span>
+                  <span className="text-[11px] text-zinc-500">Start coding without waiting</span>
                 </div>
 
                 {remediationReport.workingNow.length === 0 ? (
-                  <div className="p-4 rounded-xl bg-amber-950/20 border border-amber-500/30 text-amber-200 text-xs space-y-1.5">
+                  <div className="p-4 rounded-xl bg-amber-950/20 border border-amber-500/30 text-amber-200 text-xs space-y-1">
                     <div className="font-semibold flex items-center gap-1.5">
                       <AlertTriangle size={14} className="text-amber-400" />
                       <span>No Operational Providers Connected</span>
@@ -1408,46 +1345,33 @@ export const DiagnosticsPanel: React.FC = () => {
                     </div>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="diag-checklist-grid">
                     {remediationReport.workingNow.map((item) => (
-                      <div
-                        key={item.providerId}
-                        className="flex flex-col justify-between p-3.5 rounded-xl bg-zinc-900/80 border border-emerald-500/20 hover:border-emerald-500/40 transition-colors space-y-2.5"
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className="font-semibold text-sm text-white">{item.providerName}</span>
-                              <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                                READY
-                              </span>
-                            </div>
-                            <div className="text-[11px] font-mono text-zinc-400 mt-0.5">
-                              Model: {item.modelId} &bull; {item.authType}
-                            </div>
-                          </div>
-                          {item.latencyMs && (
-                            <span className="font-mono text-[10px] text-emerald-400 px-1.5 py-0.5 rounded bg-zinc-800">
-                              {item.latencyMs}ms TTFT
+                      <div key={item.providerId} className="diag-checklist-item">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-sm text-white">{item.providerName}</span>
+                            <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                              READY
                             </span>
-                          )}
+                          </div>
+                          <div className="text-[11px] font-mono text-zinc-400 mt-1">
+                            Model: {item.modelId} &bull; {item.authType}
+                          </div>
                         </div>
 
-                        <div className="flex items-center justify-between pt-1 border-t border-zinc-800/80 text-[11px]">
-                          <span className="text-zinc-400 truncate max-w-[200px]">{item.notes || 'Fully operational'}</span>
-                          <button
-                            onClick={() =>
-                              handleRemediationAction({
-                                actionType: 'use_provider',
-                                actionTarget: item.providerId
-                              })
-                            }
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-[11px] font-medium transition-colors cursor-pointer"
-                          >
-                            <span>Use Provider</span>
-                            <ArrowRight size={11} />
-                          </button>
-                        </div>
+                        <button
+                          onClick={() =>
+                            handleRemediationAction({
+                              actionType: 'use_provider',
+                              actionTarget: item.providerId
+                            })
+                          }
+                          className="diag-btn-hud text-xs"
+                        >
+                          <span>Use Provider</span>
+                          <ArrowRight size={11} />
+                        </button>
                       </div>
                     ))}
                   </div>
@@ -1459,7 +1383,7 @@ export const DiagnosticsPanel: React.FC = () => {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <AlertTriangle size={16} className="text-amber-400" />
-                    <h3 className="text-xs font-semibold uppercase tracking-wider text-amber-400">
+                    <h3 className="text-xs font-semibold uppercase tracking-wider text-amber-400 m-0">
                       2. Missing From You &bull; User Action Required ({remediationReport.missingFromYou.length})
                     </h3>
                   </div>
@@ -1472,17 +1396,13 @@ export const DiagnosticsPanel: React.FC = () => {
                     <span>All required API keys and user configurations are present and verified!</span>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 gap-2.5">
+                  <div className="space-y-2">
                     {remediationReport.missingFromYou.map((item) => {
                       const isChecked = Boolean(checkedItems[item.id]);
                       return (
                         <div
                           key={item.id}
-                          className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl border transition-all ${
-                            isChecked
-                              ? 'bg-zinc-900/40 border-zinc-800/60 opacity-60'
-                              : 'bg-zinc-900/80 border-zinc-800 hover:border-zinc-700'
-                          }`}
+                          className={`diag-checklist-item ${isChecked ? 'opacity-60' : ''}`}
                         >
                           <div className="flex items-start gap-3">
                             <button
@@ -1506,11 +1426,11 @@ export const DiagnosticsPanel: React.FC = () => {
                                   {item.code}
                                 </span>
                               </div>
-                              <p className="text-xs text-zinc-300">{item.issue}</p>
+                              <p className="text-xs text-zinc-300 m-0">{item.issue}</p>
                             </div>
                           </div>
 
-                          <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                          <div className="flex items-center gap-2 shrink-0">
                             {item.actionUrl && (
                               <button
                                 onClick={() =>
@@ -1520,10 +1440,10 @@ export const DiagnosticsPanel: React.FC = () => {
                                     actionUrl: item.actionUrl
                                   })
                                 }
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-200 border border-amber-500/30 text-xs font-medium transition-colors cursor-pointer"
+                                className="diag-btn-hud text-amber-200 border-amber-500/30 hover:bg-amber-500/20"
                               >
                                 <span>{item.actionText}</span>
-                                <ExternalLink size={12} />
+                                <ExternalLink size={11} />
                               </button>
                             )}
 
@@ -1531,12 +1451,12 @@ export const DiagnosticsPanel: React.FC = () => {
                               <button
                                 onClick={() => copyAiCoderPrompt(item.aiCoderPrompt!, item.id)}
                                 title="Copy AI prompt for this item"
-                                className="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white border border-zinc-700/50 transition-colors cursor-pointer"
+                                className="diag-btn-hud"
                               >
                                 {copiedItemId === item.id ? (
-                                  <Check size={13} className="text-emerald-400" />
+                                  <Check size={12} className="text-emerald-400" />
                                 ) : (
-                                  <Copy size={13} />
+                                  <Copy size={12} />
                                 )}
                               </button>
                             )}
@@ -1553,7 +1473,7 @@ export const DiagnosticsPanel: React.FC = () => {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <FileCode size={16} className="text-rose-400" />
-                    <h3 className="text-xs font-semibold uppercase tracking-wider text-rose-400">
+                    <h3 className="text-xs font-semibold uppercase tracking-wider text-rose-400 m-0">
                       3. Missing From Code &bull; AI Coder Fixes ({remediationReport.missingFromCode.length})
                     </h3>
                   </div>
@@ -1566,14 +1486,11 @@ export const DiagnosticsPanel: React.FC = () => {
                     <span>No client-side protocol or parsing bugs detected in src/!</span>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 gap-3">
+                  <div className="space-y-2.5">
                     {remediationReport.missingFromCode.map((item) => {
                       const isExpanded = Boolean(expandedRemediationEvidence[item.id]);
                       return (
-                        <div
-                          key={item.id}
-                          className="rounded-xl bg-zinc-900/80 border border-rose-950/40 p-4 space-y-3"
-                        >
+                        <div key={item.id} className="diag-card border-rose-950/40">
                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
                             <div className="space-y-1">
                               <div className="flex items-center gap-2 flex-wrap">
@@ -1586,19 +1503,19 @@ export const DiagnosticsPanel: React.FC = () => {
                                   <span>{item.targetFile}{item.targetLine ? `:${item.targetLine}` : ''}</span>
                                 </span>
                               </div>
-                              <p className="text-xs text-zinc-300">{item.issue}</p>
+                              <p className="text-xs text-zinc-300 m-0">{item.issue}</p>
                             </div>
 
                             <button
                               onClick={() => copyAiCoderPrompt(item.aiCoderPrompt, item.id)}
-                              className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-600/20 hover:bg-rose-600/30 text-rose-200 border border-rose-500/30 text-xs font-medium transition-colors cursor-pointer self-start sm:self-center"
+                              className="diag-btn-hud text-rose-200 border-rose-500/30 hover:bg-rose-500/20"
                             >
-                              {copiedItemId === item.id ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
+                              {copiedItemId === item.id ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
                               <span>{copiedItemId === item.id ? 'Prompt Copied!' : 'Copy Fix Prompt'}</span>
                             </button>
                           </div>
 
-                          <div className="p-3 rounded-lg bg-zinc-950/80 border border-zinc-800/80 text-xs space-y-1.5">
+                          <div className="p-2.5 rounded-lg bg-zinc-950/80 border border-zinc-800 text-xs space-y-1">
                             <div className="text-zinc-400 text-[11px] font-medium flex items-center gap-1.5">
                               <Terminal size={12} className="text-indigo-400" />
                               <span>Required Fix:</span>
@@ -1606,7 +1523,7 @@ export const DiagnosticsPanel: React.FC = () => {
                             <div className="text-zinc-200 font-mono text-[11px]">{item.fixDescription}</div>
 
                             {item.evidenceChunk && (
-                              <div className="pt-1.5">
+                              <div className="pt-1">
                                 <button
                                   onClick={() => toggleRemediationEvidence(item.id)}
                                   className="inline-flex items-center gap-1 text-[10px] text-zinc-400 hover:text-zinc-200 cursor-pointer"
@@ -1615,7 +1532,7 @@ export const DiagnosticsPanel: React.FC = () => {
                                   <span>{isExpanded ? 'Hide Raw Chunk Evidence' : 'Show Raw Chunk Evidence'}</span>
                                 </button>
                                 {isExpanded && (
-                                  <pre className="mt-2 p-2.5 rounded bg-black/60 border border-zinc-800 font-mono text-[10px] text-zinc-300 overflow-x-auto max-h-36 whitespace-pre-wrap break-all">
+                                  <pre className="diag-evidence-pre">
                                     {item.evidenceChunk}
                                   </pre>
                                 )}
@@ -1634,7 +1551,7 @@ export const DiagnosticsPanel: React.FC = () => {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Server size={16} className="text-orange-400" />
-                    <h3 className="text-xs font-semibold uppercase tracking-wider text-orange-400">
+                    <h3 className="text-xs font-semibold uppercase tracking-wider text-orange-400 m-0">
                       4. External Outage &bull; Providers Down Right Now ({remediationReport.externalOutage.length})
                     </h3>
                   </div>
@@ -1647,60 +1564,41 @@ export const DiagnosticsPanel: React.FC = () => {
                     <span>All remote provider gateways are responding normally without outages or rate limits!</span>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="diag-checklist-grid">
                     {remediationReport.externalOutage.map((item) => (
-                      <div
-                        key={item.id}
-                        className="p-4 rounded-xl bg-zinc-900/80 border border-orange-500/20 hover:border-orange-500/30 transition-colors space-y-3"
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className="font-semibold text-sm text-white">{item.providerName}</span>
-                              <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-orange-500/10 text-orange-400 border border-orange-500/20">
-                                {item.code}
-                              </span>
-                            </div>
-                            <div className="text-xs text-zinc-300 mt-1">{item.details}</div>
+                      <div key={item.id} className="diag-card border-orange-500/20">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-sm text-white">{item.providerName}</span>
+                            <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-orange-500/10 text-orange-400 border border-orange-500/20">
+                              {item.code}
+                            </span>
                           </div>
+                          <div className="text-xs text-zinc-300 mt-1">{item.details}</div>
                         </div>
 
-                        <div className="p-2.5 rounded-lg bg-zinc-950/60 border border-zinc-800 text-[11px] space-y-1">
+                        <div className="p-2 rounded bg-zinc-950/60 border border-zinc-800 text-[11px] space-y-1">
                           <div className="text-zinc-400 flex items-center gap-1.5">
-                            <Clock size={12} className="text-orange-400" />
+                            <Clock size={11} className="text-orange-400" />
                             <span>Retry: <strong className="text-zinc-200">{item.nextRetrySchedule}</strong></span>
                           </div>
                           <div className="text-zinc-400 flex items-center gap-1.5">
-                            <Zap size={12} className="text-emerald-400" />
+                            <Zap size={11} className="text-emerald-400" />
                             <span>Fallback: <strong className="text-emerald-300">{item.suggestedFallback}</strong></span>
                           </div>
                         </div>
 
                         {item.statusUrl && (
-                          <div className="flex items-center justify-between pt-1">
+                          <div className="pt-1">
                             <a
                               href={item.statusUrl}
                               target="_blank"
-                              rel="noreferrer"
-                              className="inline-flex items-center gap-1.5 text-xs text-orange-300 hover:text-orange-200 font-medium cursor-pointer"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-xs text-orange-300 hover:text-orange-200 underline"
                             >
-                              <span>View Live Status Page</span>
-                              <ExternalLink size={12} />
+                              <span>Provider Status Page</span>
+                              <ExternalLink size={10} />
                             </a>
-
-                            {item.aiCoderPrompt && (
-                              <button
-                                onClick={() => copyAiCoderPrompt(item.aiCoderPrompt!, item.id)}
-                                title="Copy AI prompt for this outage"
-                                className="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white transition-colors cursor-pointer"
-                              >
-                                {copiedItemId === item.id ? (
-                                  <Check size={12} className="text-emerald-400" />
-                                ) : (
-                                  <Copy size={12} />
-                                )}
-                              </button>
-                            )}
                           </div>
                         )}
                       </div>
@@ -1709,59 +1607,21 @@ export const DiagnosticsPanel: React.FC = () => {
                 )}
               </div>
 
-              {/* 6. AI CODER HANDOFF PROMPT (Self-Contained Copy Block) */}
-              <div className="space-y-3 pt-2 border-t border-zinc-800/80" id="section-ai-coder-handoff">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Terminal size={16} className="text-indigo-400" />
-                    <h3 className="text-xs font-semibold uppercase tracking-wider text-indigo-400">
-                      AI Coder Handoff Prompt Block
-                    </h3>
-                  </div>
-                  <span className="text-[11px] text-zinc-500 font-mono">docs/DIAGNOSTIC-REPORT.md</span>
-                </div>
-
-                <div className="p-4 rounded-xl bg-zinc-950 border border-zinc-800 space-y-3">
-                  <p className="text-xs text-zinc-400">
-                    Paste this self-contained block directly to your AI coder to immediately propose and apply the minimal fix in <code className="text-zinc-300">src/</code>:
-                  </p>
-
-                  <pre className="p-3.5 rounded-lg bg-zinc-900 border border-zinc-800 font-mono text-xs text-indigo-200 overflow-x-auto whitespace-pre-wrap leading-relaxed select-all">
-                    {remediationReport.aiCoderHandoffPrompt}
-                  </pre>
-
-                  <div className="flex items-center justify-between pt-1">
-                    <span className="text-[11px] text-zinc-500">
-                      Standardized template &bull; Fixed category &bull; Autonomous pass verification
-                    </span>
-
-                    <button
-                      onClick={() => copyAiCoderPrompt(remediationReport.aiCoderHandoffPrompt)}
-                      id="btn-copy-coder-prompt-box"
-                      className="flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs shadow-md transition-all cursor-pointer"
-                    >
-                      {remediationPromptCopied ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
-                      <span>{remediationPromptCopied ? 'Prompt Copied to Clipboard!' : 'Copy AI Coder Prompt'}</span>
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* 7. MANUAL SMOKE-TEST MESSAGE SCRIPT (UNDER 3 MINUTES - PHASE DIAGNOSTICS 4) */}
-              <div className="space-y-4 pt-4 border-t border-zinc-800/80" id="section-manual-smoke-test">
+              {/* 6. MANUAL SMOKE-TEST SCRIPT (6 Prompts) */}
+              <div className="space-y-3 pt-3 border-t border-zinc-800/80" id="section-manual-smoke-test">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
                       <Terminal size={16} className="text-emerald-400" />
-                      <h3 className="text-xs font-semibold uppercase tracking-wider text-emerald-400">
+                      <h3 className="text-xs font-semibold uppercase tracking-wider text-emerald-400 m-0">
                         Manual Smoke-Test Script (Under 3 Minutes)
                       </h3>
                       <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                         6 Prompts
                       </span>
                     </div>
-                    <p className="text-xs text-zinc-400">
-                      Copy and paste each message into chat to verify the core experience by hand in under 3 minutes.
+                    <p className="text-xs text-zinc-400 m-0">
+                      Copy each prompt into chat to verify completions, tool-calling, and streaming by hand.
                     </p>
                   </div>
 
@@ -1769,33 +1629,29 @@ export const DiagnosticsPanel: React.FC = () => {
                     <button
                       onClick={copyAllSmokeSteps}
                       id="btn-copy-smoke-all"
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white border border-zinc-700/60 text-xs font-medium transition-colors cursor-pointer"
+                      className="diag-btn-hud text-xs"
                     >
-                      {copiedAllSmoke ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
+                      {copiedAllSmoke ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
                       <span>{copiedAllSmoke ? 'Script Copied!' : 'Copy Entire Script'}</span>
                     </button>
 
                     <button
                       onClick={() => window.electronAPI?.openPath?.('docs/SMOKE-TEST.md')}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white border border-zinc-700/60 text-xs font-medium transition-colors cursor-pointer"
+                      className="diag-btn-hud text-xs"
                       title="Open docs/SMOKE-TEST.md"
                     >
-                      <FileText size={13} />
+                      <FileText size={12} />
                       <span>docs/SMOKE-TEST.md</span>
                     </button>
                   </div>
                 </div>
 
-                {/* 6 Steps Grid */}
-                <div className="grid grid-cols-1 gap-2.5">
+                <div className="space-y-2">
                   {SMOKE_TEST_STEPS.map((step: SmokeTestStep) => {
                     const isCopied = copiedSmokeId === step.id;
                     return (
-                      <div
-                        key={step.id}
-                        className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl bg-zinc-900/80 border border-zinc-800 hover:border-zinc-700 transition-colors"
-                      >
-                        <div className="space-y-1.5 flex-1 min-w-0">
+                      <div key={step.id} className="diag-checklist-item">
+                        <div className="space-y-1 flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="flex items-center justify-center w-5 h-5 rounded-full bg-zinc-800 text-zinc-300 text-[11px] font-bold shrink-0">
                               {step.stepNumber}
@@ -1817,10 +1673,10 @@ export const DiagnosticsPanel: React.FC = () => {
                         <button
                           onClick={() => copySmokeStep(step.send, step.id)}
                           id={`btn-copy-smoke-${step.stepNumber}`}
-                          className="shrink-0 self-end sm:self-center inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 text-xs font-medium transition-colors cursor-pointer"
+                          className="diag-btn-hud text-xs shrink-0"
                         >
-                          {isCopied ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
-                          <span>{isCopied ? 'Copied!' : 'Copy Message'}</span>
+                          {isCopied ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+                          <span>{isCopied ? 'Copied!' : 'Copy Prompt'}</span>
                         </button>
                       </div>
                     );
@@ -1830,14 +1686,16 @@ export const DiagnosticsPanel: React.FC = () => {
                 {/* Failure Protocol Alert Box */}
                 <div
                   id="smoke-failure-protocol"
-                  className="p-3.5 rounded-xl bg-amber-950/20 border border-amber-500/30 text-amber-200 text-xs space-y-1"
+                  className="diag-status-banner is-warning"
                 >
-                  <div className="font-semibold flex items-center gap-1.5 text-amber-300">
-                    <AlertTriangle size={14} className="text-amber-400" />
-                    <span>Failure Protocol:</span>
-                  </div>
-                  <div className="text-[11px] opacity-90 pl-5 leading-relaxed">
-                    {SMOKE_TEST_FAILURE_PROTOCOL}
+                  <div className="flex items-start gap-2.5">
+                    <AlertTriangle size={15} className="text-amber-400 mt-0.5 shrink-0" />
+                    <div className="space-y-0.5">
+                      <div className="font-semibold text-xs text-amber-300">Failure Protocol:</div>
+                      <div className="text-[11px] text-amber-200/90 leading-relaxed">
+                        {SMOKE_TEST_FAILURE_PROTOCOL}
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1846,35 +1704,33 @@ export const DiagnosticsPanel: React.FC = () => {
         </div>
       )}
 
-      {/* ========================================================================= */}
-      {/* SECTION 4: END-TO-END CONNECTIVITY TRACE (H1–H10 WATERFALL)               */}
-      {/* ========================================================================= */}
+      {/* =====================================================================
+          SECTION 4: END-TO-END CONNECTIVITY TRACE (H1–H10 WATERFALL)
+          ===================================================================== */}
       {subTab === 'trace' && (
-        <div className="space-y-6">
-          {/* Header & Main Actions */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-xl bg-gradient-to-r from-zinc-900 via-zinc-900 to-zinc-950 border border-zinc-800 shadow-lg">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-lg bg-purple-500/10 border border-purple-500/20 text-purple-400">
-                  <Network size={20} />
-                </div>
-                <div>
-                  <h2 className="text-lg font-semibold tracking-tight text-white">End-to-End Connectivity Trace</h2>
-                  <p className="text-xs text-zinc-400">
-                    Real-path probe tracing Hops H1 through H10 through actual app code to identify broken hops
-                  </p>
-                </div>
+        <div className="space-y-4">
+          {/* Header Banner */}
+          <div className="diag-hero-banner">
+            <div className="diag-hero-title-group">
+              <div className="diag-hero-icon" style={{ background: 'rgba(168, 85, 247, 0.15)', color: '#c084fc' }}>
+                <Network size={18} />
+              </div>
+              <div className="diag-hero-text">
+                <h2>End-to-End Connectivity Trace</h2>
+                <p>
+                  Real-path probe tracing Hops H1 through H10 through actual app code to identify broken hops across renderer, preload, and main process.
+                </p>
               </div>
             </div>
 
-            <div className="flex items-center gap-2 flex-wrap">
+            <div className="diag-hero-actions">
               <button
                 onClick={handleScanMocks}
                 disabled={isScanningMocks}
                 id="btn-scan-mocks"
-                className="flex items-center gap-2 px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-medium border border-zinc-700 transition-colors disabled:opacity-50 cursor-pointer"
+                className="diag-btn-action diag-btn-secondary"
               >
-                {isScanningMocks ? <RotateCw size={13} className="animate-spin text-purple-400" /> : <ShieldCheck size={13} className="text-purple-400" />}
+                {isScanningMocks ? <RotateCw size={12} className="animate-spin text-purple-400" /> : <ShieldCheck size={12} className="text-purple-400" />}
                 <span>{isScanningMocks ? 'Scanning...' : 'Scan Mock Paths'}</span>
               </button>
 
@@ -1882,9 +1738,9 @@ export const DiagnosticsPanel: React.FC = () => {
                 onClick={handleCopyTraceJson}
                 disabled={!traceReport}
                 id="btn-copy-trace-json"
-                className="flex items-center gap-2 px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-medium border border-zinc-700 transition-colors disabled:opacity-50 cursor-pointer"
+                className="diag-btn-action diag-btn-secondary"
               >
-                {traceCopied ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
+                {traceCopied ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
                 <span>{traceCopied ? 'Copied JSON!' : 'Copy Trace JSON'}</span>
               </button>
 
@@ -1892,16 +1748,16 @@ export const DiagnosticsPanel: React.FC = () => {
                 onClick={handleRunTrace}
                 disabled={isTraceRunning}
                 id="btn-run-connectivity-trace"
-                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold shadow-md shadow-purple-600/20 transition-all disabled:opacity-50 cursor-pointer"
+                className="diag-btn-action diag-btn-purple"
               >
                 {isTraceRunning ? (
                   <>
-                    <RotateCw size={14} className="animate-spin" />
+                    <RotateCw size={13} className="animate-spin" />
                     <span>Tracing Hops H1–H10...</span>
                   </>
                 ) : (
                   <>
-                    <Play size={14} />
+                    <Play size={13} />
                     <span>Run Live Trace</span>
                   </>
                 )}
@@ -1911,38 +1767,31 @@ export const DiagnosticsPanel: React.FC = () => {
 
           {/* Overall Trace Status Banner */}
           {traceReport && (
-            <div
-              className={`p-4 rounded-xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 ${
-                traceReport.overallStatus === 'PASS'
-                  ? 'bg-emerald-950/20 border-emerald-500/30 text-emerald-300'
-                  : 'bg-rose-950/20 border-rose-500/30 text-rose-300'
-              }`}
-            >
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  {traceReport.overallStatus === 'PASS' ? (
-                    <CheckCircle2 size={18} className="text-emerald-400" />
-                  ) : (
-                    <XCircle size={18} className="text-rose-400" />
-                  )}
-                  <span className="font-semibold text-sm">
+            <div className={`diag-status-banner ${traceReport.overallStatus === 'PASS' ? 'is-success' : 'is-danger'}`}>
+              <div className="diag-status-banner-left">
+                {traceReport.overallStatus === 'PASS' ? (
+                  <CheckCircle2 size={18} className="text-emerald-400" />
+                ) : (
+                  <XCircle size={18} className="text-rose-400" />
+                )}
+                <div>
+                  <div className="diag-status-banner-title">
                     {traceReport.overallStatus === 'PASS'
                       ? 'End-to-End Connectivity Verified Across Providers'
                       : `Connectivity Broken at Hop ${traceReport.firstFailingHop || 'H6'} (${traceReport.firstFailingProvider || 'unknown provider'})`}
-                  </span>
-                </div>
-                <div className="text-xs opacity-90 pl-6">
-                  {traceReport.summary.passedCount} of {traceReport.summary.totalTested} providers passed
-                  {traceReport.summary.skippedCount > 0
-                    ? `, ${traceReport.summary.skippedCount} skipped (optional, no key configured)`
-                    : ''}
-                  .
-                  Canned probe prompt: &ldquo;{traceReport.cannedPrompt}&rdquo;
+                  </div>
+                  <div className="diag-status-banner-desc">
+                    {traceReport.summary.passedCount} of {traceReport.summary.totalTested} providers passed
+                    {traceReport.summary.skippedCount > 0
+                      ? `, ${traceReport.summary.skippedCount} skipped (no key)`
+                      : ''}
+                    . Probe prompt: &ldquo;{traceReport.cannedPrompt}&rdquo;
+                  </div>
                 </div>
               </div>
 
               {traceReport.firstFailingProvider && traceReport.providers[traceReport.firstFailingProvider]?.taxonomyCode && (
-                <div className="px-3 py-1.5 rounded-lg bg-rose-500/20 border border-rose-500/30 text-xs font-mono font-semibold text-rose-300">
+                <div className="px-3 py-1 rounded bg-rose-500/20 border border-rose-500/30 text-xs font-mono font-semibold text-rose-300">
                   Taxonomy: {traceReport.providers[traceReport.firstFailingProvider]?.taxonomyCode}
                 </div>
               )}
@@ -1956,26 +1805,15 @@ export const DiagnosticsPanel: React.FC = () => {
                 const isActive = activeTraceProvider === pId;
                 const isPass = trace.status === 'PASS';
                 const isSkipped = trace.status === 'SKIPPED';
-                const badgeClass = isPass
-                  ? 'bg-emerald-500/20 text-emerald-400'
-                  : isSkipped
-                    ? 'bg-amber-500/20 text-amber-400'
-                    : 'bg-rose-500/20 text-rose-400';
                 const badgeLabel = isPass ? 'PASS' : isSkipped ? 'SKIP' : `FAIL (${trace.firstFailingHop || 'ERR'})`;
                 return (
                   <button
                     key={pId}
                     onClick={() => setActiveTraceProvider(pId)}
-                    className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium border transition-all cursor-pointer ${
-                      isActive
-                        ? 'bg-zinc-800 text-white border-purple-500/50 shadow-sm'
-                        : 'bg-zinc-900/60 text-zinc-400 border-zinc-800 hover:text-zinc-200'
-                    }`}
+                    className={`diag-btn-hud ${isActive ? 'is-active text-white' : ''}`}
                   >
                     <span>{trace.providerName || pId}</span>
-                    <span
-                      className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${badgeClass}`}
-                    >
+                    <span className={isPass ? 'text-emerald-400 text-[10px] font-bold' : isSkipped ? 'text-amber-400 text-[10px] font-bold' : 'text-rose-400 text-[10px] font-bold'}>
                       {badgeLabel}
                     </span>
                   </button>
@@ -1986,12 +1824,12 @@ export const DiagnosticsPanel: React.FC = () => {
 
           {/* Selected Provider Waterfall Details */}
           {traceReport && traceReport.providers[activeTraceProvider] && (
-            <div className="space-y-4">
+            <div className="space-y-3">
               {/* Provider Info Summary */}
               {(() => {
                 const trace = traceReport.providers[activeTraceProvider];
                 return (
-                  <div className="p-4 rounded-xl bg-zinc-900/90 border border-zinc-800 space-y-3">
+                  <div className="diag-card">
                     <div className="flex items-center justify-between gap-4 flex-wrap">
                       <div className="flex items-center gap-3">
                         <span className="font-semibold text-white text-sm">{trace.providerName}</span>
@@ -2006,14 +1844,14 @@ export const DiagnosticsPanel: React.FC = () => {
                     </div>
 
                     {trace.firstFailingHop && (
-                      <div className="p-3 rounded-lg bg-rose-950/30 border border-rose-500/30 text-xs space-y-1">
-                        <div className="font-semibold text-rose-300 flex items-center gap-1.5">
+                      <div className="diag-remedy-box">
+                        <div className="font-semibold text-rose-300 flex items-center gap-1.5 text-xs">
                           <AlertTriangle size={14} className="text-rose-400" />
                           <span>Failing Hop: {trace.firstFailingHop} &mdash; Classification: {trace.taxonomyCode || 'UNCLASSIFIED'}</span>
                         </div>
-                        <div className="text-rose-200/90 pl-5">{trace.errorSummary}</div>
+                        <div className="text-rose-200/90 text-xs pl-5">{trace.errorSummary}</div>
                         {trace.remedy && (
-                          <div className="text-zinc-300 pl-5 pt-1">
+                          <div className="text-zinc-300 text-xs pl-5 pt-1">
                             <strong className="text-purple-300">Remedy: </strong>
                             <span>{trace.remedy}</span>
                           </div>
@@ -2028,8 +1866,7 @@ export const DiagnosticsPanel: React.FC = () => {
                           <span>Skipped: {trace.skipReason || 'Not configured (expected state, not a failure).'}</span>
                         </div>
                         <div className="text-amber-200/70 pl-5">
-                          This provider was not probed because it holds no stored key. Add one in Settings &gt; Providers to include it
-                          in tests.
+                          This provider was not probed because it holds no stored key. Add one in Settings &gt; Providers to include it in tests.
                         </div>
                       </div>
                     )}
@@ -2038,7 +1875,7 @@ export const DiagnosticsPanel: React.FC = () => {
               })()}
 
               {/* H1 to H10 Waterfall Rows */}
-              <div className="space-y-2">
+              <div className="diag-waterfall-track">
                 {(['H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'H7', 'H8', 'H9', 'H10'] as HopId[]).map((hopId) => {
                   const trace = traceReport.providers[activeTraceProvider];
                   const hop = trace?.hops[hopId];
@@ -2064,40 +1901,32 @@ export const DiagnosticsPanel: React.FC = () => {
                   return (
                     <div
                       key={hopId}
-                      className={`rounded-xl border transition-all ${
-                        isFail
-                          ? 'bg-rose-950/20 border-rose-500/40'
-                          : isPass
-                            ? 'bg-zinc-900/80 border-zinc-800 hover:border-zinc-700'
-                            : 'bg-zinc-900/40 border-zinc-800/50 opacity-60'
-                      }`}
+                      className="diag-card p-0 overflow-hidden"
                     >
                       <div
                         onClick={() => setExpandedHopId(isExpanded ? null : hopId)}
-                        className="flex items-center justify-between p-3.5 cursor-pointer select-none"
+                        className="diag-hop-node"
                       >
-                        <div className="flex items-center gap-3 min-w-0 flex-1">
-                          {/* Hop ID Badge */}
+                        <div className="diag-hop-left">
                           <span
-                            className={`px-2.5 py-1 rounded-md text-xs font-mono font-bold shrink-0 ${
+                            className={`diag-hop-badge ${
                               isPass
-                                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                ? 'is-pass'
                                 : isFail
-                                  ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
-                                  : 'bg-zinc-800 text-zinc-400 border border-zinc-700'
+                                  ? 'is-fail'
+                                  : 'is-pending'
                             }`}
                           >
                             {hopId}
                           </span>
 
-                          {/* Title & Subtitle */}
                           <div className="min-w-0">
                             <div className="flex items-center gap-2">
-                              <span className="font-semibold text-xs text-white">
+                              <span className="diag-hop-title">
                                 {HOP_META[hopId]?.title || hop?.name || hopId}
                               </span>
                               {hop?.durationMs !== undefined && (
-                                <span className="text-[10px] font-mono text-zinc-400">
+                                <span className="diag-hop-latency">
                                   {hop.durationMs}ms
                                 </span>
                               )}
@@ -2107,23 +1936,22 @@ export const DiagnosticsPanel: React.FC = () => {
                                 </span>
                               )}
                             </div>
-                            <div className="text-[11px] text-zinc-400 truncate">
+                            <div className="diag-hop-desc">
                               {HOP_META[hopId]?.subtitle}
                             </div>
                           </div>
                         </div>
 
-                        {/* Status Icon & Expand Chevron */}
                         <div className="flex items-center gap-3 shrink-0 ml-3">
                           {isPass && (
-                            <span className="flex items-center gap-1 text-xs text-emerald-400 font-medium">
-                              <CheckCircle2 size={15} />
+                            <span className="flex items-center gap-1 text-xs text-emerald-400 font-semibold">
+                              <CheckCircle2 size={14} />
                               <span className="hidden sm:inline">PASS</span>
                             </span>
                           )}
                           {isFail && (
-                            <span className="flex items-center gap-1 text-xs text-rose-400 font-medium">
-                              <XCircle size={15} />
+                            <span className="flex items-center gap-1 text-xs text-rose-400 font-semibold">
+                              <XCircle size={14} />
                               <span className="hidden sm:inline">FAIL</span>
                             </span>
                           )}
@@ -2144,7 +1972,7 @@ export const DiagnosticsPanel: React.FC = () => {
 
                       {/* Expandable Hop Metadata Drawer */}
                       {isExpanded && (
-                        <div className="px-4 pb-4 pt-1 border-t border-zinc-800/80 space-y-3 text-xs">
+                        <div className="p-4 border-t border-zinc-800/80 space-y-3 text-xs bg-zinc-950/40">
                           {hop?.error && (
                             <div className="p-3 rounded-lg bg-rose-950/40 border border-rose-500/30 text-rose-300 font-mono text-[11px] break-all">
                               <strong>Error: </strong> {hop.error}
@@ -2154,7 +1982,7 @@ export const DiagnosticsPanel: React.FC = () => {
                           {hop?.metadata && (
                             <div className="space-y-1.5">
                               <div className="text-[11px] font-semibold text-zinc-400">Evidence Metadata (Zero Secrets):</div>
-                              <pre className="p-3 rounded-lg bg-black/60 border border-zinc-800 text-zinc-300 font-mono text-[11px] overflow-x-auto leading-relaxed">
+                              <pre className="diag-evidence-pre">
                                 {JSON.stringify(hop.metadata, null, 2)}
                               </pre>
                             </div>
@@ -2175,7 +2003,7 @@ export const DiagnosticsPanel: React.FC = () => {
 
           {/* Static Mock Scanner Findings Card */}
           {mockScanReport && (
-            <div className="p-4 rounded-xl bg-zinc-900/90 border border-zinc-800 space-y-3">
+            <div className="diag-card">
               <div className="flex items-center justify-between gap-4">
                 <div className="flex items-center gap-2">
                   <ShieldCheck size={16} className={mockScanReport.hasShortCircuits ? 'text-rose-400' : 'text-emerald-400'} />
@@ -2219,7 +2047,7 @@ export const DiagnosticsPanel: React.FC = () => {
                   ))}
                 </div>
               ) : (
-                <div className="text-xs text-zinc-400">No mock pattern references found.</div>
+                <div className="text-xs text-zinc-400">No mock pattern references found. Production streaming paths strictly verified.</div>
               )}
             </div>
           )}

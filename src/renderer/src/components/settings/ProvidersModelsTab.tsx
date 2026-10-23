@@ -11,12 +11,21 @@ import {
   AlertTriangle,
   ShieldCheck,
   Cpu,
-  Loader2
+  Loader2,
+  Search,
+  X,
+  Sparkles,
+  Layers,
+  Brain,
+  Code2,
+  Eye,
+  Sliders
 } from 'lucide-react';
 import { toast } from '../../state/toast-store';
 import { useSettingsStore, TY_CODE_FREE_PROVIDER } from '../../state/settings-store';
 import { ModelCatalogVerifierPanel } from './ModelCatalogVerifierPanel';
 import type { VerifiedModelCatalogSummary } from '../../../../preload/types';
+import './ProvidersModelsTab.css';
 
 type CatalogModel = VerifiedModelCatalogSummary['models'][number];
 
@@ -32,7 +41,7 @@ interface CatalogSection {
   title: string;
   subtitle: string;
   models: CatalogModel[];
-  badge?: { label: string; tone: 'green' | 'amber' | 'zinc' };
+  badge?: { label: string; tone: 'green' | 'amber' | 'zinc' | 'blue' };
 }
 
 const PROVIDER_TAG_LABELS: Record<string, string> = {
@@ -55,16 +64,159 @@ function providerTag(providerId: string): string {
 }
 
 function providerIdForSelection(providerId: string): string {
-  // Route premium OpenRouter entries and their free-flavored aliases through
-  // the One-Key channel; everything else keeps its catalog providerId.
   if (providerId === 'openrouter-free') return 'openrouter';
   return providerId;
+}
+
+// Brand visuals for AI providers: curated colors & icons
+function getProviderBrand(providerId: string, modelName: string) {
+  const lowerName = modelName.toLowerCase();
+  const lowerProv = providerId.toLowerCase();
+
+  if (lowerProv.includes('claude') || lowerName.includes('claude')) {
+    return {
+      bg: 'linear-gradient(135deg, rgba(234, 88, 12, 0.2) 0%, rgba(194, 65, 12, 0.35) 100%)',
+      color: '#fb923c',
+      border: 'rgba(249, 115, 22, 0.35)',
+      initial: 'CL',
+      brand: 'Anthropic'
+    };
+  }
+  if (lowerProv.includes('openai') || lowerName.includes('gpt') || lowerName.includes('o1') || lowerName.includes('o3')) {
+    return {
+      bg: 'linear-gradient(135deg, rgba(16, 185, 129, 0.2) 0%, rgba(5, 150, 105, 0.35) 100%)',
+      color: '#34d399',
+      border: 'rgba(16, 185, 129, 0.35)',
+      initial: 'AI',
+      brand: 'OpenAI'
+    };
+  }
+  if (lowerProv.includes('google') || lowerName.includes('gemini')) {
+    return {
+      bg: 'linear-gradient(135deg, rgba(139, 92, 246, 0.2) 0%, rgba(59, 130, 246, 0.35) 100%)',
+      color: '#a78bfa',
+      border: 'rgba(139, 92, 246, 0.35)',
+      initial: 'GE',
+      brand: 'Google Gemini'
+    };
+  }
+  if (lowerProv.includes('deepseek') || lowerName.includes('deepseek')) {
+    return {
+      bg: 'linear-gradient(135deg, rgba(6, 182, 212, 0.2) 0%, rgba(14, 116, 144, 0.35) 100%)',
+      color: '#22d3ee',
+      border: 'rgba(6, 182, 212, 0.35)',
+      initial: 'DS',
+      brand: 'DeepSeek'
+    };
+  }
+  if (lowerProv.includes('llama') || lowerName.includes('llama')) {
+    return {
+      bg: 'linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(29, 78, 216, 0.35) 100%)',
+      color: '#60a5fa',
+      border: 'rgba(59, 130, 246, 0.35)',
+      initial: 'LL',
+      brand: 'Meta'
+    };
+  }
+  if (lowerProv.includes('groq')) {
+    return {
+      bg: 'linear-gradient(135deg, rgba(249, 115, 22, 0.2) 0%, rgba(234, 88, 12, 0.35) 100%)',
+      color: '#fb923c',
+      border: 'rgba(249, 115, 22, 0.35)',
+      initial: 'GQ',
+      brand: 'Groq'
+    };
+  }
+  if (lowerProv.includes('mistral') || lowerName.includes('mistral') || lowerName.includes('codestral')) {
+    return {
+      bg: 'linear-gradient(135deg, rgba(245, 158, 11, 0.2) 0%, rgba(217, 119, 6, 0.35) 100%)',
+      color: '#fcd34d',
+      border: 'rgba(245, 158, 11, 0.35)',
+      initial: 'MS',
+      brand: 'Mistral'
+    };
+  }
+  if (lowerProv.includes('qwen') || lowerName.includes('qwen')) {
+    return {
+      bg: 'linear-gradient(135deg, rgba(99, 102, 241, 0.2) 0%, rgba(79, 70, 229, 0.35) 100%)',
+      color: '#818cf8',
+      border: 'rgba(99, 102, 241, 0.35)',
+      initial: 'QW',
+      brand: 'Qwen'
+    };
+  }
+  if (lowerProv.includes('ollama')) {
+    return {
+      bg: 'linear-gradient(135deg, rgba(6, 182, 212, 0.2) 0%, rgba(71, 85, 105, 0.35) 100%)',
+      color: '#67e8f9',
+      border: 'rgba(6, 182, 212, 0.35)',
+      initial: 'OL',
+      brand: 'Ollama'
+    };
+  }
+  if (lowerProv.includes('openkilo')) {
+    return {
+      bg: 'linear-gradient(135deg, rgba(16, 185, 129, 0.2) 0%, rgba(4, 120, 87, 0.35) 100%)',
+      color: '#6ee7b7',
+      border: 'rgba(16, 185, 129, 0.35)',
+      initial: 'OK',
+      brand: 'OpenKilo'
+    };
+  }
+  if (lowerProv.includes('ty-code') || lowerProv.includes('free')) {
+    return {
+      bg: 'linear-gradient(135deg, rgba(16, 185, 129, 0.2) 0%, rgba(99, 102, 241, 0.3) 100%)',
+      color: '#34d399',
+      border: 'rgba(52, 211, 153, 0.35)',
+      initial: 'TY',
+      brand: 'Ty-Code Free'
+    };
+  }
+  // Default fallback brand
+  return {
+    bg: 'linear-gradient(135deg, rgba(168, 85, 247, 0.2) 0%, rgba(126, 34, 206, 0.35) 100%)',
+    color: '#c084fc',
+    border: 'rgba(168, 85, 247, 0.35)',
+    initial: 'AI',
+    brand: 'OpenRouter'
+  };
+}
+
+// Model capability badges & specs
+function getModelBadges(model: CatalogModel) {
+  const badges: { text: string; type: 'reasoning' | 'coding' | 'context' | 'vision' | 'fast' }[] = [];
+  const lowerId = model.modelId.toLowerCase();
+  const lowerName = model.name.toLowerCase();
+
+  if (lowerId.includes('r1') || lowerName.includes('reason') || lowerId.includes('o1') || lowerId.includes('o3') || lowerName.includes('thinking')) {
+    badges.push({ text: '🧠 Reasoning', type: 'reasoning' });
+  }
+  if (lowerId.includes('coder') || lowerName.includes('coder') || lowerId.includes('sonnet') || lowerId.includes('deepseek')) {
+    badges.push({ text: '💻 Code', type: 'coding' });
+  }
+  if (lowerId.includes('gemini') || lowerName.includes('gemini') || lowerId.includes('1m')) {
+    badges.push({ text: '1M Ctx', type: 'context' });
+  } else if (lowerId.includes('sonnet') || lowerId.includes('claude')) {
+    badges.push({ text: '200k Ctx', type: 'context' });
+  } else if (lowerId.includes('4o') || lowerId.includes('llama') || lowerId.includes('qwen')) {
+    badges.push({ text: '128k Ctx', type: 'context' });
+  }
+  if (lowerId.includes('vision') || lowerId.includes('4o') || lowerId.includes('flash') || lowerId.includes('sonnet')) {
+    badges.push({ text: '👁️ Vision', type: 'vision' });
+  }
+  if (lowerId.includes('groq') || lowerId.includes('flash') || lowerId.includes('mini')) {
+    badges.push({ text: '⚡ Ultra-Fast', type: 'fast' });
+  }
+
+  return badges;
 }
 
 export function ProvidersModelsTab({ onOpenApiKeys, onOpenByok, onOpenProviderSetup, onOpenWizard }: ProvidersModelsTabProps) {
   const [catalog, setCatalog] = useState<VerifiedModelCatalogSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [activeFilter, setActiveFilter] = useState<'all' | 'free' | 'premium' | 'local' | 'reasoning' | 'coding'>('all');
   const [openSections, setOpenSections] = useState<Record<CatalogSection['id'], boolean>>({
     free: true,
     premium: true,
@@ -74,15 +226,16 @@ export function ProvidersModelsTab({ onOpenApiKeys, onOpenByok, onOpenProviderSe
   const activeProviderId = useSettingsStore((s) => s.activeProviderId);
   const activeModelId = useSettingsStore((s) => s.activeModelId);
   const setActiveProvider = useSettingsStore((s) => s.setActiveProvider);
+  const setActiveModel = useSettingsStore((s) => s.setActiveModel);
 
   const refreshCatalog = useCallback(async () => {
     setLoading(true);
     setLoadError('');
     try {
-      if (!window.electronAPI?.getVerifiedModelCatalog) {
+      if (!window.electronAPI?.getVerifiedModels) {
         throw new Error('Catalog bridge unavailable in this build.');
       }
-      const response = await window.electronAPI.getVerifiedModelCatalog();
+      const response = await window.electronAPI.getVerifiedModels();
       if (!response.success || !response.data) {
         throw new Error(response.error || 'ProviderGateway catalog could not be loaded.');
       }
@@ -111,30 +264,30 @@ export function ProvidersModelsTab({ onOpenApiKeys, onOpenByok, onOpenProviderSe
       const key = `${m.modelId}|${m.providerId}`;
       return !freeOrLocalIds.has(key) && !key.includes('|ollama');
     });
-    // Catalog order already puts the default free model first; keep it.
+
     return [
       {
         id: 'free',
         title: 'Ty-Code Free (Zero Configuration)',
-        subtitle: 'Rotating Community Key, provisioned instantly. Zero setup, zero telemetry.',
+        subtitle: 'Rotating Community Key provisioned instantly. Zero setup, zero telemetry, full offline-safe routing.',
         models: free,
         badge: catalog.communityKeyCached
-          ? { label: 'Community Key ready', tone: 'green' }
+          ? { label: 'Active & Ready', tone: 'green' }
           : { label: 'Provisioning Community Key...', tone: 'amber' }
       },
       {
         id: 'premium',
         title: 'Premium (One-Key Access)',
-        subtitle: 'One OpenRouter key unlocks the full premium lineup via the ProviderGateway bridge.',
+        subtitle: 'One OpenRouter key unlocks Claude 3.7 Sonnet, GPT-4o, DeepSeek-R1, and Gemini via ProviderGateway.',
         models: premium,
         badge: catalog.openRouterKeyAvailable
-          ? { label: 'One-Key active', tone: 'green' }
-          : { label: 'Key needed', tone: 'amber' }
+          ? { label: 'One-Key Active', tone: 'green' }
+          : { label: 'Key Needed', tone: 'amber' }
       },
       {
         id: 'local',
-        title: 'Local (Ollama)',
-        subtitle: '100% private offline inference on localhost:11434.',
+        title: 'Local (Ollama Offline)',
+        subtitle: '100% private offline inference on localhost:11434. No keys, no network calls.',
         models: local,
         badge: catalog.ollamaConnected
           ? { label: 'Connected', tone: 'green' }
@@ -149,7 +302,6 @@ export function ProvidersModelsTab({ onOpenApiKeys, onOpenByok, onOpenProviderSe
     if (model.providerId === 'openrouter') return !catalog.openRouterKeyAvailable;
     const norm = model.providerId.replace(/-free$/, '');
     if (catalog.providerKeyConfigured[model.providerId] || catalog.providerKeyConfigured[norm]) return false;
-    // One-Key Premium bridge: an OpenRouter key covers the premium lineup.
     return !catalog.openRouterKeyAvailable;
   };
 
@@ -175,6 +327,14 @@ export function ProvidersModelsTab({ onOpenApiKeys, onOpenByok, onOpenProviderSe
     return { ok: false, label: `Key Missing: ${providerTag(providerId)}`, actionable: true };
   }, [catalog, activeProviderId, activeModelId]);
 
+  // Currently active model details
+  const currentActiveModel = useMemo(() => {
+    if (!catalog) return null;
+    return catalog.models.find(
+      (m) => m.modelId === activeModelId && providerIdForSelection(m.providerId) === activeProviderId
+    ) || catalog.models.find((m) => m.modelId === activeModelId) || null;
+  }, [catalog, activeModelId, activeProviderId]);
+
   const handleSelect = (model: CatalogModel): void => {
     if (isModelLocked(model)) {
       toast.warning(
@@ -184,9 +344,9 @@ export function ProvidersModelsTab({ onOpenApiKeys, onOpenByok, onOpenProviderSe
       );
       return;
     }
-    // Instant, no Save button: the unified settings store syncs to main
-    // through the providers:update-active-config IPC channel on change.
-    setActiveProvider(providerIdForSelection(model.providerId), model.modelId);
+    const selectionProviderId = providerIdForSelection(model.providerId);
+    setActiveProvider(selectionProviderId, model.modelId);
+    setActiveModel(model.modelId);
     toast.success('Model Activated', `${model.name} is now served by the ProviderGateway.`);
   };
 
@@ -194,139 +354,331 @@ export function ProvidersModelsTab({ onOpenApiKeys, onOpenByok, onOpenProviderSe
     setOpenSections((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
-  const badgeTone: Record<'green' | 'amber' | 'zinc', string> = {
-    green: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/25',
-    amber: 'bg-amber-500/10 text-amber-400 border-amber-500/25',
-    zinc: 'bg-zinc-600/20 text-zinc-400 border-zinc-600/30'
+  // Filter models based on search query & active category filter
+  const filterModels = (models: CatalogModel[], sectionId: CatalogSection['id']) => {
+    return models.filter((m) => {
+      // Category filter
+      if (activeFilter === 'free' && sectionId !== 'free') return false;
+      if (activeFilter === 'premium' && sectionId !== 'premium') return false;
+      if (activeFilter === 'local' && sectionId !== 'local') return false;
+      if (activeFilter === 'reasoning') {
+        const isReason = m.modelId.toLowerCase().includes('r1') || m.name.toLowerCase().includes('reason') || m.modelId.toLowerCase().includes('o1') || m.modelId.toLowerCase().includes('o3');
+        if (!isReason) return false;
+      }
+      if (activeFilter === 'coding') {
+        const isCode = m.modelId.toLowerCase().includes('coder') || m.name.toLowerCase().includes('coder') || m.modelId.toLowerCase().includes('sonnet') || m.modelId.toLowerCase().includes('deepseek');
+        if (!isCode) return false;
+      }
+
+      // Search query filter
+      if (!searchQuery.trim()) return true;
+      const q = searchQuery.toLowerCase();
+      return (
+        m.name.toLowerCase().includes(q) ||
+        m.modelId.toLowerCase().includes(q) ||
+        m.providerId.toLowerCase().includes(q) ||
+        providerTag(m.providerId).toLowerCase().includes(q)
+      );
+    });
   };
 
-  const sectionIcon: Record<CatalogSection['id'], React.ReactNode> = {
-    free: <Zap size={14} className="text-emerald-400" />,
-    premium: <Rocket size={14} className="text-purple-400" />,
-    local: <Laptop size={14} className="text-cyan-400" />
-  };
+  const totalModelCount = useMemo(() => {
+    return catalog?.models.length || 0;
+  }, [catalog]);
 
   return (
-    <div className="flex flex-col gap-4 text-zinc-200" id="providers-models-tab">
-      {/* Header row: title + actions */}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div>
-          <h3 className="text-sm font-semibold text-white">AI Providers &amp; Models</h3>
-          <p className="text-xs text-zinc-500">
-            Verified catalog served by the local ProviderGateway. Click a card to activate instantly; changes save and
-            route without a Save button.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => void refreshCatalog()}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-zinc-800/70 text-zinc-300 border border-zinc-700 hover:bg-zinc-700/70 transition-colors cursor-pointer"
-            id="btn-refresh-model-catalog"
-          >
-            {loading ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
-            Refresh
-          </button>
-          <button
-            onClick={onOpenProviderSetup}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-zinc-800/70 text-zinc-300 border border-zinc-700 hover:bg-zinc-700/70 transition-colors cursor-pointer"
-            id="btn-open-provider-config-modal"
-          >
-            Configure &amp; Test Provider
-          </button>
-          <button
-            onClick={onOpenWizard}
-            className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-500 transition-colors cursor-pointer"
-          >
-            Re-run Setup Wizard
-          </button>
-        </div>
-      </div>
+    <div className="pm-container" id="providers-models-tab">
+      {/* ---------------------------------------------------------------------
+          Hero Active Model & Gateway Status Banner
+          --------------------------------------------------------------------- */}
+      <div className="pm-hero-card">
+        <div className="pm-hero-header">
+          <div className="pm-hero-info">
+            <div className="pm-hero-title-row">
+              <h3 className="pm-hero-title">
+                <Sparkles size={18} color="#818cf8" />
+                AI Providers &amp; Models
+              </h3>
+              <span className="pm-hero-badge">
+                <span
+                  id="gateway-status-dot"
+                  className="w-2 h-2 rounded-full inline-block"
+                  style={{
+                    backgroundColor: gatewayPill.ok ? '#10b981' : '#f43f5e',
+                    boxShadow: gatewayPill.ok ? '0 0 8px #10b981' : '0 0 8px #f43f5e'
+                  }}
+                />
+                <span id="gateway-status-label">
+                  {gatewayPill.ok ? 'Gateway Ready' : gatewayPill.label}
+                </span>
+              </span>
+            </div>
+            <p className="pm-hero-desc">
+              High-performance model routing served directly by Ty-Code ProviderGateway. Click any model to activate
+              instantly — changes apply across chat, inline completions, and agents with zero friction.
+            </p>
+          </div>
 
-      {/* Gateway status pill */}
-      <div className="flex items-center justify-between gap-3 px-4 py-2.5 rounded-xl bg-zinc-900/80 border border-zinc-800 flex-wrap">
-        <div className="flex items-center gap-2.5">
-          <span
-            className={`w-2.5 h-2.5 rounded-full shrink-0 ${gatewayPill.ok ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]' : 'bg-rose-400 shadow-[0_0_8px_rgba(251,113,133,0.6)]'}`}
-            id="gateway-status-dot"
-          />
-          <span className={`text-xs font-semibold ${gatewayPill.ok ? 'text-emerald-300' : 'text-rose-300'}`} id="gateway-status-label">
-            {gatewayPill.ok ? '🟢 Gateway Ready' : `🔴 ${gatewayPill.label}`}
-          </span>
-          <span className="text-[11px] text-zinc-500 hidden sm:inline">Routing runs locally; Zero-Telemetry, nothing leaves this device.</span>
+          <div className="pm-hero-actions">
+            <button
+              onClick={() => void refreshCatalog()}
+              disabled={loading}
+              className="pm-btn pm-btn-secondary"
+              id="btn-refresh-model-catalog"
+              title="Refresh provider database and live connectivity"
+            >
+              {loading ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
+              <span>Refresh</span>
+            </button>
+            <button
+              onClick={onOpenProviderSetup}
+              className="pm-btn pm-btn-secondary"
+              id="btn-open-provider-config-modal"
+              title="Configure custom endpoint or test keys"
+            >
+              <Sliders size={13} />
+              <span>Configure Provider</span>
+            </button>
+            <button
+              onClick={onOpenWizard}
+              className="pm-btn pm-btn-primary"
+              title="Launch the Onboarding & Setup Wizard"
+            >
+              <Rocket size={13} />
+              <span>Setup Wizard</span>
+            </button>
+          </div>
         </div>
+
+        {/* Spotlight: Currently Active Engine Card */}
+        {currentActiveModel && (
+          <div className="pm-spotlight">
+            <div className="pm-spotlight-left">
+              {(() => {
+                const brand = getProviderBrand(currentActiveModel.providerId, currentActiveModel.name);
+                return (
+                  <div
+                    className="pm-provider-avatar"
+                    style={{
+                      background: brand.bg,
+                      color: brand.color,
+                      border: `1px solid ${brand.border}`
+                    }}
+                  >
+                    {brand.initial}
+                  </div>
+                );
+              })()}
+              <div className="pm-spotlight-details">
+                <span className="pm-spotlight-label">Active AI Engine in Chat &amp; Agents</span>
+                <div className="pm-spotlight-name">
+                  <span>{currentActiveModel.name}</span>
+                  <span className="pm-spotlight-provider-pill">{providerTag(currentActiveModel.providerId)}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="pm-spotlight-meta">
+              <span className="flex items-center gap-1.5 text-xs text-emerald-400 font-medium">
+                <span className="pm-spotlight-status-dot" />
+                Live Routing Active
+              </span>
+              <span className="text-[11px] text-zinc-500">
+                Localhost Bridge &bull; Zero-Telemetry
+              </span>
+            </div>
+          </div>
+        )}
+
         {gatewayPill.actionable && (
-          <button
-            onClick={onOpenApiKeys}
-            className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-rose-500/15 text-rose-300 border border-rose-500/30 hover:bg-rose-500/25 transition-colors cursor-pointer"
-            id="btn-gateway-open-api-keys"
-          >
-            Add Key in API Keys
-          </button>
+          <div className="mt-3 flex items-center justify-between p-3 rounded-lg bg-rose-950/20 border border-rose-500/30 text-xs">
+            <div className="flex items-center gap-2 text-rose-300">
+              <AlertTriangle size={14} className="text-rose-400 shrink-0" />
+              <span>{gatewayPill.label}. Please add your key to enable routing.</span>
+            </div>
+            <button
+              onClick={onOpenApiKeys}
+              id="btn-gateway-open-api-keys"
+              className="pm-btn pm-btn-secondary text-rose-200 border-rose-500/40 hover:bg-rose-500/20"
+            >
+              Add Key in API Keys
+            </button>
+          </div>
         )}
       </div>
 
-      {/* Load errors */}
+      {/* ---------------------------------------------------------------------
+          Search & Quick Filter Bar
+          --------------------------------------------------------------------- */}
+      <div className="pm-toolbar">
+        <div className="pm-search-box">
+          <Search size={14} className="pm-search-icon" />
+          <input
+            type="text"
+            className="pm-search-input"
+            placeholder={`Search ${totalModelCount} models (e.g. Claude, GPT, DeepSeek, 200k)...`}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+          {searchQuery && (
+            <button className="pm-search-clear" onClick={() => setSearchQuery('')} title="Clear search">
+              <X size={13} />
+            </button>
+          )}
+        </div>
+
+        <div className="pm-filter-pills">
+          <button
+            className={`pm-filter-pill ${activeFilter === 'all' ? 'is-active' : ''}`}
+            onClick={() => setActiveFilter('all')}
+          >
+            All Models ({totalModelCount})
+          </button>
+          <button
+            className={`pm-filter-pill ${activeFilter === 'free' ? 'is-active' : ''}`}
+            onClick={() => setActiveFilter('free')}
+          >
+            ⚡ Free Tier
+          </button>
+          <button
+            className={`pm-filter-pill ${activeFilter === 'premium' ? 'is-active' : ''}`}
+            onClick={() => setActiveFilter('premium')}
+          >
+            🚀 Premium
+          </button>
+          <button
+            className={`pm-filter-pill ${activeFilter === 'local' ? 'is-active' : ''}`}
+            onClick={() => setActiveFilter('local')}
+          >
+            💻 Local (Ollama)
+          </button>
+          <button
+            className={`pm-filter-pill ${activeFilter === 'reasoning' ? 'is-active' : ''}`}
+            onClick={() => setActiveFilter('reasoning')}
+          >
+            🧠 Reasoning
+          </button>
+          <button
+            className={`pm-filter-pill ${activeFilter === 'coding' ? 'is-active' : ''}`}
+            onClick={() => setActiveFilter('coding')}
+          >
+            🛠️ Coding
+          </button>
+        </div>
+      </div>
+
+      {/* Load error banner */}
       {loadError && (
-        <div className="flex items-start gap-2.5 p-3 rounded-xl bg-rose-950/20 border border-rose-500/30 text-xs">
-          <AlertTriangle size={14} className="text-rose-400 mt-0.5 shrink-0" />
+        <div className="flex items-start gap-3 p-3.5 rounded-xl bg-rose-950/25 border border-rose-500/35 text-xs text-rose-200">
+          <AlertTriangle size={16} className="text-rose-400 mt-0.5 shrink-0" />
           <div>
-            <div className="font-semibold text-rose-300">Catalog unavailable</div>
-            <div className="text-rose-200/80">{loadError}</div>
+            <div className="font-semibold text-rose-300">Catalog Unavailable</div>
+            <div className="opacity-90 mt-0.5">{loadError}</div>
           </div>
         </div>
       )}
 
-      {/* Sections */}
+      {/* ---------------------------------------------------------------------
+          Categorized Tier Sections (Free, Premium, Local)
+          --------------------------------------------------------------------- */}
       {sections.map((section) => {
+        const filteredModels = filterModels(section.models, section.id);
         const isOpen = openSections[section.id] || (section.id === 'local' && catalog?.ollamaConnected);
+
+        if (filteredModels.length === 0 && (activeFilter === section.id || searchQuery)) {
+          // If searching or filtering and no matches in this section, hide or collapse
+          if (activeFilter === section.id && searchQuery) {
+            return (
+              <div key={section.id} className="pm-empty-state">
+                <span>No models matched &ldquo;{searchQuery}&rdquo; in {section.title}</span>
+              </div>
+            );
+          }
+        }
+
+        const sectionIcon =
+          section.id === 'free' ? (
+            <div className="pm-section-icon" style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#34d399' }}>
+              <Zap size={15} />
+            </div>
+          ) : section.id === 'premium' ? (
+            <div className="pm-section-icon" style={{ background: 'rgba(139, 92, 246, 0.15)', color: '#a78bfa' }}>
+              <Rocket size={15} />
+            </div>
+          ) : (
+            <div className="pm-section-icon" style={{ background: 'rgba(6, 182, 212, 0.15)', color: '#22d3ee' }}>
+              <Laptop size={15} />
+            </div>
+          );
+
         return (
-          <div key={section.id} className="rounded-xl border border-zinc-800 bg-zinc-900/60 overflow-hidden">
+          <div key={section.id} className="pm-section">
             <button
               onClick={() => toggleSection(section.id)}
-              className="w-full flex items-center justify-between gap-3 px-4 py-3 bg-zinc-900/90 hover:bg-zinc-800/70 transition-colors cursor-pointer select-none"
+              className="pm-section-header"
               id={`section-toggle-${section.id}`}
             >
-              <div className="flex items-center gap-2.5 min-w-0">
-                {sectionIcon[section.id]}
-                <span className="text-sm font-semibold text-white text-left">{section.title}</span>
+              <div className="pm-section-title-wrap">
+                {sectionIcon}
+                <span className="pm-section-title">{section.title}</span>
                 {section.badge && (
-                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${badgeTone[section.badge.tone]}`}>
+                  <span
+                    id={`section-badge-${section.id}`}
+                    className={`pm-section-badge ${
+                      section.badge.tone === 'green'
+                        ? 'pm-badge-green'
+                        : section.badge.tone === 'amber'
+                          ? 'pm-badge-amber'
+                          : 'pm-badge-zinc'
+                    }`}
+                  >
                     {section.badge.label}
                   </span>
                 )}
               </div>
-              <div className="flex items-center gap-3 shrink-0">
-                <span className="text-[11px] text-zinc-500">{section.models.length} models</span>
-                {isOpen ? <ChevronDown size={15} className="text-zinc-500" /> : <ChevronRight size={15} className="text-zinc-500" />}
+
+              <div className="pm-section-meta">
+                <span>{filteredModels.length} {filteredModels.length === 1 ? 'model' : 'models'}</span>
+                {isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
               </div>
             </button>
 
             {isOpen && (
-              <div className="px-4 pb-4 pt-1">
-                <p className="text-[11px] text-zinc-500 mb-3">{section.subtitle}</p>
-                {section.models.length === 0 ? (
-                  <div className="flex items-center gap-2 px-3 py-4 rounded-lg bg-zinc-900/70 border border-dashed border-zinc-700 text-xs text-zinc-500">
+              <div className="pm-section-body">
+                <p className="pm-section-subtitle">{section.subtitle}</p>
+
+                {filteredModels.length === 0 ? (
+                  <div className="pm-empty-state">
                     {section.id === 'local' ? (
                       <>
-                        <Cpu size={14} className="text-zinc-600" />
+                        <Cpu size={16} className="text-zinc-500" />
                         <span>
-                          No Ollama models detected. Install from{' '}
-                          <a href="https://ollama.com" target="_blank" rel="noopener noreferrer" className="text-cyan-400 underline hover:text-cyan-300">
+                          No Ollama models detected. Install Ollama from{' '}
+                          <a
+                            href="https://ollama.com"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-cyan-400 underline hover:text-cyan-300 font-semibold"
+                          >
                             ollama.com
                           </a>{' '}
-                          and refresh.
+                          and run <code>ollama run qwen2.5-coder</code> to enable local inference.
                         </span>
                       </>
                     ) : (
-                      <>No models available yet. Hit Refresh.</>
+                      <span>No models available for the selected filter. Try clearing filters or refreshing.</span>
                     )}
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
-                    {section.models.map((model) => {
+                  <div className="pm-cards-grid">
+                    {filteredModels.map((model) => {
                       const isActive =
-                        model.modelId === activeModelId && providerIdForSelection(model.providerId) === activeProviderId;
+                        model.modelId === activeModelId &&
+                        providerIdForSelection(model.providerId) === activeProviderId;
                       const locked = isModelLocked(model);
+                      const brand = getProviderBrand(model.providerId, model.name);
+                      const badges = getModelBadges(model);
+
                       return (
                         <div
                           key={`${model.providerId}|${model.modelId}`}
@@ -334,54 +686,79 @@ export function ProvidersModelsTab({ onOpenApiKeys, onOpenByok, onOpenProviderSe
                           role="radio"
                           aria-checked={isActive}
                           tabIndex={0}
-                          onKeyDown={(event) => {
-                            if (event.key === 'Enter' || event.key === ' ') {
-                              event.preventDefault();
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
                               handleSelect(model);
                             }
                           }}
-                          className={`group flex items-center justify-between gap-3 px-3.5 py-3 rounded-xl border text-left transition-all cursor-pointer ${
-                            isActive
-                              ? 'bg-indigo-500/10 border-indigo-500/40 shadow-[0_0_0_1px_rgba(99,102,241,0.25)]'
-                              : 'bg-zinc-900/70 border-zinc-800 hover:border-zinc-600 hover:bg-zinc-800/50'
-                          } ${locked ? 'opacity-70' : ''}`}
+                          className={`pm-model-card ${isActive ? 'is-active' : ''} ${locked ? 'is-locked' : ''}`}
                           id={`model-card-${model.providerId}-${model.modelId.replace(/[^a-z0-9-]/gi, '_')}`}
                         >
-                          {/* Left: name + provider tag */}
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className={`text-sm font-medium truncate ${isActive ? 'text-white' : 'text-zinc-200'}`}>
-                                {model.name}
-                              </span>
-                              {isActive && (
-                                <span className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/25">
-                                  <Check size={10} />
-                                  Active
-                                </span>
-                              )}
-                              {locked && (
-                                <span
-                                  className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-zinc-700/30 text-zinc-400 border border-zinc-600/40"
-                                  title="Requires a key; the ProviderGateway needs it before routing."
-                                >
-                                  <Lock size={10} />
-                                  {model.providerId === 'openrouter' ? 'One-Key Access' : 'Key required'}
-                                </span>
-                              )}
+                          <div className="pm-card-left">
+                            <div
+                              className="pm-card-brand-icon"
+                              style={{
+                                background: brand.bg,
+                                color: brand.color,
+                                border: `1px solid ${brand.border}`
+                              }}
+                              title={brand.brand}
+                            >
+                              {brand.initial}
                             </div>
-                            <span className="inline-block mt-1 px-1.5 py-0.5 rounded bg-zinc-800 text-[10px] font-medium text-zinc-400 border border-zinc-700">
-                              {providerTag(model.providerId)}
-                            </span>
+
+                            <div className="pm-card-info">
+                              <div className="pm-card-name-row">
+                                <span className="pm-card-title" title={model.name}>
+                                  {model.name}
+                                </span>
+                                {isActive && (
+                                  <span className="pm-active-pill">
+                                    <Check size={9} strokeWidth={3} />
+                                    Active
+                                  </span>
+                                )}
+                                {locked && (
+                                  <span
+                                    className="pm-locked-pill"
+                                    title="Requires API key in API Keys tab before ProviderGateway can route it."
+                                  >
+                                    <Lock size={9} />
+                                    {model.providerId === 'openrouter' ? 'One-Key' : 'Key Req'}
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="pm-card-tags-row">
+                                <span className="pm-provider-tag">{providerTag(model.providerId)}</span>
+                                {badges.map((b, i) => (
+                                  <span
+                                    key={i}
+                                    className={`pm-spec-chip ${
+                                      b.type === 'reasoning'
+                                        ? 'pm-chip-reasoning'
+                                        : b.type === 'coding'
+                                          ? 'pm-chip-coding'
+                                          : b.type === 'context'
+                                            ? 'pm-chip-context'
+                                            : b.type === 'vision'
+                                              ? 'pm-chip-vision'
+                                              : 'pm-chip-fast'
+                                    }`}
+                                  >
+                                    {b.text}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
                           </div>
 
-                          {/* Right: radio indicator driven by the unified store */}
-                          <span
-                            className={`flex items-center justify-center w-[18px] h-[18px] rounded-full border-2 shrink-0 transition-all ${
-                              isActive ? 'border-indigo-400 bg-indigo-500' : 'border-zinc-600 group-hover:border-zinc-400'
-                            }`}
-                          >
-                            {isActive && <Check size={11} className="text-white" strokeWidth={3} />}
-                          </span>
+                          <div className="pm-card-right">
+                            <div className="pm-radio-indicator">
+                              {isActive && <Check size={12} color="#ffffff" strokeWidth={3.5} />}
+                            </div>
+                          </div>
                         </div>
                       );
                     })}
@@ -393,45 +770,56 @@ export function ProvidersModelsTab({ onOpenApiKeys, onOpenByok, onOpenProviderSe
         );
       })}
 
-      {/* Catalog self-healing (collapsed by default to keep the tab clean) */}
-      <details className="rounded-xl border border-zinc-800 bg-zinc-900/60 overflow-hidden">
-        <summary className="flex items-center justify-between gap-3 px-4 py-3 bg-zinc-900/90 cursor-pointer select-none">
-          <span className="flex items-center gap-2.5 text-sm font-semibold text-white">
-            <ShieldCheck size={14} className="text-cyan-400" />
-            Model Catalog Verifier
-          </span>
-          <span className="text-[11px] text-zinc-500">Live /models corrections for the provider &amp; models database</span>
+      {/* ---------------------------------------------------------------------
+          Model Catalog Live Verifier (Collapsible Panel)
+          --------------------------------------------------------------------- */}
+      <details className="pm-section" style={{ background: 'rgba(16, 20, 32, 0.7)' }}>
+        <summary className="pm-section-header" style={{ cursor: 'pointer' }}>
+          <div className="pm-section-title-wrap">
+            <div className="pm-section-icon" style={{ background: 'rgba(6, 182, 212, 0.15)', color: '#22d3ee' }}>
+              <ShieldCheck size={15} />
+            </div>
+            <span className="pm-section-title">Model Catalog Live Verifier</span>
+            <span className="pm-section-badge pm-section-badge-blue">Auto-Healing Database</span>
+          </div>
+          <span className="text-xs text-zinc-400">Live /models sanity probe</span>
         </summary>
-        <div className="px-4 pb-4 pt-2">
-          <ModelCatalogVerifierPanel />
+        <div className="pm-section-body">
+          <ModelCatalogVerifierPanel onCorrectionsApplied={() => void refreshCatalog()} />
         </div>
       </details>
 
-      {/* Advanced alias routing: BYOK vault + custom endpoints */}
-      <div className="flex items-center justify-between gap-3 p-3 rounded-xl bg-zinc-900/60 border border-zinc-800 flex-wrap">
-        <p className="text-[11px] text-zinc-500">
-          Advanced BYOK providers, custom OpenAI-compatible endpoints and key vaults live in their dedicated tabs.
-        </p>
+      {/* ---------------------------------------------------------------------
+          Navigation to BYOK & Keys Vault
+          --------------------------------------------------------------------- */}
+      <div className="flex items-center justify-between gap-3 p-3.5 rounded-xl bg-zinc-900/60 border border-zinc-800/80 flex-wrap">
+        <div className="flex items-center gap-2.5">
+          <Layers size={15} className="text-purple-400" />
+          <p className="text-xs text-zinc-400 m-0">
+            Advanced custom OpenAI endpoints, BYOK vaults, and token quota tracking live in their dedicated tabs.
+          </p>
+        </div>
         <button
           onClick={onOpenByok}
-          className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-zinc-800 text-zinc-300 border border-zinc-700 hover:bg-zinc-700 transition-colors cursor-pointer"
+          className="pm-btn pm-btn-secondary text-xs"
         >
           Open BYOK &amp; Keys
         </button>
       </div>
 
-      {/* Attribution (kept from the previous tab) */}
-      <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-zinc-900/40 border border-zinc-800/70 text-[11px] text-zinc-500">
-        <Rocket size={12} className="text-indigo-400 shrink-0" />
+      {/* ---------------------------------------------------------------------
+          Permanent FCC Attribution Credit Invariant
+          --------------------------------------------------------------------- */}
+      <div className="pm-attribution-strip">
+        <Rocket size={13} className="text-indigo-400 shrink-0" />
         <span>
           Free-model supply layer powered by free-claude-code (FCC) — AGPL-3.0 / MIT —{' '}
           <a
             href="https://github.com/Alishahryar1/free-claude-code"
             target="_blank"
             rel="noopener noreferrer"
-            className="text-zinc-400 underline hover:text-zinc-300"
           >
-            github.com/Alishahryar1/free-claude-code
+            https://github.com/Alishahryar1/free-claude-code
           </a>
         </span>
       </div>

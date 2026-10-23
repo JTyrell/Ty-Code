@@ -1,0 +1,767 @@
+/* =========================================================================
+   Ty-Code: Provider Connection & Capability Diagnostics Panel Stylesheet
+   Clean, Modern, Enterprise-Grade Dark UI with Neon Status Accents
+   ========================================================================= */
+
+.diag-container {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  color: #e2e8f0;
+  font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+}
+
+/* -------------------------------------------------------------------------
+   At-a-Glance Live Status Strip (HUD)
+   ------------------------------------------------------------------------- */
+.diag-hud-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 18px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(20, 24, 38, 0.85) 0%, rgba(13, 15, 23, 0.95) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  flex-wrap: wrap;
+}
+
+.diag-hud-metrics {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 11.5px;
+  font-weight: 500;
+}
+
+.diag-hud-metric-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #94a3b8;
+}
+
+.diag-hud-metric-item strong {
+  color: #f1f5f9;
+}
+
+.diag-hud-divider {
+  width: 1px;
+  height: 14px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.diag-hud-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.diag-dot-green {
+  background: #10b981;
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.7);
+}
+
+.diag-dot-amber {
+  background: #f59e0b;
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.7);
+}
+
+.diag-dot-rose {
+  background: #f43f5e;
+  box-shadow: 0 0 8px rgba(244, 63, 94, 0.7);
+}
+
+.diag-dot-zinc {
+  background: #71717a;
+}
+
+.diag-hud-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.diag-btn-hud {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #cbd5e1;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.diag-btn-hud:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+}
+
+.diag-btn-hud.is-active {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border-color: rgba(52, 211, 153, 0.3);
+}
+
+/* -------------------------------------------------------------------------
+   Sub-Tab Segmented Switcher
+   ------------------------------------------------------------------------- */
+.diag-tabs-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px;
+  border-radius: 12px;
+  background: rgba(15, 18, 28, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.diag-tab-btn {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #94a3b8;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.diag-tab-btn:hover {
+  color: #e2e8f0;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.diag-tab-btn.is-active {
+  color: #ffffff;
+  background: rgba(30, 41, 59, 0.9);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.diag-tab-btn.is-active[data-tab="connection"] {
+  border-bottom: 2px solid #818cf8;
+}
+
+.diag-tab-btn.is-active[data-tab="capabilities"] {
+  border-bottom: 2px solid #38bdf8;
+}
+
+.diag-tab-btn.is-active[data-tab="remediation"] {
+  border-bottom: 2px solid #34d399;
+}
+
+.diag-tab-btn.is-active[data-tab="trace"] {
+  border-bottom: 2px solid #c084fc;
+}
+
+/* -------------------------------------------------------------------------
+   Hero Cards (Tab Headers)
+   ------------------------------------------------------------------------- */
+.diag-hero-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 20px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(22, 27, 46, 0.8) 0%, rgba(13, 16, 26, 0.9) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+  flex-wrap: wrap;
+}
+
+.diag-hero-title-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.diag-hero-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.diag-hero-text h2 {
+  font-size: 15px;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+.diag-hero-text p {
+  font-size: 11.5px;
+  color: #94a3b8;
+  margin: 3px 0 0 0;
+  max-width: 540px;
+  line-height: 1.45;
+}
+
+.diag-hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.diag-btn-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+  border: 1px solid transparent;
+}
+
+.diag-btn-primary {
+  background: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%);
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
+}
+
+.diag-btn-primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, #4338ca 0%, #4f46e5 100%);
+  transform: translateY(-1px);
+}
+
+.diag-btn-sky {
+  background: linear-gradient(135deg, #0284c7 0%, #0ea5e9 100%);
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(14, 165, 233, 0.3);
+}
+
+.diag-btn-sky:hover:not(:disabled) {
+  background: linear-gradient(135deg, #0369a1 0%, #0284c7 100%);
+  transform: translateY(-1px);
+}
+
+.diag-btn-purple {
+  background: linear-gradient(135deg, #7e22ce 0%, #9333ea 100%);
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(147, 51, 234, 0.3);
+}
+
+.diag-btn-purple:hover:not(:disabled) {
+  background: linear-gradient(135deg, #6b21a8 0%, #7e22ce 100%);
+  transform: translateY(-1px);
+}
+
+.diag-btn-secondary {
+  background: rgba(30, 41, 59, 0.7);
+  color: #cbd5e1;
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.diag-btn-secondary:hover:not(:disabled) {
+  background: rgba(51, 65, 85, 0.8);
+  color: #ffffff;
+  transform: translateY(-1px);
+}
+
+.diag-btn-action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+/* -------------------------------------------------------------------------
+   Status Banners
+   ------------------------------------------------------------------------- */
+.diag-status-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 10px;
+  border: 1px solid;
+  flex-wrap: wrap;
+}
+
+.diag-status-banner.is-success {
+  background: rgba(16, 185, 129, 0.08);
+  border-color: rgba(16, 185, 129, 0.25);
+  color: #34d399;
+}
+
+.diag-status-banner.is-warning {
+  background: rgba(245, 158, 11, 0.08);
+  border-color: rgba(245, 158, 11, 0.25);
+  color: #fbbf24;
+}
+
+.diag-status-banner.is-danger {
+  background: rgba(244, 63, 94, 0.08);
+  border-color: rgba(244, 63, 94, 0.25);
+  color: #f43f5e;
+}
+
+.diag-status-banner-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.diag-status-banner-title {
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.diag-status-banner-desc {
+  font-size: 11px;
+  opacity: 0.85;
+}
+
+.diag-status-pills {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.diag-pill-pass {
+  color: #34d399;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+}
+
+.diag-pill-fail {
+  color: #f43f5e;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(244, 63, 94, 0.15);
+  border: 1px solid rgba(244, 63, 94, 0.25);
+}
+
+.diag-pill-skip {
+  color: #94a3b8;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* -------------------------------------------------------------------------
+   Provider Connection Cards
+   ------------------------------------------------------------------------- */
+.diag-cards-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.diag-card {
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: rgba(20, 24, 38, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  transition: all 0.15s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.diag-card:hover {
+  background: rgba(24, 29, 45, 0.85);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+.diag-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.diag-card-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.diag-card-title {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.diag-tag-zero-key {
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-weight: 600;
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(52, 211, 153, 0.3);
+}
+
+.diag-tag-api-key {
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-weight: 500;
+  background: rgba(255, 255, 255, 0.06);
+  color: #94a3b8;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.diag-card-meta {
+  font-size: 11px;
+  color: #64748b;
+  font-family: var(--font-mono, monospace);
+  margin-top: 2px;
+}
+
+.diag-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 5-Step Pipeline Progress Stepper */
+.diag-pipeline-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+}
+
+@media (max-width: 680px) {
+  .diag-pipeline-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.diag-step-pill {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid;
+  transition: all 0.15s ease;
+}
+
+.diag-step-pass {
+  background: rgba(16, 185, 129, 0.08);
+  border-color: rgba(52, 211, 153, 0.2);
+  color: #34d399;
+}
+
+.diag-step-fail {
+  background: rgba(244, 63, 94, 0.12);
+  border-color: rgba(244, 63, 94, 0.3);
+  color: #f43f5e;
+}
+
+.diag-step-running {
+  background: rgba(99, 102, 241, 0.12);
+  border-color: rgba(99, 102, 241, 0.3);
+  color: #818cf8;
+}
+
+.diag-step-skipped {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(255, 255, 255, 0.06);
+  color: #64748b;
+}
+
+/* Failure Remedy Card */
+.diag-remedy-box {
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: rgba(244, 63, 94, 0.07);
+  border: 1px solid rgba(244, 63, 94, 0.2);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.diag-remedy-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.diag-remedy-message {
+  font-size: 12px;
+  font-weight: 600;
+  color: #fda4af;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.diag-remedy-text {
+  font-size: 11px;
+  color: #fecdd3;
+  opacity: 0.9;
+  line-height: 1.4;
+  margin-top: 3px;
+}
+
+.diag-btn-remedy {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  background: rgba(244, 63, 94, 0.2);
+  color: #ffffff;
+  border: 1px solid rgba(244, 63, 94, 0.4);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.diag-btn-remedy:hover {
+  background: rgba(244, 63, 94, 0.35);
+}
+
+.diag-evidence-pre {
+  margin-top: 6px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  font-family: var(--font-mono, monospace);
+  font-size: 10.5px;
+  color: #cbd5e1;
+  max-height: 160px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* -------------------------------------------------------------------------
+   Capability Scenarios Cards
+   ------------------------------------------------------------------------- */
+.diag-capability-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 10px;
+  background: rgba(20, 24, 38, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: all 0.15s ease;
+}
+
+.diag-capability-card:hover {
+  background: rgba(25, 30, 48, 0.8);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+.diag-capability-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+}
+
+.diag-scenario-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.diag-scenario-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.diag-scenario-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.diag-scenario-desc {
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+/* -------------------------------------------------------------------------
+   Remediation Checklist (Subtab 3)
+   ------------------------------------------------------------------------- */
+.diag-recommended-hero {
+  position: relative;
+  overflow: hidden;
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(49, 46, 129, 0.5) 0%, rgba(15, 23, 42, 0.85) 60%, rgba(10, 11, 16, 0.95) 100%);
+  border: 1px solid rgba(99, 102, 241, 0.4);
+  box-shadow: 0 10px 30px -10px rgba(79, 70, 229, 0.35);
+  padding: 18px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.diag-recommended-badge {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 3px 9px;
+  border-radius: 9999px;
+  background: rgba(99, 102, 241, 0.25);
+  color: #a5b4fc;
+  border: 1px solid rgba(129, 140, 248, 0.4);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.diag-checklist-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 10px;
+}
+
+.diag-checklist-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: rgba(20, 24, 38, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  transition: all 0.15s ease;
+}
+
+.diag-checklist-item:hover {
+  background: rgba(26, 31, 50, 0.8);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+/* -------------------------------------------------------------------------
+   Trace Waterfall (H1-H10)
+   ------------------------------------------------------------------------- */
+.diag-waterfall-track {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  position: relative;
+}
+
+.diag-hop-node {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: rgba(20, 24, 38, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  transition: all 0.15s ease;
+  cursor: pointer;
+}
+
+.diag-hop-node:hover {
+  background: rgba(27, 33, 52, 0.85);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.diag-hop-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.diag-hop-badge {
+  font-family: var(--font-mono, monospace);
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
+.diag-hop-badge.is-pass {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(52, 211, 153, 0.3);
+}
+
+.diag-hop-badge.is-fail {
+  background: rgba(244, 63, 94, 0.15);
+  color: #f43f5e;
+  border: 1px solid rgba(244, 63, 94, 0.3);
+}
+
+.diag-hop-badge.is-pending {
+  background: rgba(255, 255, 255, 0.05);
+  color: #64748b;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.diag-hop-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #f1f5f9;
+}
+
+.diag-hop-desc {
+  font-size: 11px;
+  color: #94a3b8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.diag-hop-latency {
+  font-family: var(--font-mono, monospace);
+  font-size: 10.5px;
+  color: #94a3b8;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.04);
+}

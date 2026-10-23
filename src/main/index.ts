@@ -2480,54 +2480,6 @@ function registerProviderHandlers(): void {
     }
   });
 
-  // Unified catalog for the redesigned "AI Providers & Models" tab: verified
-  // models + zero-telemetry availability booleans (no credentials, ever).
-  ipcMain.handle('providers:get-verified-catalog', async (event) => {
-    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
-    try {
-      const [catalog, settingsRes, ollamaModels] = await Promise.all([
-        getVerifiedModels(),
-        getSettings(),
-        detectLocalOllamaModels().catch(() => [])
-      ]);
-      const communityKeyCached = Boolean(getCommunityKeyCached());
-      if (!communityKeyCached) {
-        try {
-          warmUpCommunityKey();
-        } catch {
-          // Probe path re-resolves lazily when needed.
-        }
-      }
-      const configured = (settingsRes.data?.apiKeysConfigured || {}) as Record<string, boolean>;
-      const providerKeyConfigured: Record<string, boolean> = {};
-      for (const [providerId, isConfigured] of Object.entries(configured)) {
-        if (!isConfigured) continue;
-        providerKeyConfigured[providerId] = true;
-        const norm = providerId.replace(/-free$/, '');
-        providerKeyConfigured[norm] = true;
-      }
-      const openRouterKeyAvailable = Boolean(
-        providerKeyConfigured['openrouter'] ||
-        providerKeyConfigured['openrouter-free'] ||
-        (process.env.OPENROUTER_API_KEY && process.env.OPENROUTER_API_KEY.trim().length > 4)
-      );
-      // Internal wire URLs are main-process routing detail: withheld here.
-      const models = catalog.map((m) => ({ modelId: m.modelId, name: m.name, providerId: m.providerId, requiresKey: m.requiresKey }));
-      return {
-        success: true,
-        data: {
-          models,
-          communityKeyCached,
-          openRouterKeyAvailable,
-          providerKeyConfigured,
-          ollamaConnected: ollamaModels.length > 0
-        }
-      };
-    } catch (error: unknown) {
-      return { success: false, error: error instanceof Error ? error.message : String(error) };
-    }
-  });
-
   ipcMain.handle('provider:get-registry', async (event) => {
     if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
     try {
@@ -3009,10 +2961,48 @@ function registerFccHandlers(): void {
     data: localSessionBridge.listSessions()
   }));
 
+  // Unified catalog for the redesigned "AI Providers & Models" tab: verified
+  // models + zero-telemetry availability booleans (no credentials, and the
+  // internal wire URLs stay main-process only).
   ipcMain.handle('get-verified-models', async () => {
     try {
-      const allModels = await getVerifiedModels();
-      return { success: true, data: allModels };
+      const [catalog, settingsRes, ollamaModels] = await Promise.all([
+        getVerifiedModels(),
+        getSettings(),
+        detectLocalOllamaModels().catch(() => [])
+      ]);
+      const communityKeyCached = Boolean(getCommunityKeyCached());
+      if (!communityKeyCached) {
+        try {
+          warmUpCommunityKey();
+        } catch {
+          // Probe path re-resolves lazily when needed.
+        }
+      }
+      const configured = (settingsRes.data?.apiKeysConfigured || {}) as Record<string, boolean>;
+      const providerKeyConfigured: Record<string, boolean> = {};
+      for (const [providerId, isConfigured] of Object.entries(configured)) {
+        if (!isConfigured) continue;
+        providerKeyConfigured[providerId] = true;
+        const norm = providerId.replace(/-free$/, '');
+        providerKeyConfigured[norm] = true;
+      }
+      const openRouterKeyAvailable = Boolean(
+        providerKeyConfigured['openrouter'] ||
+        providerKeyConfigured['openrouter-free'] ||
+        (process.env.OPENROUTER_API_KEY && process.env.OPENROUTER_API_KEY.trim().length > 4)
+      );
+      const models = catalog.map((m) => ({ modelId: m.modelId, name: m.name, providerId: m.providerId, requiresKey: m.requiresKey }));
+      return {
+        success: true,
+        data: {
+          models,
+          communityKeyCached,
+          openRouterKeyAvailable,
+          providerKeyConfigured,
+          ollamaConnected: ollamaModels.length > 0
+        }
+      };
     } catch (err: unknown) {
       return { success: false, error: err instanceof Error ? err.message : String(err) };
     }

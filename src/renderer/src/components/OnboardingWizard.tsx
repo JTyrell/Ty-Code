@@ -313,7 +313,7 @@ export const OnboardingWizard: React.FC = () => {
                     Ty-Code Free Tier
                   </h2>
                 </div>
-                <p style={{ margin: 0, fontSize: '12.5px', color: '#94a3b8', lineHeight: 1.6 }}>
+                <p style={{ margin: 0, fontSize: '12.5px', color: '#94a3b8', lineHeight: 1.6, minHeight: '68px' }}>
                   Start coding immediately. No account, no API key required. Access curated free models (Qwen, DeepSeek, Llama) routed securely through our community gateway.
                 </p>
                 <div style={{ marginTop: 'auto' }}>
@@ -324,6 +324,7 @@ export const OnboardingWizard: React.FC = () => {
                     onClick={() => void handleStartFree()}
                     style={{
                       width: '100%',
+                      height: '42px',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
@@ -336,7 +337,8 @@ export const OnboardingWizard: React.FC = () => {
                       fontSize: '13.5px',
                       fontWeight: 600,
                       cursor: startingFree ? 'wait' : 'pointer',
-                      boxShadow: '0 4px 14px rgba(2, 132, 199, 0.35)'
+                      boxShadow: '0 4px 14px rgba(2, 132, 199, 0.35)',
+                      boxSizing: 'border-box'
                     }}
                   >
                     {startingFree ? (
@@ -369,16 +371,17 @@ export const OnboardingWizard: React.FC = () => {
                     Unlock Premium Models
                   </h2>
                 </div>
-                <p style={{ margin: 0, fontSize: '12.5px', color: '#94a3b8', lineHeight: 1.6 }}>
+                <p style={{ margin: 0, fontSize: '12.5px', color: '#94a3b8', lineHeight: 1.6, minHeight: '68px' }}>
                   Paste a single OpenRouter API key to instantly unlock GPT-4o, Claude 3.5 Sonnet, Qwen-Max, and 100+ other premium models. Your key is encrypted locally via OS-level safeStorage and never leaves your machine.
                 </p>
-                <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <div style={{ marginTop: 'auto' }}>
                   <button
                     type="button"
                     id="onboard-premium-btn"
                     onClick={() => setView('premium')}
                     style={{
                       width: '100%',
+                      height: '42px',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
@@ -391,29 +394,13 @@ export const OnboardingWizard: React.FC = () => {
                       fontSize: '13.5px',
                       fontWeight: 600,
                       cursor: 'pointer',
-                      boxShadow: '0 4px 14px rgba(99, 102, 241, 0.4)'
+                      boxShadow: '0 4px 14px rgba(99, 102, 241, 0.4)',
+                      boxSizing: 'border-box'
                     }}
                   >
                     <Key size={15} />
                     <span>Enter API Key</span>
                     <ArrowRight size={14} />
-                  </button>
-                  <button
-                    type="button"
-                    disabled={startingFree}
-                    onClick={() => void handleStartFree()}
-                    style={{
-                      width: '100%',
-                      background: 'transparent',
-                      border: 'none',
-                      color: startingFree ? '#475569' : '#94a3b8',
-                      fontSize: '11.5px',
-                      cursor: 'pointer',
-                      padding: '2px'
-                    }}
-                    title="You can add premium models anytime from Settings"
-                  >
-                    Not ready? Continue free here.
                   </button>
                 </div>
               </div>

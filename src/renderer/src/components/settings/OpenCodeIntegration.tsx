@@ -525,18 +525,33 @@ export const OpenCodeIntegration: React.FC<OpenCodeIntegrationProps> = ({
             </p>
           </div>
 
-          <span
-            style={{
-              padding: '3px 10px',
-              borderRadius: '12px',
-              background: 'rgba(16, 185, 129, 0.15)',
-              color: '#34d399',
-              fontSize: '11px',
-              fontWeight: 600
-            }}
-          >
-            {freeSummary?.totalFreeModels || 0} Free Models Synced
-          </span>
+          {(freeSummary?.totalFreeModels || 0) > 0 ? (
+            <span
+              style={{
+                padding: '3px 10px',
+                borderRadius: '12px',
+                background: 'rgba(16, 185, 129, 0.15)',
+                color: '#34d399',
+                fontSize: '11px',
+                fontWeight: 600
+              }}
+            >
+              {freeSummary?.totalFreeModels} Free Models Synced
+            </span>
+          ) : (
+            <span
+              style={{
+                padding: '3px 10px',
+                borderRadius: '12px',
+                background: 'rgba(100, 116, 139, 0.15)',
+                color: '#94a3b8',
+                fontSize: '11px',
+                fontWeight: 600
+              }}
+            >
+              No Free Models Synced
+            </span>
+          )}
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '10px' }}>
@@ -558,7 +573,9 @@ export const OpenCodeIntegration: React.FC<OpenCodeIntegrationProps> = ({
               )}
             </div>
             <span style={{ fontSize: '11px', color: '#94a3b8' }}>
-              {freeSummary?.openRouterFreeModels?.length || 5} models (Nemotron, Gemma 4, Laguna)
+              {freeSummary?.hasOpenRouterFree
+                ? `${freeSummary.openRouterFreeModels?.length || 0} free models (Gemma 4 31B, Nemotron 3, Laguna S)`
+                : 'Not detected in OpenCode config'}
             </span>
           </div>
 
@@ -580,7 +597,9 @@ export const OpenCodeIntegration: React.FC<OpenCodeIntegrationProps> = ({
               )}
             </div>
             <span style={{ fontSize: '11px', color: '#94a3b8' }}>
-              {freeSummary?.groqFreeModels?.length || 5} models (Llama 3.3 70B, 8B Instant)
+              {freeSummary?.hasGroqFree
+                ? `${freeSummary.groqFreeModels?.length || 0} models (Llama 3.3 70B Versatile, 8B Instant)`
+                : 'Not detected in OpenCode config'}
             </span>
           </div>
 
@@ -602,7 +621,9 @@ export const OpenCodeIntegration: React.FC<OpenCodeIntegrationProps> = ({
               )}
             </div>
             <span style={{ fontSize: '11px', color: '#94a3b8' }}>
-              3 models (Claude 3.5 Sonnet, GPT-4o, o1-mini)
+              {freeSummary?.hasCopilotFree
+                ? 'Free model roster depends on your Copilot plan'
+                : 'Not detected in OpenCode config'}
             </span>
           </div>
 
@@ -624,7 +645,9 @@ export const OpenCodeIntegration: React.FC<OpenCodeIntegrationProps> = ({
               )}
             </div>
             <span style={{ fontSize: '11px', color: '#94a3b8' }}>
-              {freeSummary?.geminiFreeModels?.length || 3} models (Gemini 2.0 Flash, 1.5 Pro)
+              {freeSummary?.hasGeminiFree
+                ? `${freeSummary.geminiFreeModels?.length || 0} models synced from your AI Studio config`
+                : 'Not detected in OpenCode config'}
             </span>
           </div>
 
@@ -646,7 +669,11 @@ export const OpenCodeIntegration: React.FC<OpenCodeIntegrationProps> = ({
               )}
             </div>
             <span style={{ fontSize: '11px', color: '#94a3b8' }}>
-              {freeSummary?.ollamaModels?.length || 0} local models (localhost:11434)
+              {freeSummary?.hasOllamaLocal
+                ? (freeSummary?.ollamaModels?.length || 0) > 0
+                  ? `${freeSummary.ollamaModels.length} local models (localhost:11434)`
+                  : 'Ollama detected, but OpenCode lists no local models yet'
+                : 'Not detected in OpenCode config'}
             </span>
           </div>
         </div>

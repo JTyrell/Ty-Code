@@ -1141,8 +1141,6 @@ export interface ElectronAPI {
 
   // Phase 2.1: Provider Onboarding & Dynamic Discovery
   providerGetRegistry: () => Promise<IpcResponse<PreConfiguredProvider[]>>;
-  /** Unified verified catalog for the AI Providers & Models tab. */
-  getVerifiedModelCatalog?: () => Promise<IpcResponse<VerifiedModelCatalogSummary>>;
   providerGetConnectionStatus: () => Promise<IpcResponse<Record<string, ProviderConnectivitySnapshot>>>;
   providerGetModels: (params: { providerId: string; apiKey?: string; customEndpoint?: string }) => Promise<IpcResponse<DiscoveredModel[]>>;
   providerTestConnection: (params: { providerId: string; apiKey?: string; modelId?: string; customEndpoint?: string }) => Promise<IpcResponse<TestConnectionResult>>;
@@ -1343,7 +1341,8 @@ export interface ElectronAPI {
   onboardingGetState?: () => Promise<IpcResponse<any>>;
   onboardingSaveState?: (updates: any) => Promise<IpcResponse<any>>;
 
-  getVerifiedModels?: () => Promise<IpcResponse<any[]>>;
+  /** Unified verified catalog + availability flags for the AI Providers tab. */
+  getVerifiedModels?: () => Promise<IpcResponse<VerifiedModelCatalogSummary>>;
   testVerifiedApi?: (data: { modelId: string; prompt: string; apiKey?: string }) => Promise<any>;
   onVerifiedApiChunk?: (cb: (chunk: string) => void) => any;
   onVerifiedApiEnd?: (cb: () => void) => any;

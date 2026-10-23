@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import {
   X,
   Key,
@@ -146,11 +146,67 @@ export const SettingsModal: React.FC = () => {
     }
   }, [activeTab, loadInstalledExtensions]);
 
+  const tabsNavRef = useRef<HTMLElement>(null);
+  const settingsBodyRef = useRef<HTMLDivElement>(null);
+
+  // Normalize aliases (e.g. 'analytics' -> 'usage', 'fleet'/'health' -> 'diagnostics')
+  const resolveTab = useCallback((tab?: string): SettingsTab => {
+    if (!tab) return 'providers';
+    if (tab === 'analytics' || tab === 'ledger') return 'usage';
+    if (tab === 'fleet' || tab === 'health') return 'diagnostics';
+    if (tab === 'models') return 'providers';
+    if (tab === 'keys') return 'apikeys';
+    return tab as SettingsTab;
+  }, []);
+
   useEffect(() => {
     if (isSettingsOpen && activeSettingsTab) {
-      setActiveTab(activeSettingsTab as SettingsTab);
+      setActiveTab(resolveTab(activeSettingsTab));
     }
-  }, [isSettingsOpen, activeSettingsTab]);
+  }, [isSettingsOpen, activeSettingsTab, resolveTab]);
+
+  // Auto-scroll the tabs navigation to show the active tab button in view when routing/switching
+  useEffect(() => {
+    if (!isSettingsOpen) return;
+
+    // Reset body scroll position on tab switch
+    if (settingsBodyRef.current) {
+      settingsBodyRef.current.scrollTop = 0;
+    }
+
+    const nav = tabsNavRef.current;
+    if (!nav) return;
+
+    const timer = setTimeout(() => {
+      const activeBtn = nav.querySelector<HTMLButtonElement>('button.is-active');
+      if (!activeBtn) return;
+
+      const navRect = nav.getBoundingClientRect();
+      const btnRect = activeBtn.getBoundingClientRect();
+
+      // Check if button is out of view or close to container edges
+      const isOutOfBounds =
+        btnRect.left < navRect.left + 24 || btnRect.right > navRect.right - 24;
+
+      if (isOutOfBounds) {
+        const targetScrollLeft =
+          activeBtn.offsetLeft - nav.clientWidth / 2 + activeBtn.clientWidth / 2;
+        nav.scrollTo({
+          left: Math.max(0, targetScrollLeft),
+          behavior: 'smooth'
+        });
+      }
+    }, 60);
+
+    return () => clearTimeout(timer);
+  }, [activeTab, isSettingsOpen]);
+
+  // Allow horizontal scrolling of the tab bar with vertical mouse wheel
+  const handleTabsWheel = useCallback((e: React.WheelEvent<HTMLElement>) => {
+    if (tabsNavRef.current && Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+      tabsNavRef.current.scrollLeft += e.deltaY;
+    }
+  }, []);
 
   // AI Providers Onboarding state
   const [registryProviders, setRegistryProviders] = useState<PreConfiguredProvider[]>(FALLBACK_PROVIDERS);
@@ -881,22 +937,29 @@ export const SettingsModal: React.FC = () => {
 
   return (
     <div className="settings-overlay" onClick={toggleSettings}>
-      <section className="settings-modal" onClick={(event) => event.stopPropagation()} aria-modal="true" role="dialog" style={{ maxWidth: '820px' }}>
+      <section className="settings-modal" onClick={(event) => event.stopPropagation()} aria-modal="true" role="dialog">
         <header className="settings-header">
           <div className="settings-title"><Key size={16} color="var(--accent-primary)" /><span>Ty-Code Preferences &amp; Configuration</span></div>
           <button onClick={toggleSettings} className="settings-close" aria-label="Close settings"><X size={14} /></button>
         </header>
 
-        <nav className="settings-tabs" aria-label="Settings sections">
+        <nav className="settings-tabs" ref={tabsNavRef} onWheel={handleTabsWheel} aria-label="Settings sections">
           <button
             className={activeTab === 'apikeys' ? 'is-active' : ''}
             onClick={() => setActiveTab('apikeys')}
             style={{ color: activeTab === 'apikeys' ? 'var(--accent-primary)' : undefined }}
             id="tab-btn-apikeys"
+            data-tab="apikeys"
           >
             <Key size={13} color="var(--accent-primary)" />API Keys
           </button>
-          <button className={activeTab === 'providers' ? 'is-active' : ''} onClick={() => setActiveTab('providers')} style={{ color: activeTab === 'providers' ? 'var(--accent-primary)' : undefined }}>
+          <button
+            className={activeTab === 'providers' ? 'is-active' : ''}
+            onClick={() => setActiveTab('providers')}
+            style={{ color: activeTab === 'providers' ? 'var(--accent-primary)' : undefined }}
+            id="tab-btn-providers"
+            data-tab="providers"
+          >
             <Key size={13} color="var(--accent-primary)" />AI Providers &amp; Models
           </button>
           <button
@@ -904,6 +967,7 @@ export const SettingsModal: React.FC = () => {
             onClick={() => setActiveTab('byok')}
             style={{ color: activeTab === 'byok' ? '#f43f5e' : undefined }}
             id="tab-btn-byok"
+            data-tab="byok"
           >
             <Key size={13} color="#f43f5e" />BYOK &amp; Keys
           </button>
@@ -912,6 +976,7 @@ export const SettingsModal: React.FC = () => {
             onClick={() => setActiveTab('usage')}
             style={{ color: activeTab === 'usage' ? '#10b981' : undefined }}
             id="tab-btn-usage"
+            data-tab="usage"
           >
             <Gauge size={13} color="#10b981" />Usage Ledger
           </button>
@@ -920,41 +985,130 @@ export const SettingsModal: React.FC = () => {
             onClick={() => setActiveTab('opencode')}
             style={{ color: activeTab === 'opencode' ? '#06b6d4' : undefined }}
             id="tab-btn-opencode"
+            data-tab="opencode"
           >
             <Code2 size={13} color="#06b6d4" />OpenCode Sync
           </button>
-          <button className={activeTab === 'orchestration' ? 'is-active' : ''} onClick={() => setActiveTab('orchestration')} style={{ color: activeTab === 'orchestration' ? '#38bdf8' : undefined }}>
+          <button
+            className={activeTab === 'orchestration' ? 'is-active' : ''}
+            onClick={() => setActiveTab('orchestration')}
+            style={{ color: activeTab === 'orchestration' ? '#38bdf8' : undefined }}
+            id="tab-btn-orchestration"
+            data-tab="orchestration"
+          >
             <Layers size={13} color="#38bdf8" />Smart Orchestration
           </button>
-          <button className={activeTab === 'openkilo' ? 'is-active' : ''} onClick={() => setActiveTab('openkilo')} style={{ color: activeTab === 'openkilo' ? '#10b981' : undefined }}>
+          <button
+            className={activeTab === 'openkilo' ? 'is-active' : ''}
+            onClick={() => setActiveTab('openkilo')}
+            style={{ color: activeTab === 'openkilo' ? '#10b981' : undefined }}
+            id="tab-btn-openkilo"
+            data-tab="openkilo"
+          >
             <Sparkles size={13} color="#10b981" />OpenKilo (Free Backup)
           </button>
-          <button className={activeTab === 'fcc' ? 'is-active' : ''} onClick={() => setActiveTab('fcc')} style={{ color: activeTab === 'fcc' ? '#f59e0b' : undefined }}>
+          <button
+            className={activeTab === 'fcc' ? 'is-active' : ''}
+            onClick={() => setActiveTab('fcc')}
+            style={{ color: activeTab === 'fcc' ? '#f59e0b' : undefined }}
+            id="tab-btn-fcc"
+            data-tab="fcc"
+          >
             <Zap size={13} color="#f59e0b" />Free Models (FCC)
           </button>
-          <button className={activeTab === 'integrations' ? 'is-active' : ''} onClick={() => setActiveTab('integrations')} style={{ color: activeTab === 'integrations' ? '#c084fc' : undefined }}>
+          <button
+            className={activeTab === 'integrations' ? 'is-active' : ''}
+            onClick={() => setActiveTab('integrations')}
+            style={{ color: activeTab === 'integrations' ? '#c084fc' : undefined }}
+            id="tab-btn-integrations"
+            data-tab="integrations"
+          >
             <Layers size={13} color="#c084fc" />Integrations &amp; Skills
           </button>
-          <button className={activeTab === 'endpoints' ? 'is-active' : ''} onClick={() => setActiveTab('endpoints')}><Server size={13} />Endpoints</button>
-          <button className={activeTab === 'params' ? 'is-active' : ''} onClick={() => setActiveTab('params')}><Sliders size={13} />Inference</button>
-          <button className={activeTab === 'terminal' ? 'is-active' : ''} onClick={() => setActiveTab('terminal')}><Terminal size={13} />Terminal</button>
-          <button className={activeTab === 'security' ? 'is-active' : ''} onClick={() => setActiveTab('security')}><ShieldCheck size={13} />Security</button>
-          <button className={activeTab === 'lsp' ? 'is-active' : ''} onClick={() => setActiveTab('lsp')}><Code2 size={13} />Language Servers (LSP)</button>
-          <button className={activeTab === 'editor' ? 'is-active' : ''} onClick={() => setActiveTab('editor')}><Sliders size={13} />Editor Polish</button>
-          <button className={activeTab === 'shortcuts' ? 'is-active' : ''} onClick={() => setActiveTab('shortcuts')}><Keyboard size={13} />Keybindings</button>
-          <button className={activeTab === 'extensions' ? 'is-active' : ''} onClick={() => setActiveTab('extensions')}><ShieldCheck size={13} />Extensions</button>
+          <button
+            className={activeTab === 'endpoints' ? 'is-active' : ''}
+            onClick={() => setActiveTab('endpoints')}
+            id="tab-btn-endpoints"
+            data-tab="endpoints"
+          >
+            <Server size={13} />Endpoints
+          </button>
+          <button
+            className={activeTab === 'params' ? 'is-active' : ''}
+            onClick={() => setActiveTab('params')}
+            id="tab-btn-params"
+            data-tab="params"
+          >
+            <Sliders size={13} />Inference
+          </button>
+          <button
+            className={activeTab === 'terminal' ? 'is-active' : ''}
+            onClick={() => setActiveTab('terminal')}
+            id="tab-btn-terminal"
+            data-tab="terminal"
+          >
+            <Terminal size={13} />Terminal
+          </button>
+          <button
+            className={activeTab === 'security' ? 'is-active' : ''}
+            onClick={() => setActiveTab('security')}
+            id="tab-btn-security"
+            data-tab="security"
+          >
+            <ShieldCheck size={13} />Security
+          </button>
+          <button
+            className={activeTab === 'lsp' ? 'is-active' : ''}
+            onClick={() => setActiveTab('lsp')}
+            id="tab-btn-lsp"
+            data-tab="lsp"
+          >
+            <Code2 size={13} />Language Servers (LSP)
+          </button>
+          <button
+            className={activeTab === 'editor' ? 'is-active' : ''}
+            onClick={() => setActiveTab('editor')}
+            id="tab-btn-editor"
+            data-tab="editor"
+          >
+            <Sliders size={13} />Editor Polish
+          </button>
+          <button
+            className={activeTab === 'shortcuts' ? 'is-active' : ''}
+            onClick={() => setActiveTab('shortcuts')}
+            id="tab-btn-shortcuts"
+            data-tab="shortcuts"
+          >
+            <Keyboard size={13} />Keybindings
+          </button>
+          <button
+            className={activeTab === 'extensions' ? 'is-active' : ''}
+            onClick={() => setActiveTab('extensions')}
+            id="tab-btn-extensions"
+            data-tab="extensions"
+          >
+            <ShieldCheck size={13} />Extensions
+          </button>
           <button
             className={activeTab === 'diagnostics' ? 'is-active' : ''}
             onClick={() => setActiveTab('diagnostics')}
             style={{ color: activeTab === 'diagnostics' ? '#38bdf8' : undefined }}
             id="tab-btn-diagnostics"
+            data-tab="diagnostics"
           >
             <Activity size={13} color="#38bdf8" />Connection Diagnostics
           </button>
-          <button className={activeTab === 'privacy' ? 'is-active' : ''} onClick={() => { setActiveTab('privacy'); setTelemetryInspectorOpen(false); }}><LockKeyhole size={13} />Privacy &amp; About</button>
+          <button
+            className={activeTab === 'privacy' ? 'is-active' : ''}
+            onClick={() => { setActiveTab('privacy'); setTelemetryInspectorOpen(false); }}
+            id="tab-btn-privacy"
+            data-tab="privacy"
+          >
+            <LockKeyhole size={13} />Privacy &amp; About
+          </button>
         </nav>
 
-        <div className="settings-body" style={{ maxHeight: '480px', overflowY: 'auto' }}>
+        <div className="settings-body" ref={settingsBodyRef}>
           {/* Tab 0: Simple API Key Harvesting & SafeStorage Vault (KeyHarvest) */}
           {activeTab === 'apikeys' && <ApiKeyManager />}
 
