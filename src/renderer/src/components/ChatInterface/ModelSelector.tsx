@@ -36,7 +36,7 @@ import type {
   RoutingPreferenceMode,
   RouterUserPreferences
 } from '../../../../shared/types/model-router';
-import type { AvailableModelConfig, ModelAvailabilitySummary, ProviderType, ProviderConnectivitySnapshot } from '../../../../preload/types';
+import type { AvailableModelConfig, ModelAvailabilitySummary, ProviderType, ProviderConnectivitySnapshot, OpencodeInstallProgress } from '../../../../preload/types';
 
 export const TIER_LABELS: Record<ModelTier, { name: string; color: string; bg: string; border: string }> = {
   tier_s_reasoning: {
@@ -214,6 +214,11 @@ export const ModelSelector: React.FC = () => {
   const [availabilitySummary, setAvailabilitySummary] = useState<ModelAvailabilitySummary | null>(null);
   const [modelQuery, setModelQuery] = useState('');
   const [lockedTooltipId, setLockedTooltipId] = useState<string | null>(null);
+  const [cliInstall, setCliInstall] = useState<{ active: boolean; percent: number; note: string | null }>({
+    active: false,
+    percent: 0,
+    note: null
+  });
   const [dropdownPosition, setDropdownPosition] = useState<DropdownPosition | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const dropdownMenuRef = useRef<HTMLDivElement>(null);
@@ -270,6 +275,37 @@ export const ModelSelector: React.FC = () => {
     void loadPreferences();
     void loadCatalog();
   }, []);
+
+  // Live progress for the OpenCode CLI auto-install (opencode-free locked rows)
+  useEffect(() => {
+    const unsubscribe = window.electronAPI.onOpencodeInstallProgress?.((progress: OpencodeInstallProgress) => {
+      setCliInstall((prev) => (prev.active ? { ...prev, percent: progress.percent, note: progress.message } : prev));
+    });
+    return () => unsubscribe?.();
+  }, []);
+
+  const handleOpencodeCliInstall = async (): Promise<void> => {
+    const api = window.electronAPI;
+    if (cliInstall.active) return;
+    if (!api?.opencodeInstall) {
+      setCliInstall({ active: false, percent: 0, note: 'Installer unavailable in this build.' });
+      return;
+    }
+    setCliInstall({ active: true, percent: 0, note: 'Starting installer...' });
+    try {
+      const res = await api.opencodeInstall();
+      if (res.success && res.data) {
+        setCliInstall({ active: false, percent: 100, note: res.data.alreadyInstalled ? 'OpenCode CLI was already installed.' : 'Installed. Refreshing free models...' });
+        setLockedTooltipId(null);
+        void loadCatalog();
+        setTimeout(() => setCliInstall({ active: false, percent: 0, note: null }), 3000);
+      } else {
+        setCliInstall({ active: false, percent: 0, note: res.error || 'OpenCode CLI installation failed.' });
+      }
+    } catch (err: unknown) {
+      setCliInstall({ active: false, percent: 0, note: err instanceof Error ? err.message : String(err) });
+    }
+  };
 
   // Keyboard shortcut listener: Ctrl+M / Cmd+M
   useEffect(() => {
@@ -820,6 +856,9 @@ export const ModelSelector: React.FC = () => {
 
             const lockReason = (r: AvailableModelConfig): string => {
               if (r.availabilityStatus === 'key_required') {
+                if (r.providerId === 'opencode-free') {
+                  return 'The OpenCode CLI is not installed. Install it with one click to use these free models.';
+                }
                 if (r.providerId === 'ty-code-free' || r.providerId === 'tycode-free') {
                   return 'Community Key is bootstrapping - retry in a moment, or add your own OpenRouter key in Settings to unlock instantly.';
                 }
@@ -827,6 +866,9 @@ export const ModelSelector: React.FC = () => {
               }
               if (r.providerId === 'fcc' || r.providerId === 'fcc-proxy') {
                 return 'Start the FCC sidecar in Settings to make this model available.';
+              }
+              if (r.providerId === 'opencode-free') {
+                return 'The OpenCode CLI is not installed. Install it with one click to use these free models.';
               }
               return `Start ${r.providerName} locally to make this model available.`;
             };
@@ -951,6 +993,47 @@ export const ModelSelector: React.FC = () => {
                       }}
                     >
                       <span style={{ fontSize: '10.5px', color: 'var(--text-primary)' }}>{lockReason(r)}</span>
+                      {r.providerId === 'opencode-free' && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                          <button
+                            type="button"
+                            id="btn-opencode-install"
+                            disabled={cliInstall.active}
+                            onClick={() => void handleOpencodeCliInstall()}
+                            style={{
+                              alignSelf: 'flex-start',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              padding: '4px 8px',
+                              borderRadius: '4px',
+                              border: 'none',
+                              background: '#38bdf8',
+                              color: '#0b1220',
+                              fontSize: '10px',
+                              fontWeight: 700,
+                              cursor: cliInstall.active ? 'wait' : 'pointer',
+                              opacity: cliInstall.active ? 0.7 : 1
+                            }}
+                          >
+                            {cliInstall.active ? `Installing (${Math.round(cliInstall.percent)}%)` : 'Install CLI for me'}
+                          </button>
+                          {(cliInstall.active || cliInstall.note) && (
+                            <span
+                              style={{
+                                fontSize: '9.5px',
+                                color: 'var(--text-muted)',
+                                maxWidth: '240px',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: cliInstall.active ? 'nowrap' : 'normal'
+                              }}
+                            >
+                              {cliInstall.note}
+                            </span>
+                          )}
+                        </div>
+                      )}
                       {r.availabilityStatus === 'key_required' && (
                         <button
                           type="button"

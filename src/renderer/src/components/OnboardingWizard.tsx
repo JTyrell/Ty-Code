@@ -1,4 +1,4 @@
-/**
+﻿/**
  * OnboardingWizard Component (Zero-Friction Edition)
  *
  * Streamlined two-path first-run choice, replacing the legacy multi-step
@@ -50,7 +50,7 @@ const FREE_DEFAULT_MODEL = 'google/gemma-4-31b-it:free';
 const PREMIUM_DEFAULT_MODEL = 'openai/gpt-4o';
 
 const FCC_CREDIT_STRING =
-  'Free-model supply layer powered by free-claude-code (FCC) — AGPL-3.0 / MIT — https://github.com/Alishahryar1/free-claude-code';
+  'Free-model supply layer powered by free-claude-code (FCC) â€” AGPL-3.0 / MIT â€” https://github.com/Alishahryar1/free-claude-code';
 
 type OnboardingView = 'choose' | 'premium';
 
@@ -220,21 +220,21 @@ export const OnboardingWizard: React.FC = () => {
           width: '860px',
           maxWidth: '95vw',
           maxHeight: '92vh',
-          backgroundColor: '#0b1329',
+          backgroundColor: 'var(--bg-primary)',
           borderRadius: '16px',
-          border: '1px solid rgba(255, 255, 255, 0.12)',
+          border: '1px solid var(--border-subtle)',
           boxShadow: '0 24px 64px -12px rgba(0, 0, 0, 0.8), 0 0 32px rgba(99, 102, 241, 0.15)',
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
-          color: '#f8fafc'
+          color: 'var(--text-primary)'
         }}
       >
         {/* Header */}
         <header
           style={{
             padding: '20px 28px 18px',
-            borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+            borderBottom: '1px solid var(--border-subtle)',
             display: 'flex',
             alignItems: 'flex-start',
             justifyContent: 'space-between',
@@ -256,13 +256,13 @@ export const OnboardingWizard: React.FC = () => {
                 flexShrink: 0
               }}
             >
-              <Lock size={22} color="#818cf8" />
+              <Lock size={22} color="var(--accent-primary)" />
             </div>
             <div>
               <h1 style={{ margin: 0, fontSize: '20px', fontWeight: 700, letterSpacing: '-0.02em' }}>
                 Welcome to Ty-Code. Your Local-First AI IDE.
               </h1>
-              <p style={{ margin: '6px 0 0', fontSize: '13px', color: '#94a3b8', lineHeight: 1.5 }}>
+              <p style={{ margin: '6px 0 0', fontSize: '13px', color: 'var(--text-muted)', lineHeight: 1.5 }}>
                 Enterprise-grade AI coding, zero cloud exfiltration. Start building instantly.
               </p>
             </div>
@@ -274,10 +274,10 @@ export const OnboardingWizard: React.FC = () => {
             title="Decide later (onboarding resumes from Settings)"
             aria-label="Close onboarding"
             style={{
-              background: 'rgba(255, 255, 255, 0.06)',
+              background: 'var(--surface-2)',
               border: 'none',
               borderRadius: '6px',
-              color: '#94a3b8',
+              color: 'var(--text-muted)',
               cursor: 'pointer',
               padding: '5px',
               display: 'flex',
@@ -307,13 +307,13 @@ export const OnboardingWizard: React.FC = () => {
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                   <span style={{ fontSize: '20px' }} role="img" aria-label="Lightning">
-                    ⚡
+                    âš¡
                   </span>
-                  <h2 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: '#38bdf8' }}>
+                  <h2 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: 'var(--accent-cyan)' }}>
                     Ty-Code Free Tier
                   </h2>
                 </div>
-                <p style={{ margin: 0, fontSize: '12.5px', color: '#94a3b8', lineHeight: 1.6, minHeight: '68px' }}>
+                <p style={{ margin: 0, fontSize: '12.5px', color: 'var(--text-muted)', lineHeight: 1.6, minHeight: '68px' }}>
                   Start coding immediately. No account, no API key required. Access curated free models (Qwen, DeepSeek, Llama) routed securely through our community gateway.
                 </p>
                 <div style={{ marginTop: 'auto' }}>
@@ -331,7 +331,7 @@ export const OnboardingWizard: React.FC = () => {
                       gap: '8px',
                       padding: '11px 20px',
                       borderRadius: '8px',
-                      background: startingFree ? 'rgba(56, 189, 248, 0.5)' : '#0284c7',
+                      background: startingFree ? 'rgba(56, 189, 248, 0.5)' : 'var(--accent-cyan)',
                       color: '#ffffff',
                       border: 'none',
                       fontSize: '13.5px',
@@ -365,13 +365,13 @@ export const OnboardingWizard: React.FC = () => {
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                   <span style={{ fontSize: '20px' }} role="img" aria-label="Rocket">
-                    🚀
+                    ðŸš€
                   </span>
-                  <h2 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: '#c084fc' }}>
+                  <h2 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: 'var(--accent-primary)' }}>
                     Unlock Premium Models
                   </h2>
                 </div>
-                <p style={{ margin: 0, fontSize: '12.5px', color: '#94a3b8', lineHeight: 1.6, minHeight: '68px' }}>
+                <p style={{ margin: 0, fontSize: '12.5px', color: 'var(--text-muted)', lineHeight: 1.6, minHeight: '68px' }}>
                   Paste a single OpenRouter API key to instantly unlock GPT-4o, Claude 3.5 Sonnet, Qwen-Max, and 100+ other premium models. Your key is encrypted locally via OS-level safeStorage and never leaves your machine.
                 </p>
                 <div style={{ marginTop: 'auto' }}>
@@ -388,7 +388,7 @@ export const OnboardingWizard: React.FC = () => {
                       gap: '8px',
                       padding: '11px 20px',
                       borderRadius: '8px',
-                      background: 'var(--accent-primary, #6366f1)',
+                      background: 'var(--accent-primary, var(--accent-primary))',
                       color: '#ffffff',
                       border: 'none',
                       fontSize: '13.5px',
@@ -410,8 +410,8 @@ export const OnboardingWizard: React.FC = () => {
           {view === 'premium' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '18px', maxWidth: '620px', margin: '0 auto' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <Rocket size={20} color="#c084fc" />
-                <h2 style={{ margin: 0, fontSize: '17px', fontWeight: 700, color: '#c084fc' }}>
+                <Rocket size={20} color="var(--accent-primary)" />
+                <h2 style={{ margin: 0, fontSize: '17px', fontWeight: 700, color: 'var(--accent-primary)' }}>
                   One Key. Every Premium Model.
                 </h2>
               </div>
@@ -433,10 +433,10 @@ export const OnboardingWizard: React.FC = () => {
                     style={{
                       width: '100%',
                       padding: '12px 44px 12px 14px',
-                      backgroundColor: 'rgba(15, 23, 42, 0.7)',
+                      backgroundColor: 'var(--surface-2)',
                       border: '1px solid rgba(168, 85, 247, 0.35)',
                       borderRadius: '8px',
-                      color: '#f8fafc',
+                      color: 'var(--text-primary)',
                       fontSize: '13px',
                       fontFamily: 'monospace',
                       outline: 'none',
@@ -457,7 +457,7 @@ export const OnboardingWizard: React.FC = () => {
                       background: 'none',
                       border: 'none',
                       cursor: 'pointer',
-                      color: '#94a3b8',
+                      color: 'var(--text-muted)',
                       padding: '4px'
                     }}
                     title={showKey ? 'Hide key' : 'Reveal key'}
@@ -478,7 +478,7 @@ export const OnboardingWizard: React.FC = () => {
                     borderRadius: '8px',
                     background: 'rgba(168, 85, 247, 0.15)',
                     border: '1px solid rgba(168, 85, 247, 0.5)',
-                    color: '#c084fc',
+                    color: 'var(--accent-primary)',
                     fontSize: '13px',
                     fontWeight: 600,
                     cursor: isTesting || !apiKey.trim() ? 'not-allowed' : 'pointer',
@@ -505,7 +505,7 @@ export const OnboardingWizard: React.FC = () => {
                     display: 'flex',
                     alignItems: 'center',
                     gap: '10px',
-                    color: '#4ade80',
+                    color: 'var(--accent-green)',
                     fontSize: '13px'
                   }}
                 >
@@ -523,7 +523,7 @@ export const OnboardingWizard: React.FC = () => {
                     display: 'flex',
                     alignItems: 'center',
                     gap: '10px',
-                    color: '#f87171',
+                    color: 'var(--accent-red)',
                     fontSize: '13px'
                   }}
                 >
@@ -544,7 +544,7 @@ export const OnboardingWizard: React.FC = () => {
                   style={{
                     background: 'transparent',
                     border: 'none',
-                    color: '#f8fafc',
+                    color: 'var(--text-primary)',
                     fontSize: '13px',
                     cursor: 'pointer',
                     padding: '10px 18px',
@@ -568,7 +568,7 @@ export const OnboardingWizard: React.FC = () => {
                     gap: '8px',
                     padding: '11px 24px',
                     borderRadius: '8px',
-                    background: testSuccess === true ? '#6d28d9' : 'rgba(51, 65, 85, 0.4)',
+                    background: testSuccess === true ? 'var(--accent-primary)' : 'rgba(51, 65, 85, 0.4)',
                     color: '#ffffff',
                     border: 'none',
                     fontSize: '13.5px',
@@ -589,23 +589,23 @@ export const OnboardingWizard: React.FC = () => {
         <footer
           style={{
             padding: '14px 28px 18px',
-            borderTop: '1px solid rgba(51, 65, 85, 0.6)',
-            background: 'rgba(11, 19, 41, 0.6)',
+            borderTop: '1px solid var(--border-default)',
+            background: 'var(--surface-2)',
             display: 'flex',
             flexDirection: 'column',
             gap: '6px',
             alignItems: 'center'
           }}
         >
-          <div style={{ fontSize: '12px', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '7px' }}>
+          <div style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '7px' }}>
             <span role="img" aria-label="Lock">
-              🔒
+              ðŸ”’
             </span>
-            <strong style={{ color: '#e2e8f0' }}>Zero-Telemetry Guarantee:</strong>
+            <strong style={{ color: 'var(--text-primary)' }}>Zero-Telemetry Guarantee:</strong>
             <span>Your code and credentials never leave this machine in plaintext.</span>
           </div>
-          <div style={{ fontSize: '10.5px', color: '#64748b', display: 'flex', alignItems: 'center', gap: '5px', textAlign: 'center' }}>
-            <Sparkles size={11} color="#64748b" />
+          <div style={{ fontSize: '10.5px', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '5px', textAlign: 'center' }}>
+            <Sparkles size={11} color="var(--text-secondary)" />
             <span>{FCC_CREDIT_STRING}</span>
           </div>
         </footer>

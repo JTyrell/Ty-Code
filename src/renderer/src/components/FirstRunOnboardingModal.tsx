@@ -1,4 +1,4 @@
-/**
+﻿/**
  * RealConnect 2: First-Run Onboarding Modal
  *
  * Appears on a clean install (no credentials.json or no configured providers).
@@ -315,21 +315,21 @@ export const FirstRunOnboardingModal: React.FC = () => {
         style={{
           width: '840px',
           maxWidth: '94vw',
-          backgroundColor: '#0b1329',
+          backgroundColor: 'var(--bg-primary)',
           borderRadius: '16px',
           border: '1px solid rgba(56, 189, 248, 0.35)',
           boxShadow: '0 30px 80px -15px rgba(0, 0, 0, 0.9), 0 0 35px rgba(56, 189, 248, 0.2)',
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
-          color: '#f8fafc'
+          color: 'var(--text-primary)'
         }}
       >
         {/* Header */}
         <div
           style={{
             padding: '24px 32px 20px',
-            borderBottom: '1px solid rgba(51, 65, 85, 0.6)',
+            borderBottom: '1px solid var(--border-default)',
             background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.9) 0%, rgba(30, 58, 138, 0.4) 100%)'
           }}
         >
@@ -346,14 +346,14 @@ export const FirstRunOnboardingModal: React.FC = () => {
                 justifyContent: 'center'
               }}
             >
-              <Lock style={{ width: '22px', height: '22px', color: '#38bdf8' }} />
+              <Lock style={{ width: '22px', height: '22px', color: 'var(--accent-cyan)' }} />
             </div>
             <div>
               <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 600, letterSpacing: '-0.02em' }}>
                 Welcome to Ty-Code: Connect Your AI Provider
               </h2>
-              <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#94a3b8' }}>
-                Keys are encrypted with OS hardware-backed <span style={{ color: '#38bdf8' }}>safeStorage</span> (DPAPI / Keychain) and never leave your machine.
+              <p style={{ margin: '4px 0 0', fontSize: '13px', color: 'var(--text-muted)' }}>
+                Keys are encrypted with OS hardware-backed <span style={{ color: 'var(--accent-cyan)' }}>safeStorage</span> (DPAPI / Keychain) and never leave your machine.
               </p>
             </div>
           </div>
@@ -373,8 +373,8 @@ export const FirstRunOnboardingModal: React.FC = () => {
               onClick={() => handleSelectTier('free_cloud')}
               style={{
                 padding: '14px 16px',
-                backgroundColor: selectedTier === 'free_cloud' ? 'rgba(56, 189, 248, 0.15)' : 'rgba(15, 23, 42, 0.6)',
-                border: selectedTier === 'free_cloud' ? '2px solid #38bdf8' : '1px solid rgba(51, 65, 85, 0.7)',
+                backgroundColor: selectedTier === 'free_cloud' ? 'rgba(56, 189, 248, 0.15)' : 'var(--surface-2)',
+                border: selectedTier === 'free_cloud' ? '2px solid var(--accent-cyan)' : '1px solid rgba(51, 65, 85, 0.7)',
                 borderRadius: '10px',
                 cursor: 'pointer',
                 textAlign: 'left',
@@ -385,12 +385,12 @@ export const FirstRunOnboardingModal: React.FC = () => {
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span style={{ fontSize: '14px', fontWeight: 600, color: selectedTier === 'free_cloud' ? '#38bdf8' : '#e2e8f0' }}>
+                <span style={{ fontSize: '14px', fontWeight: 600, color: selectedTier === 'free_cloud' ? 'var(--accent-cyan)' : 'var(--text-primary)' }}>
                   1. Free Cloud Tier
                 </span>
-                <Sparkles style={{ width: '16px', height: '16px', color: '#38bdf8' }} />
+                <Sparkles style={{ width: '16px', height: '16px', color: 'var(--accent-cyan)' }} />
               </div>
-              <span style={{ fontSize: '11px', color: '#94a3b8', lineHeight: 1.4 }}>
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)', lineHeight: 1.4 }}>
                 OpenRouter, Groq, Google AI Studio. 100% free API keys.
               </span>
             </button>
@@ -401,8 +401,8 @@ export const FirstRunOnboardingModal: React.FC = () => {
               onClick={() => handleSelectTier('byok_pro')}
               style={{
                 padding: '14px 16px',
-                backgroundColor: selectedTier === 'byok_pro' ? 'rgba(168, 85, 247, 0.15)' : 'rgba(15, 23, 42, 0.6)',
-                border: selectedTier === 'byok_pro' ? '2px solid #a855f7' : '1px solid rgba(51, 65, 85, 0.7)',
+                backgroundColor: selectedTier === 'byok_pro' ? 'rgba(168, 85, 247, 0.15)' : 'var(--surface-2)',
+                border: selectedTier === 'byok_pro' ? '2px solid var(--accent-primary)' : '1px solid rgba(51, 65, 85, 0.7)',
                 borderRadius: '10px',
                 cursor: 'pointer',
                 textAlign: 'left',
@@ -413,12 +413,12 @@ export const FirstRunOnboardingModal: React.FC = () => {
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span style={{ fontSize: '14px', fontWeight: 600, color: selectedTier === 'byok_pro' ? '#c084fc' : '#e2e8f0' }}>
+                <span style={{ fontSize: '14px', fontWeight: 600, color: selectedTier === 'byok_pro' ? 'var(--accent-primary)' : 'var(--text-primary)' }}>
                   2. Pro / BYOK
                 </span>
-                <Key style={{ width: '16px', height: '16px', color: '#c084fc' }} />
+                <Key style={{ width: '16px', height: '16px', color: 'var(--accent-primary)' }} />
               </div>
-              <span style={{ fontSize: '11px', color: '#94a3b8', lineHeight: 1.4 }}>
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)', lineHeight: 1.4 }}>
                 Claude 3.5 Sonnet, GPT-4o, DeepSeek Reasoner keys.
               </span>
             </button>
@@ -429,8 +429,8 @@ export const FirstRunOnboardingModal: React.FC = () => {
               onClick={() => handleSelectTier('local_private')}
               style={{
                 padding: '14px 16px',
-                backgroundColor: selectedTier === 'local_private' ? 'rgba(34, 197, 94, 0.15)' : 'rgba(15, 23, 42, 0.6)',
-                border: selectedTier === 'local_private' ? '2px solid #22c55e' : '1px solid rgba(51, 65, 85, 0.7)',
+                backgroundColor: selectedTier === 'local_private' ? 'rgba(34, 197, 94, 0.15)' : 'var(--surface-2)',
+                border: selectedTier === 'local_private' ? '2px solid var(--accent-green)' : '1px solid rgba(51, 65, 85, 0.7)',
                 borderRadius: '10px',
                 cursor: 'pointer',
                 textAlign: 'left',
@@ -441,12 +441,12 @@ export const FirstRunOnboardingModal: React.FC = () => {
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span style={{ fontSize: '14px', fontWeight: 600, color: selectedTier === 'local_private' ? '#4ade80' : '#e2e8f0' }}>
+                <span style={{ fontSize: '14px', fontWeight: 600, color: selectedTier === 'local_private' ? 'var(--accent-green)' : 'var(--text-primary)' }}>
                   3. Local / Private
                 </span>
-                <Server style={{ width: '16px', height: '16px', color: '#4ade80' }} />
+                <Server style={{ width: '16px', height: '16px', color: 'var(--accent-green)' }} />
               </div>
-              <span style={{ fontSize: '11px', color: '#94a3b8', lineHeight: 1.4 }}>
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)', lineHeight: 1.4 }}>
                 Ollama on localhost:11434. 100% offline, zero data sent.
               </span>
             </button>
@@ -458,7 +458,7 @@ export const FirstRunOnboardingModal: React.FC = () => {
           {/* Provider Selection (for Tier 1 & 2) */}
           {selectedTier !== 'local_private' && (
             <div>
-              <label style={{ fontSize: '12px', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px', display: 'block' }}>
+              <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px', display: 'block' }}>
                 Select Provider
               </label>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
@@ -476,22 +476,22 @@ export const FirstRunOnboardingModal: React.FC = () => {
                       }}
                       style={{
                         padding: '12px',
-                        backgroundColor: isSelected ? 'rgba(56, 189, 248, 0.12)' : 'rgba(15, 23, 42, 0.5)',
-                        border: isSelected ? '1.5px solid #38bdf8' : '1px solid rgba(51, 65, 85, 0.6)',
+                        backgroundColor: isSelected ? 'rgba(56, 189, 248, 0.12)' : 'var(--surface-2)',
+                        border: isSelected ? '1.5px solid var(--accent-cyan)' : '1px solid var(--border-default)',
                         borderRadius: '8px',
                         cursor: 'pointer',
                         textAlign: 'left',
-                        color: '#f8fafc',
+                        color: 'var(--text-primary)',
                         transition: 'all 0.15s ease'
                       }}
                     >
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
-                        <span style={{ fontSize: '13px', fontWeight: 600, color: isSelected ? '#38bdf8' : '#e2e8f0' }}>
+                        <span style={{ fontSize: '13px', fontWeight: 600, color: isSelected ? 'var(--accent-cyan)' : 'var(--text-primary)' }}>
                           {p.name}
                         </span>
-                        {isSelected && <Check style={{ width: '14px', height: '14px', color: '#38bdf8' }} />}
+                        {isSelected && <Check style={{ width: '14px', height: '14px', color: 'var(--accent-cyan)' }} />}
                       </div>
-                      <div style={{ fontSize: '11px', color: '#94a3b8', lineHeight: 1.3 }}>
+                      <div style={{ fontSize: '11px', color: 'var(--text-muted)', lineHeight: 1.3 }}>
                         {p.tagline}
                       </div>
                     </button>
@@ -505,7 +505,7 @@ export const FirstRunOnboardingModal: React.FC = () => {
           {selectedTier !== 'local_private' && activeProviderObj && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <label style={{ fontSize: '12px', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                   {activeProviderObj.name} API Key
                 </label>
                 {activeProviderObj.keyUrl && (
@@ -515,7 +515,7 @@ export const FirstRunOnboardingModal: React.FC = () => {
                     rel="noreferrer"
                     style={{
                       fontSize: '12px',
-                      color: '#38bdf8',
+                      color: 'var(--accent-cyan)',
                       textDecoration: 'none',
                       display: 'flex',
                       alignItems: 'center',
@@ -541,10 +541,10 @@ export const FirstRunOnboardingModal: React.FC = () => {
                   style={{
                     width: '100%',
                     padding: '12px 44px 12px 14px',
-                    backgroundColor: 'rgba(15, 23, 42, 0.7)',
+                    backgroundColor: 'var(--surface-2)',
                     border: '1px solid rgba(56, 189, 248, 0.3)',
                     borderRadius: '8px',
-                    color: '#f8fafc',
+                    color: 'var(--text-primary)',
                     fontSize: '13px',
                     fontFamily: 'monospace',
                     outline: 'none',
@@ -560,7 +560,7 @@ export const FirstRunOnboardingModal: React.FC = () => {
                     background: 'none',
                     border: 'none',
                     cursor: 'pointer',
-                    color: '#94a3b8',
+                    color: 'var(--text-muted)',
                     padding: '4px'
                   }}
                   title={showKey ? 'Hide key' : 'Reveal key'}
@@ -569,7 +569,7 @@ export const FirstRunOnboardingModal: React.FC = () => {
                 </button>
               </div>
 
-              <div style={{ fontSize: '11px', color: '#64748b' }}>
+              <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
                 Included models: {activeProviderObj.recommendedModels.join(', ')}
               </div>
             </div>
@@ -579,8 +579,8 @@ export const FirstRunOnboardingModal: React.FC = () => {
           {selectedTier === 'local_private' && (
             <div
               style={{
-                backgroundColor: 'rgba(15, 23, 42, 0.6)',
-                border: '1px solid rgba(51, 65, 85, 0.6)',
+                backgroundColor: 'var(--surface-2)',
+                border: '1px solid var(--border-default)',
                 borderRadius: '10px',
                 padding: '20px',
                 display: 'flex',
@@ -590,12 +590,12 @@ export const FirstRunOnboardingModal: React.FC = () => {
             >
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <Server style={{ width: '20px', height: '20px', color: '#4ade80' }} />
+                  <Server style={{ width: '20px', height: '20px', color: 'var(--accent-green)' }} />
                   <div>
-                    <div style={{ fontSize: '14px', fontWeight: 600, color: '#f8fafc' }}>
+                    <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>
                       Ollama Local Server
                     </div>
-                    <div style={{ fontSize: '12px', color: '#94a3b8' }}>
+                    <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
                       Auto-detects models at http://localhost:11434/v1
                     </div>
                   </div>
@@ -610,7 +610,7 @@ export const FirstRunOnboardingModal: React.FC = () => {
                     backgroundColor: 'rgba(56, 189, 248, 0.15)',
                     border: '1px solid rgba(56, 189, 248, 0.4)',
                     borderRadius: '6px',
-                    color: '#38bdf8',
+                    color: 'var(--accent-cyan)',
                     fontSize: '12px',
                     fontWeight: 500,
                     cursor: isCheckingOllama ? 'not-allowed' : 'pointer',
@@ -624,9 +624,9 @@ export const FirstRunOnboardingModal: React.FC = () => {
                 </button>
               </div>
 
-              <div style={{ fontSize: '12px', color: '#94a3b8', lineHeight: 1.5 }}>
-                Recommended coding models: <span style={{ color: '#f8fafc', fontFamily: 'monospace' }}>qwen2.5-coder</span>, <span style={{ color: '#f8fafc', fontFamily: 'monospace' }}>llama3.2</span>, <span style={{ color: '#f8fafc', fontFamily: 'monospace' }}>deepseek-r1</span>.
-                Make sure Ollama is running (<code style={{ color: '#38bdf8' }}>ollama serve</code>).
+              <div style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                Recommended coding models: <span style={{ color: 'var(--text-primary)', fontFamily: 'monospace' }}>qwen2.5-coder</span>, <span style={{ color: 'var(--text-primary)', fontFamily: 'monospace' }}>llama3.2</span>, <span style={{ color: 'var(--text-primary)', fontFamily: 'monospace' }}>deepseek-r1</span>.
+                Make sure Ollama is running (<code style={{ color: 'var(--accent-cyan)' }}>ollama serve</code>).
               </div>
             </div>
           )}
@@ -642,7 +642,7 @@ export const FirstRunOnboardingModal: React.FC = () => {
                 display: 'flex',
                 alignItems: 'center',
                 gap: '10px',
-                color: '#4ade80',
+                color: 'var(--accent-green)',
                 fontSize: '13px'
               }}
             >
@@ -651,7 +651,7 @@ export const FirstRunOnboardingModal: React.FC = () => {
                 <strong>Test Passed:</strong> {testMessage}
               </div>
               {testLatency && (
-                <span style={{ fontSize: '11px', color: '#86efac', backgroundColor: 'rgba(34, 197, 94, 0.2)', padding: '2px 8px', borderRadius: '4px' }}>
+                <span style={{ fontSize: '11px', color: 'var(--accent-green)', backgroundColor: 'rgba(34, 197, 94, 0.2)', padding: '2px 8px', borderRadius: '4px' }}>
                   {testLatency}ms
                 </span>
               )}
@@ -668,7 +668,7 @@ export const FirstRunOnboardingModal: React.FC = () => {
                 display: 'flex',
                 alignItems: 'center',
                 gap: '10px',
-                color: '#f87171',
+                color: 'var(--accent-red)',
                 fontSize: '13px'
               }}
             >
@@ -682,7 +682,7 @@ export const FirstRunOnboardingModal: React.FC = () => {
                 style={{
                   background: 'none',
                   border: '1px solid rgba(239, 68, 68, 0.5)',
-                  color: '#f87171',
+                  color: 'var(--accent-red)',
                   borderRadius: '4px',
                   padding: '4px 8px',
                   fontSize: '11px',
@@ -699,15 +699,15 @@ export const FirstRunOnboardingModal: React.FC = () => {
         <div
           style={{
             padding: '16px 32px 24px',
-            borderTop: '1px solid rgba(51, 65, 85, 0.6)',
+            borderTop: '1px solid var(--border-default)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            backgroundColor: 'rgba(11, 19, 41, 0.6)'
+            backgroundColor: 'var(--surface-2)'
           }}
         >
-          <div style={{ fontSize: '11px', color: '#64748b', display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <ShieldCheck style={{ width: '14px', height: '14px', color: '#38bdf8' }} />
+          <div style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <ShieldCheck style={{ width: '14px', height: '14px', color: 'var(--accent-cyan)' }} />
             <span>Hardware-encrypted credentials stored locally only</span>
           </div>
 
@@ -720,9 +720,9 @@ export const FirstRunOnboardingModal: React.FC = () => {
                 style={{
                   padding: '10px 18px',
                   backgroundColor: 'rgba(51, 65, 85, 0.5)',
-                  border: '1px solid rgba(148, 163, 184, 0.3)',
+                  border: '1px solid var(--border-default)',
                   borderRadius: '8px',
-                  color: '#f8fafc',
+                  color: 'var(--text-primary)',
                   fontSize: '13px',
                   fontWeight: 500,
                   cursor: isTesting || !apiKey.trim() ? 'not-allowed' : 'pointer',
@@ -750,7 +750,7 @@ export const FirstRunOnboardingModal: React.FC = () => {
               disabled={isSaving || (selectedTier !== 'local_private' && testSuccess !== true) || (selectedTier === 'local_private' && ollamaAvailable !== true)}
               style={{
                 padding: '10px 22px',
-                backgroundColor: (selectedTier === 'local_private' ? ollamaAvailable === true : testSuccess === true) ? '#0284c7' : 'rgba(51, 65, 85, 0.4)',
+                backgroundColor: (selectedTier === 'local_private' ? ollamaAvailable === true : testSuccess === true) ? 'var(--accent-cyan)' : 'rgba(51, 65, 85, 0.4)',
                 border: 'none',
                 borderRadius: '8px',
                 color: '#ffffff',

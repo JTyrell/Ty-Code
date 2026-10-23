@@ -107,6 +107,7 @@ import { readStoredCredentials, encryptSecret, decryptSecret } from './ipc/setti
 import type { CustomProviderConfig, StoredKeySummary } from '../shared/types/byok';
 import { opencodeIntegration } from './services/providers/opencode-integration';
 import { opencodeFreeDetector } from './services/providers/opencode-free-detector';
+import { opencodeInstaller } from './opencode-integration/opencode-installer';
 import { saveOpenCodeApiKey, getOpenCodeKeyStatus, discoverOpenCodeFreeModels } from './services/opencode-config-manager';
 import { opencodeBridge, buildBridgePromptFromMessages } from './services/opencode-bridge';
 
@@ -1752,6 +1753,41 @@ function registerIpcHandlers(): void {
     } catch (err: unknown) {
       return { success: false, error: err instanceof Error ? err.message : String(err) };
     }
+  });
+
+  // OpenCode CLI auto-install (zero-touch free tier). Runs npm -g
+  // @opencode-ai/cli, then refreshes the service manager + model caches so the
+  // CLI-synced free models appear without an app restart.
+  ipcMain.handle('opencode:install', async (event) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      const res = await opencodeInstaller.install((progress) => {
+        for (const win of BrowserWindow.getAllWindows()) {
+          if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
+            win.webContents.send('opencode:install-progress', progress);
+          }
+        }
+      });
+      if (res.success) {
+        try {
+          const { opencodeServiceManager } = await import('./opencode-integration/opencode-service-manager');
+          await opencodeServiceManager.refresh();
+          opencodeBridge.invalidateCliCheck();
+          clearAvailabilityCache();
+        } catch (refreshErr: unknown) {
+          console.warn('[OPENCODE] Post-install refresh failed (harmless until next refresh):', refreshErr instanceof Error ? refreshErr.message : refreshErr);
+        }
+        return { success: true, data: { cliPath: res.cliPath || null, alreadyInstalled: Boolean(res.alreadyInstalled) } };
+      }
+      return { success: false, error: res.error || 'OpenCode CLI installation failed.' };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('opencode:install-status', async (event) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    return { success: true, data: opencodeInstaller.getState() };
   });
 
   // Chat Sidecar → OpenCode bridge (Prompt 3). One renderer message drives one

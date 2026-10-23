@@ -219,6 +219,22 @@ export interface ModelAvailabilitySummary {
   communityKeyCooldownSec: number;
 }
 
+export type OpencodeInstallStage = 'checking' | 'installing' | 'verifying' | 'done' | 'failed';
+
+export interface OpencodeInstallProgress {
+  stage: OpencodeInstallStage;
+  percent: number;
+  message: string;
+}
+
+export interface OpencodeInstallState {
+  installing: boolean;
+  stage: OpencodeInstallStage | 'idle';
+  percent: number;
+  message: string;
+  lastResult: { success: boolean; cliPath: string | null; error: string | null } | null;
+}
+
 /**
  * Masked result of an active provider selection sync. Never carries usable
  * credentials: the renderer only sees a display-safe preview string
@@ -1260,6 +1276,11 @@ export interface ElectronAPI {
   // OpenCode Standard Supply (baked-in hosted free models)
   opencodeGetServiceStatus?: () => Promise<IpcResponse<OpenCodeServiceStatusData>>;
   opencodeRefreshStandardSupply?: () => Promise<IpcResponse<OpenCodeServiceStatusData>>;
+
+  // OpenCode CLI auto-install (zero-touch free tier)
+  opencodeInstall?: () => Promise<IpcResponse<{ cliPath: string | null; alreadyInstalled: boolean }>>;
+  opencodeInstallStatus?: () => Promise<IpcResponse<OpencodeInstallState>>;
+  onOpencodeInstallProgress?: (callback: (progress: OpencodeInstallProgress) => void) => () => void;
 
   // Manual key configuration for OpenCode's premium models (vault + config injection)
   saveOpenCodeApiKey?: (provider: string, key: string) => Promise<IpcResponse<OpenCodeApiKeySaveResult>>;

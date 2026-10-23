@@ -128,6 +128,14 @@ export class OpenCodeBridge {
   }
 
   /**
+   * Drops the cached CLI probe (10-minute TTL) so a freshly installed opencode
+   * binary is detected immediately after the auto-installer completes.
+   */
+  public invalidateCliCheck(): void {
+    this.cliCheck = null;
+  }
+
+  /**
    * Verifies the opencode CLI is present AND runnable. Cached for 10 minutes.
    * Uses the shared OS-level discovery (PATH + known install locations) and
    * then executes `opencode --version` once to prove the binary actually runs.

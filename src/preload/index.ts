@@ -521,6 +521,15 @@ const api: ElectronAPI = {
   opencodeGetMergedProviders: () => ipcRenderer.invoke('opencode:get-merged-providers'),
   opencodeGetServiceStatus: () => ipcRenderer.invoke('opencode:get-service-status'),
   opencodeRefreshStandardSupply: () => ipcRenderer.invoke('opencode:refresh-standard-supply'),
+  opencodeInstall: () => ipcRenderer.invoke('opencode:install'),
+  opencodeInstallStatus: () => ipcRenderer.invoke('opencode:install-status'),
+  onOpencodeInstallProgress: (callback: (progress: any) => void) => {
+    const listener = (_event: unknown, progress: any) => callback(progress);
+    ipcRenderer.on('opencode:install-progress', listener);
+    return () => {
+      ipcRenderer.removeListener('opencode:install-progress', listener);
+    };
+  },
 
   // Phase 6.4: Intelligent Model Router
   modelRouterClassifyTask: (prompt: string) => ipcRenderer.invoke('model-router:classify-task', prompt),

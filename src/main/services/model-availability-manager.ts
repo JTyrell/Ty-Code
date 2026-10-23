@@ -21,6 +21,7 @@ import { providerHasOwnKey } from '../providers/provider-gateway';
 import { hasCommunityKey, warmUpCommunityKey, getCommunityKeyCooldownRemainingSec } from './credential-vault';
 import { fccManager } from './orchestration/fcc-manager';
 import { getAllPreconfiguredProviders } from '../config/provider-registry';
+import { opencodeBridge } from './opencode-bridge';
 
 export type ModelAvailabilityStatus = 'available' | 'key_required' | 'service_unavailable';
 
@@ -130,6 +131,16 @@ function classifySync(model: VerifiedModelConfig, providerIdLower: string): Mode
 async function classify(model: VerifiedModelConfig, providerIdLower: string): Promise<ModelAvailabilityStatus> {
   const popped = classifySync(model, providerIdLower);
   if (popped === 'key_required') return popped;
+  // CLI-bridged free tier: the models are only "available" when the real
+  // opencode CLI is installed and runnable - otherwise they are locked, and
+  // the picker routes the user to the one-click auto-installer.
+  if (providerIdLower === 'opencode-free') {
+    try {
+      return (await opencodeBridge.isCliAvailable()) ? 'available' : 'key_required';
+    } catch {
+      return 'key_required';
+    }
+  }
   // Localhost backends must actually answer (Ollama detected entries come
   // from the detector itself and are inherently verified - others probe).
   if (LOCAL_HOST_PATTERN.test(model.url)) {

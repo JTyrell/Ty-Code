@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import {
   Sparkles,
   Code2,
@@ -31,7 +31,7 @@ const TOUR_STEPS: TourStep[] = [
     badge: 'Introduction',
     icon: <Sparkles size={28} color="var(--accent-primary)" />,
     content:
-      'Ty-Code combines the performance of Monaco Editor with autonomous AI agent capabilities, cross-platform terminal emulator, and native Git integration. Let’s take a 30-second tour of what’s inside!'
+      'Ty-Code combines the performance of Monaco Editor with autonomous AI agent capabilities, cross-platform terminal emulator, and native Git integration. Letâ€™s take a 30-second tour of whatâ€™s inside!'
   },
   {
     title: 'Monaco Editor & Language Server Protocol',

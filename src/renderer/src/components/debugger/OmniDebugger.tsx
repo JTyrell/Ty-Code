@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+﻿import React, { useState, useMemo, useEffect } from 'react';
 import {
   Bug,
   Cpu,
@@ -110,10 +110,10 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
           <span className="omni-docked-badge">LIVE EXT</span>
         </div>
 
-        <h3 style={{ fontSize: '15px', fontWeight: 700, color: '#f8fafc', margin: '0 0 6px 0' }}>
+        <h3 style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)', margin: '0 0 6px 0' }}>
           Omni-Debugger Popped Out
         </h3>
-        <p style={{ fontSize: '12px', color: '#94a3b8', margin: '0 0 20px 0', maxWidth: '240px', lineHeight: 1.5 }}>
+        <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '0 0 20px 0', maxWidth: '240px', lineHeight: 1.5 }}>
           Running in a dedicated, high-performance window for multi-monitor inspection and zero editor latency.
         </p>
 
@@ -299,7 +299,7 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
             </div>
             <div style={{ display: 'flex', flexDirection: 'column' }}>
               <span className="omni-brand-title">Omni-Debugger</span>
-              <span style={{ fontSize: '10px', color: '#64748b', fontWeight: 600 }}>
+              <span style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: 600 }}>
                 Multi-Engine Inspector
               </span>
             </div>
@@ -354,7 +354,7 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
               title="Execute full static, dynamic, architectural, and AI diagnostic sweep"
             >
               <RotateCw size={13} className={isAnalyzing ? 'animate-spin' : ''} />
-              <span>{isAnalyzing ? 'Sweeping…' : 'Run Sweep'}</span>
+              <span>{isAnalyzing ? 'Sweepingâ€¦' : 'Run Sweep'}</span>
             </button>
 
             <button
@@ -506,7 +506,7 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search rules, messages, files…"
+              placeholder="Search rules, messages, filesâ€¦"
               className="omni-search-input"
             />
             {searchQuery && (
@@ -535,8 +535,8 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
                   fontWeight: 600,
                   textTransform: 'capitalize',
                   border: selectedEngine === eng ? '1px solid rgba(99, 102, 241, 0.5)' : '1px solid transparent',
-                  background: selectedEngine === eng ? 'rgba(99, 102, 241, 0.2)' : 'rgba(255, 255, 255, 0.03)',
-                  color: selectedEngine === eng ? '#c7d2fe' : '#94a3b8',
+                  background: selectedEngine === eng ? 'rgba(99, 102, 241, 0.2)' : 'var(--surface-2)',
+                  color: selectedEngine === eng ? 'var(--accent-primary)' : 'var(--text-muted)',
                   cursor: 'pointer'
                 }}
               >
@@ -558,8 +558,8 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
               fontSize: '10.5px',
               fontWeight: 600,
               border: onlyActionable ? '1px solid rgba(16, 185, 129, 0.5)' : '1px solid transparent',
-              background: onlyActionable ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255, 255, 255, 0.03)',
-              color: onlyActionable ? '#6ee7b7' : '#94a3b8',
+              background: onlyActionable ? 'rgba(16, 185, 129, 0.2)' : 'var(--surface-2)',
+              color: onlyActionable ? 'var(--accent-green)' : 'var(--text-muted)',
               cursor: 'pointer'
             }}
             title="Filter to findings that have automated suggested fixes"
@@ -581,7 +581,7 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
             alignItems: 'center',
             gap: '8px',
             fontSize: '11px',
-            color: '#e9d5ff'
+            color: 'var(--accent-primary)'
           }}
         >
           <Sparkles size={12} className="animate-pulse text-purple-400" />
@@ -606,7 +606,7 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
                 <button
                   type="button"
                   onClick={() => setIsFileTreeExpanded(false)}
-                  style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', padding: '2px' }}
+                  style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: '2px' }}
                   title="Collapse Scope Tree"
                 >
                   <PanelLeftClose size={13} />
@@ -616,7 +616,7 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
               <button
                 type="button"
                 onClick={() => setIsFileTreeExpanded(true)}
-                style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'none', border: 'none', color: '#64748b', cursor: 'pointer' }}
+                style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}
                 title="Expand Scope Tree"
               >
                 <PanelLeftOpen size={13} />
@@ -633,7 +633,7 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
                 className={`omni-scope-item ${!activeFile || activeFile === 'all' ? 'selected' : ''}`}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '7px', minWidth: 0 }}>
-                  <Cpu size={14} color="#818cf8" />
+                  <Cpu size={14} color="var(--accent-primary)" />
                   <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     Entire Workspace
                   </span>
@@ -641,7 +641,7 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
                 <span className="omni-scope-count">{analysisResults.length}</span>
               </button>
 
-              <div style={{ padding: '8px 8px 4px', fontSize: '10px', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              <div style={{ padding: '8px 8px 4px', fontSize: '10px', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                 Monitored Files
               </div>
 
@@ -656,12 +656,12 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
                     title={node.path}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
-                      <FileCode size={13} style={{ color: '#64748b', flexShrink: 0 }} />
+                      <FileCode size={13} style={{ color: 'var(--text-secondary)', flexShrink: 0 }} />
                       <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-                        <span style={{ fontSize: '11px', fontWeight: 600, color: '#e2e8f0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {node.name}
                         </span>
-                        <span style={{ fontSize: '9.5px', color: '#64748b', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <span style={{ fontSize: '9.5px', color: 'var(--text-secondary)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {node.dir}
                         </span>
                       </div>
@@ -694,7 +694,7 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
                   borderRadius: '6px',
                   background: !activeFile ? 'rgba(99, 102, 241, 0.2)' : 'transparent',
                   border: 'none',
-                  color: !activeFile ? '#818cf8' : '#64748b',
+                  color: !activeFile ? 'var(--accent-primary)' : 'var(--text-secondary)',
                   cursor: 'pointer'
                 }}
                 title="Entire Workspace"
@@ -711,7 +711,7 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
                     borderRadius: '6px',
                     background: activeFile === node.path ? 'rgba(99, 102, 241, 0.2)' : 'transparent',
                     border: 'none',
-                    color: activeFile === node.path ? '#818cf8' : '#64748b',
+                    color: activeFile === node.path ? 'var(--accent-primary)' : 'var(--text-secondary)',
                     cursor: 'pointer'
                   }}
                   title={node.path}
@@ -733,19 +733,19 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
               {/* Findings Header Bar */}
               <div className="omni-findings-status-bar">
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span style={{ fontWeight: 600, color: '#f1f5f9' }}>
+                  <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
                     {filteredResults.length} {filteredResults.length === 1 ? 'Finding' : 'Findings'}
                   </span>
-                  <span>•</span>
+                  <span>â€¢</span>
                   <span>Scope: {activeFile ? activeFile.split('/').pop() : 'All Workspace Files'}</span>
-                  {selectedEngine !== 'all' && <span>• Engine: {selectedEngine.toUpperCase()}</span>}
+                  {selectedEngine !== 'all' && <span>â€¢ Engine: {selectedEngine.toUpperCase()}</span>}
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <button
                     type="button"
                     onClick={clearResults}
-                    style={{ background: 'none', border: 'none', color: '#64748b', fontSize: '11px', cursor: 'pointer' }}
+                    style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', fontSize: '11px', cursor: 'pointer' }}
                   >
                     Clear Results
                   </button>
@@ -763,8 +763,8 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
                       justifyContent: 'center',
                       padding: '48px 24px',
                       borderRadius: '12px',
-                      border: '1px dashed rgba(255, 255, 255, 0.1)',
-                      background: 'rgba(15, 23, 42, 0.3)',
+                      border: '1px dashed var(--border-subtle)',
+                      background: 'var(--surface-2)',
                       textAlign: 'center',
                       margin: '20px 0'
                     }}
@@ -779,17 +779,17 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        color: '#34d399',
+                        color: 'var(--accent-green)',
                         marginBottom: '12px'
                       }}
                     >
                       <CheckCircle2 size={24} />
                     </div>
-                    <h4 style={{ margin: '0 0 6px 0', fontSize: '15px', fontWeight: 700, color: '#f1f5f9' }}>
+                    <h4 style={{ margin: '0 0 6px 0', fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)' }}>
                       All Diagnostics Passing Cleanly
                     </h4>
-                    <p style={{ margin: 0, fontSize: '12px', color: '#94a3b8', maxWidth: '380px', lineHeight: 1.5 }}>
-                      Zero critical violations detected across Static AST, Dynamic Runtime profiling, and Architectural boundaries for <strong style={{ color: '#e2e8f0', textTransform: 'uppercase' }}>{selectedRole}</strong>.
+                    <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-muted)', maxWidth: '380px', lineHeight: 1.5 }}>
+                      Zero critical violations detected across Static AST, Dynamic Runtime profiling, and Architectural boundaries for <strong style={{ color: 'var(--text-primary)', textTransform: 'uppercase' }}>{selectedRole}</strong>.
                     </p>
                     <button
                       type="button"
@@ -860,8 +860,8 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
                                 textTransform: 'uppercase',
                                 padding: '2px 6px',
                                 borderRadius: '4px',
-                                background: 'rgba(255, 255, 255, 0.05)',
-                                color: '#94a3b8'
+                                background: 'var(--surface-2)',
+                                color: 'var(--text-muted)'
                               }}
                             >
                               {item.role}
@@ -869,7 +869,7 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
 
                             {/* Rule ID */}
                             {item.ruleId && (
-                              <span style={{ fontSize: '11px', fontFamily: 'monospace', color: '#64748b' }}>
+                              <span style={{ fontSize: '11px', fontFamily: 'monospace', color: 'var(--text-secondary)' }}>
                                 #{item.ruleId}
                               </span>
                             )}
@@ -908,7 +908,7 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
                         {item.suggestedFix && (
                           <div className="omni-fix-box">
                             <div className="omni-fix-content">
-                              <Wrench size={13} style={{ color: '#34d399', flexShrink: 0, marginTop: '2px' }} />
+                              <Wrench size={13} style={{ color: 'var(--accent-green)', flexShrink: 0, marginTop: '2px' }} />
                               <div className="omni-fix-text">
                                 <strong>Suggested Fix: </strong>
                                 <span>{item.suggestedFix}</span>
@@ -922,7 +922,7 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
                                 className="omni-btn-copy"
                                 title="Copy suggested fix to clipboard"
                               >
-                                {isCopied ? <Check size={11} color="#34d399" /> : <Copy size={11} />}
+                                {isCopied ? <Check size={11} color="var(--accent-green)" /> : <Copy size={11} />}
                                 <span>{isCopied ? 'Copied' : 'Copy'}</span>
                               </button>
 
@@ -944,7 +944,7 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
                                 title="Mark this diagnostic remediation as applied"
                               >
                                 {isFixed ? <Check size={11} /> : <Zap size={11} />}
-                                <span>{isFixed ? 'Applied ✓' : 'Apply Fix'}</span>
+                                <span>{isFixed ? 'Applied âœ“' : 'Apply Fix'}</span>
                               </button>
                             </div>
                           </div>
@@ -966,14 +966,14 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
               <div className="omni-engine-card card-static">
                 <div className="omni-engine-card-top">
                   <div className="omni-engine-title-group">
-                    <div className="omni-engine-icon-wrap" style={{ background: 'rgba(99, 102, 241, 0.2)', color: '#818cf8' }}>
+                    <div className="omni-engine-icon-wrap" style={{ background: 'rgba(99, 102, 241, 0.2)', color: 'var(--accent-primary)' }}>
                       <Code2 size={18} />
                     </div>
                     <div>
-                      <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: '#f8fafc' }}>
+                      <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>
                         Static AST Engine
                       </h4>
-                      <span style={{ fontSize: '10px', color: '#818cf8', fontWeight: 600 }}>AST / Syntax / Linter</span>
+                      <span style={{ fontSize: '10px', color: 'var(--accent-primary)', fontWeight: 600 }}>AST / Syntax / Linter</span>
                     </div>
                   </div>
                   <span className="omni-badge badge-engine engine-static">Active</span>
@@ -984,15 +984,15 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
                 <div className="omni-engine-rules-list">
                   <div className="omni-engine-rule-item">
                     <span>Promise Handling:</span>
-                    <strong style={{ color: '#a5b4fc' }}>no-floating-promises</strong>
+                    <strong style={{ color: 'var(--accent-primary)' }}>no-floating-promises</strong>
                   </div>
                   <div className="omni-engine-rule-item">
                     <span>Async Concurrency:</span>
-                    <strong style={{ color: '#a5b4fc' }}>race-condition-guard</strong>
+                    <strong style={{ color: 'var(--accent-primary)' }}>race-condition-guard</strong>
                   </div>
                   <div className="omni-engine-rule-item">
                     <span>Dead Code:</span>
-                    <strong style={{ color: '#a5b4fc' }}>unreachable-branches</strong>
+                    <strong style={{ color: 'var(--accent-primary)' }}>unreachable-branches</strong>
                   </div>
                 </div>
               </div>
@@ -1001,14 +1001,14 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
               <div className="omni-engine-card card-dynamic">
                 <div className="omni-engine-card-top">
                   <div className="omni-engine-title-group">
-                    <div className="omni-engine-icon-wrap" style={{ background: 'rgba(168, 85, 247, 0.2)', color: '#c084fc' }}>
+                    <div className="omni-engine-icon-wrap" style={{ background: 'rgba(168, 85, 247, 0.2)', color: 'var(--accent-primary)' }}>
                       <Activity size={18} />
                     </div>
                     <div>
-                      <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: '#f8fafc' }}>
+                      <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>
                         Dynamic Profiler
                       </h4>
-                      <span style={{ fontSize: '10px', color: '#c084fc', fontWeight: 600 }}>VSync / Memory / Latency</span>
+                      <span style={{ fontSize: '10px', color: 'var(--accent-primary)', fontWeight: 600 }}>VSync / Memory / Latency</span>
                     </div>
                   </div>
                   <span className="omni-badge badge-engine engine-dynamic">Hooked</span>
@@ -1019,15 +1019,15 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
                 <div className="omni-engine-rules-list">
                   <div className="omni-engine-rule-item">
                     <span>Render Frequency:</span>
-                    <strong style={{ color: '#d8b4fe' }}>24ms micro-batching</strong>
+                    <strong style={{ color: 'var(--accent-primary)' }}>24ms micro-batching</strong>
                   </div>
                   <div className="omni-engine-rule-item">
                     <span>Stream Profiling:</span>
-                    <strong style={{ color: '#d8b4fe' }}>rAF synchronization</strong>
+                    <strong style={{ color: 'var(--accent-primary)' }}>rAF synchronization</strong>
                   </div>
                   <div className="omni-engine-rule-item">
                     <span>Memory Footprint:</span>
-                    <strong style={{ color: '#d8b4fe' }}>no-listener-leaks</strong>
+                    <strong style={{ color: 'var(--accent-primary)' }}>no-listener-leaks</strong>
                   </div>
                 </div>
               </div>
@@ -1036,14 +1036,14 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
               <div className="omni-engine-card card-arch">
                 <div className="omni-engine-card-top">
                   <div className="omni-engine-title-group">
-                    <div className="omni-engine-icon-wrap" style={{ background: 'rgba(16, 185, 129, 0.2)', color: '#34d399' }}>
+                    <div className="omni-engine-icon-wrap" style={{ background: 'rgba(16, 185, 129, 0.2)', color: 'var(--accent-green)' }}>
                       <ShieldCheck size={18} />
                     </div>
                     <div>
-                      <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: '#f8fafc' }}>
+                      <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>
                         Arch Boundary Engine
                       </h4>
-                      <span style={{ fontSize: '10px', color: '#34d399', fontWeight: 600 }}>IPC / Isolation / Security</span>
+                      <span style={{ fontSize: '10px', color: 'var(--accent-green)', fontWeight: 600 }}>IPC / Isolation / Security</span>
                     </div>
                   </div>
                   <span className="omni-badge badge-engine engine-arch">Enforced</span>
@@ -1054,15 +1054,15 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
                 <div className="omni-engine-rules-list">
                   <div className="omni-engine-rule-item">
                     <span>Process Boundary:</span>
-                    <strong style={{ color: '#6ee7b7' }}>contextBridge IPC</strong>
+                    <strong style={{ color: 'var(--accent-green)' }}>contextBridge IPC</strong>
                   </div>
                   <div className="omni-engine-rule-item">
                     <span>Zero Exfiltration:</span>
-                    <strong style={{ color: '#6ee7b7' }}>safeStorage keyring</strong>
+                    <strong style={{ color: 'var(--accent-green)' }}>safeStorage keyring</strong>
                   </div>
                   <div className="omni-engine-rule-item">
                     <span>Credential Shield:</span>
-                    <strong style={{ color: '#6ee7b7' }}>no-plaintext-keys</strong>
+                    <strong style={{ color: 'var(--accent-green)' }}>no-plaintext-keys</strong>
                   </div>
                 </div>
               </div>
@@ -1071,14 +1071,14 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
               <div className="omni-engine-card card-ai">
                 <div className="omni-engine-card-top">
                   <div className="omni-engine-title-group">
-                    <div className="omni-engine-icon-wrap" style={{ background: 'rgba(236, 72, 153, 0.2)', color: '#f472b6' }}>
+                    <div className="omni-engine-icon-wrap" style={{ background: 'rgba(236, 72, 153, 0.2)', color: 'var(--accent-primary)' }}>
                       <Sparkles size={18} />
                     </div>
                     <div>
-                      <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: '#f8fafc' }}>
+                      <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>
                         AI Analyst Engine
                       </h4>
-                      <span style={{ fontSize: '10px', color: '#f472b6', fontWeight: 600 }}>Multi-Perspective Reasoning</span>
+                      <span style={{ fontSize: '10px', color: 'var(--accent-primary)', fontWeight: 600 }}>Multi-Perspective Reasoning</span>
                     </div>
                   </div>
                   <span className="omni-badge badge-engine engine-ai">Ready</span>
@@ -1089,15 +1089,15 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
                 <div className="omni-engine-rules-list">
                   <div className="omni-engine-rule-item">
                     <span>Role DEV:</span>
-                    <strong style={{ color: '#fbcfe8' }}>API contracts &amp; concurrency</strong>
+                    <strong style={{ color: 'var(--accent-primary)' }}>API contracts &amp; concurrency</strong>
                   </div>
                   <div className="omni-engine-rule-item">
                     <span>Role QA:</span>
-                    <strong style={{ color: '#fbcfe8' }}>Boundary conditions &amp; edge cases</strong>
+                    <strong style={{ color: 'var(--accent-primary)' }}>Boundary conditions &amp; edge cases</strong>
                   </div>
                   <div className="omni-engine-rule-item">
                     <span>Role PM:</span>
-                    <strong style={{ color: '#fbcfe8' }}>UX fallbacks &amp; accessibility</strong>
+                    <strong style={{ color: 'var(--accent-primary)' }}>UX fallbacks &amp; accessibility</strong>
                   </div>
                 </div>
               </div>
@@ -1113,30 +1113,30 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
               <div className="omni-metrics-hero">
                 <div className="omni-metric-tile">
                   <span className="omni-metric-tile-title">Health Index</span>
-                  <span className="omni-metric-tile-value" style={{ color: healthScore >= 80 ? '#34d399' : '#fbbf24' }}>
+                  <span className="omni-metric-tile-value" style={{ color: healthScore >= 80 ? 'var(--accent-green)' : 'var(--accent-amber)' }}>
                     {healthScore}%
                   </span>
-                  <span style={{ fontSize: '11px', color: '#64748b' }}>
+                  <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
                     Grade {healthGrade.letter} ({healthGrade.label})
                   </span>
                 </div>
 
                 <div className="omni-metric-tile">
                   <span className="omni-metric-tile-title">Total Monitored Files</span>
-                  <span className="omni-metric-tile-value" style={{ color: '#818cf8' }}>
+                  <span className="omni-metric-tile-value" style={{ color: 'var(--accent-primary)' }}>
                     {fileNodes.length}
                   </span>
-                  <span style={{ fontSize: '11px', color: '#64748b' }}>
+                  <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
                     {fileNodes.filter((f) => f.count > 0).length} files have active findings
                   </span>
                 </div>
 
                 <div className="omni-metric-tile">
                   <span className="omni-metric-tile-title">Remediations Applied</span>
-                  <span className="omni-metric-tile-value" style={{ color: '#34d399' }}>
+                  <span className="omni-metric-tile-value" style={{ color: 'var(--accent-green)' }}>
                     {Object.keys(fixedIds).length}
                   </span>
-                  <span style={{ fontSize: '11px', color: '#64748b' }}>
+                  <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
                     Interactive 1-click fixes applied this session
                   </span>
                 </div>
@@ -1145,55 +1145,55 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
               {/* Role-Specific Readiness Bars */}
               <div
                 style={{
-                  background: 'rgba(15, 23, 42, 0.7)',
+                  background: 'var(--surface-2)',
                   borderRadius: '10px',
-                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                  border: '1px solid var(--border-subtle)',
                   padding: '16px',
                   display: 'flex',
                   flexDirection: 'column',
                   gap: '12px'
                 }}
               >
-                <h4 style={{ margin: 0, fontSize: '13px', fontWeight: 700, color: '#f8fafc' }}>
+                <h4 style={{ margin: 0, fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>
                   Perspective Readiness Breakdown
                 </h4>
 
                 {/* DEV */}
                 <div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11.5px', marginBottom: '4px' }}>
-                    <span style={{ color: '#818cf8', fontWeight: 600 }}>Developer (DEV) Readiness</span>
-                    <span style={{ color: '#94a3b8' }}>
+                    <span style={{ color: 'var(--accent-primary)', fontWeight: 600 }}>Developer (DEV) Readiness</span>
+                    <span style={{ color: 'var(--text-muted)' }}>
                       {analysisResults.filter((r) => r.role === 'dev').length} issues
                     </span>
                   </div>
-                  <div style={{ height: '6px', borderRadius: '3px', background: 'rgba(255, 255, 255, 0.06)', overflow: 'hidden' }}>
-                    <div style={{ height: '100%', width: '82%', background: '#6366f1' }} />
+                  <div style={{ height: '6px', borderRadius: '3px', background: 'var(--surface-2)', overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: '82%', background: 'var(--accent-primary)' }} />
                   </div>
                 </div>
 
                 {/* QA */}
                 <div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11.5px', marginBottom: '4px' }}>
-                    <span style={{ color: '#f59e0b', fontWeight: 600 }}>Quality Assurance (QA) Coverage</span>
-                    <span style={{ color: '#94a3b8' }}>
+                    <span style={{ color: 'var(--accent-amber)', fontWeight: 600 }}>Quality Assurance (QA) Coverage</span>
+                    <span style={{ color: 'var(--text-muted)' }}>
                       {analysisResults.filter((r) => r.role === 'qa').length} issues
                     </span>
                   </div>
-                  <div style={{ height: '6px', borderRadius: '3px', background: 'rgba(255, 255, 255, 0.06)', overflow: 'hidden' }}>
-                    <div style={{ height: '100%', width: '74%', background: '#f59e0b' }} />
+                  <div style={{ height: '6px', borderRadius: '3px', background: 'var(--surface-2)', overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: '74%', background: 'var(--accent-amber)' }} />
                   </div>
                 </div>
 
                 {/* PM */}
                 <div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11.5px', marginBottom: '4px' }}>
-                    <span style={{ color: '#a855f7', fontWeight: 600 }}>Product Experience (PM) Quality</span>
-                    <span style={{ color: '#94a3b8' }}>
+                    <span style={{ color: 'var(--accent-primary)', fontWeight: 600 }}>Product Experience (PM) Quality</span>
+                    <span style={{ color: 'var(--text-muted)' }}>
                       {analysisResults.filter((r) => r.role === 'pm').length} issues
                     </span>
                   </div>
-                  <div style={{ height: '6px', borderRadius: '3px', background: 'rgba(255, 255, 255, 0.06)', overflow: 'hidden' }}>
-                    <div style={{ height: '100%', width: '89%', background: '#a855f7' }} />
+                  <div style={{ height: '6px', borderRadius: '3px', background: 'var(--surface-2)', overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: '89%', background: 'var(--accent-primary)' }} />
                   </div>
                 </div>
               </div>

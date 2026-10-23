@@ -1,4 +1,4 @@
-/**
+﻿/**
  * OpenCode Integration Panel (Phase 6.3)
  *
  * Full UI for OpenCode synchronization:
@@ -35,7 +35,7 @@ import type {
   OpenCodeFreeTierSummary,
   AgentFramework
 } from '../../../../shared/types/opencode-sync';
-import type { OpenCodeServiceStatusData } from '../../../../preload/types';
+import type { OpenCodeServiceStatusData, OpencodeInstallProgress } from '../../../../preload/types';
 
 export interface OpenCodeIntegrationProps {
   onSyncComplete?: () => Promise<void>;
@@ -59,6 +59,44 @@ export const OpenCodeIntegration: React.FC<OpenCodeIntegrationProps> = ({
   });
   const [actionNotice, setActionNotice] = useState<string | null>(null);
   const [errorNotice, setErrorNotice] = useState<string | null>(null);
+  const [installProgress, setInstallProgress] = useState<OpencodeInstallProgress | null>(null);
+  const isInstallingCli = Boolean(installProgress && installProgress.stage !== 'done' && installProgress.stage !== 'failed');
+
+  useEffect(() => {
+    const unsubscribe = window.electronAPI?.onOpencodeInstallProgress?.((progress: unknown) => {
+      setInstallProgress(progress as OpencodeInstallProgress);
+    });
+    return () => unsubscribe?.();
+  }, []);
+
+  const handleInstallOpenCode = async () => {
+    const api = window.electronAPI;
+    setErrorNotice(null);
+    if (!api?.opencodeInstall) {
+      setErrorNotice('Installer unavailable in this build.');
+      return;
+    }
+    setInstallProgress({ stage: 'checking', percent: 0, message: 'Starting installer...' });
+    try {
+      const res = await api.opencodeInstall();
+      if (res.success && res.data) {
+        setActionNotice(
+          res.data.alreadyInstalled
+            ? 'OpenCode CLI was already installed.'
+            : `OpenCode CLI installed at ${res.data.cliPath || 'PATH'}`
+        );
+        setTimeout(() => setActionNotice(null), 6000);
+        await scanOpenCode();
+        await onSyncComplete?.();
+      } else {
+        setErrorNotice(res.error || 'OpenCode CLI installation failed.');
+      }
+    } catch (err: unknown) {
+      setErrorNotice(err instanceof Error ? err.message : String(err));
+    } finally {
+      setInstallProgress(null);
+    }
+  };
 
   useEffect(() => {
     void scanOpenCode();
@@ -102,7 +140,7 @@ export const OpenCodeIntegration: React.FC<OpenCodeIntegrationProps> = ({
           setActionNotice(
             res.data.hostedReachable
               ? 'OpenCode standard supply verified live.'
-              : 'OpenCode standard supply host unreachable right now — retry shortly.'
+              : 'OpenCode standard supply host unreachable right now â€” retry shortly.'
           );
           setTimeout(() => setActionNotice(null), 4000);
         } else {
@@ -162,7 +200,7 @@ export const OpenCodeIntegration: React.FC<OpenCodeIntegrationProps> = ({
         display: 'flex',
         flexDirection: 'column',
         gap: '18px',
-        color: '#f8fafc'
+        color: 'var(--text-primary)'
       }}
     >
       {/* Header Banner */}
@@ -193,7 +231,7 @@ export const OpenCodeIntegration: React.FC<OpenCodeIntegrationProps> = ({
               justifyContent: 'center'
             }}
           >
-            <Code2 size={24} color="#06b6d4" />
+            <Code2 size={24} color="var(--accent-cyan)" />
           </div>
 
           <div>
@@ -208,7 +246,7 @@ export const OpenCodeIntegration: React.FC<OpenCodeIntegrationProps> = ({
                     padding: '2px 8px',
                     borderRadius: '12px',
                     background: 'rgba(16, 185, 129, 0.2)',
-                    color: '#34d399',
+                    color: 'var(--accent-green)',
                     border: '1px solid rgba(16, 185, 129, 0.4)',
                     fontSize: '11px',
                     fontWeight: 600
@@ -217,24 +255,83 @@ export const OpenCodeIntegration: React.FC<OpenCodeIntegrationProps> = ({
                   OpenCode Detected
                 </span>
               ) : (
-                <span
-                  id="badge-opencode-not-detected"
-                  style={{
-                    padding: '2px 8px',
-                    borderRadius: '12px',
-                    background: 'rgba(255, 255, 255, 0.06)',
-                    color: '#94a3b8',
-                    border: '1px solid rgba(255, 255, 255, 0.1)',
-                    fontSize: '11px'
-                  }}
-                >
-                  Not Detected in ~/.config/opencode
-                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  <span
+                    id="badge-opencode-not-detected"
+                    style={{
+                      padding: '2px 8px',
+                      borderRadius: '12px',
+                      background: 'var(--surface-3)',
+                      color: 'var(--text-muted)',
+                      border: '1px solid var(--border-subtle)',
+                      fontSize: '11px'
+                    }}
+                  >
+                    Not Detected in ~/.config/opencode
+                  </span>
+                  <button
+                    type="button"
+                    id="btn-install-opencode"
+                    disabled={isInstallingCli}
+                    onClick={() => void handleInstallOpenCode()}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '3px 10px',
+                      borderRadius: '12px',
+                      background: 'var(--accent-primary)',
+                      border: 'none',
+                      color: '#ffffff',
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      cursor: isInstallingCli ? 'wait' : 'pointer',
+                      opacity: isInstallingCli ? 0.7 : 1
+                    }}
+                  >
+                    <Download size={11} />
+                    {isInstallingCli ? `Installing (${installProgress?.percent ?? 0}%)` : 'Install CLI for me'}
+                  </button>
+                  {isInstallingCli && installProgress && (
+                    <div
+                      style={{
+                        width: '120px',
+                        height: '4px',
+                        borderRadius: '2px',
+                        background: 'var(--surface-3)',
+                        overflow: 'hidden'
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: `${installProgress.percent}%`,
+                          height: '100%',
+                          background: 'var(--accent-primary)',
+                          transition: 'width 0.2s ease'
+                        }}
+                      />
+                    </div>
+                  )}
+                  {isInstallingCli && installProgress?.message && (
+                    <span
+                      style={{
+                        fontSize: '10px',
+                        color: 'var(--text-muted)',
+                        maxWidth: '280px',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap'
+                      }}
+                    >
+                      {installProgress.message}
+                    </span>
+                  )}
+                </div>
               )}
             </div>
-            <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: '#94a3b8' }}>
+            <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: 'var(--text-muted)' }}>
               {detection?.isInstalled
-                ? `Syncing from ${detection.configPath} • ${detection.providerCount} providers • ${detection.freeModelCount} free models`
+                ? `Syncing from ${detection.configPath} â€¢ ${detection.providerCount} providers â€¢ ${detection.freeModelCount} free models`
                 : 'Connect OpenCode to automatically import all configured providers and free tier models.'}
             </p>
           </div>
@@ -253,9 +350,9 @@ export const OpenCodeIntegration: React.FC<OpenCodeIntegrationProps> = ({
               gap: '6px',
               padding: '7px 12px',
               borderRadius: '6px',
-              background: 'rgba(255, 255, 255, 0.06)',
-              border: '1px solid rgba(255, 255, 255, 0.12)',
-              color: '#cbd5e1',
+              background: 'var(--surface-2)',
+              border: '1px solid var(--border-subtle)',
+              color: 'var(--text-secondary)',
               fontSize: '12px',
               cursor: isScanning ? 'wait' : 'pointer'
             }}
@@ -275,7 +372,7 @@ export const OpenCodeIntegration: React.FC<OpenCodeIntegrationProps> = ({
               gap: '6px',
               padding: '7px 14px',
               borderRadius: '6px',
-              background: 'linear-gradient(135deg, #06b6d4 0%, #3b82f6 100%)',
+              background: 'linear-gradient(135deg, var(--accent-cyan) 0%, var(--accent-blue) 100%)',
               border: 'none',
               color: '#ffffff',
               fontSize: '12px',
@@ -306,10 +403,10 @@ export const OpenCodeIntegration: React.FC<OpenCodeIntegrationProps> = ({
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
-          <Server size={20} color="#34d399" style={{ flexShrink: 0 }} />
+          <Server size={20} color="var(--accent-green)" style={{ flexShrink: 0 }} />
           <div style={{ minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-              <span style={{ fontSize: '13px', fontWeight: 600 }}>Standard Supply — Active</span>
+              <span style={{ fontSize: '13px', fontWeight: 600 }}>Standard Supply â€” Active</span>
               <span
                 id="badge-opencode-supply-live"
                 style={{
@@ -317,15 +414,15 @@ export const OpenCodeIntegration: React.FC<OpenCodeIntegrationProps> = ({
                   borderRadius: '12px',
                   background: (serviceStatus?.hostedReachable ?? false)
                     ? 'rgba(16, 185, 129, 0.2)'
-                    : 'rgba(255, 255, 255, 0.06)',
-                  color: (serviceStatus?.hostedReachable ?? false) ? '#34d399' : '#94a3b8',
-                  border: `1px solid ${(serviceStatus?.hostedReachable ?? false) ? 'rgba(16, 185, 129, 0.4)' : 'rgba(255, 255, 255, 0.1)'}`,
+                    : 'var(--surface-2)',
+                  color: (serviceStatus?.hostedReachable ?? false) ? 'var(--accent-green)' : 'var(--text-muted)',
+                  border: `1px solid ${(serviceStatus?.hostedReachable ?? false) ? 'rgba(16, 185, 129, 0.4)' : 'var(--border-subtle)'}`,
                   fontSize: '11px',
                   fontWeight: 600
                 }}
               >
                 {(serviceStatus?.hostedReachable ?? false)
-                  ? `Zen endpoint live • ${serviceStatus?.hostedLatencyMs ?? '–'}ms`
+                  ? `Zen endpoint live â€¢ ${serviceStatus?.hostedLatencyMs ?? 'â€“'}ms`
                   : 'Zen endpoint unverified'}
               </span>
               <span
@@ -335,25 +432,25 @@ export const OpenCodeIntegration: React.FC<OpenCodeIntegrationProps> = ({
                   borderRadius: '12px',
                   background: (serviceStatus?.kiloReachable ?? false)
                     ? 'rgba(16, 185, 129, 0.2)'
-                    : 'rgba(255, 255, 255, 0.06)',
-                  color: (serviceStatus?.kiloReachable ?? false) ? '#34d399' : '#94a3b8',
-                  border: `1px solid ${(serviceStatus?.kiloReachable ?? false) ? 'rgba(16, 185, 129, 0.4)' : 'rgba(255, 255, 255, 0.1)'}`,
+                    : 'var(--surface-2)',
+                  color: (serviceStatus?.kiloReachable ?? false) ? 'var(--accent-green)' : 'var(--text-muted)',
+                  border: `1px solid ${(serviceStatus?.kiloReachable ?? false) ? 'rgba(16, 185, 129, 0.4)' : 'var(--border-subtle)'}`,
                   fontSize: '11px',
                   fontWeight: 600
                 }}
               >
                 {(serviceStatus?.kiloReachable ?? false)
-                  ? `Kilo gateway live • ${serviceStatus?.kiloLatencyMs ?? '–'}ms`
+                  ? `Kilo gateway live â€¢ ${serviceStatus?.kiloLatencyMs ?? 'â€“'}ms`
                   : 'Kilo gateway unverified'}
               </span>
-              <span style={{ fontSize: '11px', color: '#94a3b8' }}>
-                Always included • not optional
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                Always included â€¢ not optional
               </span>
             </div>
-            <p style={{ margin: '3px 0 0 0', fontSize: '11.5px', color: '#94a3b8' }}>
+            <p style={{ margin: '3px 0 0 0', fontSize: '11.5px', color: 'var(--text-muted)' }}>
               {serviceStatus
-                ? `${serviceStatus.zenModelIds.join(', ')} + OpenKilo gateway routed through the FCC orchestration backend • models in supply: ${serviceStatus.modelsInSupply}${serviceStatus.cliInstalled ? ` • local CLI adopted (${serviceStatus.cliPath})` : ''}`
-                : 'Loading standard supply status…'}
+                ? `${serviceStatus.zenModelIds.join(', ')} + OpenKilo gateway routed through the FCC orchestration backend â€¢ models in supply: ${serviceStatus.modelsInSupply}${serviceStatus.cliInstalled ? ` â€¢ local CLI adopted (${serviceStatus.cliPath})` : ''}`
+                : 'Loading standard supply statusâ€¦'}
             </p>
           </div>
         </div>
@@ -370,7 +467,7 @@ export const OpenCodeIntegration: React.FC<OpenCodeIntegrationProps> = ({
             borderRadius: '6px',
             background: 'rgba(16, 185, 129, 0.12)',
             border: '1px solid rgba(16, 185, 129, 0.35)',
-            color: '#34d399',
+            color: 'var(--accent-green)',
             fontSize: '12px',
             fontWeight: 600,
             cursor: isRefreshingSupply ? 'wait' : 'pointer',
@@ -378,7 +475,7 @@ export const OpenCodeIntegration: React.FC<OpenCodeIntegrationProps> = ({
           }}
         >
           <RotateCw size={13} className={isRefreshingSupply ? 'spinning' : ''} />
-          {isRefreshingSupply ? 'Checking…' : 'Verify Supply'}
+          {isRefreshingSupply ? 'Checkingâ€¦' : 'Verify Supply'}
         </button>
       </div>
 
@@ -390,7 +487,7 @@ export const OpenCodeIntegration: React.FC<OpenCodeIntegrationProps> = ({
             borderRadius: '6px',
             background: 'rgba(16, 185, 129, 0.15)',
             border: '1px solid rgba(16, 185, 129, 0.3)',
-            color: '#34d399',
+            color: 'var(--accent-green)',
             fontSize: '12px',
             display: 'flex',
             alignItems: 'center',
@@ -410,7 +507,7 @@ export const OpenCodeIntegration: React.FC<OpenCodeIntegrationProps> = ({
             borderRadius: '6px',
             background: 'rgba(239, 68, 68, 0.15)',
             border: '1px solid rgba(239, 68, 68, 0.3)',
-            color: '#f87171',
+            color: 'var(--accent-red)',
             fontSize: '12px',
             display: 'flex',
             alignItems: 'center',
@@ -434,16 +531,16 @@ export const OpenCodeIntegration: React.FC<OpenCodeIntegrationProps> = ({
           gap: '12px',
           padding: '16px',
           borderRadius: '8px',
-          background: 'rgba(30, 41, 59, 0.4)',
-          border: '1px solid rgba(255, 255, 255, 0.08)'
+          background: 'var(--surface-3)',
+          border: '1px solid var(--border-subtle)'
         }}
       >
         <div>
-          <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 600, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Layers size={16} color="var(--accent-primary)" />
             Default Coding Agent Framework
           </h4>
-          <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: '#94a3b8' }}>
+          <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: 'var(--text-muted)' }}>
             Choose whether Ty-Code operates using the Collaborative pair-programming engine or the Autonomous multi-agent harness.
           </p>
         </div>
@@ -456,8 +553,8 @@ export const OpenCodeIntegration: React.FC<OpenCodeIntegrationProps> = ({
             style={{
               padding: '14px',
               borderRadius: '8px',
-              border: agentFramework === 'collaborative' ? '2px solid var(--accent-primary)' : '1px solid rgba(255, 255, 255, 0.08)',
-              background: agentFramework === 'collaborative' ? 'rgba(99, 102, 241, 0.15)' : 'rgba(15, 23, 42, 0.5)',
+              border: agentFramework === 'collaborative' ? '2px solid var(--accent-primary)' : '1px solid var(--border-subtle)',
+              background: agentFramework === 'collaborative' ? 'rgba(99, 102, 241, 0.15)' : 'var(--surface-2)',
               cursor: 'pointer',
               display: 'flex',
               flexDirection: 'column',
@@ -465,10 +562,10 @@ export const OpenCodeIntegration: React.FC<OpenCodeIntegrationProps> = ({
             }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc' }}>Ty-Code Collaborative</span>
+              <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>Ty-Code Collaborative</span>
               {agentFramework === 'collaborative' && <CheckCircle2 size={16} color="var(--accent-primary)" />}
             </div>
-            <p style={{ margin: 0, fontSize: '11px', color: '#94a3b8', lineHeight: '1.5' }}>
+            <p style={{ margin: 0, fontSize: '11px', color: 'var(--text-muted)', lineHeight: '1.5' }}>
               Standard pair-programming experience with direct file edits, terminal integration, and Monaco smart diff reviews. You drive, Ty-Code assists.
             </p>
           </div>
@@ -480,8 +577,8 @@ export const OpenCodeIntegration: React.FC<OpenCodeIntegrationProps> = ({
             style={{
               padding: '14px',
               borderRadius: '8px',
-              border: agentFramework === 'autonomous' ? '2px solid #06b6d4' : '1px solid rgba(255, 255, 255, 0.08)',
-              background: agentFramework === 'autonomous' ? 'rgba(6, 182, 212, 0.15)' : 'rgba(15, 23, 42, 0.5)',
+              border: agentFramework === 'autonomous' ? '2px solid var(--accent-cyan)' : '1px solid var(--border-subtle)',
+              background: agentFramework === 'autonomous' ? 'rgba(6, 182, 212, 0.15)' : 'var(--surface-2)',
               cursor: 'pointer',
               display: 'flex',
               flexDirection: 'column',
@@ -489,10 +586,10 @@ export const OpenCodeIntegration: React.FC<OpenCodeIntegrationProps> = ({
             }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc' }}>Ty-Code Autonomous</span>
-              {agentFramework === 'autonomous' && <CheckCircle2 size={16} color="#06b6d4" />}
+              <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>Ty-Code Autonomous</span>
+              {agentFramework === 'autonomous' && <CheckCircle2 size={16} color="var(--accent-cyan)" />}
             </div>
-            <p style={{ margin: 0, fontSize: '11px', color: '#94a3b8', lineHeight: '1.5' }}>
+            <p style={{ margin: 0, fontSize: '11px', color: 'var(--text-muted)', lineHeight: '1.5' }}>
               Autonomous 3-agent harness (Build, Plan, and General agents) equipped with 10 tools and auto-compacting context. Ty-Code drives, you review.
             </p>
           </div>
@@ -510,17 +607,17 @@ export const OpenCodeIntegration: React.FC<OpenCodeIntegrationProps> = ({
           gap: '12px',
           padding: '16px',
           borderRadius: '8px',
-          background: 'rgba(30, 41, 59, 0.4)',
-          border: '1px solid rgba(255, 255, 255, 0.08)'
+          background: 'var(--surface-3)',
+          border: '1px solid var(--border-subtle)'
         }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 600, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Sparkles size={16} color="#34d399" />
+            <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Sparkles size={16} color="var(--accent-green)" />
               OpenCode Free-Tier Access &amp; Models
             </h4>
-            <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: '#94a3b8' }}>
+            <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: 'var(--text-muted)' }}>
               Automatically discovered free model endpoints configured through OpenCode.
             </p>
           </div>
@@ -531,7 +628,7 @@ export const OpenCodeIntegration: React.FC<OpenCodeIntegrationProps> = ({
                 padding: '3px 10px',
                 borderRadius: '12px',
                 background: 'rgba(16, 185, 129, 0.15)',
-                color: '#34d399',
+                color: 'var(--accent-green)',
                 fontSize: '11px',
                 fontWeight: 600
               }}
@@ -543,8 +640,8 @@ export const OpenCodeIntegration: React.FC<OpenCodeIntegrationProps> = ({
               style={{
                 padding: '3px 10px',
                 borderRadius: '12px',
-                background: 'rgba(100, 116, 139, 0.15)',
-                color: '#94a3b8',
+                background: 'var(--surface-3)',
+                color: 'var(--text-muted)',
                 fontSize: '11px',
                 fontWeight: 600
               }}
@@ -560,19 +657,19 @@ export const OpenCodeIntegration: React.FC<OpenCodeIntegrationProps> = ({
             style={{
               padding: '10px 12px',
               borderRadius: '6px',
-              background: 'rgba(15, 23, 42, 0.5)',
-              border: '1px solid rgba(255, 255, 255, 0.06)'
+              background: 'var(--surface-2)',
+              border: '1px solid var(--surface-2)'
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <span style={{ fontSize: '12px', fontWeight: 600 }}>OpenRouter Free Tier</span>
               {freeSummary?.hasOpenRouterFree ? (
-                <span style={{ color: '#34d399', fontSize: '11px', fontWeight: 600 }}>Active</span>
+                <span style={{ color: 'var(--accent-green)', fontSize: '11px', fontWeight: 600 }}>Active</span>
               ) : (
-                <span style={{ color: '#64748b', fontSize: '11px' }}>Inactive</span>
+                <span style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>Inactive</span>
               )}
             </div>
-            <span style={{ fontSize: '11px', color: '#94a3b8' }}>
+            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
               {freeSummary?.hasOpenRouterFree
                 ? `${freeSummary.openRouterFreeModels?.length || 0} free models (Gemma 4 31B, Nemotron 3, Laguna S)`
                 : 'Not detected in OpenCode config'}
@@ -584,19 +681,19 @@ export const OpenCodeIntegration: React.FC<OpenCodeIntegrationProps> = ({
             style={{
               padding: '10px 12px',
               borderRadius: '6px',
-              background: 'rgba(15, 23, 42, 0.5)',
-              border: '1px solid rgba(255, 255, 255, 0.06)'
+              background: 'var(--surface-2)',
+              border: '1px solid var(--surface-2)'
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <span style={{ fontSize: '12px', fontWeight: 600 }}>Groq Free Tier</span>
               {freeSummary?.hasGroqFree ? (
-                <span style={{ color: '#34d399', fontSize: '11px', fontWeight: 600 }}>Active</span>
+                <span style={{ color: 'var(--accent-green)', fontSize: '11px', fontWeight: 600 }}>Active</span>
               ) : (
-                <span style={{ color: '#64748b', fontSize: '11px' }}>Inactive</span>
+                <span style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>Inactive</span>
               )}
             </div>
-            <span style={{ fontSize: '11px', color: '#94a3b8' }}>
+            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
               {freeSummary?.hasGroqFree
                 ? `${freeSummary.groqFreeModels?.length || 0} models (Llama 3.3 70B Versatile, 8B Instant)`
                 : 'Not detected in OpenCode config'}
@@ -608,19 +705,19 @@ export const OpenCodeIntegration: React.FC<OpenCodeIntegrationProps> = ({
             style={{
               padding: '10px 12px',
               borderRadius: '6px',
-              background: 'rgba(15, 23, 42, 0.5)',
-              border: '1px solid rgba(255, 255, 255, 0.06)'
+              background: 'var(--surface-2)',
+              border: '1px solid var(--surface-2)'
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <span style={{ fontSize: '12px', fontWeight: 600 }}>GitHub Copilot</span>
               {freeSummary?.hasCopilotFree ? (
-                <span style={{ color: '#34d399', fontSize: '11px', fontWeight: 600 }}>Active</span>
+                <span style={{ color: 'var(--accent-green)', fontSize: '11px', fontWeight: 600 }}>Active</span>
               ) : (
-                <span style={{ color: '#64748b', fontSize: '11px' }}>Inactive</span>
+                <span style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>Inactive</span>
               )}
             </div>
-            <span style={{ fontSize: '11px', color: '#94a3b8' }}>
+            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
               {freeSummary?.hasCopilotFree
                 ? 'Free model roster depends on your Copilot plan'
                 : 'Not detected in OpenCode config'}
@@ -632,19 +729,19 @@ export const OpenCodeIntegration: React.FC<OpenCodeIntegrationProps> = ({
             style={{
               padding: '10px 12px',
               borderRadius: '6px',
-              background: 'rgba(15, 23, 42, 0.5)',
-              border: '1px solid rgba(255, 255, 255, 0.06)'
+              background: 'var(--surface-2)',
+              border: '1px solid var(--surface-2)'
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <span style={{ fontSize: '12px', fontWeight: 600 }}>Google AI Studio</span>
               {freeSummary?.hasGeminiFree ? (
-                <span style={{ color: '#34d399', fontSize: '11px', fontWeight: 600 }}>Active</span>
+                <span style={{ color: 'var(--accent-green)', fontSize: '11px', fontWeight: 600 }}>Active</span>
               ) : (
-                <span style={{ color: '#64748b', fontSize: '11px' }}>Inactive</span>
+                <span style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>Inactive</span>
               )}
             </div>
-            <span style={{ fontSize: '11px', color: '#94a3b8' }}>
+            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
               {freeSummary?.hasGeminiFree
                 ? `${freeSummary.geminiFreeModels?.length || 0} models synced from your AI Studio config`
                 : 'Not detected in OpenCode config'}
@@ -656,19 +753,19 @@ export const OpenCodeIntegration: React.FC<OpenCodeIntegrationProps> = ({
             style={{
               padding: '10px 12px',
               borderRadius: '6px',
-              background: 'rgba(15, 23, 42, 0.5)',
-              border: '1px solid rgba(255, 255, 255, 0.06)'
+              background: 'var(--surface-2)',
+              border: '1px solid var(--surface-2)'
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <span style={{ fontSize: '12px', fontWeight: 600 }}>Local Ollama</span>
               {freeSummary?.hasOllamaLocal ? (
-                <span style={{ color: '#34d399', fontSize: '11px', fontWeight: 600 }}>Active</span>
+                <span style={{ color: 'var(--accent-green)', fontSize: '11px', fontWeight: 600 }}>Active</span>
               ) : (
-                <span style={{ color: '#64748b', fontSize: '11px' }}>Inactive</span>
+                <span style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>Inactive</span>
               )}
             </div>
-            <span style={{ fontSize: '11px', color: '#94a3b8' }}>
+            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
               {freeSummary?.hasOllamaLocal
                 ? (freeSummary?.ollamaModels?.length || 0) > 0
                   ? `${freeSummary.ollamaModels.length} local models (localhost:11434)`
@@ -684,7 +781,7 @@ export const OpenCodeIntegration: React.FC<OpenCodeIntegrationProps> = ({
       {/* ============================================================ */}
       {detection?.configuredProviders && detection.configuredProviders.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          <h4 style={{ margin: 0, fontSize: '13px', fontWeight: 600, color: '#f8fafc' }}>
+          <h4 style={{ margin: 0, fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>
             Configured OpenCode Providers in Catalog
           </h4>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
@@ -694,10 +791,10 @@ export const OpenCodeIntegration: React.FC<OpenCodeIntegrationProps> = ({
                 style={{
                   padding: '4px 10px',
                   borderRadius: '6px',
-                  background: 'rgba(255, 255, 255, 0.05)',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  background: 'var(--surface-2)',
+                  border: '1px solid var(--border-subtle)',
                   fontSize: '11px',
-                  color: '#cbd5e1'
+                  color: 'var(--text-secondary)'
                 }}
               >
                 {prov}

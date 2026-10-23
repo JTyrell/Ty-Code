@@ -1,11 +1,11 @@
-/**
- * M3E Canvas — Visual Editor (M3E Canvas overhaul)
+﻿/**
+ * M3E Canvas â€” Visual Editor (M3E Canvas overhaul)
  *
  * Figma-like 3-pane editor living in the dedicated Canvas window:
- *   Left   — Component Library + Layer Tree (JSON structure of the current UI)
- *   Center — Visual Canvas (custom absolutely-positioned renderer with
+ *   Left   â€” Component Library + Layer Tree (JSON structure of the current UI)
+ *   Center â€” Visual Canvas (custom absolutely-positioned renderer with
  *            drag/resize/selection and per-platform device frames)
- *   Right  — Properties Panel for the selected node
+ *   Right  â€” Properties Panel for the selected node
  *
  * Platform changes push `activePlatform` into the shared CanvasSyncManager via
  * the canvas-store auto-sync, so the main IDE window stays in lockstep.
@@ -76,22 +76,22 @@ interface LibraryEntry {
 }
 
 const LIBRARY: LibraryEntry[] = [
-  { type: 'container', label: 'Container', color: '#8b5cf6', icon: <Square size={14} /> },
-  { type: 'card', label: 'Card', color: '#6366f1', icon: <Layers size={14} /> },
-  { type: 'button', label: 'Button', color: '#a855f7', icon: <MousePointer2 size={14} /> },
-  { type: 'text', label: 'Text', color: '#22d3ee', icon: <TypeGlyph size={14} /> },
-  { type: 'input', label: 'Input', color: '#22d3ee', icon: <Sliders size={14} /> },
-  { type: 'image', label: 'Image', color: '#f59e0b', icon: <ImageIcon size={14} /> },
-  { type: 'checkbox', label: 'Checkbox', color: '#10b981', icon: <Plus size={14} /> },
-  { type: 'switch', label: 'Switch', color: '#10b981', icon: <ToggleRight size={14} /> },
-  { type: 'progress', label: 'Progress', color: '#f472b6', icon: <Eye size={14} /> },
-  { type: 'divider', label: 'Divider', color: '#94a3b8', icon: <Box size={14} /> }
+  { type: 'container', label: 'Container', color: 'var(--accent-primary)', icon: <Square size={14} /> },
+  { type: 'card', label: 'Card', color: 'var(--accent-primary)', icon: <Layers size={14} /> },
+  { type: 'button', label: 'Button', color: 'var(--accent-primary)', icon: <MousePointer2 size={14} /> },
+  { type: 'text', label: 'Text', color: 'var(--accent-cyan)', icon: <TypeGlyph size={14} /> },
+  { type: 'input', label: 'Input', color: 'var(--accent-cyan)', icon: <Sliders size={14} /> },
+  { type: 'image', label: 'Image', color: 'var(--accent-amber)', icon: <ImageIcon size={14} /> },
+  { type: 'checkbox', label: 'Checkbox', color: 'var(--accent-green)', icon: <Plus size={14} /> },
+  { type: 'switch', label: 'Switch', color: 'var(--accent-green)', icon: <ToggleRight size={14} /> },
+  { type: 'progress', label: 'Progress', color: 'var(--accent-primary)', icon: <Eye size={14} /> },
+  { type: 'divider', label: 'Divider', color: 'var(--text-muted)', icon: <Box size={14} /> }
 ];
 
 const typeGlyphColor = (type: string): string =>
-  LIBRARY.find((entry) => entry.type === type)?.color ?? '#8b8fa3';
+  LIBRARY.find((entry) => entry.type === type)?.color ?? 'var(--text-muted)';
 
-const DEFAULT_TEXT_COLOR = '#e7eaf6';
+const DEFAULT_TEXT_COLOR = 'var(--text-primary)';
 const CANVAS_GRID_BG =
   'radial-gradient(circle, rgba(148, 163, 184, 0.12) 1px, transparent 1px)';
 
@@ -166,10 +166,10 @@ const NodeVisual: React.FC<{ node: CanvasNode }> = ({ node }) => {
             display: 'flex',
             alignItems: 'center',
             padding: `0 ${Math.max(8, padding)}px`,
-            background: 'rgba(17, 19, 24, 0.9)',
-            border: `1px solid ${checked ? '#a855f7' : 'rgba(148, 163, 184, 0.35)'}`,
+            background: 'var(--surface-2)',
+            border: `1px solid ${checked ? 'var(--accent-primary)' : 'rgba(148, 163, 184, 0.35)'}`,
             borderRadius: radius,
-            color: '#94a3b8',
+            color: 'var(--text-muted)',
             fontSize,
             overflow: 'hidden'
           }}
@@ -205,11 +205,11 @@ const NodeVisual: React.FC<{ node: CanvasNode }> = ({ node }) => {
             borderRadius: radius,
             overflow: 'hidden',
             background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.55) 0%, rgba(168, 85, 247, 0.45) 100%)',
-            border: '1px solid rgba(255, 255, 255, 0.12)',
+            border: '1px solid var(--border-subtle)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            color: '#fde68a'
+            color: 'var(--accent-amber)'
           }}
         >
           <ImageIcon size={Math.min(width, height) / 3} />
@@ -223,16 +223,16 @@ const NodeVisual: React.FC<{ node: CanvasNode }> = ({ node }) => {
               width: Math.min(height, 22),
               height: Math.min(height, 22),
               borderRadius: 6,
-              border: `1.5px solid ${checked ? '#10b981' : 'rgba(148, 163, 184, 0.55)'}`,
+              border: `1.5px solid ${checked ? 'var(--accent-green)' : 'rgba(148, 163, 184, 0.55)'}`,
               background: checked ? 'rgba(16, 185, 129, 0.25)' : 'transparent',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              color: '#34d399',
+              color: 'var(--accent-green)',
               flexShrink: 0
             }}
           >
-            {checked ? '✓' : ''}
+            {checked ? 'âœ“' : ''}
           </div>
           {str(p, 'text', '') !== '' && (
             <span style={{ color: fg, fontSize, whiteSpace: 'nowrap' }}>{label}</span>
@@ -247,7 +247,7 @@ const NodeVisual: React.FC<{ node: CanvasNode }> = ({ node }) => {
             height: '100%',
             maxWidth: Math.max(width, 46),
             borderRadius: 999,
-            background: checked ? 'rgba(16, 185, 129, 0.35)' : 'rgba(148, 163, 184, 0.25)',
+            background: checked ? 'rgba(16, 185, 129, 0.35)' : 'var(--border-default)',
             border: `1px solid ${checked ? 'rgba(16, 185, 129, 0.6)' : 'rgba(148, 163, 184, 0.4)'}`,
             display: 'flex',
             alignItems: 'center',
@@ -260,7 +260,7 @@ const NodeVisual: React.FC<{ node: CanvasNode }> = ({ node }) => {
               width: Math.max(height - 8, 16),
               height: Math.max(height - 8, 16),
               borderRadius: '50%',
-              background: checked ? '#34d399' : '#cbd5e1',
+              background: checked ? 'var(--accent-green)' : 'var(--text-secondary)',
               boxShadow: '0 1px 4px rgba(0, 0, 0, 0.4)'
             }}
           />
@@ -296,7 +296,7 @@ const NodeVisual: React.FC<{ node: CanvasNode }> = ({ node }) => {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            color: '#f3e8ff',
+            color: 'var(--accent-primary)',
             fontWeight: 700,
             fontSize: fontSize + 3
           }}
@@ -312,7 +312,7 @@ const NodeVisual: React.FC<{ node: CanvasNode }> = ({ node }) => {
             height: '100%',
             borderRadius: radius,
             background: bg,
-            border: '1px solid rgba(148, 163, 184, 0.28)',
+            border: '1px solid var(--border-default)',
             overflow: 'hidden'
           }}
         />
@@ -322,9 +322,9 @@ const NodeVisual: React.FC<{ node: CanvasNode }> = ({ node }) => {
 
 const typeDefaultBackground = (type: string): string => {
   switch (type) {
-    case 'button': return 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)';
-    case 'progress': return 'linear-gradient(90deg, #a855f7 0%, #6366f1 100%)';
-    case 'divider': return 'rgba(148, 163, 184, 0.3)';
+    case 'button': return 'linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-primary) 100%)';
+    case 'progress': return 'linear-gradient(90deg, var(--accent-primary) 0%, var(--accent-primary) 100%)';
+    case 'divider': return 'var(--border-default)';
     default: return 'rgba(139, 92, 246, 0.14)';
   }
 };
@@ -346,7 +346,7 @@ const typeDefaultPadding = (type: string): number => (type === 'input' ? 10 : 8)
 const defaultLabel = (type: string): string => {
   switch (type) {
     case 'button': return 'Get Started';
-    case 'input': return 'Placeholder…';
+    case 'input': return 'Placeholderâ€¦';
     case 'text': return 'Sample text';
     case 'checkbox': return 'Remember me';
     case 'avatar': return 'JT';
@@ -389,7 +389,7 @@ const NodeFrame: React.FC<NodeFrameProps> = ({ node, selectedId, onSelect, onDra
         width,
         height,
         cursor: 'move',
-        outline: isSelected ? '1.5px solid #c084fc' : 'none',
+        outline: isSelected ? '1.5px solid var(--accent-primary)' : 'none',
         outlineOffset: 1,
         boxShadow: isSelected ? '0 0 0 4px rgba(168, 85, 247, 0.18)' : 'none',
         borderRadius: '4px',
@@ -422,8 +422,8 @@ const NodeFrame: React.FC<NodeFrameProps> = ({ node, selectedId, onSelect, onDra
             width: 10,
             height: 10,
             borderRadius: 2,
-            background: '#c084fc',
-            border: '1.5px solid #f5f3ff',
+            background: 'var(--accent-primary)',
+            border: '1.5px solid var(--accent-primary)',
             cursor: 'nwse-resize',
             touchAction: 'none'
           }}
@@ -464,7 +464,7 @@ const LayerRow: React.FC<{
           height: 25,
           borderRadius: 5,
           cursor: 'pointer',
-          background: selectedId === node.id ? 'rgba(168, 85, 247, 0.18)' : hovered ? 'rgba(255, 255, 255, 0.05)' : 'transparent',
+          background: selectedId === node.id ? 'rgba(168, 85, 247, 0.18)' : hovered ? 'var(--surface-2)' : 'transparent',
           border: selectedId === node.id ? '1px solid rgba(168, 85, 247, 0.4)' : '1px solid transparent',
           fontSize: 10.5
         }}
@@ -476,7 +476,7 @@ const LayerRow: React.FC<{
               onToggle(node.id);
             }
           }}
-          style={{ width: 14, display: 'flex', justifyContent: 'center', color: '#94a3b8', flexShrink: 0 }}
+          style={{ width: 14, display: 'flex', justifyContent: 'center', color: 'var(--text-muted)', flexShrink: 0 }}
         >
           {hasChildren ? (isExpanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />) : null}
         </span>
@@ -485,7 +485,7 @@ const LayerRow: React.FC<{
         </span>
         <span
           style={{
-            color: selectedId === node.id ? '#e9d5ff' : '#cbd5e1',
+            color: selectedId === node.id ? 'var(--accent-primary)' : 'var(--text-secondary)',
             fontWeight: selectedId === node.id ? 600 : 400,
             overflow: 'hidden',
             textOverflow: 'ellipsis',
@@ -495,7 +495,7 @@ const LayerRow: React.FC<{
         >
           {node.name || `${node.type[0].toUpperCase()}${node.type.slice(1)}`}
         </span>
-        <span style={{ fontSize: 8.5, color: '#6b7280', flexShrink: 0 }}>#{node.id.slice(-4)}</span>
+        <span style={{ fontSize: 8.5, color: 'var(--text-secondary)', flexShrink: 0 }}>#{node.id.slice(-4)}</span>
         {hovered && (
           <button
             type="button"
@@ -507,7 +507,7 @@ const LayerRow: React.FC<{
             style={{
               background: 'transparent',
               border: 'none',
-              color: '#f87171',
+              color: 'var(--accent-red)',
               cursor: 'pointer',
               padding: 2,
               display: 'flex',
@@ -546,7 +546,7 @@ const PropRow: React.FC<{
       alignItems: 'center',
       gap: 8,
       fontSize: 10.5,
-      color: '#94a3b8'
+      color: 'var(--text-muted)'
     }}
   >
     <span style={{ width: 64, flexShrink: 0 }}>{label}</span>
@@ -557,10 +557,10 @@ const PropRow: React.FC<{
 const propInputStyle: React.CSSProperties = {
   flex: 1,
   minWidth: 0,
-  background: '#1f212a',
-  border: '1px solid #2d313d',
+  background: 'var(--bg-secondary)',
+  border: '1px solid var(--bg-tertiary)',
   borderRadius: 5,
-  color: '#e5e7eb',
+  color: 'var(--text-primary)',
   fontSize: 10.5,
   padding: '4px 7px',
   outline: 'none'
@@ -620,7 +620,7 @@ const ColorField: React.FC<ColorFieldProps> = ({ value, onChange, fallbackHex })
       <input
         style={propInputStyle}
         value={inputValue}
-        placeholder="#a855f7 | linear-gradient(...)"
+        placeholder="var(--accent-primary) | linear-gradient(...)"
         onFocus={() => {
           isUserTypingRef.current = true;
         }}
@@ -644,9 +644,9 @@ const PropertiesPanel: React.FC<PropsPanelProps> = ({ node, platform }) => {
 
   if (!node) {
     return (
-      <div style={{ padding: '18px 12px', fontSize: 10.5, color: '#6b7280', lineHeight: 1.6 }}>
-        <Sliders size={16} color="#4b5563" style={{ marginBottom: 10 }} />
-        <div style={{ fontWeight: 600, color: '#9ca3af', marginBottom: 4 }}>Properties</div>
+      <div style={{ padding: '18px 12px', fontSize: 10.5, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+        <Sliders size={16} color="var(--text-secondary)" style={{ marginBottom: 10 }} />
+        <div style={{ fontWeight: 600, color: 'var(--text-muted)', marginBottom: 4 }}>Properties</div>
         Select a node on the canvas or in the layer tree to edit its color, text, padding and layout.
       </div>
     );
@@ -670,17 +670,17 @@ const PropertiesPanel: React.FC<PropsPanelProps> = ({ node, platform }) => {
         minHeight: 0
       }}
     >
-      <div style={{ paddingBottom: 8, borderBottom: '1px solid #272a34' }}>
+      <div style={{ paddingBottom: 8, borderBottom: '1px solid var(--bg-tertiary)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <span style={{ color: typeGlyphColor(node.type) }}>
             {LIBRARY.find((entry) => entry.type === node.type)?.icon ?? <Square size={12} />}
           </span>
-          <span style={{ fontSize: 12, fontWeight: 600, color: '#f1f5f9' }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>
             {node.name || node.type}
           </span>
         </div>
-        <div style={{ fontSize: 9.5, color: '#6b7280', marginTop: 2 }}>
-          id #{node.id.slice(-8)} • {platformLabel(platform)}
+        <div style={{ fontSize: 9.5, color: 'var(--text-secondary)', marginTop: 2 }}>
+          id #{node.id.slice(-8)} â€¢ {platformLabel(platform)}
         </div>
       </div>
 
@@ -730,7 +730,7 @@ const PropertiesPanel: React.FC<PropsPanelProps> = ({ node, platform }) => {
         />
       </PropRow>
 
-      <div style={{ paddingTop: 8, borderTop: '1px solid #272a34', fontSize: 9, letterSpacing: '0.6px', color: '#6b7280' }}>
+      <div style={{ paddingTop: 8, borderTop: '1px solid var(--bg-tertiary)', fontSize: 9, letterSpacing: '0.6px', color: 'var(--text-secondary)' }}>
         LAYOUT
       </div>
       {(['x', 'y', 'width', 'height'] as const).map((key) => (
@@ -749,7 +749,7 @@ const PropertiesPanel: React.FC<PropsPanelProps> = ({ node, platform }) => {
             type="checkbox"
             checked={bool(p, 'checked')}
             onChange={(event) => updateNodeProps(node.id, { checked: event.target.checked })}
-            style={{ accentColor: '#a855f7' }}
+            style={{ accentColor: 'var(--accent-primary)' }}
           />
         </PropRow>
       ) : null}
@@ -766,7 +766,7 @@ const PropertiesPanel: React.FC<PropsPanelProps> = ({ node, platform }) => {
         </PropRow>
       ) : null}
 
-      <div style={{ paddingTop: 8, borderTop: '1px solid #272a34', fontSize: 9, letterSpacing: '0.6px', color: '#6b7280' }}>
+      <div style={{ paddingTop: 8, borderTop: '1px solid var(--bg-tertiary)', fontSize: 9, letterSpacing: '0.6px', color: 'var(--text-secondary)' }}>
         JSON
       </div>
       <pre
@@ -774,9 +774,9 @@ const PropertiesPanel: React.FC<PropsPanelProps> = ({ node, platform }) => {
           margin: 0,
           padding: 8,
           borderRadius: 6,
-          background: '#191b22',
-          border: '1px solid #272a34',
-          color: '#a5b4af',
+          background: 'var(--bg-secondary)',
+          border: '1px solid var(--bg-tertiary)',
+          color: 'var(--text-muted)',
           fontSize: 9.5,
           lineHeight: 1.45,
           overflowX: 'auto',
@@ -789,7 +789,7 @@ const PropertiesPanel: React.FC<PropsPanelProps> = ({ node, platform }) => {
             type: node.type,
             platform: node.platform,
             props: node.props,
-            ...(node.children.length > 0 ? { children: '[…]' } : {})
+            ...(node.children.length > 0 ? { children: '[â€¦]' } : {})
           },
           null,
           2
@@ -821,7 +821,7 @@ const FrameForPlatform = (platform: CanvasPlatform): FrameSpec => {
         contentPadTop: 26,
         scale: true,
         titlebar: (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 14px', fontSize: 9.5, color: '#9ca3af' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 14px', fontSize: 9.5, color: 'var(--text-muted)' }}>
             <span>9:41</span>
             <span style={{ display: 'flex', gap: 4 }}>
               <span style={{ width: 18, height: 8, borderRadius: 3, background: 'rgba(255,255,255,0.22)' }} />
@@ -841,7 +841,7 @@ const FrameForPlatform = (platform: CanvasPlatform): FrameSpec => {
             <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#ff5f57' }} />
             <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#febc2e' }} />
             <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#28c840' }} />
-            <span style={{ marginLeft: 8, fontSize: 10, color: '#9ca3af' }}>MainActivity.swift — Preview</span>
+            <span style={{ marginLeft: 8, fontSize: 10, color: 'var(--text-muted)' }}>MainActivity.swift â€” Preview</span>
           </div>
         )
       };
@@ -865,10 +865,10 @@ const FrameForPlatform = (platform: CanvasPlatform): FrameSpec => {
                 borderRadius: 999,
                 background: 'rgba(255,255,255,0.08)',
                 fontSize: 9.5,
-                color: '#9ca3af'
+                color: 'var(--text-muted)'
               }}
             >
-              localhost:3000 — preview
+              localhost:3000 â€” preview
             </span>
           </div>
         )
@@ -894,18 +894,18 @@ const LibraryPanel: React.FC<{ onAdd: (type: string) => void }> = ({ onAdd }) =>
           gap: 7,
           padding: '8px 9px',
           borderRadius: 8,
-          background: 'rgba(255, 255, 255, 0.035)',
-          border: '1px solid rgba(255, 255, 255, 0.08)',
-          color: '#e5e7eb',
+          background: 'var(--surface-2)',
+          border: '1px solid var(--border-subtle)',
+          color: 'var(--text-primary)',
           fontSize: 10.5,
           cursor: 'pointer',
           textAlign: 'left'
         }}
         onMouseEnter={(event) => {
-          event.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+          event.currentTarget.style.background = 'var(--border-subtle)';
         }}
         onMouseLeave={(event) => {
-          event.currentTarget.style.background = 'rgba(255, 255, 255, 0.035)';
+          event.currentTarget.style.background = 'var(--surface-2)';
         }}
       >
         <span style={{ color: entry.color, display: 'flex' }}>{entry.icon}</span>
@@ -1055,7 +1055,7 @@ export const M3ECanvas: React.FC = () => {
     if (!target) return;
     try {
       const { toPng } = await import('html-to-image');
-      const dataUrl = await toPng(target, { pixelRatio: 2, backgroundColor: '#0d0e12' });
+      const dataUrl = await toPng(target, { pixelRatio: 2, backgroundColor: 'var(--bg-primary)' });
       const link = document.createElement('a');
       link.download = `m3e-canvas-${activePlatform}.png`;
       link.href = dataUrl;
@@ -1074,7 +1074,7 @@ export const M3ECanvas: React.FC = () => {
       const result = await extractImageCss(file);
       setImageCss(result);
     } catch (err: unknown) {
-      console.warn('Image → CSS extraction failed:', err);
+      console.warn('Image â†’ CSS extraction failed:', err);
     } finally {
       setIsProcessingImage(false);
       if (cssFileInputRef.current) cssFileInputRef.current.value = '';
@@ -1112,7 +1112,7 @@ export const M3ECanvas: React.FC = () => {
         minWidth: 0,
         display: 'flex',
         flexDirection: 'column',
-        background: '#121316',
+        background: 'var(--bg-primary)',
         overflow: 'hidden'
       }}
     >
@@ -1126,21 +1126,21 @@ export const M3ECanvas: React.FC = () => {
           justifyContent: 'space-between',
           gap: 12,
           padding: '0 12px',
-          borderBottom: '1px solid #272a34',
-          background: '#16171d'
+          borderBottom: '1px solid var(--bg-tertiary)',
+          background: 'var(--bg-secondary)'
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-          <Braces size={14} color="#c084fc" />
+          <Braces size={14} color="var(--accent-primary)" />
           <select
             value={activePlatform}
             onChange={(event) => setPlatform(event.target.value as CanvasPlatform)}
             title="Target platform"
             style={{
-              background: '#1f212a',
+              background: 'var(--bg-secondary)',
               border: '1px solid rgba(168, 85, 247, 0.4)',
               borderRadius: 7,
-              color: '#f1f5f9',
+              color: 'var(--text-primary)',
               fontSize: 11,
               fontWeight: 600,
               padding: '5px 8px',
@@ -1155,8 +1155,8 @@ export const M3ECanvas: React.FC = () => {
               </option>
             ))}
           </select>
-          <span style={{ fontSize: 10, color: '#6b7280', whiteSpace: 'nowrap' }}>
-            {nodes.length} root{nodes.length === 1 ? '' : 's'} • {countNodes(nodes)} node{countNodes(nodes) === 1 ? '' : 's'}
+          <span style={{ fontSize: 10, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+            {nodes.length} root{nodes.length === 1 ? '' : 's'} â€¢ {countNodes(nodes)} node{countNodes(nodes) === 1 ? '' : 's'}
           </span>
         </div>
 
@@ -1165,23 +1165,23 @@ export const M3ECanvas: React.FC = () => {
             type="button"
             onClick={() => cssFileInputRef.current?.click()}
             disabled={isProcessingImage}
-            title="Extract a color palette → CSS from a picked image"
+            title="Extract a color palette â†’ CSS from a picked image"
             style={{
               display: 'flex',
               alignItems: 'center',
               gap: 5,
               padding: '6px 10px',
               borderRadius: 6,
-              background: imageCss ? 'rgba(168, 85, 247, 0.18)' : 'rgba(255, 255, 255, 0.05)',
-              border: `1px solid ${imageCss ? 'rgba(168, 85, 247, 0.45)' : 'rgba(255, 255, 255, 0.1)'}`,
-              color: '#e9d5ff',
+              background: imageCss ? 'rgba(168, 85, 247, 0.18)' : 'var(--surface-2)',
+              border: `1px solid ${imageCss ? 'rgba(168, 85, 247, 0.45)' : 'var(--border-subtle)'}`,
+              color: 'var(--accent-primary)',
               fontSize: 10.5,
               cursor: isProcessingImage ? 'wait' : 'pointer',
               whiteSpace: 'nowrap'
             }}
           >
             <Palette size={12} />
-            {isProcessingImage ? 'Extracting…' : 'Img → CSS'}
+            {isProcessingImage ? 'Extractingâ€¦' : 'Img â†’ CSS'}
           </button>
           <button
             type="button"
@@ -1193,9 +1193,9 @@ export const M3ECanvas: React.FC = () => {
               gap: 5,
               padding: '6px 10px',
               borderRadius: 6,
-              background: 'rgba(255, 255, 255, 0.05)',
-              border: '1px solid rgba(255, 255, 255, 0.1)',
-              color: '#cbd5e1',
+              background: 'var(--surface-2)',
+              border: '1px solid var(--border-subtle)',
+              color: 'var(--text-secondary)',
               fontSize: 10.5,
               cursor: 'pointer',
               whiteSpace: 'nowrap'
@@ -1221,9 +1221,9 @@ export const M3ECanvas: React.FC = () => {
               gap: 5,
               padding: '6px 10px',
               borderRadius: 6,
-              background: confirmingClear ? 'rgba(239, 68, 68, 0.2)' : 'rgba(255, 255, 255, 0.05)',
-              border: `1px solid ${confirmingClear ? 'rgba(239, 68, 68, 0.45)' : 'rgba(255, 255, 255, 0.1)'}`,
-              color: confirmingClear ? '#fca5a5' : '#cbd5e1',
+              background: confirmingClear ? 'rgba(239, 68, 68, 0.2)' : 'var(--surface-2)',
+              border: `1px solid ${confirmingClear ? 'rgba(239, 68, 68, 0.45)' : 'var(--border-subtle)'}`,
+              color: confirmingClear ? 'var(--accent-red)' : 'var(--text-secondary)',
               fontSize: 10.5,
               cursor: 'pointer',
               whiteSpace: 'nowrap'
@@ -1233,7 +1233,7 @@ export const M3ECanvas: React.FC = () => {
             {confirmingClear ? 'Confirm clear?' : 'Clear All'}
           </button>
           {!hydrated && (
-            <span style={{ fontSize: 10, color: '#10b981', whiteSpace: 'nowrap' }}>Syncing shared state…</span>
+            <span style={{ fontSize: 10, color: 'var(--accent-green)', whiteSpace: 'nowrap' }}>Syncing shared stateâ€¦</span>
           )}
         </div>
       </div>
@@ -1247,8 +1247,8 @@ export const M3ECanvas: React.FC = () => {
             flexShrink: 0,
             display: 'flex',
             flexDirection: 'column',
-            borderRight: '1px solid #272a34',
-            background: '#15161c',
+            borderRight: '1px solid var(--bg-tertiary)',
+            background: 'var(--bg-primary)',
             minHeight: 0
           }}
         >
@@ -1260,14 +1260,14 @@ export const M3ECanvas: React.FC = () => {
               alignItems: 'center',
               gap: 7,
               padding: '0 10px',
-              borderBottom: '1px solid #22252e',
+              borderBottom: '1px solid var(--bg-secondary)',
               fontSize: 10,
               fontWeight: 700,
               letterSpacing: '0.5px',
-              color: '#9ca3af'
+              color: 'var(--text-muted)'
             }}
           >
-            <Plus size={12} color="#c084fc" />
+            <Plus size={12} color="var(--accent-primary)" />
             COMPONENT LIBRARY
           </div>
           <LibraryPanel onAdd={handleAdd} />
@@ -1280,20 +1280,20 @@ export const M3ECanvas: React.FC = () => {
               alignItems: 'center',
               gap: 7,
               padding: '0 10px',
-              borderTop: '1px solid #22252e',
-              borderBottom: '1px solid #22252e',
+              borderTop: '1px solid var(--bg-secondary)',
+              borderBottom: '1px solid var(--bg-secondary)',
               fontSize: 10,
               fontWeight: 700,
               letterSpacing: '0.5px',
-              color: '#9ca3af'
+              color: 'var(--text-muted)'
             }}
           >
-            <Layers size={12} color="#c084fc" />
+            <Layers size={12} color="var(--accent-primary)" />
             LAYER TREE
           </div>
           <div style={{ flex: 1, overflowY: 'auto', padding: '6px 8px 10px', minHeight: 0 }}>
             {nodes.length === 0 ? (
-              <div style={{ fontSize: 10, color: '#6b7280', padding: '10px 4px', lineHeight: 1.6 }}>
+              <div style={{ fontSize: 10, color: 'var(--text-secondary)', padding: '10px 4px', lineHeight: 1.6 }}>
                 No layers yet.
                 <br />
                 Add components from the library above.
@@ -1325,7 +1325,7 @@ export const M3ECanvas: React.FC = () => {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            background: '#0e0f13'
+            background: 'var(--bg-primary)'
           }}
         >
           <div
@@ -1350,17 +1350,17 @@ export const M3ECanvas: React.FC = () => {
                 gap: 12,
                 padding: '26px 34px',
                 borderRadius: 14,
-                background: 'rgba(21, 22, 28, 0.85)',
+                background: 'var(--surface-2)',
                 border: '1px dashed rgba(168, 85, 247, 0.4)',
                 textAlign: 'center'
               }}
             >
-              <Box size={26} color="#c084fc" />
-              <div style={{ fontSize: 13, fontWeight: 600, color: '#e5e7eb' }}>
+              <Box size={26} color="var(--accent-primary)" />
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
                 {platformLabel(activePlatform)} canvas is empty
               </div>
-              <div style={{ fontSize: 11, color: '#8b8fa3', lineHeight: 1.6, maxWidth: 280 }}>
-                Add containers, buttons or text from the library — every change syncs to the main IDE
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.6, maxWidth: 280 }}>
+                Add containers, buttons or text from the library â€” every change syncs to the main IDE
                 window, and the shared chat can drive this canvas directly.
               </div>
               <button
@@ -1372,7 +1372,7 @@ export const M3ECanvas: React.FC = () => {
                   gap: 6,
                   padding: '7px 14px',
                   borderRadius: 8,
-                  background: '#a855f7',
+                  background: 'var(--accent-primary)',
                   border: 'none',
                   color: '#ffffff',
                   fontSize: 11,
@@ -1404,13 +1404,13 @@ export const M3ECanvas: React.FC = () => {
                   display: 'flex',
                   flexDirection: 'column',
                   borderRadius: activePlatform === 'web' ? 10 : activePlatform === 'swiftui' ? 10 : 34,
-                  background: '#0d0e12',
-                  border: '1px solid rgba(148, 163, 184, 0.25)',
+                  background: 'var(--bg-primary)',
+                  border: '1px solid var(--border-default)',
                   boxShadow: '0 18px 50px rgba(0, 0, 0, 0.55)',
                   overflow: 'hidden'
                 }}
               >
-                <div style={{ flexShrink: 0, background: 'rgba(24, 25, 30, 0.9)' }}>
+                <div style={{ flexShrink: 0, background: 'var(--surface-2)' }}>
                   {frame.titlebar}
                 </div>
                 <div
@@ -1419,7 +1419,7 @@ export const M3ECanvas: React.FC = () => {
                     flex: 1,
                     minHeight: 0,
                     paddingTop: frame.contentPadTop,
-                    backgroundColor: '#101116'
+                    backgroundColor: 'var(--bg-primary)'
                   }}
                 >
                   {nodes.map((node) => (
@@ -1437,7 +1437,7 @@ export const M3ECanvas: React.FC = () => {
             </div>
           )}
 
-          {/* Hidden image input for Img → CSS extraction */}
+          {/* Hidden image input for Img â†’ CSS extraction */}
           <input
             ref={cssFileInputRef}
             type="file"
@@ -1446,7 +1446,7 @@ export const M3ECanvas: React.FC = () => {
             style={{ display: 'none' }}
           />
 
-          {/* Image → CSS result panel */}
+          {/* Image â†’ CSS result panel */}
           {imageCss && (
             <div
               style={{
@@ -1460,22 +1460,22 @@ export const M3ECanvas: React.FC = () => {
                 flexDirection: 'column',
                 padding: 12,
                 borderRadius: 12,
-                background: 'rgba(21, 22, 28, 0.96)',
+                background: 'var(--surface-2)',
                 border: '1px solid rgba(168, 85, 247, 0.4)',
                 boxShadow: '0 16px 40px rgba(0, 0, 0, 0.5)',
                 backdropFilter: 'blur(8px)'
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                <Palette size={13} color="#c084fc" />
-                <span style={{ fontSize: 11.5, fontWeight: 700, color: '#f1f5f9', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <Palette size={13} color="var(--accent-primary)" />
+                <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--text-primary)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   CSS from {imageCss.sourceName}
                 </span>
                 <button
                   type="button"
                   onClick={() => setImageCss(null)}
                   title="Dismiss"
-                  style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', display: 'flex', padding: 2 }}
+                  style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', padding: 2 }}
                 >
                   <X size={12} />
                 </button>
@@ -1490,7 +1490,7 @@ export const M3ECanvas: React.FC = () => {
                       height: 20,
                       borderRadius: 5,
                       background: hex,
-                      border: '1px solid rgba(255, 255, 255, 0.18)',
+                      border: '1px solid var(--border-subtle)',
                       cursor: 'default'
                     }}
                   />
@@ -1504,8 +1504,8 @@ export const M3ECanvas: React.FC = () => {
                   overflow: 'auto',
                   padding: 8,
                   borderRadius: 7,
-                  background: '#14151b',
-                  border: '1px solid #272a34',
+                  background: 'var(--bg-primary)',
+                  border: '1px solid var(--bg-tertiary)',
                   color: '#9fd6c4',
                   fontSize: 9.5,
                   lineHeight: 1.5
@@ -1525,9 +1525,9 @@ export const M3ECanvas: React.FC = () => {
                     gap: 5,
                     padding: '6px 0',
                     borderRadius: 6,
-                    background: 'rgba(255, 255, 255, 0.07)',
-                    border: '1px solid rgba(255, 255, 255, 0.12)',
-                    color: copiedCss ? '#34d399' : '#e5e7eb',
+                    background: 'var(--surface-2)',
+                    border: '1px solid var(--border-subtle)',
+                    color: copiedCss ? 'var(--accent-green)' : 'var(--text-primary)',
                     fontSize: 10.5,
                     fontWeight: 600,
                     cursor: 'pointer'
@@ -1551,7 +1551,7 @@ export const M3ECanvas: React.FC = () => {
                     borderRadius: 6,
                     background: 'rgba(168, 85, 247, 0.22)',
                     border: '1px solid rgba(168, 85, 247, 0.45)',
-                    color: selectedNode ? '#e9d5ff' : '#6b7280',
+                    color: selectedNode ? 'var(--accent-primary)' : 'var(--text-secondary)',
                     fontSize: 10.5,
                     fontWeight: 600,
                     cursor: selectedNode ? 'pointer' : 'not-allowed'
@@ -1572,8 +1572,8 @@ export const M3ECanvas: React.FC = () => {
             flexShrink: 0,
             display: 'flex',
             flexDirection: 'column',
-            borderLeft: '1px solid #272a34',
-            background: '#15161c',
+            borderLeft: '1px solid var(--bg-tertiary)',
+            background: 'var(--bg-primary)',
             minHeight: 0
           }}
         >
@@ -1585,14 +1585,14 @@ export const M3ECanvas: React.FC = () => {
               alignItems: 'center',
               gap: 7,
               padding: '0 10px',
-              borderBottom: '1px solid #22252e',
+              borderBottom: '1px solid var(--bg-secondary)',
               fontSize: 10,
               fontWeight: 700,
               letterSpacing: '0.5px',
-              color: '#9ca3af'
+              color: 'var(--text-muted)'
             }}
           >
-            <Sliders size={12} color="#c084fc" />
+            <Sliders size={12} color="var(--accent-primary)" />
             PROPERTIES
             {selectedNode && (
               <button
@@ -1603,7 +1603,7 @@ export const M3ECanvas: React.FC = () => {
                   marginLeft: 'auto',
                   background: 'transparent',
                   border: 'none',
-                  color: selectedNodeId ? '#f87171' : '#6b7280',
+                  color: selectedNodeId ? 'var(--accent-red)' : 'var(--text-secondary)',
                   cursor: selectedNodeId ? 'pointer' : 'default',
                   display: 'flex',
                   padding: 2
