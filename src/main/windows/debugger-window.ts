@@ -274,7 +274,7 @@ export class DebuggerSyncManager {
       if (this.isTrustedSender && !this.isTrustedSender(event)) {
         return { success: false, error: 'Untrusted renderer frame.' };
       }
-      return { success: true, data: debuggerModelRouter.getDebuggerModelPreferences() };
+      return { success: true, data: await debuggerModelRouter.getDebuggerModelPreferences() };
     });
 
     // 7. Set Debugger Model Mode (Auto vs Manual)

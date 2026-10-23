@@ -21,6 +21,7 @@ export type DebuggerModelMode = 'auto' | 'manual';
 
 export interface DebuggerModelPreferences {
   mode: DebuggerModelMode;
+  auto: boolean;
   manualModelId?: string;
   manualProviderId?: string;
   lastActiveModel?: {
@@ -40,7 +41,8 @@ export const DEFAULT_FREE_FALLBACK: VerifiedModelConfig = {
 };
 
 let currentPreferences: DebuggerModelPreferences = {
-  mode: 'auto'
+  mode: 'auto',
+  auto: true
 };
 
 /**
@@ -79,8 +81,12 @@ export function isFreeModel(model: VerifiedModelConfig): boolean {
 /**
  * Retrieves the current Debugger model selection preferences.
  */
-export function getDebuggerModelPreferences(): DebuggerModelPreferences {
-  return { ...currentPreferences };
+export async function getDebuggerModelPreferences(): Promise<DebuggerModelPreferences> {
+  return { ...currentPreferences, auto: currentPreferences.mode === 'auto' };
+}
+
+export function getDebuggerModelPreferencesSync(): DebuggerModelPreferences {
+  return { ...currentPreferences, auto: currentPreferences.mode === 'auto' };
 }
 
 /**
@@ -94,6 +100,7 @@ export function setDebuggerModelPreferences(
   currentPreferences = {
     ...currentPreferences,
     mode,
+    auto: mode === 'auto',
     manualModelId: mode === 'manual' ? manualModelId : undefined,
     manualProviderId: mode === 'manual' ? manualProviderId : undefined
   };
@@ -133,7 +140,7 @@ export async function selectBestModelForTask(
   taskType: DebuggerTaskType,
   options?: { forceAuto?: boolean }
 ): Promise<VerifiedModelConfig> {
-  const prefs = getDebuggerModelPreferences();
+  const prefs = await getDebuggerModelPreferences();
 
   // If in Manual mode and manualModelId is selected (and not forced auto), return manual model
   if (!options?.forceAuto && prefs.mode === 'manual' && prefs.manualModelId) {
@@ -384,6 +391,7 @@ export async function selectBestModelForTask(
   }
 
   recordActiveAnalysisModel(taskType, selected);
+  console.log(`[DEBUGGER-ROUTER] Selected best model for task "${taskType}": ${selected.modelId} (${selected.providerId}) [mode=${prefs.mode}]`);
   return selected;
 }
 

@@ -8,6 +8,7 @@ import { debuggerModelRouter } from './debugger-engines/debugger-model-router';
 import type { ArchProjectReport } from './debugger-engines/arch-engine';
 import { resolveWorkerRuntimeFile } from './debugger-engines/runtime-paths';
 import type { AnalysisResult, AnalysisRole, AnalysisSeverity } from '../windows/debugger-window';
+import type { VerifiedModelConfig } from './verified-models';
 
 export type DebuggerEngineName = 'static' | 'dynamic' | 'arch';
 
@@ -196,18 +197,34 @@ export async function runFullAnalysis(
   const runId = `run-${startedAt}`;
 
   // Step 3: Model router selection for each engine/phase (Auto vs Manual)
-  const [staticModel, dynamicModel, archModel, aiModel] = await Promise.all([
-    debuggerModelRouter.selectBestModelForTask('static'),
-    debuggerModelRouter.selectBestModelForTask('dynamic'),
-    debuggerModelRouter.selectBestModelForTask('arch'),
-    debuggerModelRouter.selectBestModelForTask('ai_reasoning')
-  ]);
+  const prefs = await debuggerModelRouter.getDebuggerModelPreferences();
+  const isAuto = prefs.mode === 'auto' || prefs.auto;
+  let staticModel: VerifiedModelConfig;
+  let dynamicModel: VerifiedModelConfig;
+  let archModel: VerifiedModelConfig;
+  let aiModel: VerifiedModelConfig;
+
+  if (isAuto) {
+    [staticModel, dynamicModel, archModel, aiModel] = await Promise.all([
+      debuggerModelRouter.selectBestModelForTask('static'),
+      debuggerModelRouter.selectBestModelForTask('dynamic'),
+      debuggerModelRouter.selectBestModelForTask('arch'),
+      debuggerModelRouter.selectBestModelForTask('ai_reasoning')
+    ]);
+  } else {
+    // If Manual: Use the user-selected model for all engines.
+    const manualModel = await debuggerModelRouter.selectBestModelForTask('ai_reasoning');
+    staticModel = manualModel;
+    dynamicModel = manualModel;
+    archModel = manualModel;
+    aiModel = manualModel;
+  }
 
   // Logging requirement: report chosen model for each task phase
-  console.log(`[DEBUGGER] static analysis using model: ${staticModel.modelId} (${staticModel.providerId})`);
-  console.log(`[DEBUGGER] dynamic analysis using model: ${dynamicModel.modelId} (${dynamicModel.providerId})`);
-  console.log(`[DEBUGGER] arch analysis using model: ${archModel.modelId} (${archModel.providerId})`);
-  console.log(`[DEBUGGER] ai_reasoning analysis using model: ${aiModel.modelId} (${aiModel.providerId})`);
+  console.log(`[DEBUGGER] Static analysis using model: ${staticModel.modelId} (${staticModel.providerId})`);
+  console.log(`[DEBUGGER] Dynamic analysis using model: ${dynamicModel.modelId} (${dynamicModel.providerId})`);
+  console.log(`[DEBUGGER] Architectural analysis using model: ${archModel.modelId} (${archModel.providerId})`);
+  console.log(`[DEBUGGER] AI reasoning using model: ${aiModel.modelId} (${aiModel.providerId})`);
 
   const staticStep: Promise<WorkerOutcome<AnalysisResult[]> | WorkerFailure> = targetFile
     ? runWorkerJob<AnalysisResult[]>(

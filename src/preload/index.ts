@@ -559,6 +559,7 @@ const api: ElectronAPI = {
   getAvailableModels: () => ipcRenderer.invoke('models:get-available-models'),
   getModelAvailabilitySummary: () => ipcRenderer.invoke('models:get-availability-summary'),
   resetModelsAvailabilityCache: () => ipcRenderer.invoke('models:reset-availability-cache'),
+  updateActiveModelConfig: (config: any) => ipcRenderer.invoke('models:update-active-model-config', config),
   getCommunityKeyStatus: () => ipcRenderer.invoke('community-key:get-status'),
   onCommunityKeyStatusChanged: (callback: (data: any) => void) => {
     const listener = (_event: any, data: any) => callback(data);

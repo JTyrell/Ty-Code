@@ -28,6 +28,7 @@ import {
   Activity
 } from 'lucide-react';
 import type { AvailableModelConfig } from '../../../../preload/types';
+import { useActiveModelStore } from '../../state/active-model-store';
 
 interface DebuggerToolbarProps {
   className?: string;
@@ -159,6 +160,9 @@ export const DebuggerToolbar: React.FC<DebuggerToolbarProps> = ({ className, sty
     setMode('auto');
     setSelectedModelId(null);
     setIsOpen(false);
+    try {
+      await useActiveModelStore.getState().setAutoMode(true);
+    } catch {}
     if (window.electronAPI?.setDebuggerModelMode) {
       await window.electronAPI.setDebuggerModelMode('auto');
     }
@@ -173,6 +177,9 @@ export const DebuggerToolbar: React.FC<DebuggerToolbarProps> = ({ className, sty
       providerId: model.providerId
     });
     setIsOpen(false);
+    try {
+      await useActiveModelStore.getState().setActiveModel(model.providerId, model.modelId, model);
+    } catch {}
     if (window.electronAPI?.setDebuggerModelMode) {
       await window.electronAPI.setDebuggerModelMode('manual', model.modelId, model.providerId);
     }
@@ -239,7 +246,7 @@ export const DebuggerToolbar: React.FC<DebuggerToolbarProps> = ({ className, sty
           }}
         >
           {mode === 'auto'
-            ? '🤖 Auto (Best per task)'
+            ? '🤖 Auto (Best model per task)'
             : selectedModelObj?.name || selectedModelId || 'Select Model'}
         </span>
 
@@ -378,7 +385,7 @@ export const DebuggerToolbar: React.FC<DebuggerToolbarProps> = ({ className, sty
                 }}
               >
                 <Sparkles size={11} color={mode === 'auto' ? 'var(--accent-primary, #38bdf8)' : 'currentColor'} />
-                <span>Auto (Best per task)</span>
+                <span>Auto (Best model per task)</span>
               </button>
 
               <button

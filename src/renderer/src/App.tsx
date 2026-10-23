@@ -26,6 +26,7 @@ import { useChatStore } from './state/chat-store';
 import { useWorkspaceStore } from './state/workspace-store';
 import { useEditorNavigationStore } from './state/editor-navigation-store';
 import { useDebuggerStore } from './state/debugger-store';
+import { useActiveModelSync } from './state/active-model-store';
 import { useThemeSync } from './hooks/useThemeSync';
 
 import { Palette } from 'lucide-react';
@@ -43,6 +44,7 @@ const CodeReviewPanel = React.lazy(() => import('./components/CodeReviewPanel').
 const DiffViewer = React.lazy(() => import('./components/DiffViewer').then((m) => ({ default: m.DiffViewer })));
 
 const MainWorkbench: React.FC = () => {
+  useActiveModelSync();
   const [activityTab, setActivityTab] = useState<ActivityTab>('explorer');
   const [isQuickOpenOpen, setIsQuickOpenOpen] = useState(false);
   const [quickOpenInitialQuery, setQuickOpenInitialQuery] = useState('');

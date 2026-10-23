@@ -475,13 +475,21 @@ export class AgentEngine {
           runModel = activeModel;
           console.log(`[AGENT] Provider (failover override): ${activeProvider}, Model: ${activeModel}`);
         } else {
-          // Live active-config read: renderer selections (providers:update-
-          // active-config) land here between iterations without a task restart.
+          // Live active-config read: renderer selections (models:update-active-model-config)
+          // land here between iterations without a task restart.
+          const globalActive = typeof ProviderGateway.getActiveModel === 'function' ? ProviderGateway.getActiveModel() : null;
           const agentCfg = getActiveAgentConfig();
-          const hasLiveOverride = agentCfg.providerId && agentCfg.updatedAt > 0;
-          const rawActiveProvider = (hasLiveOverride ? agentCfg.providerId : currentSettings.activeProvider) || '';
-          const rawConfiguredModel = hasLiveOverride ? agentCfg.modelId : currentSettings.activeModel;
-          const isAutoBinding = !rawActiveProvider || rawActiveProvider === 'auto';
+          const hasLiveOverride = Boolean(
+            (globalActive && (globalActive.isAutoMode || (globalActive.providerId && globalActive.modelId))) ||
+            (agentCfg.providerId && agentCfg.updatedAt > 0)
+          );
+          const rawActiveProvider = globalActive?.isAutoMode
+            ? 'auto'
+            : (globalActive?.providerId || (hasLiveOverride ? agentCfg.providerId : currentSettings.activeProvider) || '');
+          const rawConfiguredModel = globalActive?.isAutoMode
+            ? 'Auto'
+            : (globalActive?.modelId || (hasLiveOverride ? agentCfg.modelId : currentSettings.activeModel));
+          const isAutoBinding = !rawActiveProvider || rawActiveProvider === 'auto' || globalActive?.isAutoMode;
 
           if (isAutoBinding) {
             const lastUserMessage = [...messages].reverse().find((m: any) => m.role === 'user');
@@ -579,7 +587,8 @@ export class AgentEngine {
           (calls: GatewayToolCall[]) => {
             structuredCalls.push(...calls);
           },
-          params.taskId
+          params.taskId,
+          'chat'
         );
         agentObservability.recordEvent({
           type: 'llm_call',
@@ -1014,7 +1023,7 @@ export class AgentEngine {
         // eligible provider from getVerifiedModels(), inject the hidden switch
         // instruction, and resume with the Todo state fully intact.
         const providerFailure =
-          /\[RATE_LIMITED\]|\[PROVIDER_DOWN\]|\(429\)|\(500\)|\(502\)|\(503\)|\(504\)|Maximum handoffs/i.test(message);
+          /\[RATE_LIMITED\]|\[PROVIDER_DOWN\]|\(429\)|\(500\)|\(502\)|\(503\)|\(504\)|Maximum handoffs|KEY_MISSING_ERROR|key required|unavailable/i.test(message);
         if (providerFailure && providerSwitchesUsed < MAX_PROVIDER_SWITCHES) {
           providerSwitchesUsed++;
           const failedProvider = runProvider || currentSettings.activeProvider || '';

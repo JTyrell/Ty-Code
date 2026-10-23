@@ -34,6 +34,7 @@ import {
 } from 'lucide-react';
 import { useChatStore } from '../../state/chat-store';
 import { useSettingsStore } from '../../state/settings-store';
+import { useActiveModelStore } from '../../state/active-model-store';
 import { toast } from '../../state/toast-store';
 import type {
   ModelTier,
@@ -527,6 +528,10 @@ export const ModelSelector: React.FC = () => {
     });
 
     try {
+      await useActiveModelStore.getState().setActiveModel(targetProvider, candidate.modelId);
+    } catch {}
+
+    try {
       if (window.electronAPI?.modelRouterSetPreferences) {
         await window.electronAPI.modelRouterSetPreferences({
           mode: 'manual',
@@ -556,6 +561,10 @@ export const ModelSelector: React.FC = () => {
     // Return to the "Auto" binding: FCC decides the concrete free provider/model
     // per request (free-first, key-safe handoff). No manual override left behind.
     await saveSettings({ activeModel: '', activeProvider: 'auto' });
+    try {
+      await useActiveModelStore.getState().setAutoMode(true);
+    } catch {}
+
     try {
       if (window.electronAPI?.modelRouterSetPreferences) {
         await window.electronAPI.modelRouterSetPreferences({ mode: 'auto' });

@@ -1978,6 +1978,26 @@ function registerIpcHandlers(): void {
     return { success: true };
   });
 
+  ipcMain.handle('models:update-active-model-config', async (event, config: { providerId: string; modelId: string; isAutoMode: boolean }) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      ProviderGateway.setActiveModel(config);
+      return { success: true, data: config };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('update-active-model-config', async (event, config: { providerId: string; modelId: string; isAutoMode: boolean }) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      ProviderGateway.setActiveModel(config);
+      return { success: true, data: config };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
   ipcMain.handle('community-key:get-status', async () => {
     return { success: true, data: { status: getCommunityKeyStatus() } };
   });

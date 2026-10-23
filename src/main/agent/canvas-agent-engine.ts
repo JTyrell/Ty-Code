@@ -462,9 +462,16 @@ export class CanvasAgentEngine {
     let provider = 'openrouter';
     let model = 'google/gemma-4-31b-it:free';
     try {
-      const settings = await settingsManager.getEffectiveSettings();
-      provider = (settings?.activeProvider as string) || provider;
-      model = settings?.activeModel ? String(settings.activeModel) : model;
+      const { ProviderGateway } = await import('../providers/provider-gateway');
+      const active = typeof ProviderGateway.getActiveModel === 'function' ? ProviderGateway.getActiveModel() : null;
+      if (active && (active.isAutoMode || (active.providerId && active.modelId))) {
+        provider = active.isAutoMode ? 'auto' : active.providerId;
+        model = active.isAutoMode ? 'Auto' : active.modelId;
+      } else {
+        const settings = await settingsManager.getEffectiveSettings();
+        provider = (settings?.activeProvider as string) || provider;
+        model = settings?.activeModel ? String(settings.activeModel) : model;
+      }
       if (provider === 'openkilo' && !(model.endsWith(':free') || model.endsWith('/free'))) {
         model = 'kilo-auto/free';
       }
@@ -495,7 +502,30 @@ export class CanvasAgentEngine {
       response = await this.callGateway(provider, model, messages, onToken, opts.abortSignal);
     } catch (err: unknown) {
       const error = err instanceof Error ? err.message : String(err);
-      return { ok: false, platform, error: `Canvas generation failed: ${error}` };
+      console.warn(`[CANVAS] Model ${provider}/${model} failed (${error}); falling back to free tier.`);
+      const isUnavailable = /KEY_MISSING_ERROR|key required|unavailable|429|500|502|503/i.test(error);
+      if (isUnavailable) {
+        if (onToken) {
+          try {
+            onToken(`\n*(Notice: ${provider}/${model} unavailable; falling back to Ty-Code Free)*\n\n`);
+          } catch {}
+        }
+        canvasSyncManager.pushMessage({
+          id: `canvas_fallback_${globalThis.crypto.randomUUID()}`,
+          role: 'assistant',
+          content: `⚠️ Model \`${provider}/${model}\` is unavailable. Falling back to Ty-Code Free.`,
+          timestamp: Date.now(),
+          origin: 'canvas'
+        });
+        try {
+          response = await this.callGateway('ty-code-free', 'google/gemma-4-31b-it:free', messages, onToken, opts.abortSignal);
+        } catch (fallbackErr: unknown) {
+          const fbError = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
+          return { ok: false, platform, error: `Canvas generation failed: ${fbError}` };
+        }
+      } else {
+        return { ok: false, platform, error: `Canvas generation failed: ${error}` };
+      }
     }
 
     const runnable = extractRunnableCode(response, platform);
@@ -581,7 +611,13 @@ export class CanvasAgentEngine {
           }
         : undefined,
       0,
-      abortSignal
+      abortSignal,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      'canvas'
     );
   }
 }

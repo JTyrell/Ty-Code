@@ -97,6 +97,17 @@ const SEVERITY_RANK: Record<string, number> = {
  * settings-driven with graceful openkilo/groq/qwen fallbacks.
  */
 async function resolveProviderModel(): Promise<{ provider: string; model: string }> {
+  try {
+    const active = typeof ProviderGateway.getActiveModel === 'function' ? ProviderGateway.getActiveModel() : null;
+    if (active && (active.isAutoMode || (active.providerId && active.modelId))) {
+      return {
+        provider: active.isAutoMode ? 'auto' : active.providerId,
+        model: active.isAutoMode ? 'Auto' : active.modelId
+      };
+    }
+  } catch {
+    // fall through
+  }
   const settings = await settingsManager.getEffectiveSettings();
   const rawActiveProvider = settings.activeProvider || '';
   const provider = !rawActiveProvider || rawActiveProvider === 'auto' ? 'openkilo' : rawActiveProvider;
@@ -430,14 +441,67 @@ export async function generateRoleBasedReport(
         }
       : undefined;
 
-    const responseText = await ProviderGateway.sendChatRequest(provider, model, messages, true, undefined, onToken, 0, options?.abortSignal);
+    let activeProvider = provider;
+    let activeModel = model;
+    let responseText: string;
+
+    try {
+      responseText = await ProviderGateway.sendChatRequest(
+        activeProvider,
+        activeModel,
+        messages,
+        true,
+        undefined,
+        onToken,
+        0,
+        options?.abortSignal,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        'debugger'
+      );
+    } catch (initialErr) {
+      const errMessage = initialErr instanceof Error ? initialErr.message : String(initialErr);
+      const isUnavailable = /KEY_MISSING_ERROR|key required|unavailable|429|500|502|503/i.test(errMessage);
+      if (isUnavailable) {
+        console.warn(`[AI-ANALYST] Model ${activeProvider}/${activeModel} unavailable (${errMessage}). Falling back to best available free model.`);
+        if (options?.onToken) {
+          try {
+            options.onToken(`\n*(Notice: ${activeProvider}/${activeModel} unavailable. Falling back to Ty-Code Free)*\n\n`);
+          } catch {}
+        }
+        activeProvider = 'ty-code-free';
+        activeModel = 'google/gemma-4-31b-it:free';
+        responseText = await ProviderGateway.sendChatRequest(
+          activeProvider,
+          activeModel,
+          messages,
+          true,
+          undefined,
+          onToken,
+          0,
+          options?.abortSignal,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          'debugger'
+        );
+      } else {
+        throw initialErr;
+      }
+    }
+
     const completedAt = Date.now();
     const rawText = (responseText || '').trim();
 
     if (!rawText) throw new Error('model returned an empty response');
 
     const { results, parseMode } = parseFallback(role, rawText);
-    return { role, provider, model, durationMs: completedAt - startedAt, parseMode, results, rawText };
+    return { role, provider: activeProvider, model: activeModel, durationMs: completedAt - startedAt, parseMode, results, rawText };
   } catch (error) {
     const failure = await reportGenerationFailure(role, provider, model, options ?? {}, error);
     failure.durationMs = Date.now() - startedAt;

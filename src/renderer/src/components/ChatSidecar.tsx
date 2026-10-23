@@ -27,6 +27,7 @@ import { BackgroundAgentsPanel } from './agent/BackgroundAgentsPanel';
 import { ChatInput } from './chat/ChatInput';
 import { useChatInputStore } from '../state/chat-input-store';
 import { ChatMessageItem } from './ChatMessage';
+import { ChatMessageList, type ChatMessageListHandle } from './chat/ChatMessageList';
 import type { AgentToolApproval, ChatMessage, ToolCall, ToolExecutionStatus, ChatErrorCard as ChatErrorCardType, ProviderType } from '../../../preload/types';
 
 const languages: Record<string, LanguageFn> = {
@@ -1102,9 +1103,7 @@ export const ChatSidecar: React.FC = () => {
   const [input, setInput] = useState('');
   const [sidecarTab, setSidecarTab] = useState<'chat' | 'pair'>('chat');
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const feedRef = useRef<HTMLDivElement>(null);
-  const userAtBottomRef = useRef(true);
+  const chatListRef = useRef<ChatMessageListHandle>(null);
   const { messages, isRunning, currentTaskId, currentStatus, currentThought, streamingText, pendingApproval, sendMessage, stopTask, respondToApproval, clearChat, agentMode, setAgentMode, draftPrompt, setDraftPrompt, activeErrorCard, dismissErrorCard, contextTokens, recentSessions, pendingResume, loadRecentSessions, acceptSessionResume, dismissSessionResume } = useChatStore();
   const { isPairActive, suggestions, togglePairMode, dismissSuggestion, clearSuggestions } = usePairProgrammingStore();
   const communityKeyStatus = useSettingsStore((s) => s.communityKeyStatus);
@@ -1225,16 +1224,6 @@ export const ChatSidecar: React.FC = () => {
     }
   }, [draftPrompt, setDraftPrompt]);
 
-  const handleScroll = () => {
-    const feed = feedRef.current;
-    if (feed) userAtBottomRef.current = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 60;
-  };
-  useEffect(() => {
-    if (!userAtBottomRef.current) return;
-    const frame = window.requestAnimationFrame(() => messagesEndRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' }));
-    return () => window.cancelAnimationFrame(frame);
-  }, [messages, streamingText, currentThought, currentStatus]);
-
   // Listen for mid-stream provider handoffs (FCC-3)
   useEffect(() => {
     const unsub = window.electronAPI?.onProviderHandoff?.((data) => {
@@ -1262,7 +1251,7 @@ export const ChatSidecar: React.FC = () => {
   }, []);
 
   const sendPrompt = (prompt: string, appendUserMessage = true, images?: string[], clientSentAt?: number) => {
-    userAtBottomRef.current = true;
+    chatListRef.current?.scrollToBottom();
     const h1 = clientSentAt ?? (performance.timeOrigin + performance.now());
     console.log('UI: Sending prompt', prompt, 'H1:', h1);
     void sendMessage(prompt, workspacePath, activeTab?.path, activeTab?.content, appendUserMessage, { clientSentAt: h1 }, images);
@@ -1508,134 +1497,53 @@ export const ChatSidecar: React.FC = () => {
         )}
       </div>
     ) : (
-      <div ref={feedRef} onScroll={handleScroll} className="chat-feed" aria-live="polite">
-        {groupedMessages.length === 0 && !isRunning && (
-          <div className="chat-empty-state">
-            <Sparkles size={30} color="var(--border-strong)" />
-            <strong>How can Ty-Code help you today?</strong>
-            <span>Explore your workspace, implement a feature, fix a bug, or run a test suite.</span>
-          </div>
-        )}
-
-        {!isRunning && pendingResume && !resumeArmed && (
-          <div className="session-resume-card" role="status">
-            <strong>Offer from the previous session</strong>
-            <span>
-              Mode: {pendingResume.mode} | {pendingResume.todoCount} task{pendingResume.todoCount === 1 ? '' : 's'} | {describeSessionAge(pendingResume.updatedAt)}
-            </span>
-            <div className="session-resume-actions">
-              <button type="button" className="session-resume-confirm" onClick={() => { setResumeArmed(true); acceptSessionResume(pendingResume); }}>
-                Resume and continue tasks
-              </button>
-              <button type="button" className="session-resume-dismiss" onClick={() => { setResumeArmed(false); dismissSessionResume(); }}>
-                Ignore
-              </button>
-            </div>
-            <span className="session-resume-note">Your next message resumes this session; tasks and iteration progress are restored from disk.</span>
-          </div>
-        )}
-
-        {groupedMessages.map((message) => {
-          const isLastAssistant = message.id === lastAssistantId;
-          const isStreaming = isLastAssistant && (message.isStreaming ?? isRunning);
-          return (
-            <ChatMessageItem
-              key={message.id}
-              message={message}
-              isLastAssistant={isLastAssistant}
-              isRunning={isRunning}
-              isStreaming={isStreaming}
-              currentStatus={currentStatus}
-              contextTokens={contextTokens}
-              onRegenerate={handleRegenerate}
-              onInspectDiff={openDiffReview}
-              onApplyDiff={(diff) => void applyDiff(diff)}
-              onRetryError={handleRegenerate}
-            />
-          );
-        })}
-
-        {pendingApproval && pendingApproval.approvalKind === 'plan_review' && (
-          <PlanReviewCard
-            approval={pendingApproval}
-            sending={approvalSending}
-            onApprove={async () => {
-              setApprovalSending(true);
-              try {
-                await respondToApproval(true);
-              } finally {
-                setApprovalSending(false);
-              }
-            }}
-            onRevise={async (feedback) => {
-              setApprovalSending(true);
-              try {
-                await respondToApproval(false, feedback);
-              } finally {
-                setApprovalSending(false);
-              }
-            }}
-          />
-        )}
-
-        {pendingApproval && pendingApproval.approvalKind !== 'plan_review' && (
-          <article className="agent-approval" role="alert" aria-labelledby="agent-approval-title">
-            <div className="agent-approval-heading">
-              <ShieldCheck size={15} />
-              <div>
-                <strong id="agent-approval-title">Approval required</strong>
-                <span>{pendingApproval.reason}</span>
-              </div>
-            </div>
-            <div className="agent-approval-tool">
-              <strong>{pendingApproval.toolCall.name}</strong>
-              <pre>{JSON.stringify(pendingApproval.toolCall.arguments, null, 2)}</pre>
-            </div>
-            {pendingApproval.reviewDiff && (
-              <details className="agent-approval-diff" open>
-                <summary>
-                  Review proposed file change ({pendingApproval.addedLines || 0} added, {pendingApproval.removedLines || 0} removed)
-                </summary>
-                <div>
-                  <strong>Before</strong>
-                  <pre>{pendingApproval.reviewDiff.originalContent || '(new file)'}</pre>
-                </div>
-                <div>
-                  <strong>After</strong>
-                  <pre>{pendingApproval.reviewDiff.proposedContent}</pre>
-                </div>
-              </details>
-            )}
-            {pendingApproval.affectedPaths && pendingApproval.affectedPaths.length > 0 && (
-              <div className="agent-approval-paths">
-                <strong>Potentially affected paths</strong>
-                <ul>
-                  {pendingApproval.affectedPaths.map((path) => (
-                    <li key={path}>{path}</li>
-                  ))}
-                </ul>
+      <ChatMessageList
+        ref={chatListRef}
+        messages={groupedMessages}
+        lastAssistantId={lastAssistantId}
+        isRunning={isRunning}
+        currentStatus={currentStatus}
+        contextTokens={contextTokens}
+        onRegenerate={handleRegenerate}
+        onInspectDiff={openDiffReview}
+        onApplyDiff={(diff) => void applyDiff(diff)}
+        onRetryError={handleRegenerate}
+        header={
+          <>
+            {groupedMessages.length === 0 && !isRunning && (
+              <div className="chat-empty-state">
+                <Sparkles size={30} color="var(--border-strong)" />
+                <strong>How can Ty-Code help you today?</strong>
+                <span>Explore your workspace, implement a feature, fix a bug, or run a test suite.</span>
               </div>
             )}
-            <div className="agent-approval-actions">
-              <button
-                className="agent-approval-decline"
-                disabled={approvalSending}
-                onClick={async () => {
-                  setApprovalSending(true);
-                  try {
-                    await respondToApproval(false);
-                  } finally {
-                    setApprovalSending(false);
-                  }
-                }}
-              >
-                <X size={12} />
-                Deny
-              </button>
-              <button
-                className="agent-approval-accept"
-                disabled={approvalSending}
-                onClick={async () => {
+
+            {!isRunning && pendingResume && !resumeArmed && (
+              <div className="session-resume-card" role="status">
+                <strong>Offer from the previous session</strong>
+                <span>
+                  Mode: {pendingResume.mode} | {pendingResume.todoCount} task{pendingResume.todoCount === 1 ? '' : 's'} | {describeSessionAge(pendingResume.updatedAt)}
+                </span>
+                <div className="session-resume-actions">
+                  <button type="button" className="session-resume-confirm" onClick={() => { setResumeArmed(true); acceptSessionResume(pendingResume); }}>
+                    Resume and continue tasks
+                  </button>
+                  <button type="button" className="session-resume-dismiss" onClick={() => { setResumeArmed(false); dismissSessionResume(); }}>
+                    Ignore
+                  </button>
+                </div>
+                <span className="session-resume-note">Your next message resumes this session; tasks and iteration progress are restored from disk.</span>
+              </div>
+            )}
+          </>
+        }
+        footer={
+          <>
+            {pendingApproval && pendingApproval.approvalKind === 'plan_review' && (
+              <PlanReviewCard
+                approval={pendingApproval}
+                sending={approvalSending}
+                onApprove={async () => {
                   setApprovalSending(true);
                   try {
                     await respondToApproval(true);
@@ -1643,50 +1551,127 @@ export const ChatSidecar: React.FC = () => {
                     setApprovalSending(false);
                   }
                 }}
-              >
-                <Check size={12} />
-                {pendingApproval.reviewDiff ? 'Apply change' : 'Approve operation'}
-              </button>
-              <button
-                className="agent-approval-accept-temp"
-                disabled={approvalSending}
-                onClick={async () => {
+                onRevise={async (feedback) => {
                   setApprovalSending(true);
                   try {
-                    await respondToApproval(true);
-                    if (pendingApproval?.toolCall?.name) {
-                      await window.electronAPI?.addApprovalRule?.({
-                        toolName: pendingApproval.toolCall.name,
-                        action: 'auto_approve',
-                        scope: 'workspace',
-                        expiresAt: Date.now() + 10 * 60 * 1000
-                      });
-                    }
+                    await respondToApproval(false, feedback);
                   } finally {
                     setApprovalSending(false);
                   }
                 }}
-              >
-                Approve for 10 min
-              </button>
-            </div>
-            <span className="agent-approval-note">
-              Nothing runs or changes until approved. Requests expire after two minutes.
-            </span>
-          </article>
-        )}
+              />
+            )}
 
-        {activeErrorCard && (
-          <div className="chat-active-error-banner" style={{ margin: '8px 0' }}>
-            <ChatErrorCard
-              errorCard={activeErrorCard}
-              onRetry={handleRegenerate}
-              onDismiss={dismissErrorCard}
-            />
-          </div>
-        )}
-        <div ref={messagesEndRef} />
-      </div>
+            {pendingApproval && pendingApproval.approvalKind !== 'plan_review' && (
+              <article className="agent-approval" role="alert" aria-labelledby="agent-approval-title">
+                <div className="agent-approval-heading">
+                  <ShieldCheck size={15} />
+                  <div>
+                    <strong id="agent-approval-title">Approval required</strong>
+                    <span>{pendingApproval.reason}</span>
+                  </div>
+                </div>
+                <div className="agent-approval-tool">
+                  <strong>{pendingApproval.toolCall.name}</strong>
+                  <pre>{JSON.stringify(pendingApproval.toolCall.arguments, null, 2)}</pre>
+                </div>
+                {pendingApproval.reviewDiff && (
+                  <details className="agent-approval-diff" open>
+                    <summary>
+                      Review proposed file change ({pendingApproval.addedLines || 0} added, {pendingApproval.removedLines || 0} removed)
+                    </summary>
+                    <div>
+                      <strong>Before</strong>
+                      <pre>{pendingApproval.reviewDiff.originalContent || '(new file)'}</pre>
+                    </div>
+                    <div>
+                      <strong>After</strong>
+                      <pre>{pendingApproval.reviewDiff.proposedContent}</pre>
+                    </div>
+                  </details>
+                )}
+                {pendingApproval.affectedPaths && pendingApproval.affectedPaths.length > 0 && (
+                  <div className="agent-approval-paths">
+                    <strong>Potentially affected paths</strong>
+                    <ul>
+                      {pendingApproval.affectedPaths.map((path) => (
+                        <li key={path}>{path}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                <div className="agent-approval-actions">
+                  <button
+                    className="agent-approval-decline"
+                    disabled={approvalSending}
+                    onClick={async () => {
+                      setApprovalSending(true);
+                      try {
+                        await respondToApproval(false);
+                      } finally {
+                        setApprovalSending(false);
+                      }
+                    }}
+                  >
+                    <X size={12} />
+                    Deny
+                  </button>
+                  <button
+                    className="agent-approval-accept"
+                    disabled={approvalSending}
+                    onClick={async () => {
+                      setApprovalSending(true);
+                      try {
+                        await respondToApproval(true);
+                      } finally {
+                        setApprovalSending(false);
+                      }
+                    }}
+                  >
+                    <Check size={12} />
+                    {pendingApproval.reviewDiff ? 'Apply change' : 'Approve operation'}
+                  </button>
+                  <button
+                    className="agent-approval-accept-temp"
+                    disabled={approvalSending}
+                    onClick={async () => {
+                      setApprovalSending(true);
+                      try {
+                        await respondToApproval(true);
+                        if (pendingApproval?.toolCall?.name) {
+                          await window.electronAPI?.addApprovalRule?.({
+                            toolName: pendingApproval.toolCall.name,
+                            action: 'auto_approve',
+                            scope: 'workspace',
+                            expiresAt: Date.now() + 10 * 60 * 1000
+                          });
+                        }
+                      } finally {
+                        setApprovalSending(false);
+                      }
+                    }}
+                  >
+                    Approve for 10 min
+                  </button>
+                </div>
+                <span className="agent-approval-note">
+                  Nothing runs or changes until approved. Requests expire after two minutes.
+                </span>
+              </article>
+            )}
+
+            {activeErrorCard && (
+              <div className="chat-active-error-banner" style={{ margin: '8px 0' }}>
+                <ChatErrorCard
+                  errorCard={activeErrorCard}
+                  onRetry={handleRegenerate}
+                  onDismiss={dismissErrorCard}
+                />
+              </div>
+            )}
+          </>
+        }
+      />
     )}
 
     <BackgroundAgentsPanel />

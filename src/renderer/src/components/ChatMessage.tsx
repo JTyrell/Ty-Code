@@ -547,19 +547,33 @@ export const ChatMessageItem: React.FC<ChatMessageProps> = ({
   // -------------------------------------------------------------------------
   if (isUser) {
     return (
-      <article style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', margin: '8px 0', padding: '0 4px' }}>
-        <div style={{
-          maxWidth: '88%',
-          borderRadius: '16px',
-          borderTopRightRadius: '5px',
-          background: 'linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-primary-hover) 100%)',
-          color: '#ffffff',
-          padding: '10px 14px',
-          fontSize: '12px',
-          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.18)',
-          lineHeight: 1.6,
-          userSelect: 'text'
-        }}>
+      <article
+        className="chat-message-bubble chat-message-user contain-content"
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'flex-end',
+          margin: '8px 0',
+          padding: '0 4px',
+          contain: 'content'
+        }}
+      >
+        <div
+          className="contain-content"
+          style={{
+            maxWidth: '88%',
+            borderRadius: '16px',
+            borderTopRightRadius: '5px',
+            background: 'linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-primary-hover) 100%)',
+            color: '#ffffff',
+            padding: '10px 14px',
+            fontSize: '12px',
+            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.18)',
+            lineHeight: 1.6,
+            userSelect: 'text',
+            contain: 'content'
+          }}
+        >
           {/* Attached images */}
           {Array.isArray(message.images) && message.images.length > 0 && (
             <div style={{ display: 'flex', gap: '8px', marginBottom: '8px', flexWrap: 'wrap' }}>
@@ -588,7 +602,19 @@ export const ChatMessageItem: React.FC<ChatMessageProps> = ({
       const snippetMatch = message.content.match(/```\n([\s\S]*?)\n```/);
       const snippet = snippetMatch ? snippetMatch[1] : '';
       return (
-        <details style={{ margin: '6px 0', maxWidth: '94%', borderRadius: '10px', border: '1px solid var(--border-subtle)', background: 'var(--surface-2)', overflow: 'hidden', fontSize: '11px' }}>
+        <details
+          className="chat-message-bubble chat-message-system contain-content"
+          style={{
+            margin: '6px 0',
+            maxWidth: '94%',
+            borderRadius: '10px',
+            border: '1px solid var(--border-subtle)',
+            background: 'var(--surface-2)',
+            overflow: 'hidden',
+            fontSize: '11px',
+            contain: 'content'
+          }}
+        >
           <summary style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 12px', cursor: 'pointer', color: 'var(--accent-primary)', fontWeight: 600, userSelect: 'none', listStyle: 'none' }}>
             <Presentation size={12} style={{ flexShrink: 0 }} />
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>M3E Canvas updated: {action}</span>
@@ -615,7 +641,16 @@ export const ChatMessageItem: React.FC<ChatMessageProps> = ({
     }
 
     return (
-      <div style={{ margin: '6px 0', display: 'flex', justifyContent: 'center', padding: '0 8px' }}>
+      <div
+        className="chat-message-bubble chat-message-system contain-content"
+        style={{
+          margin: '6px 0',
+          display: 'flex',
+          justifyContent: 'center',
+          padding: '0 8px',
+          contain: 'content'
+        }}
+      >
         <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '4px 12px', borderRadius: '999px', fontSize: '11px', fontWeight: 500, background: 'var(--surface-2)', border: '1px solid var(--border-subtle)', color: 'var(--text-muted)' }}>
           <Info size={11} />
           <span>{message.content}</span>
@@ -628,15 +663,29 @@ export const ChatMessageItem: React.FC<ChatMessageProps> = ({
   // Render: UNIFIED ASSISTANT MESSAGE
   // -------------------------------------------------------------------------
   return (
-    <article style={{ margin: '10px 0', display: 'flex', flexDirection: 'column', width: '100%', color: 'var(--text-secondary)' }}>
-      <div style={{
-        borderRadius: '16px',
-        borderBottomLeftRadius: '5px',
-        border: '1px solid var(--border-subtle)',
-        background: 'var(--bg-secondary)',
-        padding: '14px',
-        boxShadow: '0 1px 2px rgba(0, 0, 0, 0.08)'
-      }}>
+    <article
+      className="chat-message-bubble chat-message-assistant contain-content"
+      style={{
+        margin: '10px 0',
+        display: 'flex',
+        flexDirection: 'column',
+        width: '100%',
+        color: 'var(--text-secondary)',
+        contain: 'content'
+      }}
+    >
+      <div
+        className="contain-content"
+        style={{
+          borderRadius: '16px',
+          borderBottomLeftRadius: '5px',
+          border: '1px solid var(--border-subtle)',
+          background: 'var(--bg-secondary)',
+          padding: '14px',
+          boxShadow: '0 1px 2px rgba(0, 0, 0, 0.08)',
+          contain: 'content'
+        }}
+      >
         {/* Assistant Header: Avatar + Model identity & Cached/Failover indicators */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '10px', paddingBottom: '6px', borderBottom: '1px solid var(--border-subtle)', fontSize: '11px', color: 'var(--text-muted)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>

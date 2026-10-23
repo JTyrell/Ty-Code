@@ -200,24 +200,85 @@ const KILO_URL = 'https://api.kilo.ai/api/gateway/chat/completions';
 const TY_CODE_FREE_PROVIDER = 'ty-code-free';
 const TY_CODE_FREE_MODEL = 'google/gemma-4-31b-it:free';
 
+export class KeyMissingError extends Error {
+  public readonly code = 'KEY_MISSING_ERROR';
+  public readonly providerId: string;
+
+  constructor(providerId: string, message?: string) {
+    super(
+      message ||
+        `KEY_MISSING_ERROR: No API key found for provider "${providerId}". Please add your API key in Settings -> Providers.`
+    );
+    this.name = 'KeyMissingError';
+    this.providerId = providerId;
+  }
+}
+
 /**
- * Gateway-side active override (set via IPC from renderer selections).
- * sendChatRequest callers omit nothing normally; the override is only used
- * when a call arrives with a blank provider/model so the gateway still knows
- * where to route. Main-process only: no credentials are stored here.
+ * Global active model selection (Prompt 2: Fix Routing Across All Features).
+ * Controls whether routing is locked to a specific provider/model or dynamically
+ * evaluated via the adaptive router.
  */
+let currentActiveModel: { providerId: string; modelId: string; isAutoMode: boolean } = {
+  providerId: TY_CODE_FREE_PROVIDER,
+  modelId: TY_CODE_FREE_MODEL,
+  isAutoMode: true
+};
+
 let gatewayActiveOverride: { providerId: string; modelId: string } | null = null;
 
-export function setGatewayActiveConfig(providerId: string, modelId: string): { providerId: string; modelId: string } {
-  gatewayActiveOverride = {
-    providerId: (providerId || TY_CODE_FREE_PROVIDER).trim(),
-    modelId: (modelId || (gatewayActiveOverride?.providerId === providerId ? gatewayActiveOverride.modelId : TY_CODE_FREE_MODEL)).trim()
+export function setActiveModel(config: { providerId: string; modelId: string; isAutoMode: boolean }): void {
+  const p = (config?.providerId || TY_CODE_FREE_PROVIDER).trim();
+  const m = (config?.modelId || TY_CODE_FREE_MODEL).trim();
+  const isAuto = Boolean(config?.isAutoMode || p === 'auto');
+
+  currentActiveModel = {
+    providerId: isAuto ? 'auto' : p,
+    modelId: isAuto ? '' : m,
+    isAutoMode: isAuto
   };
-  return { ...gatewayActiveOverride };
+
+  gatewayActiveOverride = {
+    providerId: currentActiveModel.providerId,
+    modelId: currentActiveModel.modelId
+  };
+
+  try {
+    import('../services/orchestration/user-preferences').then(({ userPreferences }) => {
+      if (isAuto) {
+        void userPreferences.updatePreferences({
+          mode: 'auto',
+          manualProviderId: undefined,
+          manualModelId: undefined
+        });
+        console.log('[GATEWAY] Active model set to Auto (adaptive routing enabled)');
+      } else {
+        void userPreferences.updatePreferences({
+          mode: 'manual',
+          manualProviderId: p,
+          manualModelId: m
+        });
+        console.log(`[GATEWAY] Active model locked to: provider=${p}, model=${m}`);
+      }
+    }).catch(() => {});
+  } catch {}
+}
+
+export function getActiveModel(): { providerId: string; modelId: string; isAutoMode: boolean } {
+  return { ...currentActiveModel };
+}
+
+export function setGatewayActiveConfig(providerId: string, modelId: string): { providerId: string; modelId: string } {
+  setActiveModel({
+    providerId,
+    modelId,
+    isAutoMode: providerId === 'auto' || !providerId
+  });
+  return { providerId: currentActiveModel.providerId, modelId: currentActiveModel.modelId };
 }
 
 export function getGatewayActiveOverride(): { providerId: string; modelId: string } | null {
-  return gatewayActiveOverride ? { ...gatewayActiveOverride } : null;
+  return { providerId: currentActiveModel.providerId, modelId: currentActiveModel.modelId };
 }
 
 // ZeroFriction-2 One-Key Premium: premium direct providers transparently
@@ -329,17 +390,58 @@ export async function sendChatRequest(
   onReasoning?: (thought: string) => void,
   tools?: GatewayToolSchema[],
   onToolCalls?: (calls: GatewayToolCall[]) => void,
-  taskId?: string
+  taskId?: string,
+  context?: 'chat' | 'debugger' | 'canvas' | string
 ): Promise<string> {
   const currentTaskId = taskId || chatLatencyTracker.getActiveTaskId() || `task_${Date.now()}`;
   chatLatencyTracker.setActiveTaskId(currentTaskId);
-  // Fall back to the active selection when a caller omits provider/model so
-  // untargeted gateway calls still route to the user's chosen supply.
-  const overrideCfg = gatewayActiveOverride;
-  if (!providerId || !String(providerId).trim()) providerId = overrideCfg?.providerId || TY_CODE_FREE_PROVIDER;
-  if (!modelId || !String(modelId).trim()) {
-    modelId = overrideCfg && overrideCfg.providerId === providerId ? overrideCfg.modelId : TY_CODE_FREE_MODEL;
+
+  // Read currentActiveModel to determine routing (Prompt 2: Fix Routing)
+  const activeConfig = getActiveModel();
+  let effectiveProvider = providerId;
+  let effectiveModel = modelId;
+
+  // If isAutoMode === true (or caller passed blank / 'auto'):
+  if (activeConfig.isAutoMode || !effectiveProvider || effectiveProvider === 'auto') {
+    try {
+      const { modelRouter } = await import('../services/orchestration/model-router');
+      const userMessage = [...messages].reverse().find((m) => m?.role === 'user');
+      const promptText = typeof userMessage?.content === 'string'
+        ? userMessage.content
+        : Array.isArray(userMessage?.content)
+        ? (userMessage.content.map((c: any) => c.text || '').join(' ') || '')
+        : '';
+      const decision = await modelRouter.selectModel(promptText || 'help with code');
+      if (decision?.selectedModel) {
+        effectiveProvider = decision.selectedModel.providerId;
+        effectiveModel = decision.selectedModel.modelId;
+        console.log(`[GATEWAY][ADAPTIVE] Auto mode selected: ${effectiveProvider}/${effectiveModel} (task: ${decision.taskClassification.taskType})`);
+      }
+    } catch (routerErr) {
+      console.warn('[GATEWAY][ADAPTIVE] Auto routing selection error:', routerErr);
+      effectiveProvider = TY_CODE_FREE_PROVIDER;
+      effectiveModel = TY_CODE_FREE_MODEL;
+    }
+  } else {
+    // isAutoMode === false: lock routing to the specified providerId and modelId
+    if (handoffCount === 0 && activeConfig.providerId && activeConfig.modelId) {
+      effectiveProvider = activeConfig.providerId;
+      effectiveModel = activeConfig.modelId;
+    } else {
+      if (!effectiveProvider || effectiveProvider === 'auto' || effectiveProvider === 'current') {
+        effectiveProvider = activeConfig.providerId;
+      }
+      if (!effectiveModel || effectiveModel === 'Auto' || effectiveModel === '') {
+        effectiveModel = activeConfig.modelId;
+      }
+    }
   }
+
+  if (!effectiveProvider || !String(effectiveProvider).trim()) effectiveProvider = TY_CODE_FREE_PROVIDER;
+  if (!effectiveModel || !String(effectiveModel).trim()) effectiveModel = TY_CODE_FREE_MODEL;
+
+  providerId = effectiveProvider;
+  modelId = effectiveModel;
   const provider = providerId;
   const norm = (providerId || '').toLowerCase().trim().replace(/-free$/, '');
   const isKilo = norm === 'kilo' || norm === 'openkilo';
@@ -359,7 +461,7 @@ export async function sendChatRequest(
   }
 
   // ZeroFriction diagnosis (Prompt 3): entry logs; keys are never printed.
-  console.log(`[GATEWAY] Request received - provider: ${providerId}, model: ${modelId}`);
+  console.log(`[GATEWAY] Request received [${context || 'chat'}] - provider: ${providerId}, model: ${modelId}`);
   console.log('[GATEWAY] Checking if provider requires key...');
 
   // OpenCode Free Tier (auto-discovery): entries surfaced from the user's
@@ -628,22 +730,29 @@ export async function sendChatRequest(
           }
 
           if (!key) {
-            emitCommunityKeyStatus('degraded');
-            console.log(`[GATEWAY] ${providerId} has no key configured; falling back to anonymous OpenKilo pool`);
-            const isKiloSupported = (modelId || '').includes(':free') || (modelId || '').includes('/free');
-            const fallbackModel = isKiloSupported ? modelId : 'kilo-auto/free';
-            config = {
-              modelId: fallbackModel,
-              name: fallbackModel,
-              url: KILO_URL,
-              requiresKey: false,
-              providerId: 'openkilo'
-            };
+            throw new KeyMissingError(
+              providerId,
+              `KEY_MISSING_ERROR: No API key found for provider "${providerId}". Please add your API key in Settings -> Providers to unlock ${modelId}.`
+            );
           }
         }
       }
     }
   }
+
+  // Determine keySource for explicit logging requirement
+  let keySource: 'user_key' | 'community_key' | 'free_tier' | 'one_key_openrouter' = 'free_tier';
+  if (!config.requiresKey) {
+    keySource = 'free_tier';
+  } else if (isTyCodeFree || (key && key === getCommunityKeyCached())) {
+    keySource = 'community_key';
+  } else if (bridgeRequestModel) {
+    keySource = 'one_key_openrouter';
+  } else if (key) {
+    keySource = 'user_key';
+  }
+
+  console.log(`[GATEWAY] Routing request: provider=${providerId}, model=${modelId}, keySource=${keySource}`);
 
   // Whether the resolved key came from the Community Key card (rotating).
   const usedCommunityKey = isTyCodeFree && Boolean(key && key === getCommunityKeyCached());
@@ -739,10 +848,11 @@ export async function sendChatRequest(
   if (norm === 'anthropic' || norm === 'claude') {
     const systemMsg = formattedMessages.find((m: any) => m.role === 'system');
     const userAndAssistantMsgs = formattedMessages.filter((m: any) => m.role !== 'system');
+    const contextMaxTokens = context === 'debugger' ? 8192 : context === 'canvas' ? 4096 : 4096;
     payload = {
       model: modelId,
       messages: userAndAssistantMsgs.map((m: any) => ({ role: m.role, content: toAnthropicContent(m.content) })),
-      max_tokens: 4096,
+      max_tokens: contextMaxTokens,
       stream
     };
     if (systemMsg && systemMsg.content) {
@@ -766,7 +876,8 @@ export async function sendChatRequest(
         }
         return { role: m.role, content: m.content };
       }),
-      stream
+      stream,
+      ...(context === 'debugger' ? { max_tokens: 8192 } : {})
     };
     if (Array.isArray(tools) && tools.length > 0) {
       payload.tools = tools.map((t) => ({
@@ -1359,6 +1470,8 @@ function appendDelta(existing: string, incoming: string | undefined): string {
 
 export class ProviderGateway {
   public static sendChatRequest = sendChatRequest;
+  public static setActiveModel = setActiveModel;
+  public static getActiveModel = getActiveModel;
   public static getVerifiedModels = getVerifiedModels;
   public static router: OmniRouteRouter = omniRouteRouter;
   public static freeRegistry = freeProviderRegistry;

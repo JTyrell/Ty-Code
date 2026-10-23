@@ -1261,10 +1261,10 @@ export interface ElectronAPI {
   onDebuggerUpdate?: (callback: (data: AnalysisResultData[] | { results: AnalysisResultData[] }) => void) => () => void;
   onDebuggerStateSynced?: (callback: (state: DebuggerStateSnapshotData) => void) => () => void;
   onDebuggerAiStream?: (callback: (frame: { runId: string; role: AnalysisRole; phase: 'token' | 'done' | 'error'; chunk?: string; parseMode?: string }) => void) => () => void;
-  setDebuggerModelMode?: (mode: 'auto' | 'manual', modelId?: string, providerId?: string) => Promise<IpcResponse<{ mode: 'auto' | 'manual'; manualModelId?: string; manualProviderId?: string }>>;
-  getDebuggerModelPreferences?: () => Promise<IpcResponse<{ mode: 'auto' | 'manual'; manualModelId?: string; manualProviderId?: string; lastActiveModel?: { modelId: string; name: string; providerId: string; taskType: string } }>>;
+  setDebuggerModelMode?: (mode: 'auto' | 'manual', modelId?: string, providerId?: string) => Promise<IpcResponse<{ mode: 'auto' | 'manual'; auto?: boolean; manualModelId?: string; manualProviderId?: string }>>;
+  getDebuggerModelPreferences?: () => Promise<IpcResponse<{ mode: 'auto' | 'manual'; auto?: boolean; manualModelId?: string; manualProviderId?: string; lastActiveModel?: { modelId: string; name: string; providerId: string; taskType: string } }>>;
   getDebuggerTaskModels?: () => Promise<IpcResponse<Record<string, { modelId: string; name: string; url: string; requiresKey: boolean; providerId: string }>>>;
-  onDebuggerModelPreferencesChanged?: (callback: (prefs: { mode: 'auto' | 'manual'; manualModelId?: string; manualProviderId?: string }) => void) => () => void;
+  onDebuggerModelPreferencesChanged?: (callback: (prefs: { mode: 'auto' | 'manual'; auto?: boolean; manualModelId?: string; manualProviderId?: string }) => void) => () => void;
 
   // Phase 6.2: Seamless BYOK Interface & Key Management
   byokDetectKeys?: () => Promise<IpcResponse<DetectedApiKey[]>>;
@@ -1313,6 +1313,7 @@ export interface ElectronAPI {
   getAvailableModels?: () => Promise<IpcResponse<AvailableModelConfig[]>>;
   getModelAvailabilitySummary?: () => Promise<IpcResponse<ModelAvailabilitySummary>>;
   resetModelsAvailabilityCache?: () => Promise<IpcResponse<void>>;
+  updateActiveModelConfig?: (config: { providerId: string; modelId: string; isAutoMode: boolean }) => Promise<IpcResponse<{ providerId: string; modelId: string; isAutoMode: boolean }>>;
   getCommunityKeyStatus?: () => Promise<IpcResponse<{ status: 'active' | 'degraded' | 'missing' }>>;
   onCommunityKeyStatusChanged?: (callback: (data: { status: 'active' | 'degraded' | 'missing' }) => void) => () => void;
 
