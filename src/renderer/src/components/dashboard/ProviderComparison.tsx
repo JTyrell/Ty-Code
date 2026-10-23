@@ -75,11 +75,11 @@ export const ProviderComparison: React.FC<ProviderComparisonProps> = ({
       {/* Header and Tier Filter */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
         <div>
-          <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: '#f1f5f9', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Award size={16} color="var(--accent-primary, #38bdf8)" />
             Side-by-Side Provider Benchmark Matrix
           </h3>
-          <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#94a3b8' }}>
+          <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: 'var(--text-secondary)' }}>
             Multi-dimensional evaluation of free capacity, latency profile, and task suitability.
           </p>
         </div>
@@ -88,10 +88,10 @@ export const ProviderComparison: React.FC<ProviderComparisonProps> = ({
         <div
           style={{
             display: 'flex',
-            backgroundColor: 'rgba(255, 255, 255, 0.04)',
+            backgroundColor: 'var(--bg-tertiary)',
             borderRadius: '6px',
             padding: '2px',
-            border: '1px solid rgba(255, 255, 255, 0.08)'
+            border: '1px solid var(--border-subtle)'
           }}
         >
           {(['ALL', 'S', 'A', 'B'] as const).map((tier) => (
@@ -101,9 +101,9 @@ export const ProviderComparison: React.FC<ProviderComparisonProps> = ({
               id={tier === 'S' ? 'btn-filter-tier-s' : tier === 'A' ? 'btn-filter-tier-a' : tier === 'B' ? 'btn-filter-tier-b' : 'btn-filter-tier-all'}
               onClick={() => setFilterTier(tier)}
               style={{
-                background: filterTier === tier ? 'rgba(56, 189, 248, 0.2)' : 'transparent',
-                color: filterTier === tier ? '#38bdf8' : '#94a3b8',
-                border: filterTier === tier ? '1px solid rgba(56, 189, 248, 0.35)' : 'none',
+                background: filterTier === tier ? 'var(--surface-3)' : 'transparent',
+                color: filterTier === tier ? 'var(--accent-primary, #38bdf8)' : 'var(--text-secondary)',
+                border: filterTier === tier ? '1px solid var(--border-default)' : '1px solid transparent',
                 borderRadius: '4px',
                 padding: '4px 10px',
                 fontSize: '11px',
@@ -134,8 +134,8 @@ export const ProviderComparison: React.FC<ProviderComparisonProps> = ({
             style={{
               display: 'flex',
               flexDirection: 'column',
-              backgroundColor: 'rgba(255, 255, 255, 0.03)',
-              border: '1px solid rgba(255, 255, 255, 0.08)',
+              backgroundColor: 'var(--bg-secondary)',
+              border: '1px solid var(--border-subtle)',
               borderRadius: '10px',
               padding: '16px',
               gap: '14px',
@@ -151,19 +151,20 @@ export const ProviderComparison: React.FC<ProviderComparisonProps> = ({
                     width: '32px',
                     height: '32px',
                     borderRadius: '8px',
-                    backgroundColor: 'rgba(56, 189, 248, 0.1)',
+                    backgroundColor: 'var(--surface-2)',
                     display: 'flex',
                     alignItems: 'center',
-                    justifyContent: 'center'
+                    justifyContent: 'center',
+                    border: '1px solid var(--border-subtle)'
                   }}
                 >
-                  <Cpu size={16} color="#38bdf8" />
+                  <Cpu size={16} color="var(--accent-primary, #38bdf8)" />
                 </div>
                 <div>
-                  <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 600, color: '#f8fafc' }}>
+                  <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>
                     {item.providerName}
                   </h4>
-                  <span style={{ fontSize: '11px', color: '#64748b' }}>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                     {item.providerId}
                   </span>
                 </div>
@@ -178,65 +179,66 @@ export const ProviderComparison: React.FC<ProviderComparisonProps> = ({
                 display: 'grid',
                 gridTemplateColumns: '1fr 1fr',
                 gap: '8px',
-                backgroundColor: 'rgba(0, 0, 0, 0.2)',
+                backgroundColor: 'var(--bg-tertiary)',
                 borderRadius: '8px',
-                padding: '10px 12px'
+                padding: '10px 12px',
+                border: '1px solid var(--border-subtle)'
               }}
             >
               <div>
-                <span style={{ fontSize: '10px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                <span style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                   Free Models
                 </span>
-                <div style={{ fontSize: '13px', fontWeight: 700, color: '#f1f5f9', marginTop: '2px' }}>
+                <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)', marginTop: '2px' }}>
                   {item.freeModelCount} Models
                 </div>
               </div>
 
               <div>
-                <span style={{ fontSize: '10px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                <span style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                   Free Quota
                 </span>
-                <div style={{ fontSize: '13px', fontWeight: 700, color: '#38bdf8', marginTop: '2px' }}>
+                <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--accent-cyan, #06b6d4)', marginTop: '2px' }}>
                   {formatTokens(item.totalTokensAvailable)} /mo
                 </div>
               </div>
 
               <div>
-                <span style={{ fontSize: '10px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                <span style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                   Avg Latency
                 </span>
                 <div
                   style={{
                     fontSize: '13px',
                     fontWeight: 700,
-                    color: item.averageLatencyMs <= 150 ? '#34d399' : '#f1f5f9',
+                    color: item.averageLatencyMs <= 150 ? 'var(--accent-green, #10b981)' : 'var(--text-primary)',
                     marginTop: '2px',
                     display: 'flex',
                     alignItems: 'center',
                     gap: '4px'
                   }}
                 >
-                  <Clock size={11} color={item.averageLatencyMs > 0 && item.averageLatencyMs <= 150 ? '#34d399' : '#94a3b8'} />
+                  <Clock size={11} color={item.averageLatencyMs > 0 && item.averageLatencyMs <= 150 ? 'var(--accent-green, #10b981)' : 'var(--text-muted)'} />
                   {item.averageLatencyMs > 0 ? `${item.averageLatencyMs} ms` : 'Not measured'}
                 </div>
               </div>
 
               <div>
-                <span style={{ fontSize: '10px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                <span style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                   Success Rate
                 </span>
                 <div
                   style={{
                     fontSize: '13px',
                     fontWeight: 700,
-                    color: item.successRate >= 99 ? '#34d399' : '#fbbf24',
+                    color: item.successRate >= 99 ? 'var(--accent-green, #10b981)' : 'var(--accent-amber, #f59e0b)',
                     marginTop: '2px',
                     display: 'flex',
                     alignItems: 'center',
                     gap: '4px'
                   }}
                 >
-                  <CheckCircle2 size={11} color={item.successRate >= 99 ? '#34d399' : '#94a3b8'} />
+                  <CheckCircle2 size={11} color={item.successRate >= 99 ? 'var(--accent-green, #10b981)' : 'var(--text-muted)'} />
                   {item.successRate > 0 ? `${item.successRate}%` : 'No data'}
                 </div>
               </div>
@@ -244,18 +246,18 @@ export const ProviderComparison: React.FC<ProviderComparisonProps> = ({
 
             {/* Best For Tag */}
             <div>
-              <span style={{ fontSize: '11px', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>
+              <span style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
                 Best For:
               </span>
               <div
                 style={{
                   fontSize: '12px',
                   fontWeight: 600,
-                  color: '#e2e8f0',
-                  backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                  color: 'var(--text-primary)',
+                  backgroundColor: 'var(--surface-2)',
                   padding: '4px 8px',
                   borderRadius: '6px',
-                  border: '1px solid rgba(255, 255, 255, 0.08)'
+                  border: '1px solid var(--border-subtle)'
                 }}
               >
                 {item.bestFor}
@@ -264,10 +266,10 @@ export const ProviderComparison: React.FC<ProviderComparisonProps> = ({
 
             {/* Key Strengths */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <span style={{ fontSize: '10px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              <span style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                 Key Strengths
               </span>
-              <ul style={{ margin: 0, paddingLeft: '16px', fontSize: '11px', color: '#94a3b8', lineHeight: 1.5 }}>
+              <ul style={{ margin: 0, paddingLeft: '16px', fontSize: '11px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
                 {item.strengths.map((str, idx) => (
                   <li key={idx}>{str}</li>
                 ))}

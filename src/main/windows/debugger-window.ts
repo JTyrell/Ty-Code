@@ -39,6 +39,7 @@ export interface DebuggerStateSnapshot {
   analysisResults: AnalysisResult[];
   isPopOutMode: boolean;
   selectedRole: AnalysisRole;
+  theme?: string;
   updatedAt: number;
 }
 
@@ -58,6 +59,7 @@ export class DebuggerSyncManager {
   private analysisResults: AnalysisResult[] = [];
   private isPopOutMode = true;
   private selectedRole: AnalysisRole = 'dev';
+  private theme = 'dark';
   private updatedAt = Date.now();
   private windowResolver: (() => WebContents[]) | null = null;
   private isTrustedSender: TrustedSenderCheck | null = null;
@@ -77,6 +79,7 @@ export class DebuggerSyncManager {
       analysisResults: [...this.analysisResults],
       isPopOutMode: this.isPopOutMode,
       selectedRole: this.selectedRole,
+      theme: this.theme,
       updatedAt: this.updatedAt
     };
   }
@@ -92,6 +95,7 @@ export class DebuggerSyncManager {
     if (partial.analysisResults !== undefined) this.analysisResults = partial.analysisResults;
     if (partial.isPopOutMode !== undefined) this.isPopOutMode = partial.isPopOutMode;
     if (partial.selectedRole !== undefined) this.selectedRole = partial.selectedRole;
+    if (partial.theme !== undefined) this.theme = partial.theme;
     this.updatedAt = Date.now();
   }
 

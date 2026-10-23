@@ -210,22 +210,22 @@ export const DebuggerToolbar: React.FC<DebuggerToolbarProps> = ({ className, sty
           gap: '6px',
           padding: '4px 10px',
           borderRadius: '6px',
-          background: 'rgba(18, 21, 29, 0.95)',
-          border: '1px solid rgba(255, 255, 255, 0.12)',
-          color: 'var(--text-primary, #e2e8f0)',
+          background: 'var(--surface-2)',
+          border: '1px solid var(--border-subtle)',
+          color: 'var(--text-primary)',
           fontSize: '11px',
           fontWeight: 500,
           cursor: 'pointer',
-          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)',
+          boxShadow: 'var(--shadow-sm, 0 2px 8px rgba(0, 0, 0, 0.15))',
           transition: 'all 0.15s ease',
           outline: 'none'
         }}
         title="Omni-Debugger Intelligent Model Selector (Auto vs Manual)"
       >
         {mode === 'auto' ? (
-          <Sparkles size={12} color="#38bdf8" style={{ flexShrink: 0 }} />
+          <Sparkles size={12} color="var(--accent-primary, #38bdf8)" style={{ flexShrink: 0 }} />
         ) : (
-          <Sliders size={12} color="#818cf8" style={{ flexShrink: 0 }} />
+          <Sliders size={12} color="var(--accent-purple, #818cf8)" style={{ flexShrink: 0 }} />
         )}
 
         <span
@@ -235,7 +235,7 @@ export const DebuggerToolbar: React.FC<DebuggerToolbarProps> = ({ className, sty
             textOverflow: 'ellipsis',
             whiteSpace: 'nowrap',
             fontWeight: 600,
-            color: '#f8fafc'
+            color: 'var(--text-primary)'
           }}
         >
           {mode === 'auto'
@@ -292,7 +292,7 @@ export const DebuggerToolbar: React.FC<DebuggerToolbarProps> = ({ className, sty
               padding: '1px 5px',
               borderRadius: '3px',
               backgroundColor: 'rgba(56, 189, 248, 0.12)',
-              color: '#38bdf8',
+              color: 'var(--accent-primary, #38bdf8)',
               border: '1px solid rgba(56, 189, 248, 0.25)',
               whiteSpace: 'nowrap',
               flexShrink: 0,
@@ -308,7 +308,7 @@ export const DebuggerToolbar: React.FC<DebuggerToolbarProps> = ({ className, sty
 
         <ChevronDown
           size={11}
-          color="var(--text-muted, #94a3b8)"
+          color="var(--text-muted)"
           style={{
             flexShrink: 0,
             transform: isOpen ? 'rotate(180deg)' : 'none',
@@ -334,10 +334,10 @@ export const DebuggerToolbar: React.FC<DebuggerToolbarProps> = ({ className, sty
               boxSizing: 'border-box',
               overflowX: 'hidden',
               overflowY: 'auto',
-              background: '#161922',
-              border: '1px solid rgba(255, 255, 255, 0.12)',
+              background: 'var(--bg-secondary)',
+              border: '1px solid var(--border-default)',
               borderRadius: '8px',
-              boxShadow: '0 16px 36px rgba(0, 0, 0, 0.65)',
+              boxShadow: '0 16px 36px rgba(0, 0, 0, 0.25)',
               zIndex: 3000,
               padding: '10px',
               display: 'flex',
@@ -350,10 +350,10 @@ export const DebuggerToolbar: React.FC<DebuggerToolbarProps> = ({ className, sty
             <div
               style={{
                 display: 'flex',
-                background: 'rgba(255, 255, 255, 0.04)',
+                background: 'var(--bg-tertiary)',
                 borderRadius: '6px',
                 padding: '2px',
-                border: '1px solid rgba(255, 255, 255, 0.08)'
+                border: '1px solid var(--border-subtle)'
               }}
             >
               <button
@@ -370,14 +370,14 @@ export const DebuggerToolbar: React.FC<DebuggerToolbarProps> = ({ className, sty
                   border: 'none',
                   borderRadius: '4px',
                   background: mode === 'auto' ? 'rgba(56, 189, 248, 0.18)' : 'transparent',
-                  color: mode === 'auto' ? '#ffffff' : 'var(--text-muted, #94a3b8)',
+                  color: mode === 'auto' ? 'var(--text-primary)' : 'var(--text-muted)',
                   fontSize: '10.5px',
                   fontWeight: mode === 'auto' ? 600 : 400,
                   cursor: 'pointer',
                   transition: 'all 0.15s ease'
                 }}
               >
-                <Sparkles size={11} color={mode === 'auto' ? '#38bdf8' : 'currentColor'} />
+                <Sparkles size={11} color={mode === 'auto' ? 'var(--accent-primary, #38bdf8)' : 'currentColor'} />
                 <span>Auto (Best per task)</span>
               </button>
 
@@ -395,14 +395,14 @@ export const DebuggerToolbar: React.FC<DebuggerToolbarProps> = ({ className, sty
                   border: 'none',
                   borderRadius: '4px',
                   background: mode === 'manual' ? 'rgba(129, 140, 248, 0.18)' : 'transparent',
-                  color: mode === 'manual' ? '#ffffff' : 'var(--text-muted, #94a3b8)',
+                  color: mode === 'manual' ? 'var(--text-primary)' : 'var(--text-muted)',
                   fontSize: '10.5px',
                   fontWeight: mode === 'manual' ? 600 : 400,
                   cursor: 'pointer',
                   transition: 'all 0.15s ease'
                 }}
               >
-                <Sliders size={11} color={mode === 'manual' ? '#818cf8' : 'currentColor'} />
+                <Sliders size={11} color={mode === 'manual' ? 'var(--accent-purple, #818cf8)' : 'currentColor'} />
                 <span>Manual Choice</span>
               </button>
             </div>
@@ -416,8 +416,8 @@ export const DebuggerToolbar: React.FC<DebuggerToolbarProps> = ({ className, sty
                   gap: '8px',
                   padding: '10px',
                   borderRadius: '6px',
-                  background: 'rgba(56, 189, 248, 0.04)',
-                  border: '1px solid rgba(56, 189, 248, 0.15)'
+                  background: 'var(--surface-2)',
+                  border: '1px solid var(--border-subtle)'
                 }}
               >
                 {/* Auto Selection Banner */}
@@ -431,7 +431,7 @@ export const DebuggerToolbar: React.FC<DebuggerToolbarProps> = ({ className, sty
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <span style={{ fontSize: '12px' }}>🤖</span>
-                    <span style={{ fontSize: '11px', fontWeight: 700, color: '#f8fafc' }}>
+                    <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-primary)' }}>
                       Auto (Best model per task)
                     </span>
                   </div>
@@ -453,7 +453,7 @@ export const DebuggerToolbar: React.FC<DebuggerToolbarProps> = ({ className, sty
                 <p
                   style={{
                     fontSize: '10px',
-                    color: 'var(--text-muted, #94a3b8)',
+                    color: 'var(--text-secondary)',
                     margin: 0,
                     lineHeight: 1.45
                   }}
@@ -469,11 +469,11 @@ export const DebuggerToolbar: React.FC<DebuggerToolbarProps> = ({ className, sty
                       alignItems: 'center',
                       gap: '6px',
                       fontSize: '10px',
-                      color: '#cbd5e1'
+                      color: 'var(--text-secondary)'
                     }}
                   >
-                    <Code2 size={11} color="#38bdf8" style={{ flexShrink: 0 }} />
-                    <strong style={{ color: '#f1f5f9' }}>Static AST:</strong>
+                    <Code2 size={11} color="var(--accent-primary, #38bdf8)" style={{ flexShrink: 0 }} />
+                    <strong style={{ color: 'var(--text-primary)' }}>Static AST:</strong>
                     <span>Fast code model (Qwen 2.5 Coder Free, Llama 3.3 70B)</span>
                   </div>
 
@@ -483,11 +483,11 @@ export const DebuggerToolbar: React.FC<DebuggerToolbarProps> = ({ className, sty
                       alignItems: 'center',
                       gap: '6px',
                       fontSize: '10px',
-                      color: '#cbd5e1'
+                      color: 'var(--text-secondary)'
                     }}
                   >
-                    <Activity size={11} color="#34d399" style={{ flexShrink: 0 }} />
-                    <strong style={{ color: '#f1f5f9' }}>Dynamic Runtime:</strong>
+                    <Activity size={11} color="var(--accent-green, #34d399)" style={{ flexShrink: 0 }} />
+                    <strong style={{ color: 'var(--text-primary)' }}>Dynamic Runtime:</strong>
                     <span>Strong code understanding (DeepSeek R1 Free)</span>
                   </div>
 
@@ -497,11 +497,11 @@ export const DebuggerToolbar: React.FC<DebuggerToolbarProps> = ({ className, sty
                       alignItems: 'center',
                       gap: '6px',
                       fontSize: '10px',
-                      color: '#cbd5e1'
+                      color: 'var(--text-secondary)'
                     }}
                   >
-                    <Layers size={11} color="#a855f7" style={{ flexShrink: 0 }} />
-                    <strong style={{ color: '#f1f5f9' }}>Architectural:</strong>
+                    <Layers size={11} color="var(--accent-purple, #a855f7)" style={{ flexShrink: 0 }} />
+                    <strong style={{ color: 'var(--text-primary)' }}>Architectural:</strong>
                     <span>High-capacity reasoning (Claude 3.5 Sonnet / DeepSeek R1)</span>
                   </div>
 
@@ -511,11 +511,11 @@ export const DebuggerToolbar: React.FC<DebuggerToolbarProps> = ({ className, sty
                       alignItems: 'center',
                       gap: '6px',
                       fontSize: '10px',
-                      color: '#cbd5e1'
+                      color: 'var(--text-secondary)'
                     }}
                   >
-                    <Sparkles size={11} color="#fbbf24" style={{ flexShrink: 0 }} />
-                    <strong style={{ color: '#f1f5f9' }}>AI Reasoning:</strong>
+                    <Sparkles size={11} color="var(--accent-amber, #fbbf24)" style={{ flexShrink: 0 }} />
+                    <strong style={{ color: 'var(--text-primary)' }}>AI Reasoning:</strong>
                     <span>Best available based on keys (Claude &gt; GPT-4o &gt; Free tier)</span>
                   </div>
                 </div>
@@ -531,7 +531,7 @@ export const DebuggerToolbar: React.FC<DebuggerToolbarProps> = ({ className, sty
                     background: 'rgba(16, 185, 129, 0.08)',
                     border: '1px solid rgba(16, 185, 129, 0.22)',
                     fontSize: '9.5px',
-                    color: '#34d399',
+                    color: 'var(--accent-green, #34d399)',
                     fontWeight: 600
                   }}
                 >
@@ -550,11 +550,11 @@ export const DebuggerToolbar: React.FC<DebuggerToolbarProps> = ({ className, sty
                     gap: '6px',
                     padding: '4px 8px',
                     borderRadius: '5px',
-                    background: 'rgba(255, 255, 255, 0.04)',
-                    border: '1px solid rgba(255, 255, 255, 0.08)'
+                    background: 'var(--bg-primary)',
+                    border: '1px solid var(--border-subtle)'
                   }}
                 >
-                  <Search size={11} color="var(--text-muted, #94a3b8)" style={{ flexShrink: 0 }} />
+                  <Search size={11} color="var(--text-muted)" style={{ flexShrink: 0 }} />
                   <input
                     type="text"
                     value={searchQuery}
@@ -564,7 +564,7 @@ export const DebuggerToolbar: React.FC<DebuggerToolbarProps> = ({ className, sty
                       background: 'transparent',
                       border: 'none',
                       outline: 'none',
-                      color: '#ffffff',
+                      color: 'var(--text-primary)',
                       fontSize: '10.5px',
                       width: '100%'
                     }}
@@ -582,7 +582,7 @@ export const DebuggerToolbar: React.FC<DebuggerToolbarProps> = ({ className, sty
                       padding: '2px 4px',
                       fontSize: '10px',
                       fontWeight: 600,
-                      color: '#34d399'
+                      color: 'var(--accent-green, #34d399)'
                     }}
                   >
                     <span>⚡ Available Now</span>
@@ -595,7 +595,7 @@ export const DebuggerToolbar: React.FC<DebuggerToolbarProps> = ({ className, sty
                     <div
                       style={{
                         fontSize: '10px',
-                        color: 'var(--text-muted, #94a3b8)',
+                        color: 'var(--text-muted)',
                         padding: '6px'
                       }}
                     >
@@ -619,13 +619,19 @@ export const DebuggerToolbar: React.FC<DebuggerToolbarProps> = ({ className, sty
                             borderRadius: '5px',
                             background: isSelected
                               ? 'rgba(129, 140, 248, 0.16)'
-                              : 'rgba(255, 255, 255, 0.02)',
+                              : 'transparent',
                             border: isSelected
-                              ? '1px solid #818cf8'
-                              : '1px solid rgba(255, 255, 255, 0.04)',
+                              ? '1px solid var(--accent-purple, #818cf8)'
+                              : '1px solid transparent',
                             cursor: 'pointer',
                             textAlign: 'left',
                             transition: 'all 0.15s ease'
+                          }}
+                          onMouseEnter={(e) => {
+                            if (!isSelected) (e.currentTarget as HTMLButtonElement).style.background = 'var(--bg-hover)';
+                          }}
+                          onMouseLeave={(e) => {
+                            if (!isSelected) (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
                           }}
                         >
                           <div
@@ -641,7 +647,7 @@ export const DebuggerToolbar: React.FC<DebuggerToolbarProps> = ({ className, sty
                                 style={{
                                   fontSize: '10.5px',
                                   fontWeight: isSelected ? 600 : 500,
-                                  color: isSelected ? '#ffffff' : 'var(--text-primary, #e2e8f0)',
+                                  color: isSelected ? 'var(--accent-purple, #818cf8)' : 'var(--text-primary)',
                                   overflow: 'hidden',
                                   textOverflow: 'ellipsis',
                                   whiteSpace: 'nowrap'
@@ -658,7 +664,7 @@ export const DebuggerToolbar: React.FC<DebuggerToolbarProps> = ({ className, sty
                                     padding: '0 4px',
                                     borderRadius: '2px',
                                     backgroundColor: 'rgba(16, 185, 129, 0.2)',
-                                    color: '#34d399',
+                                    color: 'var(--accent-green, #34d399)',
                                     border: '1px solid rgba(16, 185, 129, 0.4)'
                                   }}
                                 >
@@ -673,7 +679,7 @@ export const DebuggerToolbar: React.FC<DebuggerToolbarProps> = ({ className, sty
                                     padding: '0 4px',
                                     borderRadius: '2px',
                                     backgroundColor: 'rgba(56, 189, 248, 0.2)',
-                                    color: '#38bdf8',
+                                    color: 'var(--accent-primary, #38bdf8)',
                                     border: '1px solid rgba(56, 189, 248, 0.4)'
                                   }}
                                 >
@@ -685,7 +691,7 @@ export const DebuggerToolbar: React.FC<DebuggerToolbarProps> = ({ className, sty
                             <span
                               style={{
                                 fontSize: '9px',
-                                color: 'var(--text-muted, #94a3b8)',
+                                color: 'var(--text-muted)',
                                 overflow: 'hidden',
                                 textOverflow: 'ellipsis',
                                 whiteSpace: 'nowrap'
@@ -696,7 +702,7 @@ export const DebuggerToolbar: React.FC<DebuggerToolbarProps> = ({ className, sty
                           </div>
 
                           {isSelected && (
-                            <Check size={12} color="#818cf8" style={{ flexShrink: 0 }} />
+                            <Check size={12} color="var(--accent-purple, #818cf8)" style={{ flexShrink: 0 }} />
                           )}
                         </button>
                       );
@@ -714,7 +720,7 @@ export const DebuggerToolbar: React.FC<DebuggerToolbarProps> = ({ className, sty
                           padding: '6px 4px 2px',
                           fontSize: '10px',
                           fontWeight: 600,
-                          color: 'var(--text-muted, #94a3b8)'
+                          color: 'var(--text-muted)'
                         }}
                       >
                         <span>🔒 Locked (Needs Key)</span>
@@ -730,16 +736,16 @@ export const DebuggerToolbar: React.FC<DebuggerToolbarProps> = ({ className, sty
                             justifyContent: 'space-between',
                             padding: '4px 8px',
                             borderRadius: '4px',
-                            background: 'rgba(255, 255, 255, 0.01)',
+                            background: 'var(--surface-2)',
                             opacity: 0.6,
                             fontSize: '10px'
                           }}
                         >
                           <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                            <Lock size={10} color="var(--text-muted, #94a3b8)" />
-                            <span style={{ color: 'var(--text-muted, #94a3b8)' }}>{r.name}</span>
+                            <Lock size={10} color="var(--text-muted)" />
+                            <span style={{ color: 'var(--text-muted)' }}>{r.name}</span>
                           </div>
-                          <span style={{ fontSize: '8.5px', color: 'var(--text-muted, #94a3b8)' }}>
+                          <span style={{ fontSize: '8.5px', color: 'var(--text-muted)' }}>
                             {r.providerName}
                           </span>
                         </div>

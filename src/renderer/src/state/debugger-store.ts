@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { useEffect } from 'react';
+import { applyAppTheme, normalizeAppTheme } from '../hooks/useThemeSync';
 
 export type AnalysisSeverity = 'critical' | 'high' | 'medium' | 'low' | 'info';
 export type AnalysisEngine = 'static' | 'dynamic' | 'arch' | 'ai';
@@ -249,6 +250,9 @@ export function useDebuggerStoreListener(): void {
       if (state.isPopOutMode !== undefined) {
         useDebuggerStore.setState({ isPopOutMode: Boolean(state.isPopOutMode) });
       }
+      if (state.theme) {
+        applyAppTheme(normalizeAppTheme(state.theme), true);
+      }
     });
 
     // 3. Request initial snapshot if available
@@ -259,6 +263,7 @@ export function useDebuggerStoreListener(): void {
         if (d.analysisResults?.length) useDebuggerStore.setState({ analysisResults: d.analysisResults });
         if (d.selectedRole) setRole(d.selectedRole);
         if (d.isPopOutMode !== undefined) useDebuggerStore.setState({ isPopOutMode: Boolean(d.isPopOutMode) });
+        if (d.theme) applyAppTheme(normalizeAppTheme(d.theme), false);
       }
     });
 

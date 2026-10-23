@@ -168,7 +168,9 @@ export const ModelSelectorDropdown: React.FC<ModelSelectorDropdownProps> = ({
             fontSize: '11px',
             borderRadius: '4px',
             border: '1px solid var(--border-subtle)',
-            backgroundColor: 'var(--bg-primary)'
+            backgroundColor: 'var(--bg-primary)',
+            color: 'var(--text-primary)',
+            outline: 'none'
           }}
         />
       </div>

@@ -177,18 +177,18 @@ export const UsageLedgerView: React.FC = () => {
           alignItems: 'center',
           justifyContent: 'space-between',
           padding: '12px 16px',
-          backgroundColor: 'rgba(30, 41, 59, 0.6)',
+          backgroundColor: 'var(--bg-secondary)',
           borderRadius: '8px',
-          border: '1px solid rgba(255, 255, 255, 0.08)'
+          border: '1px solid var(--border-subtle)'
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <ShieldCheck size={18} color="#10b981" />
+          <ShieldCheck size={18} color="var(--accent-green, #10b981)" />
           <div>
-            <div style={{ fontSize: '13px', fontWeight: 600, color: '#f1f5f9' }}>
+            <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>
               Zero-Server Local Ledger (Per-Instance)
             </div>
-            <div style={{ fontSize: '11px', color: '#94a3b8' }}>
+            <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
               All usage is stored securely on your machine in <code>userData/usage-ledger.json</code>. Zero tracking servers.
             </div>
           </div>
@@ -196,7 +196,7 @@ export const UsageLedgerView: React.FC = () => {
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           {exportNotice && (
-            <span style={{ fontSize: '11px', color: '#34d399', marginRight: '6px' }}>
+            <span style={{ fontSize: '11px', color: 'var(--accent-green, #34d399)', marginRight: '6px' }}>
               {exportNotice}
             </span>
           )}
@@ -212,9 +212,9 @@ export const UsageLedgerView: React.FC = () => {
               padding: '6px 10px',
               fontSize: '11px',
               fontWeight: 500,
-              backgroundColor: 'rgba(255, 255, 255, 0.08)',
-              color: '#f1f5f9',
-              border: '1px solid rgba(255, 255, 255, 0.12)',
+              backgroundColor: 'var(--surface-2)',
+              color: 'var(--text-primary)',
+              border: '1px solid var(--border-subtle)',
               borderRadius: '6px',
               cursor: 'pointer'
             }}
@@ -235,9 +235,9 @@ export const UsageLedgerView: React.FC = () => {
               padding: '6px 10px',
               fontSize: '11px',
               fontWeight: 500,
-              backgroundColor: 'rgba(255, 255, 255, 0.08)',
-              color: '#f1f5f9',
-              border: '1px solid rgba(255, 255, 255, 0.12)',
+              backgroundColor: 'var(--surface-2)',
+              color: 'var(--text-primary)',
+              border: '1px solid var(--border-subtle)',
               borderRadius: '6px',
               cursor: 'pointer'
             }}
@@ -259,7 +259,7 @@ export const UsageLedgerView: React.FC = () => {
               fontSize: '11px',
               fontWeight: 500,
               backgroundColor: 'rgba(239, 68, 68, 0.12)',
-              color: '#f87171',
+              color: 'var(--accent-red, #f87171)',
               border: '1px solid rgba(239, 68, 68, 0.25)',
               borderRadius: '6px',
               cursor: 'pointer'
@@ -282,68 +282,68 @@ export const UsageLedgerView: React.FC = () => {
       >
         <div
           style={{
-            backgroundColor: 'rgba(30, 41, 59, 0.4)',
-            border: '1px solid rgba(51, 65, 85, 0.6)',
+            backgroundColor: 'var(--bg-secondary)',
+            border: '1px solid var(--border-subtle)',
             borderRadius: '8px',
             padding: '12px 14px'
           }}
         >
-          <span style={{ fontSize: '11px', color: '#94a3b8' }}>Total AI Requests</span>
-          <div style={{ fontSize: '20px', fontWeight: 700, marginTop: '4px', color: '#38bdf8' }}>
+          <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Total AI Requests</span>
+          <div style={{ fontSize: '20px', fontWeight: 700, marginTop: '4px', color: 'var(--accent-primary, #38bdf8)' }}>
             {overall.totalRequests.toLocaleString()}
           </div>
-          <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px' }}>
+          <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>
             {overall.totalErrors > 0 ? `${overall.totalErrors} errors encountered` : '0 errors (100% success)'}
           </div>
         </div>
 
         <div
           style={{
-            backgroundColor: 'rgba(30, 41, 59, 0.4)',
-            border: '1px solid rgba(51, 65, 85, 0.6)',
+            backgroundColor: 'var(--bg-secondary)',
+            border: '1px solid var(--border-subtle)',
             borderRadius: '8px',
             padding: '12px 14px'
           }}
         >
-          <span style={{ fontSize: '11px', color: '#94a3b8' }}>Total Tokens Consumed</span>
-          <div style={{ fontSize: '20px', fontWeight: 700, marginTop: '4px', color: '#a855f7' }}>
+          <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Total Tokens Consumed</span>
+          <div style={{ fontSize: '20px', fontWeight: 700, marginTop: '4px', color: 'var(--accent-purple, #a855f7)' }}>
             {formatTokens(overall.totalTokens)}
           </div>
-          <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px' }}>
+          <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>
             {formatTokens(overall.totalPromptTokens)} prompt · {formatTokens(overall.totalCompletionTokens)} completion
           </div>
         </div>
 
         <div
           style={{
-            backgroundColor: 'rgba(30, 41, 59, 0.4)',
-            border: '1px solid rgba(51, 65, 85, 0.6)',
+            backgroundColor: 'var(--bg-secondary)',
+            border: '1px solid var(--border-subtle)',
             borderRadius: '8px',
             padding: '12px 14px'
           }}
         >
-          <span style={{ fontSize: '11px', color: '#94a3b8' }}>Total Cost Saved</span>
-          <div style={{ fontSize: '20px', fontWeight: 700, marginTop: '4px', color: '#34d399' }}>
+          <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Total Cost Saved</span>
+          <div style={{ fontSize: '20px', fontWeight: 700, marginTop: '4px', color: 'var(--accent-green, #34d399)' }}>
             ${overall.totalCostSavedUsd.toFixed(4)}
           </div>
-          <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px' }}>
+          <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>
             Benchmark: $3.00 / 1M tokens
           </div>
         </div>
 
         <div
           style={{
-            backgroundColor: 'rgba(30, 41, 59, 0.4)',
-            border: '1px solid rgba(51, 65, 85, 0.6)',
+            backgroundColor: 'var(--bg-secondary)',
+            border: '1px solid var(--border-subtle)',
             borderRadius: '8px',
             padding: '12px 14px'
           }}
         >
-          <span style={{ fontSize: '11px', color: '#94a3b8' }}>Average Latency</span>
-          <div style={{ fontSize: '20px', fontWeight: 700, marginTop: '4px', color: '#f59e0b' }}>
+          <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Average Latency</span>
+          <div style={{ fontSize: '20px', fontWeight: 700, marginTop: '4px', color: 'var(--accent-amber, #f59e0b)' }}>
             {overall.averageLatencyMs}ms
           </div>
-          <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px' }}>
+          <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>
             Across all streaming hops
           </div>
         </div>
@@ -351,7 +351,7 @@ export const UsageLedgerView: React.FC = () => {
 
       {/* Provider Free-Tier Caps & Resets */}
       <div>
-        <h4 style={{ margin: '0 0 10px 0', fontSize: '13px', fontWeight: 600, color: '#f1f5f9' }}>
+        <h4 style={{ margin: '0 0 10px 0', fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>
           Provider Quotas &amp; Header Rate Limits
         </h4>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px' }}>
@@ -361,9 +361,10 @@ export const UsageLedgerView: React.FC = () => {
                 gridColumn: '1 / -1',
                 padding: '16px',
                 textAlign: 'center',
-                backgroundColor: 'rgba(30, 41, 59, 0.3)',
+                backgroundColor: 'var(--surface-2)',
+                border: '1px dashed var(--border-subtle)',
                 borderRadius: '8px',
-                color: '#64748b',
+                color: 'var(--text-muted)',
                 fontSize: '12px'
               }}
             >
@@ -375,8 +376,8 @@ export const UsageLedgerView: React.FC = () => {
                 key={providerId}
                 style={{
                   padding: '12px 14px',
-                  backgroundColor: 'rgba(30, 41, 59, 0.4)',
-                  border: '1px solid rgba(51, 65, 85, 0.5)',
+                  backgroundColor: 'var(--bg-secondary)',
+                  border: '1px solid var(--border-subtle)',
                   borderRadius: '8px',
                   display: 'flex',
                   alignItems: 'center',
@@ -384,10 +385,10 @@ export const UsageLedgerView: React.FC = () => {
                 }}
               >
                 <div>
-                  <div style={{ fontSize: '13px', fontWeight: 600, color: '#f1f5f9' }}>
+                  <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>
                     {providerId}
                   </div>
-                  <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '3px' }}>
+                  <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '3px' }}>
                     {limit.remainingRequests !== undefined
                       ? `${limit.remainingRequests} requests remaining`
                       : 'Active quota'}
@@ -420,13 +421,13 @@ export const UsageLedgerView: React.FC = () => {
 
       {/* Provider Counters (Exact vs Estimated Breakdown) */}
       <div>
-        <h4 style={{ margin: '0 0 10px 0', fontSize: '13px', fontWeight: 600, color: '#f1f5f9' }}>
+        <h4 style={{ margin: '0 0 10px 0', fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>
           Model Consumption &amp; Accuracy Ledger
         </h4>
-        <div style={{ overflowX: 'auto', borderRadius: '8px', border: '1px solid rgba(51, 65, 85, 0.6)' }}>
+        <div style={{ overflowX: 'auto', borderRadius: '8px', border: '1px solid var(--border-subtle)' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', textAlign: 'left' }}>
             <thead>
-              <tr style={{ backgroundColor: 'rgba(30, 41, 59, 0.8)', borderBottom: '1px solid rgba(51, 65, 85, 0.8)', color: '#94a3b8' }}>
+              <tr style={{ backgroundColor: 'var(--bg-tertiary)', borderBottom: '1px solid var(--border-subtle)', color: 'var(--text-secondary)' }}>
                 <th style={{ padding: '8px 12px' }}>Provider / Model</th>
                 <th style={{ padding: '8px 12px' }}>Requests</th>
                 <th style={{ padding: '8px 12px' }}>Prompt Tok</th>
@@ -439,20 +440,20 @@ export const UsageLedgerView: React.FC = () => {
             <tbody>
               {Object.entries(data?.providerCounters || {}).length === 0 ? (
                 <tr>
-                  <td colSpan={7} style={{ padding: '16px', textAlign: 'center', color: '#64748b' }}>
+                  <td colSpan={7} style={{ padding: '16px', textAlign: 'center', color: 'var(--text-muted)' }}>
                     No model transactions logged yet. Run a prompt in the chat sidecar to populate the ledger.
                   </td>
                 </tr>
               ) : (
                 Object.entries(data?.providerCounters || {}).map(([key, counter]) => (
-                  <tr key={key} style={{ borderBottom: '1px solid rgba(51, 65, 85, 0.4)' }}>
-                    <td style={{ padding: '8px 12px', fontWeight: 600, color: '#f1f5f9' }}>
-                      {counter.providerId} / <span style={{ color: '#38bdf8' }}>{counter.modelId}</span>
+                  <tr key={key} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                    <td style={{ padding: '8px 12px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                      {counter.providerId} / <span style={{ color: 'var(--accent-primary, #38bdf8)' }}>{counter.modelId}</span>
                     </td>
-                    <td style={{ padding: '8px 12px', color: '#f1f5f9' }}>{counter.requests}</td>
-                    <td style={{ padding: '8px 12px', color: '#94a3b8' }}>{counter.promptTokens.toLocaleString()}</td>
-                    <td style={{ padding: '8px 12px', color: '#94a3b8' }}>{counter.completionTokens.toLocaleString()}</td>
-                    <td style={{ padding: '8px 12px', fontWeight: 600, color: '#a855f7' }}>
+                    <td style={{ padding: '8px 12px', color: 'var(--text-primary)' }}>{counter.requests}</td>
+                    <td style={{ padding: '8px 12px', color: 'var(--text-secondary)' }}>{counter.promptTokens.toLocaleString()}</td>
+                    <td style={{ padding: '8px 12px', color: 'var(--text-secondary)' }}>{counter.completionTokens.toLocaleString()}</td>
+                    <td style={{ padding: '8px 12px', fontWeight: 600, color: 'var(--accent-purple, #a855f7)' }}>
                       {counter.totalTokens.toLocaleString()}
                     </td>
                     <td style={{ padding: '8px 12px' }}>
@@ -467,7 +468,7 @@ export const UsageLedgerView: React.FC = () => {
                         {counter.exactUsageCount} exact / {counter.estimatedUsageCount} est
                       </span>
                     </td>
-                    <td style={{ padding: '8px 12px', color: '#34d399', fontWeight: 600 }}>
+                    <td style={{ padding: '8px 12px', color: 'var(--accent-green, #10b981)', fontWeight: 600 }}>
                       ${counter.costSavedUsd.toFixed(4)}
                     </td>
                   </tr>

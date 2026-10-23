@@ -23,61 +23,23 @@ import type { AppInfo } from '../../../preload/types';
 
 const appRegion = (region: 'drag' | 'no-drag'): React.CSSProperties => ({ WebkitAppRegion: region } as React.CSSProperties);
 
-export type AppTheme =
-  | 'dark' | 'light' | 'high-contrast'
-  | 'obsidian-night' | 'glacial-graphite' | 'sapphire-deep' | 'emerald-deep' | 'amethyst-deep'
-  | 'reuben-ruby' | 'simeon-topaz' | 'levi-emerald' | 'judah-turquoise' | 'dan-sapphire'
-  | 'naphtali-jacynth' | 'gad-agate' | 'asher-beryl' | 'issachar-lapis' | 'zebulun-diamond'
-  | 'joseph-onyx' | 'benjamin-jasper';
-
-export interface AppThemeMeta {
-  id: AppTheme;
-  label: string;
-  group: 'Dark' | 'Light' | 'High contrast';
-  swatch: string;
-}
-
-export const APP_THEMES: AppThemeMeta[] = [
-  { id: 'dark', label: 'Midnight (default)', group: 'Dark', swatch: '#8b5cf6' },
-  { id: 'obsidian-night', label: 'Obsidian Night', group: 'Dark', swatch: '#38bdf8' },
-  { id: 'glacial-graphite', label: 'Glacial Graphite', group: 'Dark', swatch: '#7dd3fc' },
-  { id: 'sapphire-deep', label: 'Sapphire Deep', group: 'Dark', swatch: '#60a5fa' },
-  { id: 'emerald-deep', label: 'Emerald Deep', group: 'Dark', swatch: '#34d399' },
-  { id: 'amethyst-deep', label: 'Amethyst Deep', group: 'Dark', swatch: '#a78bfa' },
-  { id: 'reuben-ruby', label: 'Reuben · Ruby', group: 'Light', swatch: '#9f1239' },
-  { id: 'simeon-topaz', label: 'Simeon · Topaz', group: 'Light', swatch: '#a16207' },
-  { id: 'levi-emerald', label: 'Levi · Emerald', group: 'Light', swatch: '#047857' },
-  { id: 'judah-turquoise', label: 'Judah · Turquoise', group: 'Light', swatch: '#0e7490' },
-  { id: 'dan-sapphire', label: 'Dan · Sapphire', group: 'Light', swatch: '#1d4ed8' },
-  { id: 'naphtali-jacynth', label: 'Naphtali · Jacynth', group: 'Light', swatch: '#6d28d9' },
-  { id: 'gad-agate', label: 'Gad · Agate', group: 'Light', swatch: '#9a4a26' },
-  { id: 'asher-beryl', label: 'Asher · Beryl', group: 'Light', swatch: '#0d9488' },
-  { id: 'issachar-lapis', label: 'Issachar · Lapis', group: 'Light', swatch: '#3730a3' },
-  { id: 'zebulun-diamond', label: 'Zebulun · Diamond', group: 'Light', swatch: '#0284c7' },
-  { id: 'joseph-onyx', label: 'Joseph · Onyx', group: 'Light', swatch: '#1f2937' },
-  { id: 'benjamin-jasper', label: 'Benjamin · Jasper', group: 'Light', swatch: '#9a3412' },
-  { id: 'high-contrast', label: 'High Contrast', group: 'High contrast', swatch: '#ffff00' }
-];
-
-const normalizeAppTheme = (value: string | null): AppTheme =>
-  APP_THEMES.some((t) => t.id === value) ? (value as AppTheme) : 'dark';
+export {
+  type AppTheme,
+  type AppThemeMeta,
+  APP_THEMES,
+  normalizeAppTheme,
+  applyAppTheme
+} from '../hooks/useThemeSync';
+import {
+  type AppTheme,
+  APP_THEMES,
+  normalizeAppTheme,
+  applyAppTheme
+} from '../hooks/useThemeSync';
 
 // Custom purplish microchip logo matching Ty-Code design language
-const TyCodeMicrochipLogo: React.FC<{ size?: number }> = ({ size = 18 }) => (
-  <div
-    style={{
-      width: `${size + 5}px`,
-      height: `${size + 5}px`,
-      borderRadius: '5px',
-      background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.22) 0%, rgba(99, 102, 241, 0.16) 100%)',
-      border: '1px solid rgba(168, 85, 247, 0.35)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      boxShadow: '0 0 10px rgba(168, 85, 247, 0.25)',
-      flexShrink: 0
-    }}
-  >
+const TyCodeMicrochipLogo: React.FC<{ size?: number; boxed?: boolean }> = ({ size = 18, boxed = false }) => {
+  const svg = (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
       <defs>
         <linearGradient id="tyMicrochipGrad" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
@@ -99,8 +61,35 @@ const TyCodeMicrochipLogo: React.FC<{ size?: number }> = ({ size = 18 }) => (
       {/* Right Pins */}
       <path d="M19 8.5h3M19 12h3M19 15.5h3" stroke="url(#tyMicrochipGrad)" strokeWidth="1.5" strokeLinecap="round" />
     </svg>
-  </div>
-);
+  );
+
+  if (!boxed) {
+    return (
+      <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        {svg}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      style={{
+        width: `${size + 5}px`,
+        height: `${size + 5}px`,
+        borderRadius: '5px',
+        background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.22) 0%, rgba(99, 102, 241, 0.16) 100%)',
+        border: '1px solid rgba(168, 85, 247, 0.35)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        boxShadow: '0 0 10px rgba(168, 85, 247, 0.25)',
+        flexShrink: 0
+      }}
+    >
+      {svg}
+    </div>
+  );
+};
 
 // Panel & Layout control icons
 const LayoutAllIcon: React.FC<{ size?: number }> = ({ size = 14 }) => (
@@ -190,11 +179,11 @@ const WindowControlButton: React.FC<WindowControlButtonProps> = ({ onClick, titl
             ? '#e81123'
             : 'transparent'
           : active
-          ? 'rgba(255, 255, 255, 0.16)'
+          ? 'var(--bg-active, var(--bg-hover))'
           : hovered
-          ? 'rgba(255, 255, 255, 0.08)'
+          ? 'var(--bg-hover)'
           : 'transparent',
-        color: isClose && hovered ? '#ffffff' : 'var(--text-secondary, #94a3b8)',
+        color: isClose && hovered ? '#ffffff' : hovered ? 'var(--text-primary)' : 'var(--text-secondary, #94a3b8)',
         border: 'none',
         outline: 'none',
         cursor: 'default',
@@ -237,11 +226,21 @@ export const TitleBar: React.FC = () => {
   const menuBarRef = useRef<HTMLDivElement>(null);
   const profileMenuRef = useRef<HTMLDivElement>(null);
 
-  // Apply theme to body
+  // Apply theme to body and sync across all windows
   useEffect(() => {
-    for (const t of APP_THEMES) document.body.classList.remove(`theme-${t.id}`);
-    document.body.classList.add(`theme-${theme}`);
-    localStorage.setItem('ty_claude_theme', theme);
+    applyAppTheme(theme);
+  }, [theme]);
+
+  // Listen for external theme updates (e.g. from other windows or storage)
+  useEffect(() => {
+    const handleThemeChange = (e: Event) => {
+      const customEvent = e as CustomEvent<AppTheme>;
+      if (customEvent.detail && customEvent.detail !== theme) {
+        setTheme(customEvent.detail);
+      }
+    };
+    window.addEventListener('ty-theme-change', handleThemeChange);
+    return () => window.removeEventListener('ty-theme-change', handleThemeChange);
   }, [theme]);
 
   // Window maximize & App info listener
@@ -489,32 +488,12 @@ export const TitleBar: React.FC = () => {
             return (
               <div key={menuKey} style={{ position: 'relative', height: '100%', display: 'flex', alignItems: 'center' }}>
                 <button
+                  type="button"
+                  className={`titlebar-menu-btn${isOpen ? ' is-open' : ''}`}
                   onClick={() => setActiveMenu(isOpen ? null : menuKey)}
                   onMouseEnter={() => {
                     if (activeMenu !== null && activeMenu !== menuKey) {
                       setActiveMenu(menuKey);
-                    }
-                  }}
-                  style={{
-                    fontSize: '12px',
-                    padding: '3px 7px',
-                    color: isOpen ? '#ffffff' : 'var(--text-secondary, #94a3b8)',
-                    backgroundColor: isOpen ? 'rgba(255, 255, 255, 0.12)' : 'transparent',
-                    border: 'none',
-                    borderRadius: '4px',
-                    cursor: 'pointer',
-                    transition: 'background-color 100ms ease, color 100ms ease'
-                  }}
-                  onMouseOver={(e) => {
-                    if (!isOpen) {
-                      e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)';
-                      e.currentTarget.style.color = '#ffffff';
-                    }
-                  }}
-                  onMouseOut={(e) => {
-                    if (!isOpen) {
-                      e.currentTarget.style.backgroundColor = 'transparent';
-                      e.currentTarget.style.color = 'var(--text-secondary, #94a3b8)';
                     }
                   }}
                 >
@@ -569,8 +548,8 @@ export const TitleBar: React.FC = () => {
                             userSelect: 'none'
                           }}
                           onMouseEnter={(e) => {
-                            e.currentTarget.style.backgroundColor = 'var(--accent-primary, #0284c7)';
-                            e.currentTarget.style.color = '#ffffff';
+                            e.currentTarget.style.backgroundColor = 'var(--bg-hover)';
+                            e.currentTarget.style.color = 'var(--text-primary)';
                           }}
                           onMouseLeave={(e) => {
                             e.currentTarget.style.backgroundColor = 'transparent';
@@ -631,181 +610,108 @@ export const TitleBar: React.FC = () => {
         {/* Layout Icons (Matching Screenshot) */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '2px', marginRight: '4px' }}>
           {/* Toggle All Panels / Split */}
+            <button
+              type="button"
+              className="titlebar-icon-btn"
+              onClick={() => window.dispatchEvent(new CustomEvent('workbench:toggle-all-panels'))}
+              title="Customize Layout"
+              aria-label="Customize Layout"
+            >
+              <LayoutAllIcon size={14} />
+            </button>
+
+            {/* Toggle Primary Sidebar (Left) */}
+            <button
+              type="button"
+              className="titlebar-icon-btn"
+              onClick={() => window.dispatchEvent(new CustomEvent('workbench:toggle-left-sidebar'))}
+              title="Toggle Primary Sidebar (Ctrl+B)"
+              aria-label="Toggle Primary Sidebar (Ctrl+B)"
+            >
+              <SidebarLeftIcon size={14} />
+            </button>
+
+            {/* Toggle Bottom Panel (Terminal) */}
+            <button
+              type="button"
+              className={`titlebar-icon-btn${isTerminalOpen ? ' is-active' : ''}`}
+              onClick={toggleTerminal}
+              title="Toggle Panel (Ctrl+`)"
+              aria-label="Toggle Panel (Ctrl+`)"
+            >
+              <PanelBottomIcon size={14} active={isTerminalOpen} />
+            </button>
+
+            {/* Toggle Secondary Sidebar (AI Assistant) */}
+            <button
+              type="button"
+              className="titlebar-icon-btn"
+              onClick={() => window.dispatchEvent(new CustomEvent('workbench:toggle-right-sidebar'))}
+              title="Toggle Secondary Sidebar (AI Assistant)"
+              aria-label="Toggle Secondary Sidebar (AI Assistant)"
+            >
+              <SidebarRightIcon size={14} />
+            </button>
+          </div>
+
+          {/* Search Quick Open Icon */}
           <button
-            onClick={() => window.dispatchEvent(new CustomEvent('workbench:toggle-all-panels'))}
-            style={{
-              padding: '4px 6px',
-              color: 'var(--text-secondary, #94a3b8)',
-              background: 'transparent',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center'
-            }}
-            title="Customize Layout"
-            aria-label="Customize Layout"
-            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)'; e.currentTarget.style.color = '#ffffff'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--text-secondary, #94a3b8)'; }}
+            type="button"
+            className="titlebar-icon-btn"
+            onClick={() => window.dispatchEvent(new CustomEvent('workbench:quick-open'))}
+            title="Search Files (Ctrl+P)"
+            aria-label="Search Files (Ctrl+P)"
           >
-            <LayoutAllIcon size={14} />
+            <Search size={14} />
           </button>
 
-          {/* Toggle Primary Sidebar (Left) */}
+          {/* Vertical Divider */}
+          <div style={{ width: '1px', height: '14px', backgroundColor: 'var(--border-subtle, rgba(255, 255, 255, 0.12))', margin: '0 5px' }} />
+
+          {/* Global / Updates Check */}
           <button
-            onClick={() => window.dispatchEvent(new CustomEvent('workbench:toggle-left-sidebar'))}
+            type="button"
+            className="titlebar-icon-btn"
+            onClick={handleCheckUpdate}
             style={{
-              padding: '4px 6px',
-              color: 'var(--text-secondary, #94a3b8)',
-              background: 'transparent',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center'
+              gap: '3px',
+              color: updateStatus === 'available' ? 'var(--accent-green, #10b981)' : updateStatus === 'downloaded' ? 'var(--accent-cyan, #06b6d4)' : 'var(--text-secondary, #94a3b8)'
             }}
-            title="Toggle Primary Sidebar (Ctrl+B)"
-            aria-label="Toggle Primary Sidebar (Ctrl+B)"
-            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)'; e.currentTarget.style.color = '#ffffff'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--text-secondary, #94a3b8)'; }}
+            title={
+              updateStatus === 'checking'
+                ? 'Checking for updates…'
+                : updateStatus === 'downloading'
+                ? `Downloading update (${updatePercent}%)…`
+                : updateStatus === 'downloaded'
+                ? 'Update downloaded! Restart to apply'
+                : 'Check for Updates'
+            }
+            aria-label="Check for Updates"
           >
-            <SidebarLeftIcon size={14} />
+            {updateStatus === 'checking' ? (
+              <RefreshCw size={13} className="animate-spin" />
+            ) : updateStatus === 'downloaded' ? (
+              <CheckCircle2 size={13} color="var(--accent-green, #10b981)" />
+            ) : updateStatus === 'available' || updateStatus === 'downloading' ? (
+              <DownloadCloud size={13} color="var(--accent-primary, #38bdf8)" />
+            ) : (
+              <RefreshCw size={13} />
+            )}
+            {updateStatus === 'downloading' && (
+              <span style={{ fontSize: '10px' }}>{updatePercent}%</span>
+            )}
           </button>
 
-          {/* Toggle Bottom Panel (Terminal) */}
+          {/* Settings Gear */}
           <button
-            onClick={toggleTerminal}
-            style={{
-              padding: '4px 6px',
-              color: isTerminalOpen ? 'var(--accent-primary, #38bdf8)' : 'var(--text-secondary, #94a3b8)',
-              background: isTerminalOpen ? 'rgba(56, 189, 248, 0.12)' : 'transparent',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center'
-            }}
-            title="Toggle Panel (Ctrl+`)"
-            aria-label="Toggle Panel (Ctrl+`)"
-            onMouseEnter={(e) => { if (!isTerminalOpen) { e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)'; e.currentTarget.style.color = '#ffffff'; } }}
-            onMouseLeave={(e) => { if (!isTerminalOpen) { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--text-secondary, #94a3b8)'; } }}
+            type="button"
+            className="titlebar-icon-btn"
+            onClick={toggleSettings}
+            title="Settings & API Keys (Ctrl+,)"
           >
-            <PanelBottomIcon size={14} active={isTerminalOpen} />
+            <Settings size={14} />
           </button>
 
-          {/* Toggle Secondary Sidebar (AI Assistant) */}
-          <button
-            onClick={() => window.dispatchEvent(new CustomEvent('workbench:toggle-right-sidebar'))}
-            style={{
-              padding: '4px 6px',
-              color: 'var(--text-secondary, #94a3b8)',
-              background: 'transparent',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center'
-            }}
-            title="Toggle Secondary Sidebar (AI Assistant)"
-            aria-label="Toggle Secondary Sidebar (AI Assistant)"
-            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)'; e.currentTarget.style.color = '#ffffff'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--text-secondary, #94a3b8)'; }}
-          >
-            <SidebarRightIcon size={14} />
-          </button>
-        </div>
-
-        {/* Search Quick Open Icon */}
-        <button
-          onClick={() => window.dispatchEvent(new CustomEvent('workbench:quick-open'))}
-          style={{
-            padding: '4px 6px',
-            color: 'var(--text-secondary, #94a3b8)',
-            background: 'transparent',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}
-          title="Search Files (Ctrl+P)"
-          aria-label="Search Files (Ctrl+P)"
-          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)'; e.currentTarget.style.color = '#ffffff'; }}
-          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--text-secondary, #94a3b8)'; }}
-        >
-          <Search size={14} />
-        </button>
-
-        {/* Vertical Divider */}
-        <div style={{ width: '1px', height: '14px', backgroundColor: 'var(--border-subtle, rgba(255, 255, 255, 0.12))', margin: '0 5px' }} />
-
-        {/* Global / Updates Check */}
-        <button
-          onClick={handleCheckUpdate}
-          style={{
-            padding: '4px 6px',
-            color: updateStatus === 'available' ? 'var(--accent-green, #10b981)' : updateStatus === 'downloaded' ? 'var(--accent-cyan, #06b6d4)' : 'var(--text-secondary, #94a3b8)',
-            background: 'transparent',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '3px'
-          }}
-          title={
-            updateStatus === 'checking'
-              ? 'Checking for updates…'
-              : updateStatus === 'downloading'
-              ? `Downloading update (${updatePercent}%)…`
-              : updateStatus === 'downloaded'
-              ? 'Update downloaded! Restart to apply'
-              : 'Check for Updates'
-          }
-          aria-label="Check for Updates"
-          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)'; }}
-          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
-        >
-          {updateStatus === 'checking' ? (
-            <RefreshCw size={13} className="animate-spin" />
-          ) : updateStatus === 'downloaded' ? (
-            <CheckCircle2 size={13} color="var(--accent-green, #10b981)" />
-          ) : updateStatus === 'available' || updateStatus === 'downloading' ? (
-            <DownloadCloud size={13} color="var(--accent-primary, #38bdf8)" />
-          ) : (
-            <RefreshCw size={13} />
-          )}
-          {updateStatus === 'downloading' && (
-            <span style={{ fontSize: '10px' }}>{updatePercent}%</span>
-          )}
-        </button>
-
-        {/* Settings Gear */}
-        <button
-          onClick={toggleSettings}
-          style={{
-            padding: '4px 6px',
-            color: 'var(--text-secondary, #94a3b8)',
-            background: 'transparent',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}
-          title="Settings & API Keys (Ctrl+,)"
-          aria-label="Settings & API Keys (Ctrl+,)"
-          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)'; e.currentTarget.style.color = '#ffffff'; }}
-          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--text-secondary, #94a3b8)'; }}
-        >
-          <Settings size={14} />
-        </button>
 
         {/* Avatar Profile Dropdown */}
         <div ref={profileMenuRef} style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
@@ -867,14 +773,14 @@ export const TitleBar: React.FC = () => {
               }}
             >
               <div style={{ padding: '6px 12px', borderBottom: '1px solid var(--border-subtle, rgba(255, 255, 255, 0.08))' }}>
-                <div style={{ fontSize: '12px', fontWeight: 600, color: '#ffffff' }}>Developer</div>
+                <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)' }}>Developer</div>
                 <div style={{ fontSize: '10px', color: 'var(--text-secondary, #94a3b8)' }}>Ty-Code Desktop</div>
               </div>
               <button
                 type="button"
                 onClick={() => { setIsProfileMenuOpen(false); openSettings('byok'); }}
                 style={{ width: '100%', background: 'none', border: 'none', padding: '6px 12px', fontSize: '12px', color: 'var(--text-primary, #e2e8f0)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', textAlign: 'left' }}
-                onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--accent-primary, #0284c7)'; e.currentTarget.style.color = '#ffffff'; }}
+                onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--bg-hover)'; e.currentTarget.style.color = 'var(--text-primary)'; }}
                 onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--text-primary, #e2e8f0)'; }}
               >
                 <Shield size={13} />
@@ -884,7 +790,7 @@ export const TitleBar: React.FC = () => {
                 type="button"
                 onClick={() => { setIsProfileMenuOpen(false); openUsageDashboard(); }}
                 style={{ width: '100%', background: 'none', border: 'none', padding: '6px 12px', fontSize: '12px', color: 'var(--text-primary, #e2e8f0)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', textAlign: 'left' }}
-                onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--accent-primary, #0284c7)'; e.currentTarget.style.color = '#ffffff'; }}
+                onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--bg-hover)'; e.currentTarget.style.color = 'var(--text-primary)'; }}
                 onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--text-primary, #e2e8f0)'; }}
               >
                 <FolderOpen size={13} />
@@ -896,8 +802,8 @@ export const TitleBar: React.FC = () => {
                   id="theme-picker-trigger"
                   onClick={() => { setThemeMenuOpen(!themeMenuOpen); }}
                   style={{ width: '100%', background: 'none', border: 'none', padding: '6px 12px', fontSize: '12px', color: 'var(--text-primary, #e2e8f0)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', textAlign: 'left' }}
-                  onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--accent-primary, #0284c7)'; e.currentTarget.style.color = '#ffffff'; }}
-                  onMouseLeave={(e) => { if (!themeMenuOpen) { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--text-primary, #e2e8f0)'; } else { e.currentTarget.style.backgroundColor = 'var(--bg-active, rgba(255,255,255,0.1))'; e.currentTarget.style.color = 'var(--text-primary, #e2e8f0)'; } }}
+                  onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--bg-hover)'; e.currentTarget.style.color = 'var(--text-primary)'; }}
+                  onMouseLeave={(e) => { if (!themeMenuOpen) { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--text-primary, #e2e8f0)'; } else { e.currentTarget.style.backgroundColor = 'var(--bg-active, var(--bg-hover))'; e.currentTarget.style.color = 'var(--text-primary, #e2e8f0)'; } }}
                 >
                   <Palette size={13} />
                   <span>Theme: {APP_THEMES.find((t) => t.id === theme)?.label || theme}</span>
@@ -965,7 +871,7 @@ export const TitleBar: React.FC = () => {
                 type="button"
                 onClick={() => { setIsProfileMenuOpen(false); void handleCheckUpdate(); }}
                 style={{ width: '100%', background: 'none', border: 'none', padding: '6px 12px', fontSize: '12px', color: 'var(--text-primary, #e2e8f0)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', textAlign: 'left' }}
-                onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--accent-primary, #0284c7)'; e.currentTarget.style.color = '#ffffff'; }}
+                onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--bg-hover)'; e.currentTarget.style.color = 'var(--text-primary)'; }}
                 onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--text-primary, #e2e8f0)'; }}
               >
                 <RefreshCw size={13} />
@@ -1035,7 +941,7 @@ export const TitleBar: React.FC = () => {
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
-              <TyCodeMicrochipLogo size={28} />
+              <TyCodeMicrochipLogo size={28} boxed={true} />
               <div>
                 <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700 }}>Ty-Code</h3>
                 <div style={{ fontSize: '12px', color: '#94a3b8' }}>

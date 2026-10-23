@@ -696,7 +696,7 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
                 style={{
                   padding: '6px',
                   borderRadius: '6px',
-                  background: !activeFile ? 'rgba(99, 102, 241, 0.2)' : 'transparent',
+                  background: !activeFile ? 'var(--surface-3)' : 'transparent',
                   border: 'none',
                   color: !activeFile ? 'var(--accent-primary)' : 'var(--text-secondary)',
                   cursor: 'pointer'
@@ -713,7 +713,7 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
                   style={{
                     padding: '6px',
                     borderRadius: '6px',
-                    background: activeFile === node.path ? 'rgba(99, 102, 241, 0.2)' : 'transparent',
+                    background: activeFile === node.path ? 'var(--surface-3)' : 'transparent',
                     border: 'none',
                     color: activeFile === node.path ? 'var(--accent-primary)' : 'var(--text-secondary)',
                     cursor: 'pointer'

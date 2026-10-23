@@ -189,8 +189,8 @@ export const ProviderDashboard: React.FC<ProviderDashboardProps> = ({
         flexDirection: 'column',
         height: '100%',
         width: '100%',
-        backgroundColor: '#0f1117',
-        color: '#f8fafc',
+        backgroundColor: 'var(--bg-primary)',
+        color: 'var(--text-primary)',
         overflow: 'hidden'
       }}
     >
@@ -202,8 +202,8 @@ export const ProviderDashboard: React.FC<ProviderDashboardProps> = ({
           alignItems: 'center',
           justifyContent: 'space-between',
           padding: '16px 24px',
-          borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
-          backgroundColor: '#161922'
+          borderBottom: '1px solid var(--border-subtle)',
+          backgroundColor: 'var(--bg-secondary)'
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -212,19 +212,19 @@ export const ProviderDashboard: React.FC<ProviderDashboardProps> = ({
               width: '36px',
               height: '36px',
               borderRadius: '8px',
-              background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.2), rgba(129, 140, 248, 0.2))',
-              border: '1px solid rgba(56, 189, 248, 0.35)',
+              background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.2), rgba(129, 140, 248, 0.2))',
+              border: '1px solid var(--border-subtle)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center'
             }}
           >
-            <Layers size={20} color="#38bdf8" />
+            <Layers size={20} color="var(--accent-cyan)" />
           </div>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <h2 style={{ margin: 0, fontSize: '17px', fontWeight: 700, color: '#f8fafc' }}>
-                Unified Provider Dashboard & Free-Tier Quota
+              <h2 style={{ margin: 0, fontSize: '17px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                Unified Provider Dashboard &amp; Free-Tier Quota
               </h2>
               <span
                 style={{
@@ -232,15 +232,15 @@ export const ProviderDashboard: React.FC<ProviderDashboardProps> = ({
                   fontWeight: 700,
                   padding: '2px 6px',
                   borderRadius: '4px',
-                  backgroundColor: 'rgba(56, 189, 248, 0.15)',
-                  color: '#38bdf8',
-                  border: '1px solid rgba(56, 189, 248, 0.3)'
+                  backgroundColor: 'rgba(6, 182, 212, 0.15)',
+                  color: 'var(--accent-cyan)',
+                  border: '1px solid var(--border-subtle)'
                 }}
               >
                 Ty-Code Zero-Cost
               </span>
             </div>
-            <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: '#94a3b8' }}>
+            <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: 'var(--text-secondary)' }}>
               Real-time monitoring across {summary.activeFreeProvidersCount} connected providers and {summary.totalFreeModelsAvailable} curated free models.
             </p>
           </div>
@@ -258,10 +258,10 @@ export const ProviderDashboard: React.FC<ProviderDashboardProps> = ({
               alignItems: 'center',
               gap: '6px',
               padding: '6px 12px',
-              backgroundColor: 'rgba(255, 255, 255, 0.05)',
-              border: '1px solid rgba(255, 255, 255, 0.1)',
+              backgroundColor: 'var(--surface-2)',
+              border: '1px solid var(--border-subtle)',
               borderRadius: '6px',
-              color: '#94a3b8',
+              color: 'var(--text-secondary)',
               fontSize: '12px',
               fontWeight: 500,
               cursor: 'pointer',
@@ -282,8 +282,8 @@ export const ProviderDashboard: React.FC<ProviderDashboardProps> = ({
           alignItems: 'center',
           gap: '8px',
           padding: '8px 24px',
-          backgroundColor: '#12141c',
-          borderBottom: '1px solid rgba(255, 255, 255, 0.06)'
+          backgroundColor: 'var(--bg-tertiary)',
+          borderBottom: '1px solid var(--border-subtle)'
         }}
       >
         {[
@@ -313,9 +313,9 @@ export const ProviderDashboard: React.FC<ProviderDashboardProps> = ({
                 borderRadius: '6px',
                 fontSize: '12px',
                 fontWeight: isActive ? 600 : 500,
-                color: isActive ? '#38bdf8' : '#94a3b8',
-                backgroundColor: isActive ? 'rgba(56, 189, 248, 0.12)' : 'transparent',
-                border: isActive ? '1px solid rgba(56, 189, 248, 0.3)' : '1px solid transparent',
+                color: isActive ? 'var(--accent-cyan)' : 'var(--text-secondary)',
+                backgroundColor: isActive ? 'var(--surface-2)' : 'transparent',
+                border: isActive ? '1px solid var(--border-subtle)' : '1px solid transparent',
                 cursor: 'pointer',
                 transition: 'all 0.15s ease'
               }}
@@ -343,8 +343,8 @@ export const ProviderDashboard: React.FC<ProviderDashboardProps> = ({
           <>
             {/* Section 1: Free Tier Summary Cards */}
             <div id="section-free-tier-summary">
-              <h3 style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: 600, color: '#f1f5f9', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <TrendingUp size={15} color="#38bdf8" />
+              <h3 style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <TrendingUp size={15} color="var(--accent-cyan)" />
                 Free Tier Capacity Summary
               </h3>
 
@@ -355,42 +355,42 @@ export const ProviderDashboard: React.FC<ProviderDashboardProps> = ({
                   gap: '12px'
                 }}
               >
-                <div style={{ backgroundColor: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '8px', padding: '14px 16px' }}>
-                  <span style={{ fontSize: '11px', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Monthly Free Pool</span>
-                  <div style={{ fontSize: '22px', fontWeight: 700, color: '#f8fafc', marginTop: '4px' }}>
+                <div style={{ backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)', borderRadius: '8px', padding: '14px 16px' }}>
+                  <span style={{ fontSize: '11px', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Monthly Free Pool</span>
+                  <div style={{ fontSize: '22px', fontWeight: 700, color: 'var(--text-primary)', marginTop: '4px' }}>
                     {formatTokens(summary.totalFreeTokensMonthly)}
                   </div>
-                  <span style={{ fontSize: '11px', color: '#10b981', marginTop: '2px', display: 'block' }}>
+                  <span style={{ fontSize: '11px', color: 'var(--accent-green)', marginTop: '2px', display: 'block' }}>
                     Across {summary.activeFreeProvidersCount} active providers
                   </span>
                 </div>
 
-                <div style={{ backgroundColor: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '8px', padding: '14px 16px' }}>
-                  <span style={{ fontSize: '11px', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Daily Allowance Headroom</span>
-                  <div style={{ fontSize: '22px', fontWeight: 700, color: '#38bdf8', marginTop: '4px' }}>
+                <div style={{ backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)', borderRadius: '8px', padding: '14px 16px' }}>
+                  <span style={{ fontSize: '11px', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Daily Allowance Headroom</span>
+                  <div style={{ fontSize: '22px', fontWeight: 700, color: 'var(--accent-cyan)', marginTop: '4px' }}>
                     {formatTokens(summary.totalFreeTokensDailyLimit)}
                   </div>
-                  <span style={{ fontSize: '11px', color: '#64748b', marginTop: '2px', display: 'block' }}>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px', display: 'block' }}>
                     {formatTokens(summary.totalTokensConsumedToday)} consumed today
                   </span>
                 </div>
 
-                <div style={{ backgroundColor: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '8px', padding: '14px 16px' }}>
-                  <span style={{ fontSize: '11px', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Cumulative Cost Savings</span>
-                  <div style={{ fontSize: '22px', fontWeight: 700, color: '#fbbf24', marginTop: '4px' }}>
+                <div style={{ backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)', borderRadius: '8px', padding: '14px 16px' }}>
+                  <span style={{ fontSize: '11px', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Cumulative Cost Savings</span>
+                  <div style={{ fontSize: '22px', fontWeight: 700, color: 'var(--accent-amber)', marginTop: '4px' }}>
                     ${summary.totalEstimatedSavingsUsd.toFixed(2)} USD
                   </div>
-                  <span style={{ fontSize: '11px', color: '#64748b', marginTop: '2px', display: 'block' }}>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px', display: 'block' }}>
                     Vs commercial API list prices
                   </span>
                 </div>
 
-                <div style={{ backgroundColor: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '8px', padding: '14px 16px' }}>
-                  <span style={{ fontSize: '11px', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Curated Free Models</span>
-                  <div style={{ fontSize: '22px', fontWeight: 700, color: '#c084fc', marginTop: '4px' }}>
+                <div style={{ backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)', borderRadius: '8px', padding: '14px 16px' }}>
+                  <span style={{ fontSize: '11px', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Curated Free Models</span>
+                  <div style={{ fontSize: '22px', fontWeight: 700, color: 'var(--accent-primary)', marginTop: '4px' }}>
                     {summary.totalFreeModelsAvailable} Models
                   </div>
-                  <span style={{ fontSize: '11px', color: '#64748b', marginTop: '2px', display: 'block' }}>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px', display: 'block' }}>
                     Tiers S, A, B, and C ready
                   </span>
                 </div>
@@ -400,11 +400,11 @@ export const ProviderDashboard: React.FC<ProviderDashboardProps> = ({
             {/* Section 2: Connected Providers Grid */}
             <div id="section-connected-providers">
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-                <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 600, color: '#f1f5f9', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Server size={15} color="#10b981" />
-                  Connected Free Providers & Health
+                <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Server size={15} color="var(--accent-green)" />
+                  Connected Free Providers &amp; Health
                 </h3>
-                <span style={{ fontSize: '11px', color: '#94a3b8' }}>
+                <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
                   Live ping latency and success rates updated continuously
                 </span>
               </div>
@@ -427,8 +427,8 @@ export const ProviderDashboard: React.FC<ProviderDashboardProps> = ({
                       key={p.id}
                       id={`provider-card-${p.id}`}
                       style={{
-                        backgroundColor: 'rgba(255, 255, 255, 0.03)',
-                        border: '1px solid rgba(255, 255, 255, 0.08)',
+                        backgroundColor: 'var(--bg-secondary)',
+                        border: '1px solid var(--border-subtle)',
                         borderRadius: '10px',
                         padding: '16px',
                         display: 'flex',
@@ -438,10 +438,10 @@ export const ProviderDashboard: React.FC<ProviderDashboardProps> = ({
                     >
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                         <div>
-                          <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 600, color: '#f8fafc' }}>
+                          <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>
                             {p.name}
                           </h4>
-                          <span style={{ fontSize: '10px', color: '#64748b' }}>{p.id}</span>
+                          <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{p.id}</span>
                         </div>
 
                         {/* Status Chip */}
@@ -450,7 +450,7 @@ export const ProviderDashboard: React.FC<ProviderDashboardProps> = ({
                             display: 'flex',
                             alignItems: 'center',
                             gap: '6px',
-                            backgroundColor: 'rgba(0, 0, 0, 0.25)',
+                            backgroundColor: 'var(--surface-2)',
                             padding: '3px 8px',
                             borderRadius: '9999px',
                             fontSize: '10px',
@@ -476,26 +476,26 @@ export const ProviderDashboard: React.FC<ProviderDashboardProps> = ({
                           display: 'grid',
                           gridTemplateColumns: 'repeat(3, 1fr)',
                           gap: '6px',
-                          backgroundColor: 'rgba(0, 0, 0, 0.2)',
+                          backgroundColor: 'var(--bg-tertiary)',
                           borderRadius: '6px',
                           padding: '8px 10px'
                         }}
                       >
                         <div>
-                          <span style={{ fontSize: '9px', color: '#64748b', textTransform: 'uppercase' }}>Latency</span>
-                          <div style={{ fontSize: '12px', fontWeight: 700, color: '#f1f5f9', marginTop: '2px' }}>
+                          <span style={{ fontSize: '9px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Latency</span>
+                          <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)', marginTop: '2px' }}>
                             {p.latencyMs} ms
                           </div>
                         </div>
                         <div>
-                          <span style={{ fontSize: '9px', color: '#64748b', textTransform: 'uppercase' }}>Success</span>
-                          <div style={{ fontSize: '12px', fontWeight: 700, color: '#10b981', marginTop: '2px' }}>
+                          <span style={{ fontSize: '9px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Success</span>
+                          <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--accent-green)', marginTop: '2px' }}>
                             {p.successRate}%
                           </div>
                         </div>
                         <div>
-                          <span style={{ fontSize: '9px', color: '#64748b', textTransform: 'uppercase' }}>Models</span>
-                          <div style={{ fontSize: '12px', fontWeight: 700, color: '#38bdf8', marginTop: '2px' }}>
+                          <span style={{ fontSize: '9px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Models</span>
+                          <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--accent-cyan)', marginTop: '2px' }}>
                             {p.freeModelCount} free
                           </div>
                         </div>
@@ -504,8 +504,8 @@ export const ProviderDashboard: React.FC<ProviderDashboardProps> = ({
                       {/* Quota Progress */}
                       <div>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '11px', marginBottom: '4px' }}>
-                          <span style={{ color: '#94a3b8' }}>Quota Used</span>
-                          <span style={{ fontWeight: 600, color: p.percentUsed >= 90 ? '#ef4444' : '#f1f5f9' }}>
+                          <span style={{ color: 'var(--text-secondary)' }}>Quota Used</span>
+                          <span style={{ fontWeight: 600, color: p.percentUsed >= 90 ? 'var(--accent-red)' : 'var(--text-primary)' }}>
                             {formatTokens(p.consumedTokens)} / {formatTokens(p.monthlyQuotaTokens)} ({p.percentUsed}%)
                           </span>
                         </div>
@@ -513,7 +513,7 @@ export const ProviderDashboard: React.FC<ProviderDashboardProps> = ({
                           style={{
                             width: '100%',
                             height: '4px',
-                            backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                            backgroundColor: 'var(--surface-3)',
                             borderRadius: '2px',
                             overflow: 'hidden'
                           }}
@@ -522,7 +522,7 @@ export const ProviderDashboard: React.FC<ProviderDashboardProps> = ({
                             style={{
                               width: `${p.percentUsed}%`,
                               height: '100%',
-                              backgroundColor: p.percentUsed >= 90 ? '#ef4444' : p.percentUsed >= 70 ? '#f59e0b' : '#10b981',
+                              backgroundColor: p.percentUsed >= 90 ? 'var(--accent-red)' : p.percentUsed >= 70 ? 'var(--accent-amber)' : 'var(--accent-green)',
                               borderRadius: '2px'
                             }}
                           />
@@ -539,9 +539,9 @@ export const ProviderDashboard: React.FC<ProviderDashboardProps> = ({
                           style={{
                             padding: '4px 10px',
                             borderRadius: '4px',
-                            backgroundColor: 'rgba(255, 255, 255, 0.05)',
-                            border: '1px solid rgba(255, 255, 255, 0.1)',
-                            color: '#94a3b8',
+                            backgroundColor: 'var(--surface-2)',
+                            border: '1px solid var(--border-subtle)',
+                            color: 'var(--text-secondary)',
                             fontSize: '11px',
                             fontWeight: 500,
                             cursor: 'pointer',
@@ -555,7 +555,7 @@ export const ProviderDashboard: React.FC<ProviderDashboardProps> = ({
                         </button>
 
                         {currentTest && (
-                          <span style={{ fontSize: '10px', color: currentTest.ok ? '#34d399' : '#f87171' }}>
+                          <span style={{ fontSize: '10px', color: currentTest.ok ? 'var(--accent-green)' : 'var(--accent-red)' }}>
                             {currentTest.message}
                           </span>
                         )}
@@ -569,32 +569,32 @@ export const ProviderDashboard: React.FC<ProviderDashboardProps> = ({
             {/* Section 4: Recent Activity Table */}
             <div id="section-recent-activity">
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-                <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 600, color: '#f1f5f9', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Clock size={15} color="#c084fc" />
-                  Recent Invocations & Telemetry (Last 10)
+                <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Clock size={15} color="var(--accent-primary)" />
+                  Recent Invocations &amp; Telemetry (Last 10)
                 </h3>
-                <span style={{ fontSize: '11px', color: '#94a3b8' }}>
+                <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
                   Recorded latency, token consumption, and auto-failovers
                 </span>
               </div>
 
               <div
                 style={{
-                  backgroundColor: 'rgba(255, 255, 255, 0.03)',
-                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                  backgroundColor: 'var(--bg-secondary)',
+                  border: '1px solid var(--border-subtle)',
                   borderRadius: '10px',
                   overflow: 'hidden'
                 }}
               >
                 <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '12px' }}>
                   <thead>
-                    <tr style={{ backgroundColor: 'rgba(0, 0, 0, 0.3)', borderBottom: '1px solid rgba(255, 255, 255, 0.08)' }}>
-                      <th style={{ padding: '10px 14px', color: '#94a3b8', fontWeight: 600 }}>Model / Provider</th>
-                      <th style={{ padding: '10px 14px', color: '#94a3b8', fontWeight: 600 }}>Task Type</th>
-                      <th style={{ padding: '10px 14px', color: '#94a3b8', fontWeight: 600 }}>Tokens</th>
-                      <th style={{ padding: '10px 14px', color: '#94a3b8', fontWeight: 600 }}>Latency</th>
-                      <th style={{ padding: '10px 14px', color: '#94a3b8', fontWeight: 600 }}>Status</th>
-                      <th style={{ padding: '10px 14px', color: '#94a3b8', fontWeight: 600 }}>Cost Saved</th>
+                    <tr style={{ backgroundColor: 'var(--bg-tertiary)', borderBottom: '1px solid var(--border-subtle)' }}>
+                      <th style={{ padding: '10px 14px', color: 'var(--text-secondary)', fontWeight: 600 }}>Model / Provider</th>
+                      <th style={{ padding: '10px 14px', color: 'var(--text-secondary)', fontWeight: 600 }}>Task Type</th>
+                      <th style={{ padding: '10px 14px', color: 'var(--text-secondary)', fontWeight: 600 }}>Tokens</th>
+                      <th style={{ padding: '10px 14px', color: 'var(--text-secondary)', fontWeight: 600 }}>Latency</th>
+                      <th style={{ padding: '10px 14px', color: 'var(--text-secondary)', fontWeight: 600 }}>Status</th>
+                      <th style={{ padding: '10px 14px', color: 'var(--text-secondary)', fontWeight: 600 }}>Cost Saved</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -602,29 +602,29 @@ export const ProviderDashboard: React.FC<ProviderDashboardProps> = ({
                       <tr
                         key={act.id}
                         id={`row-activity-${act.id}`}
-                        style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.04)' }}
+                        style={{ borderBottom: '1px solid var(--border-subtle)' }}
                       >
                         <td style={{ padding: '10px 14px' }}>
-                          <div style={{ fontWeight: 600, color: '#f1f5f9' }}>{act.modelName}</div>
-                          <div style={{ fontSize: '10px', color: '#64748b' }}>via {act.providerName}</div>
+                          <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{act.modelName}</div>
+                          <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>via {act.providerName}</div>
                         </td>
-                        <td style={{ padding: '10px 14px', color: '#94a3b8' }}>
+                        <td style={{ padding: '10px 14px', color: 'var(--text-secondary)' }}>
                           <span
                             style={{
                               fontSize: '10px',
                               padding: '2px 6px',
                               borderRadius: '4px',
-                              backgroundColor: 'rgba(255, 255, 255, 0.06)',
-                              color: '#cbd5e1'
+                              backgroundColor: 'var(--surface-2)',
+                              color: 'var(--text-secondary)'
                             }}
                           >
                             {act.taskType.replace('_', ' ')}
                           </span>
                         </td>
-                        <td style={{ padding: '10px 14px', color: '#cbd5e1' }}>
+                        <td style={{ padding: '10px 14px', color: 'var(--text-secondary)' }}>
                           {act.totalTokens.toLocaleString()}
                         </td>
-                        <td style={{ padding: '10px 14px', color: act.latencyMs <= 200 ? '#34d399' : '#cbd5e1' }}>
+                        <td style={{ padding: '10px 14px', color: act.latencyMs <= 200 ? 'var(--accent-green)' : 'var(--text-secondary)' }}>
                           {act.latencyMs} ms
                         </td>
                         <td style={{ padding: '10px 14px' }}>
@@ -635,13 +635,13 @@ export const ProviderDashboard: React.FC<ProviderDashboardProps> = ({
                               padding: '2px 6px',
                               borderRadius: '4px',
                               backgroundColor: act.status === 'success' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)',
-                              color: act.status === 'success' ? '#34d399' : '#fbbf24'
+                              color: act.status === 'success' ? 'var(--accent-green)' : 'var(--accent-amber)'
                             }}
                           >
                             {act.status}
                           </span>
                         </td>
-                        <td style={{ padding: '10px 14px', color: '#fbbf24', fontWeight: 600 }}>
+                        <td style={{ padding: '10px 14px', color: 'var(--accent-amber)', fontWeight: 600 }}>
                           ${act.costSavedUsd.toFixed(4)}
                         </td>
                       </tr>
@@ -682,47 +682,47 @@ export const ProviderDashboard: React.FC<ProviderDashboardProps> = ({
 
         {activeTab === 'activity' && (
           <div id="full-activity-view">
-            <h3 style={{ margin: '0 0 12px 0', fontSize: '15px', fontWeight: 600, color: '#f1f5f9' }}>
-              Full Telemetry & Request Audit Trail
+            <h3 style={{ margin: '0 0 12px 0', fontSize: '15px', fontWeight: 600, color: 'var(--text-primary)' }}>
+              Full Telemetry &amp; Request Audit Trail
             </h3>
             {/* Same comprehensive activity table */}
             <div
               style={{
-                backgroundColor: 'rgba(255, 255, 255, 0.03)',
-                border: '1px solid rgba(255, 255, 255, 0.08)',
+                backgroundColor: 'var(--bg-secondary)',
+                border: '1px solid var(--border-subtle)',
                 borderRadius: '10px',
                 overflow: 'hidden'
               }}
             >
               <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '12px' }}>
                 <thead>
-                  <tr style={{ backgroundColor: 'rgba(0, 0, 0, 0.3)', borderBottom: '1px solid rgba(255, 255, 255, 0.08)' }}>
-                    <th style={{ padding: '10px 14px', color: '#94a3b8', fontWeight: 600 }}>Timestamp</th>
-                    <th style={{ padding: '10px 14px', color: '#94a3b8', fontWeight: 600 }}>Model / Provider</th>
-                    <th style={{ padding: '10px 14px', color: '#94a3b8', fontWeight: 600 }}>Task Type</th>
-                    <th style={{ padding: '10px 14px', color: '#94a3b8', fontWeight: 600 }}>Tokens</th>
-                    <th style={{ padding: '10px 14px', color: '#94a3b8', fontWeight: 600 }}>Latency</th>
-                    <th style={{ padding: '10px 14px', color: '#94a3b8', fontWeight: 600 }}>Status</th>
-                    <th style={{ padding: '10px 14px', color: '#94a3b8', fontWeight: 600 }}>Savings</th>
+                  <tr style={{ backgroundColor: 'var(--bg-tertiary)', borderBottom: '1px solid var(--border-subtle)' }}>
+                    <th style={{ padding: '10px 14px', color: 'var(--text-secondary)', fontWeight: 600 }}>Timestamp</th>
+                    <th style={{ padding: '10px 14px', color: 'var(--text-secondary)', fontWeight: 600 }}>Model / Provider</th>
+                    <th style={{ padding: '10px 14px', color: 'var(--text-secondary)', fontWeight: 600 }}>Task Type</th>
+                    <th style={{ padding: '10px 14px', color: 'var(--text-secondary)', fontWeight: 600 }}>Tokens</th>
+                    <th style={{ padding: '10px 14px', color: 'var(--text-secondary)', fontWeight: 600 }}>Latency</th>
+                    <th style={{ padding: '10px 14px', color: 'var(--text-secondary)', fontWeight: 600 }}>Status</th>
+                    <th style={{ padding: '10px 14px', color: 'var(--text-secondary)', fontWeight: 600 }}>Savings</th>
                   </tr>
                 </thead>
                 <tbody>
                   {recentActivity.map((act) => (
-                    <tr key={act.id} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.04)' }}>
-                      <td style={{ padding: '10px 14px', color: '#64748b' }}>
+                    <tr key={act.id} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                      <td style={{ padding: '10px 14px', color: 'var(--text-muted)' }}>
                         {new Date(act.timestamp).toLocaleTimeString()}
                       </td>
                       <td style={{ padding: '10px 14px' }}>
-                        <div style={{ fontWeight: 600, color: '#f1f5f9' }}>{act.modelName}</div>
-                        <div style={{ fontSize: '10px', color: '#64748b' }}>via {act.providerName}</div>
+                        <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{act.modelName}</div>
+                        <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>via {act.providerName}</div>
                       </td>
-                      <td style={{ padding: '10px 14px', color: '#94a3b8' }}>
+                      <td style={{ padding: '10px 14px', color: 'var(--text-secondary)' }}>
                         {act.taskType}
                       </td>
-                      <td style={{ padding: '10px 14px', color: '#cbd5e1' }}>
+                      <td style={{ padding: '10px 14px', color: 'var(--text-secondary)' }}>
                         {act.totalTokens.toLocaleString()}
                       </td>
-                      <td style={{ padding: '10px 14px', color: act.latencyMs <= 200 ? '#34d399' : '#cbd5e1' }}>
+                      <td style={{ padding: '10px 14px', color: act.latencyMs <= 200 ? 'var(--accent-green)' : 'var(--text-secondary)' }}>
                         {act.latencyMs} ms
                       </td>
                       <td style={{ padding: '10px 14px' }}>
@@ -733,13 +733,13 @@ export const ProviderDashboard: React.FC<ProviderDashboardProps> = ({
                             padding: '2px 6px',
                             borderRadius: '4px',
                             backgroundColor: act.status === 'success' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)',
-                            color: act.status === 'success' ? '#34d399' : '#fbbf24'
+                            color: act.status === 'success' ? 'var(--accent-green)' : 'var(--accent-amber)'
                           }}
                         >
                           {act.status}
                         </span>
                       </td>
-                      <td style={{ padding: '10px 14px', color: '#fbbf24', fontWeight: 600 }}>
+                      <td style={{ padding: '10px 14px', color: 'var(--accent-amber)', fontWeight: 600 }}>
                         ${act.costSavedUsd.toFixed(4)}
                       </td>
                     </tr>

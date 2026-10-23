@@ -26,6 +26,7 @@ import { useChatStore } from './state/chat-store';
 import { useWorkspaceStore } from './state/workspace-store';
 import { useEditorNavigationStore } from './state/editor-navigation-store';
 import { useDebuggerStore } from './state/debugger-store';
+import { useThemeSync } from './hooks/useThemeSync';
 
 import { Palette } from 'lucide-react';
 import { SketcherWindow } from './components/SketcherWindow';
@@ -526,6 +527,8 @@ const MainWorkbench: React.FC = () => {
 };
 
 export const App: React.FC = () => {
+  useThemeSync();
+
   const isSketcher = typeof window !== 'undefined' && window.location.hash.includes('sketcher');
   if (isSketcher) {
     return <SketcherWindow />;

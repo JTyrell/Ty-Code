@@ -1640,6 +1640,7 @@ export interface DebuggerStateSnapshotData {
   analysisResults: AnalysisResultData[];
   isPopOutMode: boolean;
   selectedRole: AnalysisRole;
+  theme?: string;
   updatedAt?: number;
 }
 

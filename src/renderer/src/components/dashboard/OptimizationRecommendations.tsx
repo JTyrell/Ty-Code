@@ -145,11 +145,11 @@ export const OptimizationRecommendations: React.FC<OptimizationRecommendationsPr
     <div id="optimization-recommendations-container" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div>
-          <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: '#f1f5f9', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Sparkles size={16} color="var(--accent-primary, #38bdf8)" />
             AI-Driven Optimization Recommendations
           </h3>
-          <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#94a3b8' }}>
+          <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: 'var(--text-secondary)' }}>
             Personalized insights derived from recent query distribution, quota consumption, and latency metrics.
           </p>
         </div>
@@ -160,9 +160,9 @@ export const OptimizationRecommendations: React.FC<OptimizationRecommendationsPr
             fontWeight: 600,
             padding: '4px 10px',
             borderRadius: '6px',
-            backgroundColor: 'rgba(56, 189, 248, 0.12)',
-            color: '#38bdf8',
-            border: '1px solid rgba(56, 189, 248, 0.25)'
+            backgroundColor: 'var(--surface-2)',
+            color: 'var(--accent-primary, #38bdf8)',
+            border: '1px solid var(--border-subtle)'
           }}
         >
           {recommendations.length} Active {recommendations.length === 1 ? 'Tip' : 'Tips'}
@@ -175,14 +175,14 @@ export const OptimizationRecommendations: React.FC<OptimizationRecommendationsPr
           style={{
             padding: '36px',
             textAlign: 'center',
-            backgroundColor: 'rgba(255, 255, 255, 0.02)',
-            border: '1px dashed rgba(255, 255, 255, 0.1)',
+            backgroundColor: 'var(--surface-2)',
+            border: '1px dashed var(--border-subtle)',
             borderRadius: '10px'
           }}
         >
-          <CheckCircle2 size={32} color="#10b981" style={{ margin: '0 auto 10px auto' }} />
-          <h4 style={{ margin: '0 0 4px 0', fontSize: '14px', color: '#f1f5f9' }}>Ecosystem Fully Optimized</h4>
-          <p style={{ margin: 0, fontSize: '12px', color: '#94a3b8' }}>
+          <CheckCircle2 size={32} color="var(--accent-green, #10b981)" style={{ margin: '0 auto 10px auto' }} />
+          <h4 style={{ margin: '0 0 4px 0', fontSize: '14px', color: 'var(--text-primary)' }}>Ecosystem Fully Optimized</h4>
+          <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-secondary)' }}>
             Your active models, fallback routes, and provider balances are operating at peak efficiency.
           </p>
         </div>
@@ -202,8 +202,8 @@ export const OptimizationRecommendations: React.FC<OptimizationRecommendationsPr
                   justifyContent: 'space-between',
                   gap: '14px',
                   padding: '14px 16px',
-                  backgroundColor: 'rgba(255, 255, 255, 0.03)',
-                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                  backgroundColor: 'var(--bg-secondary)',
+                  border: '1px solid var(--border-subtle)',
                   borderRadius: '10px',
                   transition: 'all 0.2s ease',
                   opacity: isDismissing ? 0.4 : 1
@@ -215,8 +215,8 @@ export const OptimizationRecommendations: React.FC<OptimizationRecommendationsPr
                       width: '36px',
                       height: '36px',
                       borderRadius: '8px',
-                      backgroundColor: 'rgba(255, 255, 255, 0.04)',
-                      border: '1px solid rgba(255, 255, 255, 0.08)',
+                      backgroundColor: 'var(--surface-2)',
+                      border: '1px solid var(--border-subtle)',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
@@ -229,13 +229,13 @@ export const OptimizationRecommendations: React.FC<OptimizationRecommendationsPr
 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc' }}>
+                      <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>
                         {rec.title}
                       </span>
                       {getPriorityBadge(rec.priority)}
                     </div>
 
-                    <p style={{ margin: 0, fontSize: '12px', color: '#94a3b8', lineHeight: 1.5 }}>
+                    <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
                       {rec.description}
                     </p>
                   </div>
@@ -282,7 +282,7 @@ export const OptimizationRecommendations: React.FC<OptimizationRecommendationsPr
                     style={{
                       background: 'none',
                       border: 'none',
-                      color: '#64748b',
+                      color: 'var(--text-muted)',
                       cursor: 'pointer',
                       padding: '6px',
                       borderRadius: '6px',
@@ -291,8 +291,8 @@ export const OptimizationRecommendations: React.FC<OptimizationRecommendationsPr
                       justifyContent: 'center',
                       transition: 'color 0.15s ease'
                     }}
-                    onMouseEnter={(e) => (e.currentTarget.style.color = '#ef4444')}
-                    onMouseLeave={(e) => (e.currentTarget.style.color = '#64748b')}
+                    onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--accent-red, #ef4444)')}
+                    onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
                   >
                     <X size={14} />
                   </button>

@@ -585,7 +585,7 @@ export const ModelSelector: React.FC = () => {
           height: '24px',
           padding: '0 6px',
           borderRadius: '6px',
-          background: isOpen ? 'var(--surface-3, rgba(255, 255, 255, 0.08))' : 'var(--surface-2, rgba(255, 255, 255, 0.04))',
+          background: isOpen ? 'var(--surface-3)' : 'var(--surface-2)',
           border: isOpen ? '1px solid var(--accent-primary)' : '1px solid var(--border-subtle)',
           color: 'var(--text-primary)',
           fontSize: '11px',
@@ -599,13 +599,13 @@ export const ModelSelector: React.FC = () => {
       >
         <span style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
           {routingMode === 'auto' ? (
-            <Sparkles size={11} color="#38bdf8" />
+            <Sparkles size={11} color="var(--accent-primary, #38bdf8)" />
           ) : routingMode === 'fastest' ? (
-            <Zap size={11} color="#fbbf24" />
+            <Zap size={11} color="var(--accent-amber, #fbbf24)" />
           ) : routingMode === 'most_capable' ? (
-            <Cpu size={11} color="#818cf8" />
+            <Cpu size={11} color="var(--accent-purple, #818cf8)" />
           ) : (
-            <Sliders size={11} color="#cbd5e1" />
+            <Sliders size={11} color="var(--text-secondary, #cbd5e1)" />
           )}
         </span>
 
@@ -660,10 +660,10 @@ export const ModelSelector: React.FC = () => {
             boxSizing: 'border-box',
             overflowX: 'hidden',
             overflowY: 'auto',
-            background: '#161922',
-            border: '1px solid rgba(255, 255, 255, 0.12)',
+            background: 'var(--bg-secondary)',
+            border: '1px solid var(--border-default)',
             borderRadius: '8px',
-            boxShadow: '0 16px 36px rgba(0, 0, 0, 0.55)',
+            boxShadow: '0 16px 36px rgba(0, 0, 0, 0.25)',
             zIndex: 2000,
             padding: '8px',
             display: 'flex',
@@ -674,11 +674,11 @@ export const ModelSelector: React.FC = () => {
           {communityKeyStatus === 'degraded' && (
             <div
               id="chip-community-key-degraded-model-selector"
-              className="bg-yellow-500/10 text-yellow-400 border border-yellow-500/30 text-[10px] px-2 py-0.5 rounded-full"
+              className="text-[10px] px-2 py-0.5 rounded-full"
               style={{
-                backgroundColor: 'rgba(234, 179, 8, 0.1)',
-                color: '#facc15',
-                border: '1px solid rgba(234, 179, 8, 0.3)',
+                backgroundColor: 'rgba(234, 179, 8, 0.12)',
+                color: 'var(--accent-amber, #fbbf24)',
+                border: '1px solid rgba(234, 179, 8, 0.35)',
                 fontSize: '10px',
                 padding: '3px 8px',
                 borderRadius: '9999px',
@@ -698,17 +698,17 @@ export const ModelSelector: React.FC = () => {
           <div
             style={{
               display: 'flex',
-              background: 'rgba(255, 255, 255, 0.04)',
+              background: 'var(--bg-tertiary)',
               borderRadius: '6px',
               padding: '2px',
-              border: '1px solid rgba(255, 255, 255, 0.08)'
+              border: '1px solid var(--border-subtle)'
             }}
           >
             {[
-              { id: 'auto', label: 'Auto', icon: Sparkles, color: '#38bdf8' },
-              { id: 'fastest', label: 'Fastest', icon: Zap, color: '#fbbf24' },
-              { id: 'most_capable', label: 'Capable', icon: Cpu, color: '#818cf8' },
-              { id: 'manual', label: 'Manual', icon: Sliders, color: '#cbd5e1' }
+              { id: 'auto', label: 'Auto', icon: Sparkles, color: 'var(--accent-primary, #38bdf8)' },
+              { id: 'fastest', label: 'Fastest', icon: Zap, color: 'var(--accent-amber, #fbbf24)' },
+              { id: 'most_capable', label: 'Capable', icon: Cpu, color: 'var(--accent-purple, #818cf8)' },
+              { id: 'manual', label: 'Manual', icon: Sliders, color: 'var(--text-secondary, #cbd5e1)' }
             ].map((m) => {
               const IconComp = m.icon;
               const isSelected = routingMode === m.id;
@@ -727,8 +727,8 @@ export const ModelSelector: React.FC = () => {
                     padding: '4px 0',
                     border: 'none',
                     borderRadius: '4px',
-                    background: isSelected ? 'rgba(255, 255, 255, 0.12)' : 'transparent',
-                    color: isSelected ? '#ffffff' : 'var(--text-muted)',
+                    background: isSelected ? 'var(--surface-3)' : 'transparent',
+                    color: isSelected ? 'var(--text-primary)' : 'var(--text-muted)',
                     fontSize: '10px',
                     fontWeight: isSelected ? 600 : 400,
                     cursor: 'pointer',
@@ -746,7 +746,7 @@ export const ModelSelector: React.FC = () => {
             <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
               Select Model (Ctrl+M)
             </span>
-            <span style={{ fontSize: '10px', color: '#34d399', fontWeight: 600 }}>
+            <span style={{ fontSize: '10px', color: 'var(--accent-green, #34d399)', fontWeight: 600 }}>
               Auto-Failover Active
             </span>
           </div>
@@ -771,24 +771,24 @@ export const ModelSelector: React.FC = () => {
                   justifyContent: 'space-between',
                   padding: '6px 8px',
                   borderRadius: '5px',
-                  background: isAutoSelected ? 'rgba(56, 189, 248, 0.16)' : 'rgba(56, 189, 248, 0.04)',
-                  border: isAutoSelected ? '1px solid #38bdf8' : '1px solid rgba(56, 189, 248, 0.15)',
+                  background: isAutoSelected ? 'rgba(56, 189, 248, 0.16)' : 'var(--surface-2)',
+                  border: isAutoSelected ? '1px solid var(--accent-primary, #38bdf8)' : '1px solid var(--border-subtle)',
                   boxShadow: isAutoSelected ? '0 0 10px rgba(56, 189, 248, 0.25)' : 'none',
                   cursor: 'pointer',
                   transition: 'background 0.12s ease'
                 }}
-                onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = isAutoSelected ? 'rgba(56, 189, 248, 0.16)' : 'rgba(56, 189, 248, 0.1)'; }}
-                onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = isAutoSelected ? 'rgba(56, 189, 248, 0.16)' : 'rgba(56, 189, 248, 0.04)'; }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = isAutoSelected ? 'rgba(56, 189, 248, 0.16)' : 'var(--bg-hover)'; }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = isAutoSelected ? 'rgba(56, 189, 248, 0.16)' : 'var(--surface-2)'; }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
-                  <Sparkles size={11} color="#38bdf8" style={{ flexShrink: 0 }} />
-                  <span style={{ fontSize: '11px', fontWeight: 600, color: '#ffffff' }}>Auto (FCC decides)</span>
+                  <Sparkles size={11} color="var(--accent-primary, #38bdf8)" style={{ flexShrink: 0 }} />
+                  <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-primary)' }}>Auto (FCC decides)</span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <span style={{ fontSize: '9px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
                     Best free model per message
                   </span>
-                  {isAutoSelected && <Check size={13} color="#38bdf8" style={{ flexShrink: 0 }} />}
+                  {isAutoSelected && <Check size={13} color="var(--accent-primary, #38bdf8)" style={{ flexShrink: 0 }} />}
                 </div>
               </div>
             );
@@ -926,13 +926,19 @@ export const ModelSelector: React.FC = () => {
                       justifyContent: 'space-between',
                       padding: '6px 8px',
                       borderRadius: '5px',
-                      background: isSelected ? 'rgba(56, 189, 248, 0.16)' : 'rgba(255, 255, 255, 0.02)',
-                      border: isSelected ? '1px solid #38bdf8' : '1px solid transparent',
+                      background: isSelected ? 'rgba(56, 189, 248, 0.16)' : 'transparent',
+                      border: isSelected ? '1px solid var(--accent-primary, #38bdf8)' : '1px solid transparent',
                       boxShadow: isSelected ? '0 0 10px rgba(56, 189, 248, 0.25)' : 'none',
                       cursor: locked ? 'help' : 'pointer',
                       opacity: locked ? 0.75 : 1,
                       textAlign: 'left',
                       transition: 'all 0.15s ease'
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!isSelected) (e.currentTarget as HTMLButtonElement).style.background = 'var(--bg-hover)';
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!isSelected) (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
                     }}
                   >
                     <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
@@ -946,7 +952,7 @@ export const ModelSelector: React.FC = () => {
                             whiteSpace: 'nowrap',
                             fontSize: '11px',
                             fontWeight: isSelected ? 600 : 500,
-                            color: locked ? 'var(--text-muted)' : isSelected ? '#ffffff' : 'var(--text-primary)'
+                            color: locked ? 'var(--text-muted)' : isSelected ? 'var(--accent-primary, #38bdf8)' : 'var(--text-primary)'
                           }}
                         >
                           {r.name}
@@ -960,7 +966,7 @@ export const ModelSelector: React.FC = () => {
                               padding: '0 4px',
                               borderRadius: '2px',
                               backgroundColor: 'rgba(16, 185, 129, 0.2)',
-                              color: '#34d399',
+                              color: 'var(--accent-green, #34d399)',
                               border: '1px solid rgba(16, 185, 129, 0.4)'
                             }}
                           >
@@ -976,7 +982,7 @@ export const ModelSelector: React.FC = () => {
                               padding: '0 4px',
                               borderRadius: '2px',
                               backgroundColor: 'rgba(56, 189, 248, 0.2)',
-                              color: '#38bdf8',
+                              color: 'var(--accent-primary, #38bdf8)',
                               border: '1px solid rgba(56, 189, 248, 0.4)'
                             }}
                           >
@@ -995,7 +1001,7 @@ export const ModelSelector: React.FC = () => {
                           {r.availabilityStatus === 'key_required' ? 'locked' : 'offline'}
                         </span>
                       )}
-                      {isSelected && <Check size={13} color="#38bdf8" style={{ flexShrink: 0 }} />}
+                      {isSelected && <Check size={13} color="var(--accent-primary, #38bdf8)" style={{ flexShrink: 0 }} />}
                     </div>
                   </button>
 
@@ -1012,9 +1018,9 @@ export const ModelSelector: React.FC = () => {
                         gap: '6px',
                         padding: '8px',
                         borderRadius: '6px',
-                        background: '#1b1f2b',
-                        border: '1px solid rgba(255, 255, 255, 0.15)',
-                        boxShadow: '0 12px 28px rgba(0, 0, 0, 0.5)'
+                        background: 'var(--bg-secondary)',
+                        border: '1px solid var(--border-default)',
+                        boxShadow: '0 12px 28px rgba(0, 0, 0, 0.35)'
                       }}
                     >
                       <span style={{ fontSize: '10.5px', color: 'var(--text-primary)' }}>{lockReason(r)}</span>
@@ -1033,8 +1039,8 @@ export const ModelSelector: React.FC = () => {
                               padding: '4px 8px',
                               borderRadius: '4px',
                               border: 'none',
-                              background: '#38bdf8',
-                              color: '#0b1220',
+                              background: 'var(--accent-primary, #38bdf8)',
+                              color: 'var(--bg-primary, #0b1220)',
                               fontSize: '10px',
                               fontWeight: 700,
                               cursor: cliInstall.active ? 'wait' : 'pointer',
@@ -1075,8 +1081,8 @@ export const ModelSelector: React.FC = () => {
                             padding: '4px 8px',
                             borderRadius: '4px',
                             border: 'none',
-                            background: '#38bdf8',
-                            color: '#0b1220',
+                            background: 'var(--accent-primary, #38bdf8)',
+                            color: 'var(--bg-primary, #0b1220)',
                             fontSize: '10px',
                             fontWeight: 700,
                             cursor: 'pointer'
@@ -1140,8 +1146,8 @@ export const ModelSelector: React.FC = () => {
                 {/* 🔒 Unlock with Key — requires keys or services the user doesn't have yet */}
                 {renderSection('locked', 'models-group-locked', '🔒 Locked (Needs key or service)', lockedRows, {
                   count: lockedRows.length,
-                  bg: 'rgba(148, 163, 184, 0.06)',
-                  border: 'rgba(148, 163, 184, 0.16)',
+                  bg: 'var(--surface-2)',
+                  border: 'var(--border-subtle)',
                   labelColor: 'var(--text-muted)',
                 })}
 

@@ -6,8 +6,8 @@ const CONTEXT_WINDOW_LIMIT = 128_000;
 const SPARKLINE_POINTS = 40;
 
 const cardStyle: React.CSSProperties = {
-  background: 'rgba(30, 41, 59, 0.5)',
-  border: '1px solid rgba(51, 65, 85, 0.6)',
+  background: 'var(--bg-secondary)',
+  border: '1px solid var(--border-subtle)',
   borderRadius: '10px',
   padding: '14px 16px',
   display: 'flex',
@@ -21,19 +21,19 @@ const sectionTitleStyle: React.CSSProperties = {
   fontWeight: 600,
   letterSpacing: '0.06em',
   textTransform: 'uppercase',
-  color: '#64748b'
+  color: 'var(--text-muted)'
 };
 
 const metricStyle: React.CSSProperties = {
   fontSize: '20px',
   fontWeight: 600,
-  color: '#e2e8f0',
+  color: 'var(--text-primary)',
   lineHeight: 1.2
 };
 
 const hintStyle: React.CSSProperties = {
   fontSize: '11px',
-  color: '#64748b'
+  color: 'var(--text-secondary)'
 };
 
 function formatNumber(value: number): string {
@@ -52,9 +52,9 @@ function TokenSparkline({ values, width, height }: { values: number[]; width: nu
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          color: '#475569',
+          color: 'var(--text-muted)',
           fontSize: '11px',
-          border: '1px dashed rgba(51, 65, 85, 0.8)',
+          border: '1px dashed var(--border-subtle)',
           borderRadius: '8px'
         }}
       >
@@ -166,7 +166,7 @@ export function ObservabilityPanel() {
     width: '84px',
     height: '84px',
     borderRadius: '50%',
-    background: `conic-gradient(${pieColor} 0turn ${overallRate / 100}turn, rgba(51, 65, 85, 0.9) ${overallRate / 100}turn 1turn)`,
+    background: `conic-gradient(${pieColor} 0turn ${overallRate / 100}turn, var(--surface-3) ${overallRate / 100}turn 1turn)`,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center'
@@ -175,7 +175,7 @@ export function ObservabilityPanel() {
     width: '58px',
     height: '58px',
     borderRadius: '50%',
-    background: 'rgba(15, 23, 42, 0.96)',
+    background: 'var(--bg-secondary)',
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
@@ -199,9 +199,9 @@ export function ObservabilityPanel() {
       data-observability-panel
       style={{
         margin: '0 24px 24px',
-        border: '1px solid rgba(51, 65, 85, 0.6)',
+        border: '1px solid var(--border-subtle)',
         borderRadius: '12px',
-        background: 'rgba(15, 23, 42, 0.55)',
+        background: 'var(--bg-tertiary)',
         padding: '16px',
         display: 'flex',
         flexDirection: 'column',
@@ -209,8 +209,8 @@ export function ObservabilityPanel() {
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-        <Activity size={16} color="#38bdf8" />
-        <span style={{ fontSize: '14px', fontWeight: 600, color: '#e2e8f0' }}>
+        <Activity size={16} color="var(--accent-primary, #38bdf8)" />
+        <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>
           Agent Observability
         </span>
         <span style={hintStyle}>Local-only metrics — nothing leaves this machine</span>
@@ -225,9 +225,9 @@ export function ObservabilityPanel() {
             gap: '5px',
             padding: '5px 10px',
             fontSize: '11px',
-            color: '#94a3b8',
-            background: 'transparent',
-            border: '1px solid rgba(51, 65, 85, 0.8)',
+            color: 'var(--text-secondary)',
+            background: 'var(--surface-2)',
+            border: '1px solid var(--border-subtle)',
             borderRadius: '8px',
             cursor: 'pointer'
           }}
@@ -244,9 +244,9 @@ export function ObservabilityPanel() {
             gap: '5px',
             padding: '5px 10px',
             fontSize: '11px',
-            color: '#94a3b8',
-            background: 'transparent',
-            border: '1px solid rgba(51, 65, 85, 0.8)',
+            color: 'var(--text-secondary)',
+            background: 'var(--surface-2)',
+            border: '1px solid var(--border-subtle)',
             borderRadius: '8px',
             cursor: 'pointer'
           }}
@@ -263,9 +263,9 @@ export function ObservabilityPanel() {
             gap: '5px',
             padding: '5px 10px',
             fontSize: '11px',
-            color: '#94a3b8',
-            background: 'transparent',
-            border: '1px solid rgba(51, 65, 85, 0.8)',
+            color: 'var(--text-secondary)',
+            background: 'var(--surface-2)',
+            border: '1px solid var(--border-subtle)',
             borderRadius: '8px',
             cursor: 'pointer'
           }}
@@ -276,7 +276,7 @@ export function ObservabilityPanel() {
       </div>
 
       {loadError ? (
-        <div style={{ fontSize: '12px', color: '#f87171' }}>{loadError}</div>
+        <div style={{ fontSize: '12px', color: 'var(--accent-red, #f87171)' }}>{loadError}</div>
       ) : null}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px' }}>
@@ -299,7 +299,7 @@ export function ObservabilityPanel() {
               </div>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', minWidth: 0 }}>
-              <span style={{ fontSize: '13px', color: '#e2e8f0' }}>
+              <span style={{ fontSize: '13px', color: 'var(--text-primary)' }}>
                 {toolCalls ? formatNumber(toolCalls.totalCount) : 0} tool calls
               </span>
               <span style={hintStyle}>
@@ -323,7 +323,7 @@ export function ObservabilityPanel() {
                   <span
                     style={{
                       fontSize: '11px',
-                      color: '#94a3b8',
+                      color: 'var(--text-secondary)',
                       width: '132px',
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
@@ -339,7 +339,7 @@ export function ObservabilityPanel() {
                       flex: 1,
                       height: '8px',
                       borderRadius: '4px',
-                      background: 'rgba(51, 65, 85, 0.9)',
+                      background: 'var(--surface-3)',
                       overflow: 'hidden',
                       position: 'relative'
                     }}
@@ -349,13 +349,13 @@ export function ObservabilityPanel() {
                         position: 'absolute',
                         inset: 0,
                         width: `${Math.max(2, Math.round((metric.avgDuration / maxToolDuration) * 100))}%`,
-                        background: metric.successRate >= 0.9 ? '#10b981' : metric.successRate >= 0.7 ? '#f59e0b' : '#f87171',
+                        background: metric.successRate >= 0.9 ? 'var(--accent-green, #10b981)' : metric.successRate >= 0.7 ? 'var(--accent-amber, #f59e0b)' : 'var(--accent-red, #f87171)',
                         borderRadius: '4px',
                         display: 'block'
                       }}
                     />
                   </span>
-                  <span style={{ fontSize: '11px', color: '#64748b', flexShrink: 0 }}>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', flexShrink: 0 }}>
                     {formatNumber(metric.avgDuration)}ms
                   </span>
                 </div>
@@ -377,7 +377,7 @@ export function ObservabilityPanel() {
               width: '100%',
               height: '8px',
               borderRadius: '4px',
-              background: 'rgba(51, 65, 85, 0.9)',
+              background: 'var(--surface-3)',
               overflow: 'hidden',
               position: 'relative'
             }}
@@ -425,7 +425,7 @@ export function ObservabilityPanel() {
               key={`${index}-${message.slice(0, 24)}`}
               style={{
                 fontSize: '11px',
-                color: '#f87171',
+                color: 'var(--accent-red, #f87171)',
                 fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',

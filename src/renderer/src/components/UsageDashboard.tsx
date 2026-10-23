@@ -145,7 +145,7 @@ export const UsageDashboard: React.FC = () => {
       style={{
         position: 'fixed',
         inset: 0,
-        backgroundColor: 'rgba(10, 15, 29, 0.75)',
+        backgroundColor: 'rgba(0, 0, 0, 0.65)',
         backdropFilter: 'blur(8px)',
         zIndex: 9999,
         display: 'flex',
@@ -161,14 +161,14 @@ export const UsageDashboard: React.FC = () => {
           maxWidth: '95vw',
           height: '94vh',
           maxHeight: '94vh',
-          backgroundColor: '#0f172a',
+          backgroundColor: 'var(--bg-secondary)',
           borderRadius: '14px',
-          border: '1px solid rgba(56, 189, 248, 0.25)',
-          boxShadow: '0 25px 60px -15px rgba(0, 0, 0, 0.7), 0 0 25px rgba(56, 189, 248, 0.1)',
+          border: '1px solid var(--border-default)',
+          boxShadow: '0 25px 60px -15px rgba(0, 0, 0, 0.5), 0 0 25px var(--surface-2)',
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
-          color: '#f1f5f9'
+          color: 'var(--text-primary)'
         }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -176,11 +176,11 @@ export const UsageDashboard: React.FC = () => {
         <div
           style={{
             padding: '16px 24px',
-            borderBottom: '1px solid rgba(51, 65, 85, 0.8)',
+            borderBottom: '1px solid var(--border-subtle)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            background: 'linear-gradient(90deg, rgba(15, 23, 42, 0.9) 0%, rgba(30, 41, 59, 0.8) 100%)'
+            background: 'var(--bg-tertiary)'
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -189,18 +189,18 @@ export const UsageDashboard: React.FC = () => {
                 width: '36px',
                 height: '36px',
                 borderRadius: '8px',
-                background: 'linear-gradient(135deg, #0ea5e9, #6366f1)',
+                background: 'linear-gradient(135deg, var(--accent-cyan), var(--accent-primary))',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                boxShadow: '0 4px 12px rgba(14, 165, 233, 0.3)'
+                boxShadow: '0 4px 12px rgba(6, 182, 212, 0.3)'
               }}
             >
               <Gauge size={20} color="#ffffff" />
             </div>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <h2 style={{ fontSize: '18px', fontWeight: 600, margin: 0, letterSpacing: '-0.01em' }}>
+                <h2 style={{ fontSize: '18px', fontWeight: 600, margin: 0, letterSpacing: '-0.01em', color: 'var(--text-primary)' }}>
                   Smart Orchestration &amp; Quota Dashboard
                 </h2>
                 <span
@@ -210,14 +210,14 @@ export const UsageDashboard: React.FC = () => {
                     padding: '2px 8px',
                     borderRadius: '12px',
                     backgroundColor: freeMode ? 'rgba(16, 185, 129, 0.2)' : 'rgba(245, 158, 11, 0.2)',
-                    color: freeMode ? '#34d399' : '#fbbf24',
-                    border: `1px solid ${freeMode ? 'rgba(16, 185, 129, 0.4)' : 'rgba(245, 158, 11, 0.4)'}`
+                    color: freeMode ? 'var(--accent-green)' : 'var(--accent-amber)',
+                    border: `1px solid ${freeMode ? 'var(--accent-green)' : 'var(--accent-amber)'}`
                   }}
                 >
                   {freeMode ? '100% Free Mode Active' : 'Hybrid Free/Paid'}
                 </span>
               </div>
-              <p style={{ fontSize: '12px', color: '#94a3b8', margin: '2px 0 0 0' }}>
+              <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: '2px 0 0 0' }}>
                 Multi-provider automated model routing, token quota tracking, and rate-limit failover
               </p>
             </div>
@@ -234,9 +234,9 @@ export const UsageDashboard: React.FC = () => {
                 fontWeight: 500,
                 padding: '6px 12px',
                 borderRadius: '6px',
-                backgroundColor: freeMode ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255, 255, 255, 0.05)',
-                color: freeMode ? '#34d399' : '#94a3b8',
-                border: `1px solid ${freeMode ? 'rgba(16, 185, 129, 0.3)' : 'rgba(255, 255, 255, 0.1)'}`,
+                backgroundColor: freeMode ? 'rgba(16, 185, 129, 0.15)' : 'var(--surface-2)',
+                color: freeMode ? 'var(--accent-green)' : 'var(--text-secondary)',
+                border: `1px solid ${freeMode ? 'var(--accent-green)' : 'var(--border-subtle)'}`,
                 cursor: 'pointer',
                 transition: 'all 0.15s ease'
               }}
@@ -250,10 +250,10 @@ export const UsageDashboard: React.FC = () => {
               onClick={() => void refreshStats()}
               style={{
                 background: 'transparent',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
+                border: '1px solid var(--border-subtle)',
                 borderRadius: '6px',
                 padding: '6px',
-                color: '#94a3b8',
+                color: 'var(--text-secondary)',
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
@@ -269,7 +269,7 @@ export const UsageDashboard: React.FC = () => {
               style={{
                 background: 'transparent',
                 border: 'none',
-                color: '#94a3b8',
+                color: 'var(--text-secondary)',
                 cursor: 'pointer',
                 padding: '4px',
                 display: 'flex',
@@ -304,8 +304,8 @@ export const UsageDashboard: React.FC = () => {
         >
           <div
             style={{
-              backgroundColor: 'rgba(30, 41, 59, 0.5)',
-              border: '1px solid rgba(51, 65, 85, 0.6)',
+              backgroundColor: 'var(--bg-tertiary)',
+              border: '1px solid var(--border-subtle)',
               borderRadius: '10px',
               padding: '14px 16px',
               position: 'relative',
@@ -313,13 +313,13 @@ export const UsageDashboard: React.FC = () => {
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span style={{ fontSize: '12px', color: '#94a3b8', fontWeight: 500 }}>Total Free Tokens</span>
-              <Sparkles size={16} color="#38bdf8" />
+              <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 500 }}>Total Free Tokens</span>
+              <Sparkles size={16} color="var(--accent-cyan)" />
             </div>
-            <div style={{ fontSize: '22px', fontWeight: 700, marginTop: '6px', color: '#38bdf8' }}>
+            <div style={{ fontSize: '22px', fontWeight: 700, marginTop: '6px', color: 'var(--accent-cyan)' }}>
               {formatTokens(totalLimit)}
             </div>
-            <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>
+            <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
               {connectedProviderCount > 0
                 ? `Aggregated monthly across ${connectedProviderCount} provider${connectedProviderCount === 1 ? '' : 's'}`
                 : 'No connected providers yet'}
@@ -328,8 +328,8 @@ export const UsageDashboard: React.FC = () => {
 
           <div
             style={{
-              backgroundColor: 'rgba(30, 41, 59, 0.5)',
-              border: '1px solid rgba(51, 65, 85, 0.6)',
+              backgroundColor: 'var(--bg-tertiary)',
+              border: '1px solid var(--border-subtle)',
               borderRadius: '10px',
               padding: '14px 16px',
               position: 'relative',
@@ -337,21 +337,21 @@ export const UsageDashboard: React.FC = () => {
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span style={{ fontSize: '12px', color: '#94a3b8', fontWeight: 500 }}>Tokens Consumed</span>
-              <Activity size={16} color="#10b981" />
+              <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 500 }}>Tokens Consumed</span>
+              <Activity size={16} color="var(--accent-green)" />
             </div>
-            <div style={{ fontSize: '22px', fontWeight: 700, marginTop: '6px', color: '#10b981' }}>
+            <div style={{ fontSize: '22px', fontWeight: 700, marginTop: '6px', color: 'var(--accent-green)' }}>
               {formatTokens(totalUsed)}
             </div>
-            <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>
+            <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
               {formatTokens(remainingTokens)} remaining headroom
             </div>
           </div>
 
           <div
             style={{
-              backgroundColor: 'rgba(30, 41, 59, 0.5)',
-              border: '1px solid rgba(51, 65, 85, 0.6)',
+              backgroundColor: 'var(--bg-tertiary)',
+              border: '1px solid var(--border-subtle)',
               borderRadius: '10px',
               padding: '14px 16px',
               position: 'relative',
@@ -359,21 +359,21 @@ export const UsageDashboard: React.FC = () => {
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span style={{ fontSize: '12px', color: '#94a3b8', fontWeight: 500 }}>Cost Saved (Est.)</span>
-              <DollarSign size={16} color="#34d399" />
+              <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 500 }}>Cost Saved (Est.)</span>
+              <DollarSign size={16} color="var(--accent-green)" />
             </div>
-            <div style={{ fontSize: '22px', fontWeight: 700, marginTop: '6px', color: '#34d399' }}>
+            <div style={{ fontSize: '22px', fontWeight: 700, marginTop: '6px', color: 'var(--accent-green)' }}>
               ${savings.toFixed(2)}
             </div>
-            <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>
+            <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
               vs $3.00/1M commercial API cost
             </div>
           </div>
 
           <div
             style={{
-              backgroundColor: 'rgba(30, 41, 59, 0.5)',
-              border: '1px solid rgba(51, 65, 85, 0.6)',
+              backgroundColor: 'var(--bg-tertiary)',
+              border: '1px solid var(--border-subtle)',
               borderRadius: '10px',
               padding: '14px 16px',
               position: 'relative',
@@ -381,13 +381,13 @@ export const UsageDashboard: React.FC = () => {
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span style={{ fontSize: '12px', color: '#94a3b8', fontWeight: 500 }}>Global Quota Used</span>
-              <TrendingUp size={16} color="#a855f7" />
+              <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 500 }}>Global Quota Used</span>
+              <TrendingUp size={16} color="var(--accent-primary)" />
             </div>
-            <div style={{ fontSize: '22px', fontWeight: 700, marginTop: '6px', color: '#a855f7' }}>
+            <div style={{ fontSize: '22px', fontWeight: 700, marginTop: '6px', color: 'var(--accent-primary)' }}>
               {percentUsed.toFixed(2)}%
             </div>
-            <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>
+            <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
               of aggregated monthly free-token capacity
             </div>
           </div>
@@ -400,8 +400,8 @@ export const UsageDashboard: React.FC = () => {
             margin: '0 24px 12px 24px',
             padding: '12px 18px',
             borderRadius: '8px',
-            background: 'linear-gradient(90deg, rgba(14, 165, 233, 0.12), rgba(16, 185, 129, 0.12))',
-            border: '1px solid rgba(14, 165, 233, 0.3)',
+            background: 'linear-gradient(90deg, rgba(6, 182, 212, 0.12), rgba(16, 185, 129, 0.12))',
+            border: '1px solid var(--border-subtle)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
@@ -409,12 +409,12 @@ export const UsageDashboard: React.FC = () => {
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <Zap size={18} color="#38bdf8" />
+            <Zap size={18} color="var(--accent-cyan)" />
             <div>
-              <div style={{ fontSize: '13px', fontWeight: 700, color: '#38bdf8' }}>
+              <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--accent-cyan)' }}>
                 {optSavings?.label || 'Optimization saved 0 tokens (0%) this session'}
               </div>
-              <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '2px' }}>
+              <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' }}>
                 RTK Output Compression: {new Intl.NumberFormat('en-US').format(optSavings?.rtkSavedTokens || 0)} tok • Headroom Context Pruning: {new Intl.NumberFormat('en-US').format(optSavings?.headroomSavedTokens || 0)} tok • Semantic Response Cache: {new Intl.NumberFormat('en-US').format(optSavings?.cacheSavedTokens || 0)} tok
               </div>
             </div>
@@ -425,9 +425,9 @@ export const UsageDashboard: React.FC = () => {
               padding: '4px 10px',
               borderRadius: '12px',
               backgroundColor: 'rgba(16, 185, 129, 0.2)',
-              color: '#34d399',
+              color: 'var(--accent-green)',
               fontWeight: 600,
-              border: '1px solid rgba(16, 185, 129, 0.4)'
+              border: '1px solid var(--accent-green)'
             }}
           >
             {optSavings?.percent || 0}% Optimized
@@ -441,8 +441,8 @@ export const UsageDashboard: React.FC = () => {
             margin: '0 24px 12px 24px',
             padding: '12px 18px',
             borderRadius: '8px',
-            background: engineRunning ? 'rgba(16, 185, 129, 0.10)' : 'rgba(30, 41, 59, 0.6)',
-            border: engineRunning ? '1px solid rgba(16, 185, 129, 0.35)' : '1px solid rgba(51, 65, 85, 0.6)',
+            background: engineRunning ? 'rgba(16, 185, 129, 0.10)' : 'var(--bg-tertiary)',
+            border: engineRunning ? '1px solid rgba(16, 185, 129, 0.35)' : '1px solid var(--border-subtle)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
@@ -450,10 +450,10 @@ export const UsageDashboard: React.FC = () => {
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <Server size={18} color={engineRunning ? '#34d399' : '#64748b'} style={{ flexShrink: 0 }} />
+            <Server size={18} color={engineRunning ? 'var(--accent-green)' : 'var(--text-muted)'} style={{ flexShrink: 0 }} />
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: '13px', fontWeight: 700, color: engineRunning ? '#34d399' : '#94a3b8' }}>
+                <span style={{ fontSize: '13px', fontWeight: 700, color: engineRunning ? 'var(--accent-green)' : 'var(--text-secondary)' }}>
                   FCC Engine {engineRunning ? 'running' : 'stopped'}
                 </span>
                 <span
@@ -461,7 +461,7 @@ export const UsageDashboard: React.FC = () => {
                     fontSize: '10px',
                     padding: '1px 8px',
                     borderRadius: '10px',
-                    backgroundColor: engineRunning ? 'rgba(16, 185, 129, 0.18)' : 'rgba(100, 116, 139, 0.2)',
+                    backgroundColor: engineRunning ? 'rgba(16, 185, 129, 0.18)' : 'var(--surface-2)',
                     color: engineHealthColor,
                     fontWeight: 600
                   }}
@@ -469,12 +469,12 @@ export const UsageDashboard: React.FC = () => {
                   {fccEngine?.health || 'unknown'}
                 </span>
                 {fccService?.installed && (
-                  <span style={{ fontSize: '10px', color: '#64748b' }}>
+                  <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
                     genuine binary detected
                   </span>
                 )}
               </div>
-              <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '2px' }}>
+              <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' }}>
                 {fccEngine?.mode === 'external-process' ? 'Genuine FCC process' : 'Built-in sidecar'}
                 {fccEngine?.port ? ` • port ${fccEngine.port}` : ''}
                 {fccEngine?.uptimeSeconds ? ` • up ${Math.floor(fccEngine.uptimeSeconds / 60)}m` : ''}
@@ -482,7 +482,7 @@ export const UsageDashboard: React.FC = () => {
                 {` • integrity: ${fccEngine?.integrityStatus || 'unverified'}`}
               </div>
               {(fccService?.lastError || fccEngine?.integrityError) && (
-                <div style={{ fontSize: '11px', color: '#fca5a5', marginTop: '2px' }}>
+                <div style={{ fontSize: '11px', color: 'var(--accent-red)', marginTop: '2px' }}>
                   {fccService?.lastError || fccEngine?.integrityError}
                 </div>
               )}
@@ -490,10 +490,10 @@ export const UsageDashboard: React.FC = () => {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: '13px', fontWeight: 700, color: '#38bdf8' }}>
+              <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--accent-cyan)' }}>
                 {formatTokens(fccEngine?.freeTokensUsed || 0)} tok
               </div>
-              <div style={{ fontSize: '10px', color: '#64748b' }}>
+              <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
                 used this session of {formatTokens(fccEngine?.freeTokensAllocated || 0)} declared
               </div>
             </div>
@@ -505,9 +505,9 @@ export const UsageDashboard: React.FC = () => {
                   fontSize: '11px',
                   padding: '6px 12px',
                   borderRadius: '6px',
-                  border: '1px solid rgba(255, 255, 255, 0.15)',
-                  background: 'rgba(255, 255, 255, 0.06)',
-                  color: '#94a3b8',
+                  border: '1px solid var(--border-subtle)',
+                  background: 'var(--surface-2)',
+                  color: 'var(--text-secondary)',
                   cursor: 'pointer'
                 }}
                 title="Attempt to bring the FCC engine back online"
@@ -532,16 +532,16 @@ export const UsageDashboard: React.FC = () => {
             margin: '0 24px 8px 24px',
             padding: '10px 16px',
             borderRadius: '8px',
-            backgroundColor: 'rgba(30, 41, 59, 0.85)',
+            backgroundColor: 'var(--bg-tertiary)',
             backdropFilter: 'blur(6px)',
-            border: '1px solid rgba(56, 189, 248, 0.3)'
+            border: '1px solid var(--border-subtle)'
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
-            <Sparkles size={15} color="#38bdf8" style={{ flexShrink: 0 }} />
+            <Sparkles size={15} color="var(--accent-cyan)" style={{ flexShrink: 0 }} />
             <div style={{ minWidth: 0 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-                <span style={{ fontSize: '12px', fontWeight: 600, color: '#f1f5f9', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {activeModelShort}
                 </span>
                 <span
@@ -550,27 +550,27 @@ export const UsageDashboard: React.FC = () => {
                     fontWeight: 600,
                     padding: '1px 8px',
                     borderRadius: '10px',
-                    backgroundColor: isAutoBinding ? 'rgba(16, 185, 129, 0.2)' : 'rgba(56, 189, 248, 0.2)',
-                    color: isAutoBinding ? '#34d399' : '#38bdf8',
-                    border: `1px solid ${isAutoBinding ? 'rgba(16, 185, 129, 0.4)' : 'rgba(56, 189, 248, 0.4)'}`
+                    backgroundColor: isAutoBinding ? 'rgba(16, 185, 129, 0.2)' : 'rgba(6, 182, 212, 0.2)',
+                    color: isAutoBinding ? 'var(--accent-green)' : 'var(--accent-cyan)',
+                    border: `1px solid ${isAutoBinding ? 'var(--accent-green)' : 'var(--accent-cyan)'}`
                   }}
                 >
                   {isAutoBinding ? 'Auto' : 'Manual'}
                 </span>
               </div>
-              <div style={{ fontSize: '10px', color: '#94a3b8', marginTop: '2px', whiteSpace: 'nowrap' }}>
+              <div style={{ fontSize: '10px', color: 'var(--text-secondary)', marginTop: '2px', whiteSpace: 'nowrap' }}>
                 via {isAutoBinding ? 'OpenKilo (FCC free pool)' : activeQuota?.providerName || normalizedActiveProvider}
                 {isAutoBinding ? '' : ' — active in Model Selector'}
               </div>
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0 }}>
-            <span style={{ fontSize: '12px', fontWeight: 700, color: '#38bdf8' }}>
+            <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--accent-cyan)' }}>
               {activeRemainingTokens !== undefined
                 ? `${formatTokens(Math.max(0, activeRemainingTokens))} tok left`
                 : 'No metered quota'}
             </span>
-            <span style={{ fontSize: '10px', color: '#94a3b8' }}>
+            <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>
               {activeLimitTokens !== undefined
                 ? `of ${formatTokens(activeLimitTokens)} • ${activePercentUsed.toFixed(1)}% used`
                 : activeQuota
@@ -584,8 +584,8 @@ export const UsageDashboard: React.FC = () => {
                   padding: '2px 8px',
                   borderRadius: '10px',
                   backgroundColor: 'rgba(239, 68, 68, 0.15)',
-                  color: '#ef4444',
-                  border: '1px solid rgba(239, 68, 68, 0.3)'
+                  color: 'var(--accent-red)',
+                  border: '1px solid var(--accent-red)'
                 }}
               >
                 Exhausted — failover ready
@@ -604,11 +604,11 @@ export const UsageDashboard: React.FC = () => {
             display: 'flex',
             gap: '8px',
             padding: '8px 24px',
-            borderBottom: '1px solid rgba(51, 65, 85, 0.4)',
+            borderBottom: '1px solid var(--border-subtle)',
             flexShrink: 0,
             overflowX: 'auto',
             overflowY: 'hidden',
-            backgroundColor: 'rgba(15, 23, 42, 0.92)',
+            backgroundColor: 'var(--bg-secondary)',
             backdropFilter: 'blur(6px)'
           }}
         >
@@ -621,8 +621,8 @@ export const UsageDashboard: React.FC = () => {
               padding: '8px 14px',
               fontSize: '13px',
               fontWeight: 500,
-              color: activeTab === 'unified' ? '#38bdf8' : '#94a3b8',
-              borderBottom: activeTab === 'unified' ? '2px solid #38bdf8' : '2px solid transparent',
+              color: activeTab === 'unified' ? 'var(--accent-cyan)' : 'var(--text-secondary)',
+              borderBottom: activeTab === 'unified' ? '2px solid var(--accent-cyan)' : '2px solid transparent',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
@@ -641,8 +641,8 @@ export const UsageDashboard: React.FC = () => {
               padding: '8px 14px',
               fontSize: '13px',
               fontWeight: 500,
-              color: activeTab === 'quotas' ? '#38bdf8' : '#94a3b8',
-              borderBottom: activeTab === 'quotas' ? '2px solid #38bdf8' : '2px solid transparent',
+              color: activeTab === 'quotas' ? 'var(--accent-cyan)' : 'var(--text-secondary)',
+              borderBottom: activeTab === 'quotas' ? '2px solid var(--accent-cyan)' : '2px solid transparent',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
@@ -662,8 +662,8 @@ export const UsageDashboard: React.FC = () => {
               padding: '8px 14px',
               fontSize: '13px',
               fontWeight: 500,
-              color: activeTab === 'ledger' ? '#38bdf8' : '#94a3b8',
-              borderBottom: activeTab === 'ledger' ? '2px solid #38bdf8' : '2px solid transparent',
+              color: activeTab === 'ledger' ? 'var(--accent-cyan)' : 'var(--text-secondary)',
+              borderBottom: activeTab === 'ledger' ? '2px solid var(--accent-cyan)' : '2px solid transparent',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
@@ -682,8 +682,8 @@ export const UsageDashboard: React.FC = () => {
               padding: '8px 14px',
               fontSize: '13px',
               fontWeight: 500,
-              color: activeTab === 'rules' ? '#38bdf8' : '#94a3b8',
-              borderBottom: activeTab === 'rules' ? '2px solid #38bdf8' : '2px solid transparent',
+              color: activeTab === 'rules' ? 'var(--accent-cyan)' : 'var(--text-secondary)',
+              borderBottom: activeTab === 'rules' ? '2px solid var(--accent-cyan)' : '2px solid transparent',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
@@ -702,8 +702,8 @@ export const UsageDashboard: React.FC = () => {
               padding: '8px 14px',
               fontSize: '13px',
               fontWeight: 500,
-              color: activeTab === 'logs' ? '#38bdf8' : '#94a3b8',
-              borderBottom: activeTab === 'logs' ? '2px solid #38bdf8' : '2px solid transparent',
+              color: activeTab === 'logs' ? 'var(--accent-cyan)' : 'var(--text-secondary)',
+              borderBottom: activeTab === 'logs' ? '2px solid var(--accent-cyan)' : '2px solid transparent',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
@@ -716,8 +716,8 @@ export const UsageDashboard: React.FC = () => {
               <span
                 style={{
                   fontSize: '10px',
-                  backgroundColor: 'rgba(56, 189, 248, 0.2)',
-                  color: '#38bdf8',
+                  backgroundColor: 'rgba(6, 182, 212, 0.2)',
+                  color: 'var(--accent-cyan)',
                   padding: '1px 6px',
                   borderRadius: '10px'
                 }}
@@ -757,8 +757,8 @@ export const UsageDashboard: React.FC = () => {
                   style={{
                     padding: '14px 18px',
                     borderRadius: '8px',
-                    backgroundColor: 'rgba(30, 41, 59, 0.6)',
-                    border: '1px solid rgba(56, 189, 248, 0.3)',
+                    backgroundColor: 'var(--bg-tertiary)',
+                    border: '1px solid var(--border-subtle)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
@@ -766,10 +766,10 @@ export const UsageDashboard: React.FC = () => {
                   }}
                 >
                   <div>
-                    <div style={{ fontSize: '14px', fontWeight: 700, color: '#38bdf8' }}>
+                    <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--accent-cyan)' }}>
                       {new Intl.NumberFormat('en-US').format(quotaMeters.aggregateFreeTokensRemainingToday)} free tokens remaining today
                     </div>
-                    <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '2px' }}>
+                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' }}>
                       Daily estimate across {quotaMeters.providers.length} free providers ({new Intl.NumberFormat('en-US').format(quotaMeters.aggregateFreeTokensDailyBudget)} total daily budget)
                     </div>
                   </div>
@@ -779,8 +779,8 @@ export const UsageDashboard: React.FC = () => {
                       padding: '3px 8px',
                       borderRadius: '12px',
                       backgroundColor: quotaMeters.hasAnyExhausted ? 'rgba(239, 68, 68, 0.15)' : 'rgba(16, 185, 129, 0.15)',
-                      color: quotaMeters.hasAnyExhausted ? '#ef4444' : '#34d399',
-                      border: `1px solid ${quotaMeters.hasAnyExhausted ? 'rgba(239, 68, 68, 0.3)' : 'rgba(16, 185, 129, 0.3)'}`
+                      color: quotaMeters.hasAnyExhausted ? 'var(--accent-red)' : 'var(--accent-green)',
+                      border: `1px solid ${quotaMeters.hasAnyExhausted ? 'var(--accent-red)' : 'var(--accent-green)'}`
                     }}
                   >
                     {quotaMeters.hasAnyExhausted ? 'Failover Active' : 'All Pools Healthy'}
@@ -797,8 +797,8 @@ export const UsageDashboard: React.FC = () => {
                     key={p.providerId}
                     id={`quota-bar-${p.providerId}`}
                     style={{
-                      backgroundColor: 'rgba(30, 41, 59, 0.4)',
-                      border: `1px solid ${isExhausted ? 'rgba(239, 68, 68, 0.4)' : 'rgba(51, 65, 85, 0.5)'}`,
+                      backgroundColor: 'var(--bg-tertiary)',
+                      border: `1px solid ${isExhausted ? 'var(--accent-red)' : 'var(--border-subtle)'}`,
                       borderRadius: '8px',
                       padding: '14px 18px',
                       display: 'flex',
@@ -813,18 +813,18 @@ export const UsageDashboard: React.FC = () => {
                             width: '8px',
                             height: '8px',
                             borderRadius: '50%',
-                            backgroundColor: isExhausted ? '#ef4444' : '#10b981',
-                            boxShadow: `0 0 8px ${isExhausted ? '#ef4444' : '#10b981'}`
+                            backgroundColor: isExhausted ? 'var(--accent-red)' : 'var(--accent-green)',
+                            boxShadow: `0 0 8px ${isExhausted ? 'var(--accent-red)' : 'var(--accent-green)'}`
                           }}
                         />
-                        <span style={{ fontSize: '14px', fontWeight: 600 }}>{p.providerName}</span>
+                        <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>{p.providerName}</span>
                         <span
                           style={{
                             fontSize: '11px',
                             padding: '2px 6px',
                             borderRadius: '4px',
-                            backgroundColor: 'rgba(255, 255, 255, 0.06)',
-                            color: '#94a3b8'
+                            backgroundColor: 'var(--surface-2)',
+                            color: 'var(--text-secondary)'
                           }}
                         >
                           {p.providerId === 'ollama' ? 'Local Unlimited' : p.providerId === 'copilot' ? 'Subscription' : 'Free Tier'}
@@ -832,9 +832,9 @@ export const UsageDashboard: React.FC = () => {
                       </div>
 
                       <div style={{ display: 'flex', alignItems: 'center', gap: '14px', fontSize: '12px' }}>
-                        <span style={{ color: '#94a3b8' }}>
+                        <span style={{ color: 'var(--text-secondary)' }}>
                           Remaining:{' '}
-                          <strong style={{ color: '#f1f5f9' }}>
+                          <strong style={{ color: 'var(--text-primary)' }}>
                             {p.remainingTokens !== undefined ? formatTokens(p.remainingTokens) : 'Unlimited'}
                           </strong>{' '}
                           /{' '}
@@ -846,8 +846,8 @@ export const UsageDashboard: React.FC = () => {
                             padding: '2px 8px',
                             borderRadius: '12px',
                             backgroundColor: isExhausted ? 'rgba(239, 68, 68, 0.15)' : 'rgba(16, 185, 129, 0.15)',
-                            color: isExhausted ? '#ef4444' : '#34d399',
-                            border: `1px solid ${isExhausted ? 'rgba(239, 68, 68, 0.3)' : 'rgba(16, 185, 129, 0.3)'}`
+                            color: isExhausted ? 'var(--accent-red)' : 'var(--accent-green)',
+                            border: `1px solid ${isExhausted ? 'var(--accent-red)' : 'var(--accent-green)'}`
                           }}
                         >
                           {isExhausted ? 'Quota Limit' : p.resetHuman}
@@ -860,7 +860,7 @@ export const UsageDashboard: React.FC = () => {
                       style={{
                         height: '6px',
                         width: '100%',
-                        backgroundColor: 'rgba(15, 23, 42, 0.8)',
+                        backgroundColor: 'var(--bg-primary)',
                         borderRadius: '3px',
                         overflow: 'hidden'
                       }}
@@ -871,8 +871,8 @@ export const UsageDashboard: React.FC = () => {
                           width: `${Math.max(1, usedPct)}%`,
                           background:
                             usedPct > 90
-                              ? 'linear-gradient(90deg, #f59e0b, #ef4444)'
-                              : 'linear-gradient(90deg, #0ea5e9, #10b981)',
+                              ? 'linear-gradient(90deg, var(--accent-amber), var(--accent-red))'
+                              : 'linear-gradient(90deg, var(--accent-cyan), var(--accent-green))',
                           transition: 'width 0.3s ease'
                         }}
                       />
@@ -892,11 +892,11 @@ export const UsageDashboard: React.FC = () => {
                           gap: '6px'
                         }}
                       >
-                        <div style={{ fontSize: '12px', fontWeight: 600, color: '#f87171', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--accent-red)', display: 'flex', alignItems: 'center', gap: '6px' }}>
                           <AlertCircle size={14} />
                           <span>Quota exhausted for {p.providerName}</span>
                         </div>
-                        <div style={{ fontSize: '11px', color: '#cbd5e1' }}>
+                        <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
                           {quotaMeters?.recommendedAlternative ? `${quotaMeters.recommendedAlternative.reason} Or connect your GitHub Copilot / ChatGPT subscription at $0 extra cost.` : 'Switch to another free provider or connect your existing subscription.'}
                         </div>
                         <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
@@ -912,7 +912,7 @@ export const UsageDashboard: React.FC = () => {
                                 fontSize: '11px',
                                 fontWeight: 600,
                                 borderRadius: '4px',
-                                backgroundColor: '#0284c7',
+                                backgroundColor: 'var(--accent-blue)',
                                 color: '#fff',
                                 border: 'none',
                                 cursor: 'pointer'
@@ -933,8 +933,8 @@ export const UsageDashboard: React.FC = () => {
                               fontWeight: 600,
                               borderRadius: '4px',
                               backgroundColor: 'rgba(16, 185, 129, 0.2)',
-                              color: '#34d399',
-                              border: '1px solid rgba(16, 185, 129, 0.4)',
+                              color: 'var(--accent-green)',
+                              border: '1px solid var(--accent-green)',
                               cursor: 'pointer'
                             }}
                           >
@@ -953,8 +953,8 @@ export const UsageDashboard: React.FC = () => {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
               <div
                 style={{
-                  backgroundColor: 'rgba(30, 41, 59, 0.4)',
-                  border: '1px solid rgba(56, 189, 248, 0.2)',
+                  backgroundColor: 'var(--bg-tertiary)',
+                  border: '1px solid var(--border-subtle)',
                   borderRadius: '8px',
                   padding: '14px 16px'
                 }}
@@ -965,26 +965,26 @@ export const UsageDashboard: React.FC = () => {
                       fontSize: '11px',
                       padding: '2px 8px',
                       borderRadius: '4px',
-                      backgroundColor: 'rgba(56, 189, 248, 0.15)',
-                      color: '#38bdf8',
+                      backgroundColor: 'rgba(6, 182, 212, 0.15)',
+                      color: 'var(--accent-cyan)',
                       fontWeight: 600
                     }}
                   >
                     Code Generation
                   </span>
                 </div>
-                <div style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc' }}>
+                <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>
                   Qwen3 Coder / DeepSeek Coder
                 </div>
-                <p style={{ fontSize: '12px', color: '#94a3b8', margin: '4px 0 0 0' }}>
+                <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: '4px 0 0 0' }}>
                   Routes refactoring, function writing, algorithms, and bug fixes to state-of-the-art coding weights.
                 </p>
               </div>
 
               <div
                 style={{
-                  backgroundColor: 'rgba(30, 41, 59, 0.4)',
-                  border: '1px solid rgba(168, 85, 247, 0.2)',
+                  backgroundColor: 'var(--bg-tertiary)',
+                  border: '1px solid var(--border-subtle)',
                   borderRadius: '8px',
                   padding: '14px 16px'
                 }}
@@ -996,25 +996,25 @@ export const UsageDashboard: React.FC = () => {
                       padding: '2px 8px',
                       borderRadius: '4px',
                       backgroundColor: 'rgba(168, 85, 247, 0.15)',
-                      color: '#a855f7',
+                      color: 'var(--accent-primary)',
                       fontWeight: 600
                     }}
                   >
                     Complex Reasoning
                   </span>
                 </div>
-                <div style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc' }}>
+                <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>
                   DeepSeek R1 / R1-0528 (164K)
                 </div>
-                <p style={{ fontSize: '12px', color: '#94a3b8', margin: '4px 0 0 0' }}>
+                <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: '4px 0 0 0' }}>
                   Leverages thinking tokens and chain-of-thought for mathematical, architectural, and multi-file logic.
                 </p>
               </div>
 
               <div
                 style={{
-                  backgroundColor: 'rgba(30, 41, 59, 0.4)',
-                  border: '1px solid rgba(16, 185, 129, 0.2)',
+                  backgroundColor: 'var(--bg-tertiary)',
+                  border: '1px solid var(--border-subtle)',
                   borderRadius: '8px',
                   padding: '14px 16px'
                 }}
@@ -1026,25 +1026,25 @@ export const UsageDashboard: React.FC = () => {
                       padding: '2px 8px',
                       borderRadius: '4px',
                       backgroundColor: 'rgba(16, 185, 129, 0.15)',
-                      color: '#10b981',
+                      color: 'var(--accent-green)',
                       fontWeight: 600
                     }}
                   >
                     Fast Responses
                   </span>
                 </div>
-                <div style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc' }}>
+                <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>
                   Groq Llama 3.3 70B Versatile
                 </div>
-                <p style={{ fontSize: '12px', color: '#94a3b8', margin: '4px 0 0 0' }}>
+                <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: '4px 0 0 0' }}>
                   Ultra-low latency LPU engine for live inline completions, typing feedback, and quick explanations.
                 </p>
               </div>
 
               <div
                 style={{
-                  backgroundColor: 'rgba(30, 41, 59, 0.4)',
-                  border: '1px solid rgba(245, 158, 11, 0.2)',
+                  backgroundColor: 'var(--bg-tertiary)',
+                  border: '1px solid var(--border-subtle)',
                   borderRadius: '8px',
                   padding: '14px 16px'
                 }}
@@ -1056,25 +1056,25 @@ export const UsageDashboard: React.FC = () => {
                       padding: '2px 8px',
                       borderRadius: '4px',
                       backgroundColor: 'rgba(245, 158, 11, 0.15)',
-                      color: '#f59e0b',
+                      color: 'var(--accent-amber)',
                       fontWeight: 600
                     }}
                   >
                     Large Context (&gt;32K)
                   </span>
                 </div>
-                <div style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc' }}>
+                <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>
                   Qwen3 Coder (262K) / GLM-5 / Long-Context Model
                 </div>
-                <p style={{ fontSize: '12px', color: '#94a3b8', margin: '4px 0 0 0' }}>
+                <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: '4px 0 0 0' }}>
                   Deep repository search and whole-project awareness without context truncation or loss of precision.
                 </p>
               </div>
 
               <div
                 style={{
-                  backgroundColor: 'rgba(30, 41, 59, 0.4)',
-                  border: '1px solid rgba(236, 72, 153, 0.2)',
+                  backgroundColor: 'var(--bg-tertiary)',
+                  border: '1px solid var(--border-subtle)',
                   borderRadius: '8px',
                   padding: '14px 16px'
                 }}
@@ -1093,18 +1093,18 @@ export const UsageDashboard: React.FC = () => {
                     Vision &amp; Multimodal
                   </span>
                 </div>
-                <div style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc' }}>
+                <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>
                   Long-Context Vision / Gemma 3 27B
                 </div>
-                <p style={{ fontSize: '12px', color: '#94a3b8', margin: '4px 0 0 0' }}>
+                <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: '4px 0 0 0' }}>
                   Image attachments, UI screenshot reviews, and visual bug inspections automatically select vision models.
                 </p>
               </div>
 
               <div
                 style={{
-                  backgroundColor: 'rgba(30, 41, 59, 0.4)',
-                  border: '1px solid rgba(148, 163, 184, 0.2)',
+                  backgroundColor: 'var(--bg-tertiary)',
+                  border: '1px solid var(--border-subtle)',
                   borderRadius: '8px',
                   padding: '14px 16px'
                 }}
@@ -1115,18 +1115,18 @@ export const UsageDashboard: React.FC = () => {
                       fontSize: '11px',
                       padding: '2px 8px',
                       borderRadius: '4px',
-                      backgroundColor: 'rgba(148, 163, 184, 0.15)',
-                      color: '#94a3b8',
+                      backgroundColor: 'var(--surface-2)',
+                      color: 'var(--text-secondary)',
                       fontWeight: 600
                     }}
                   >
                     Simple Queries
                   </span>
                 </div>
-                <div style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc' }}>
+                <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>
                   Llama 3.2 3B / Llama 3.1 8B (Fast &amp; Free)
                 </div>
-                <p style={{ fontSize: '12px', color: '#94a3b8', margin: '4px 0 0 0' }}>
+                <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: '4px 0 0 0' }}>
                   Saves quota for high-complexity prompts by answering straightforward questions with fast small weights.
                 </p>
               </div>
@@ -1140,7 +1140,7 @@ export const UsageDashboard: React.FC = () => {
                   style={{
                     padding: '36px',
                     textAlign: 'center',
-                    color: '#64748b',
+                    color: 'var(--text-muted)',
                     fontSize: '13px'
                   }}
                 >
@@ -1155,8 +1155,8 @@ export const UsageDashboard: React.FC = () => {
                     <div
                       key={log.id}
                       style={{
-                        backgroundColor: 'rgba(30, 41, 59, 0.4)',
-                        border: '1px solid rgba(51, 65, 85, 0.4)',
+                        backgroundColor: 'var(--bg-tertiary)',
+                        border: '1px solid var(--border-subtle)',
                         borderRadius: '6px',
                         padding: '10px 14px',
                         display: 'flex',
@@ -1166,7 +1166,7 @@ export const UsageDashboard: React.FC = () => {
                       }}
                     >
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
-                        <span style={{ fontSize: '11px', color: '#64748b', whiteSpace: 'nowrap' }}>
+                        <span style={{ fontSize: '11px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
                           {dateStr}
                         </span>
                         <span
@@ -1185,7 +1185,7 @@ export const UsageDashboard: React.FC = () => {
                         <span
                           style={{
                             fontSize: '12px',
-                            color: '#e2e8f0',
+                            color: 'var(--text-primary)',
                             whiteSpace: 'nowrap',
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
@@ -1198,7 +1198,7 @@ export const UsageDashboard: React.FC = () => {
                       </div>
 
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0 }}>
-                        <span style={{ fontSize: '11px', color: '#38bdf8', fontWeight: 500 }}>
+                        <span style={{ fontSize: '11px', color: 'var(--accent-cyan)', fontWeight: 500 }}>
                           {log.selectedModel}
                         </span>
                         <span
@@ -1206,13 +1206,13 @@ export const UsageDashboard: React.FC = () => {
                             fontSize: '10px',
                             padding: '1px 6px',
                             borderRadius: '4px',
-                            backgroundColor: 'rgba(255, 255, 255, 0.05)',
-                            color: '#94a3b8'
+                            backgroundColor: 'var(--surface-2)',
+                            color: 'var(--text-secondary)'
                           }}
                         >
                           {log.selectedProvider}
                         </span>
-                        <span style={{ fontSize: '11px', color: '#64748b' }}>
+                        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                           {log.rationale}
                         </span>
                       </div>
@@ -1230,17 +1230,17 @@ export const UsageDashboard: React.FC = () => {
         <div
           style={{
             padding: '12px 24px',
-            borderTop: '1px solid rgba(51, 65, 85, 0.6)',
+            borderTop: '1px solid var(--border-subtle)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            background: 'rgba(15, 23, 42, 0.8)',
+            background: 'var(--bg-tertiary)',
             fontSize: '12px',
-            color: '#64748b'
+            color: 'var(--text-muted)'
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <ShieldCheck size={14} color="#10b981" />
+            <ShieldCheck size={14} color="var(--accent-green)" />
             <span>ToS-compliant local &amp; anonymous routing active</span>
           </div>
 

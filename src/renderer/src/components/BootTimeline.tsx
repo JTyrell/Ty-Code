@@ -99,11 +99,11 @@ const InfoTip: React.FC<InfoTipProps> = ({ text, children, style }) => {
               boxSizing: 'border-box',
               padding: '8px 10px',
               borderRadius: 6,
-              background: 'rgba(18, 20, 24, 0.97)',
-              border: '1px solid rgba(139, 148, 158, 0.35)',
-              boxShadow: '0 6px 18px rgba(0, 0, 0, 0.55)',
-              color: '#e6edf3',
-              fontFamily: "'Segoe UI', system-ui, sans-serif",
+              background: 'var(--bg-secondary)',
+              border: '1px solid var(--border-default)',
+              boxShadow: '0 6px 18px rgba(0, 0, 0, 0.35)',
+              color: 'var(--text-primary)',
+              fontFamily: "var(--font-sans, 'Segoe UI', system-ui, sans-serif)",
               fontSize: 11.5,
               lineHeight: 1.5,
               whiteSpace: 'pre-wrap',
@@ -205,12 +205,12 @@ export const BootTimeline: React.FC<BootTimelineProps> = ({ isOpen, onClose }) =
   const gapWarnings = trace?.gapWarnings || [];
 
   const getBarColor = (mark: PerfMark): string => {
-    if (mark.category === 'sync_io') return '#ef4444';
-    if (mark.category === 'eager_import') return '#f59e0b';
-    if (mark.category === 'network_wait') return '#3b82f6';
-    if (mark.category === 'process_spawn') return '#a855f7';
-    if (mark.category === 'render_storm') return '#ec4899';
-    return '#38bdf8';
+    if (mark.category === 'sync_io') return 'var(--accent-red)';
+    if (mark.category === 'eager_import') return 'var(--accent-amber)';
+    if (mark.category === 'network_wait') return 'var(--accent-blue)';
+    if (mark.category === 'process_spawn') return 'var(--accent-primary)';
+    if (mark.category === 'render_storm') return 'var(--accent-primary-hover)';
+    return 'var(--accent-cyan)';
   };
 
   return (
@@ -219,7 +219,7 @@ export const BootTimeline: React.FC<BootTimelineProps> = ({ isOpen, onClose }) =
         {/* Modal Header */}
         <div className={styles.header}>
           <div className={styles.headerTitle}>
-            <Zap size={20} color="#38bdf8" />
+            <Zap size={20} color="var(--accent-cyan)" />
             <h2>Boot & Transition Profiler</h2>
             <InfoTip text="Total time from process start until all services were ready, in milliseconds.">
               <span className={styles.bootBadge}>{totalBootMs.toFixed(1)} ms total</span>
@@ -316,7 +316,7 @@ export const BootTimeline: React.FC<BootTimelineProps> = ({ isOpen, onClose }) =
               <InfoTip text="Count of boot time spans longer than 100ms that no performance mark covers. Large gaps point at missing measurements.">
                 <span className={styles.statCardLabel}>Unmarked Gaps &gt;100ms</span>
               </InfoTip>
-              <span className={styles.statCardValue} style={{ color: gapWarnings.length === 0 ? '#7ee787' : '#f87171' }}>
+              <span className={styles.statCardValue} style={{ color: gapWarnings.length === 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
                 {gapWarnings.length}
               </span>
               <span className={styles.statCardSub}>
@@ -347,10 +347,10 @@ export const BootTimeline: React.FC<BootTimelineProps> = ({ isOpen, onClose }) =
                           #{idx + 1}
                         </span>
                       </td>
-                      <td style={{ fontWeight: 600, color: '#ffffff' }}>
+                      <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
                         {item.item}
                       </td>
-                      <td style={{ color: item.ms > 100 ? '#f87171' : '#fbbf24', fontWeight: 600 }}>
+                      <td style={{ color: item.ms > 100 ? 'var(--accent-red)' : 'var(--accent-amber)', fontWeight: 600 }}>
                         {item.ms.toFixed(1)} ms
                       </td>
                       <td style={{ textTransform: 'capitalize' }}>{item.phase}</td>
@@ -361,7 +361,7 @@ export const BootTimeline: React.FC<BootTimelineProps> = ({ isOpen, onClose }) =
                           </span>
                         </InfoTip>
                       </td>
-                      <td style={{ color: '#8b949e', fontSize: 11 }}>
+                      <td style={{ color: 'var(--text-muted)', fontSize: 11 }}>
                         {item.details || '—'}
                       </td>
                     </tr>
@@ -442,22 +442,22 @@ export const BootTimeline: React.FC<BootTimelineProps> = ({ isOpen, onClose }) =
                 <tbody>
                   {liveTransitions.map((t) => (
                     <tr key={t.id}>
-                      <td style={{ fontWeight: 600, color: '#e6edf3' }}>{t.name}</td>
-                      <td style={{ color: t.durationMs > 50 ? '#f87171' : '#7ee787', fontWeight: 600 }}>
+                      <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{t.name}</td>
+                      <td style={{ color: t.durationMs > 50 ? 'var(--accent-red)' : 'var(--accent-green)', fontWeight: 600 }}>
                         {t.durationMs.toFixed(1)} ms
                       </td>
                       <td>
                         {t.longTasks.length > 0 ? (
-                          <span style={{ color: '#f87171', fontWeight: 600 }}>
+                          <span style={{ color: 'var(--accent-red)', fontWeight: 600 }}>
                             {t.longTasks.length} (&gt;50ms)
                           </span>
                         ) : (
-                          <span style={{ color: '#8b949e' }}>0</span>
+                          <span style={{ color: 'var(--text-muted)' }}>0</span>
                         )}
                       </td>
                       <td>{t.reactRenders}</td>
                       <td>{t.ipcRoundTrips}</td>
-                      <td style={{ color: '#8b949e' }}>+{t.startTime.toFixed(1)} ms</td>
+                      <td style={{ color: 'var(--text-muted)' }}>+{t.startTime.toFixed(1)} ms</td>
                     </tr>
                   ))}
                   {liveTransitions.length === 0 && (
@@ -476,7 +476,7 @@ export const BootTimeline: React.FC<BootTimelineProps> = ({ isOpen, onClose }) =
           {activeTab === 'sync_io' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
               <div>
-                <h3 style={{ fontSize: 14, margin: '0 0 10px 0', color: '#ffffff' }}>
+                <h3 style={{ fontSize: 14, margin: '0 0 10px 0', color: 'var(--text-primary)' }}>
                   Pre-Window Synchronous Calls (Main Process)
                 </h3>
                 <div className={styles.tableWrapper}>
@@ -492,10 +492,10 @@ export const BootTimeline: React.FC<BootTimelineProps> = ({ isOpen, onClose }) =
                     <tbody>
                       {syncIoCalls.map((c, i) => (
                         <tr key={`sync_${i}`}>
-                          <td style={{ fontFamily: 'monospace', color: '#f87171' }}>{c.operation}</td>
-                          <td style={{ color: '#c9d1d9' }}>{c.target || '—'}</td>
+                          <td style={{ fontFamily: 'monospace', color: 'var(--accent-red)' }}>{c.operation}</td>
+                          <td style={{ color: 'var(--text-secondary)' }}>{c.target || '—'}</td>
                           <td style={{ fontWeight: 600 }}>{c.durationMs.toFixed(1)} ms</td>
-                          <td style={{ color: '#8b949e' }}>+{c.timestamp.toFixed(1)} ms</td>
+                          <td style={{ color: 'var(--text-muted)' }}>+{c.timestamp.toFixed(1)} ms</td>
                         </tr>
                       ))}
                       {syncIoCalls.length === 0 && (
@@ -511,7 +511,7 @@ export const BootTimeline: React.FC<BootTimelineProps> = ({ isOpen, onClose }) =
               </div>
 
               <div>
-                <h3 style={{ fontSize: 14, margin: '0 0 10px 0', color: '#ffffff' }}>
+                <h3 style={{ fontSize: 14, margin: '0 0 10px 0', color: 'var(--text-primary)' }}>
                   Top-Level Renderer Imports Parse Cost
                 </h3>
                 <div className={styles.tableWrapper}>
@@ -526,9 +526,9 @@ export const BootTimeline: React.FC<BootTimelineProps> = ({ isOpen, onClose }) =
                     <tbody>
                       {importCosts.map((imp, i) => (
                         <tr key={`imp_${i}`}>
-                          <td style={{ fontWeight: 600, color: '#fbbf24' }}>{imp.module}</td>
+                          <td style={{ fontWeight: 600, color: 'var(--accent-amber)' }}>{imp.module}</td>
                           <td style={{ fontWeight: 600 }}>{imp.durationMs.toFixed(1)} ms</td>
-                          <td style={{ color: '#8b949e' }}>+{imp.timestamp.toFixed(1)} ms</td>
+                          <td style={{ color: 'var(--text-muted)' }}>+{imp.timestamp.toFixed(1)} ms</td>
                         </tr>
                       ))}
                       {importCosts.length === 0 && (

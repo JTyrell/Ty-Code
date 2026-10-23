@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Bug, Sparkles, Minimize2, ExternalLink } from 'lucide-react';
 import { OmniDebugger } from './OmniDebugger';
 import { useDebuggerStore } from '../../state/debugger-store';
+import { useThemeSync } from '../../hooks/useThemeSync';
 
 const appRegion = (region: 'drag' | 'no-drag'): React.CSSProperties =>
   ({ WebkitAppRegion: region } as React.CSSProperties);
@@ -74,7 +75,7 @@ const WindowControlButton: React.FC<WindowControlButtonProps> = ({ onClick, titl
           : hovered
           ? 'var(--surface-2)'
           : 'transparent',
-        color: isClose && hovered ? '#ffffff' : '#94a3b8',
+        color: isClose && hovered ? '#ffffff' : 'var(--text-secondary)',
         border: 'none',
         outline: 'none',
         cursor: 'default',
@@ -90,6 +91,8 @@ const WindowControlButton: React.FC<WindowControlButtonProps> = ({ onClick, titl
 };
 
 export const DebuggerWindow: React.FC = () => {
+  useThemeSync();
+
   const [isMaximized, setIsMaximized] = useState(false);
   const isMac = typeof navigator !== 'undefined' && /macintosh|mac os x/i.test(navigator.userAgent);
 
@@ -120,8 +123,8 @@ export const DebuggerWindow: React.FC = () => {
         flexDirection: 'column',
         width: '100vw',
         height: '100vh',
-        background: '#090d16',
-        color: '#e2e8f0',
+        background: 'var(--bg-primary)',
+        color: 'var(--text-primary)',
         overflow: 'hidden',
         userSelect: 'none'
       }}
@@ -134,7 +137,7 @@ export const DebuggerWindow: React.FC = () => {
           minHeight: '35px',
           maxHeight: '35px',
           boxSizing: 'border-box',
-          backgroundColor: '#0c101c',
+          backgroundColor: 'var(--bg-secondary)',
           borderBottom: '1px solid var(--border-subtle)',
           display: 'flex',
           flexDirection: 'row',
@@ -179,9 +182,9 @@ export const DebuggerWindow: React.FC = () => {
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: '6px' }}>
-            <span style={{ fontSize: '12px', fontWeight: 600, color: '#f8fafc', letterSpacing: '-0.01em', whiteSpace: 'nowrap' }}>
-              <span style={{ color: '#818cf8', fontWeight: 700 }}>Ty-Code</span>
-              <span style={{ color: '#64748b', margin: '0 5px' }}>•</span>
+            <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)', letterSpacing: '-0.01em', whiteSpace: 'nowrap' }}>
+              <span style={{ color: 'var(--accent-primary)', fontWeight: 700 }}>Ty-Code</span>
+              <span style={{ color: 'var(--text-muted)', margin: '0 5px' }}>•</span>
               Omni-Debugger
             </span>
           </div>
@@ -240,7 +243,7 @@ export const DebuggerWindow: React.FC = () => {
             className="omni-window-findings-badge"
             style={{
               fontSize: '11px',
-              color: '#64748b',
+              color: 'var(--text-muted)',
               fontFamily: 'monospace',
               whiteSpace: 'nowrap'
             }}
@@ -278,7 +281,7 @@ export const DebuggerWindow: React.FC = () => {
               borderRadius: '5px',
               fontSize: '11px',
               fontWeight: 500,
-              color: '#cbd5e1',
+              color: 'var(--text-secondary)',
               background: 'var(--surface-2)',
               border: '1px solid var(--border-subtle)',
               cursor: 'pointer',
@@ -288,7 +291,7 @@ export const DebuggerWindow: React.FC = () => {
             }}
             title="Dock debugger back into the main IDE sidebar"
           >
-            <Minimize2 size={12} color="#94a3b8" />
+            <Minimize2 size={12} color="var(--text-secondary)" />
             <span>Dock to Sidebar</span>
           </button>
 

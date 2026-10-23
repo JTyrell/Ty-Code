@@ -126,80 +126,80 @@ export const QuotaTracker: React.FC<QuotaTrackerProps> = ({
       >
         <div
           style={{
-            backgroundColor: 'rgba(255, 255, 255, 0.03)',
-            border: '1px solid rgba(255, 255, 255, 0.08)',
+            backgroundColor: 'var(--bg-secondary)',
+            border: '1px solid var(--border-subtle)',
             borderRadius: '10px',
             padding: '14px 16px'
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: '#94a3b8', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: 'var(--text-secondary)', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
             <span>Total Free Pool</span>
-            <Layers size={14} color="#38bdf8" />
+            <Layers size={14} color="var(--accent-cyan)" />
           </div>
-          <div style={{ fontSize: '20px', fontWeight: 700, color: '#f8fafc', marginTop: '6px' }}>
+          <div style={{ fontSize: '20px', fontWeight: 700, color: 'var(--text-primary)', marginTop: '6px' }}>
             {formatTokens(summary.totalFreeTokensMonthly)}
           </div>
-          <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
             Monthly limit across {summary.activeFreeProvidersCount} providers
           </div>
         </div>
 
         <div
           style={{
-            backgroundColor: 'rgba(255, 255, 255, 0.03)',
-            border: '1px solid rgba(255, 255, 255, 0.08)',
+            backgroundColor: 'var(--bg-secondary)',
+            border: '1px solid var(--border-subtle)',
             borderRadius: '10px',
             padding: '14px 16px'
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: '#94a3b8', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: 'var(--text-secondary)', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
             <span>Consumed (Month)</span>
-            <TrendingUp size={14} color="#10b981" />
+            <TrendingUp size={14} color="var(--accent-green)" />
           </div>
-          <div style={{ fontSize: '20px', fontWeight: 700, color: '#34d399', marginTop: '6px' }}>
+          <div style={{ fontSize: '20px', fontWeight: 700, color: 'var(--accent-green)', marginTop: '6px' }}>
             {formatTokens(summary.totalTokensConsumedMonthly)}
           </div>
-          <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
             {((summary.totalTokensConsumedMonthly / Math.max(1, summary.totalFreeTokensMonthly)) * 100).toFixed(1)}% of free pool
           </div>
         </div>
 
         <div
           style={{
-            backgroundColor: 'rgba(255, 255, 255, 0.03)',
-            border: '1px solid rgba(255, 255, 255, 0.08)',
+            backgroundColor: 'var(--bg-secondary)',
+            border: '1px solid var(--border-subtle)',
             borderRadius: '10px',
             padding: '14px 16px'
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: '#94a3b8', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: 'var(--text-secondary)', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
             <span>Commercial Cost Saved</span>
-            <DollarSign size={14} color="#fbbf24" />
+            <DollarSign size={14} color="var(--accent-amber)" />
           </div>
-          <div style={{ fontSize: '20px', fontWeight: 700, color: '#fbbf24', marginTop: '6px' }}>
+          <div style={{ fontSize: '20px', fontWeight: 700, color: 'var(--accent-amber)', marginTop: '6px' }}>
             ${summary.totalEstimatedSavingsUsd.toFixed(2)} USD
           </div>
-          <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
             Calculated at $3.00 / 1M token benchmark
           </div>
         </div>
 
         <div
           style={{
-            backgroundColor: 'rgba(255, 255, 255, 0.03)',
-            border: '1px solid rgba(255, 255, 255, 0.08)',
+            backgroundColor: 'var(--bg-secondary)',
+            border: '1px solid var(--border-subtle)',
             borderRadius: '10px',
             padding: '14px 16px'
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: '#94a3b8', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: 'var(--text-secondary)', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
             <span>Remaining Headroom</span>
-            <ShieldCheck size={14} color="#c084fc" />
+            <ShieldCheck size={14} color="var(--accent-primary)" />
           </div>
-          <div style={{ fontSize: '20px', fontWeight: 700, color: '#c084fc', marginTop: '6px' }}>
+          <div style={{ fontSize: '20px', fontWeight: 700, color: 'var(--accent-primary)', marginTop: '6px' }}>
             {formatTokens(summary.totalRemainingTokensMonthly)}
           </div>
-          <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
             Zero-cost capacity remaining
           </div>
         </div>
@@ -209,18 +209,18 @@ export const QuotaTracker: React.FC<QuotaTrackerProps> = ({
       <div
         id="provider-quota-bars-section"
         style={{
-          backgroundColor: 'rgba(255, 255, 255, 0.03)',
-          border: '1px solid rgba(255, 255, 255, 0.08)',
+          backgroundColor: 'var(--bg-secondary)',
+          border: '1px solid var(--border-subtle)',
           borderRadius: '10px',
           padding: '16px'
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
           <div>
-            <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 600, color: '#f8fafc' }}>
+            <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>
               Quota Consumption by Provider
             </h4>
-            <span style={{ fontSize: '11px', color: '#94a3b8' }}>
+            <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
               Real-time progress towards daily and monthly rate thresholds
             </span>
           </div>
@@ -228,10 +228,10 @@ export const QuotaTracker: React.FC<QuotaTrackerProps> = ({
           <div
             style={{
               display: 'flex',
-              backgroundColor: 'rgba(0, 0, 0, 0.25)',
+              backgroundColor: 'var(--bg-tertiary)',
               borderRadius: '6px',
               padding: '2px',
-              border: '1px solid rgba(255, 255, 255, 0.08)'
+              border: '1px solid var(--border-subtle)'
             }}
           >
             <button
@@ -239,8 +239,8 @@ export const QuotaTracker: React.FC<QuotaTrackerProps> = ({
               id="btn-scope-monthly"
               onClick={() => setViewScope('monthly')}
               style={{
-                background: viewScope === 'monthly' ? 'rgba(56, 189, 248, 0.2)' : 'transparent',
-                color: viewScope === 'monthly' ? '#38bdf8' : '#94a3b8',
+                background: viewScope === 'monthly' ? 'var(--surface-2)' : 'transparent',
+                color: viewScope === 'monthly' ? 'var(--accent-cyan)' : 'var(--text-secondary)',
                 border: 'none',
                 borderRadius: '4px',
                 padding: '3px 8px',
@@ -256,8 +256,8 @@ export const QuotaTracker: React.FC<QuotaTrackerProps> = ({
               id="btn-scope-daily"
               onClick={() => setViewScope('daily')}
               style={{
-                background: viewScope === 'daily' ? 'rgba(56, 189, 248, 0.2)' : 'transparent',
-                color: viewScope === 'daily' ? '#38bdf8' : '#94a3b8',
+                background: viewScope === 'daily' ? 'var(--surface-2)' : 'transparent',
+                color: viewScope === 'daily' ? 'var(--accent-cyan)' : 'var(--text-secondary)',
                 border: 'none',
                 borderRadius: '4px',
                 padding: '3px 8px',
@@ -282,11 +282,11 @@ export const QuotaTracker: React.FC<QuotaTrackerProps> = ({
               <div key={p.id} id={`quota-bar-${p.id}`} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '12px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ fontWeight: 600, color: '#f1f5f9' }}>{p.name}</span>
-                    <span style={{ fontSize: '10px', color: '#64748b' }}>({p.id})</span>
+                    <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{p.name}</span>
+                    <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>({p.id})</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <span style={{ color: '#94a3b8' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>
                       {formatTokens(usedTokens)} / {formatTokens(maxTokens)}
                     </span>
                     <span style={{ fontWeight: 700, color: barColor, minWidth: '40px', textAlign: 'right' }}>
@@ -299,7 +299,7 @@ export const QuotaTracker: React.FC<QuotaTrackerProps> = ({
                   style={{
                     width: '100%',
                     height: '6px',
-                    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                    backgroundColor: 'var(--surface-3)',
                     borderRadius: '3px',
                     overflow: 'hidden'
                   }}
@@ -324,19 +324,19 @@ export const QuotaTracker: React.FC<QuotaTrackerProps> = ({
       <div
         id="usage-history-chart-section"
         style={{
-          backgroundColor: 'rgba(255, 255, 255, 0.03)',
-          border: '1px solid rgba(255, 255, 255, 0.08)',
+          backgroundColor: 'var(--bg-secondary)',
+          border: '1px solid var(--border-subtle)',
           borderRadius: '10px',
           padding: '16px'
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
           <div>
-            <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 600, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <BarChart3 size={15} color="#38bdf8" />
+            <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <BarChart3 size={15} color="var(--accent-cyan)" />
               Historical Token Consumption Trends
             </h4>
-            <span style={{ fontSize: '11px', color: '#94a3b8' }}>
+            <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
               Granular time-series distribution across connected free providers
             </span>
           </div>
@@ -344,10 +344,10 @@ export const QuotaTracker: React.FC<QuotaTrackerProps> = ({
           <div
             style={{
               display: 'flex',
-              backgroundColor: 'rgba(0, 0, 0, 0.25)',
+              backgroundColor: 'var(--bg-tertiary)',
               borderRadius: '6px',
               padding: '2px',
-              border: '1px solid rgba(255, 255, 255, 0.08)'
+              border: '1px solid var(--border-subtle)'
             }}
           >
             {(['daily', 'weekly', 'monthly'] as const).map((mode) => (
@@ -357,8 +357,8 @@ export const QuotaTracker: React.FC<QuotaTrackerProps> = ({
                 id={mode === 'daily' ? 'btn-chart-mode-daily' : mode === 'weekly' ? 'btn-chart-mode-weekly' : 'btn-chart-mode-monthly'}
                 onClick={() => setChartMode(mode)}
                 style={{
-                  background: chartMode === mode ? 'rgba(56, 189, 248, 0.2)' : 'transparent',
-                  color: chartMode === mode ? '#38bdf8' : '#94a3b8',
+                  background: chartMode === mode ? 'var(--surface-2)' : 'transparent',
+                  color: chartMode === mode ? 'var(--accent-cyan)' : 'var(--text-secondary)',
                   border: 'none',
                   borderRadius: '4px',
                   padding: '3px 10px',
@@ -383,7 +383,7 @@ export const QuotaTracker: React.FC<QuotaTrackerProps> = ({
             gap: '8px',
             height: '140px',
             paddingTop: '20px',
-            borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
+            borderBottom: '1px solid var(--border-subtle)'
           }}
         >
           {activeHistoryData.map((bucket, idx) => {
@@ -406,18 +406,18 @@ export const QuotaTracker: React.FC<QuotaTrackerProps> = ({
                   style={{
                     width: '100%',
                     height: `${heightPct}%`,
-                    backgroundColor: idx === activeHistoryData.length - 1 ? '#38bdf8' : 'rgba(56, 189, 248, 0.45)',
+                    backgroundColor: idx === activeHistoryData.length - 1 ? 'var(--accent-cyan)' : 'rgba(6, 182, 212, 0.45)',
                     borderRadius: '4px 4px 0 0',
                     transition: 'all 0.2s ease',
                     cursor: 'pointer'
                   }}
-                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#60a5fa')}
-                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = idx === activeHistoryData.length - 1 ? '#38bdf8' : 'rgba(56, 189, 248, 0.45)')}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--accent-blue)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = idx === activeHistoryData.length - 1 ? 'var(--accent-cyan)' : 'rgba(6, 182, 212, 0.45)')}
                 />
                 <span
                   style={{
                     fontSize: '9px',
-                    color: '#64748b',
+                    color: 'var(--text-muted)',
                     marginTop: '6px',
                     whiteSpace: 'nowrap'
                   }}
@@ -434,14 +434,14 @@ export const QuotaTracker: React.FC<QuotaTrackerProps> = ({
       <div
         id="model-breakdown-section"
         style={{
-          backgroundColor: 'rgba(255, 255, 255, 0.03)',
-          border: '1px solid rgba(255, 255, 255, 0.08)',
+          backgroundColor: 'var(--bg-secondary)',
+          border: '1px solid var(--border-subtle)',
           borderRadius: '10px',
           padding: '16px'
         }}
       >
-        <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: 600, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <PieChart size={15} color="#c084fc" />
+        <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <PieChart size={15} color="var(--accent-primary)" />
           Per-Model Consumption Breakdown
         </h4>
 
@@ -456,19 +456,19 @@ export const QuotaTracker: React.FC<QuotaTrackerProps> = ({
                 gap: '4px',
                 padding: '8px 10px',
                 borderRadius: '6px',
-                backgroundColor: 'rgba(0, 0, 0, 0.15)'
+                backgroundColor: 'var(--bg-tertiary)'
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '12px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ fontWeight: 600, color: '#f1f5f9' }}>{item.modelName}</span>
-                  <span style={{ fontSize: '10px', color: '#64748b' }}>via {item.providerName}</span>
+                  <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{item.modelName}</span>
+                  <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>via {item.providerName}</span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <span style={{ fontSize: '11px', color: '#94a3b8' }}>
+                  <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
                     {item.requestCount} requests · {item.avgLatencyMs}ms avg
                   </span>
-                  <span style={{ fontWeight: 700, color: '#38bdf8' }}>
+                  <span style={{ fontWeight: 700, color: 'var(--accent-cyan)' }}>
                     {formatTokens(item.tokensConsumed)} ({item.percentage}%)
                   </span>
                 </div>
@@ -478,7 +478,7 @@ export const QuotaTracker: React.FC<QuotaTrackerProps> = ({
                 style={{
                   width: '100%',
                   height: '4px',
-                  backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                  backgroundColor: 'var(--surface-3)',
                   borderRadius: '2px',
                   overflow: 'hidden'
                 }}
@@ -487,7 +487,7 @@ export const QuotaTracker: React.FC<QuotaTrackerProps> = ({
                   style={{
                     width: `${item.percentage}%`,
                     height: '100%',
-                    backgroundColor: '#818cf8',
+                    backgroundColor: 'var(--accent-primary)',
                     borderRadius: '2px'
                   }}
                 />

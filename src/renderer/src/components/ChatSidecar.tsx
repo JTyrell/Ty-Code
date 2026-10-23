@@ -1064,6 +1064,40 @@ function describeSessionAge(timestamp: number): string {
   return `${Math.round(hours / 24)} days ago`;
 }
 
+function formatHeaderStatus(status: string, maxLen = 23): string {
+  if (!status) return '';
+  const trimmed = status.trim();
+
+  const knownMap: Record<string, string> = {
+    'Plan revision feedback sent.': 'Feedback sent',
+    'Waiting for your approval…': 'Needs approval',
+    'Approval request expired.': 'Request expired',
+    'Approval granted.': 'Approved',
+    'Approval denied.': 'Denied',
+    'Analyzing workspace…': 'Analyzing…',
+    'Stopping task…': 'Stopping…',
+    'Task stopped.': 'Task stopped',
+    'Task completed.': 'Task completed',
+    'Could not start agent.': 'Could not start agent.'
+  };
+  if (knownMap[trimmed]) return knownMap[trimmed];
+
+  const toolMatch = trimmed.match(/^Running\s+([a-zA-Z0-9_\-.:]+)(…|\.{3})?$/i);
+  if (toolMatch) {
+    const rawTool = toolMatch[1];
+    const maxToolLen = 12;
+    const toolName = rawTool.length > maxToolLen ? `${rawTool.slice(0, 10)}…` : rawTool;
+    return `Running ${toolName}…`;
+  }
+
+  if (trimmed.length > maxLen) {
+    return `${trimmed.slice(0, maxLen - 1).trimEnd()}…`;
+  }
+
+  return trimmed;
+}
+
+
 export const ChatSidecar: React.FC = () => {
   const [input, setInput] = useState('');
   const [sidecarTab, setSidecarTab] = useState<'chat' | 'pair'>('chat');
@@ -1329,7 +1363,7 @@ export const ChatSidecar: React.FC = () => {
           </button>
         </div>
         <div className="chat-header-actions">
-          {currentStatus && <span className="chat-status" title={currentStatus}><Loader2 size={10} className="animate-spin" /><span>{currentStatus}</span></span>}
+          {currentStatus && <span className="chat-status" title={currentStatus}><Loader2 size={10} className="animate-spin" /><span>{formatHeaderStatus(currentStatus)}</span></span>}
           {sidecarTab === 'chat' ? (
             <button onClick={clearChat} title="Clear chat history" aria-label="Clear chat history" className="chat-icon-button"><Trash2 size={13} /></button>
           ) : (
