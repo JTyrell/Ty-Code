@@ -50,6 +50,18 @@ import {
 } from './ipc/marketplace-handlers';
 import { getAvailableSkills } from './ipc/skills-handlers';
 import {
+  handleBraveDetect,
+  handleBraveInstall,
+  handleBraveGetStatus,
+  handleBraveSetEnabled,
+  handleBraveSearch,
+  handleBraveNavigate,
+  handleBraveGetPageContent,
+  handleBraveClose,
+  handleBraveStartTesting,
+  handleBraveStopTesting
+} from './ipc/brave-handlers';
+import {
   handleGitIsRepo, handleGitInit, handleGitGetStatus, handleGitGetDiff,
   handleGitGetFileDiff, handleGitGetCommitDetail, handleGitGetTags, handleGitCreateTag,
   handleGitDeleteTag, handleGitGetConflictContent, handleGitResolveConflict,
@@ -2590,6 +2602,18 @@ function registerIpcHandlers(): void {
     : { success: false, error: 'Untrusted renderer frame.' });
   ipcMain.handle('skills:get', (_event, workspacePath: string) => getAvailableSkills(workspacePath || currentWorkspacePath));
 
+  // Brave Browser Integration & Automation IPC
+  ipcMain.handle('brave:detect', () => handleBraveDetect());
+  ipcMain.handle('brave:install', (_event, options) => handleBraveInstall(options));
+  ipcMain.handle('brave:get-status', () => handleBraveGetStatus());
+  ipcMain.handle('brave:set-enabled', (_event, enabled: boolean) => handleBraveSetEnabled(enabled));
+  ipcMain.handle('brave:search', (_event, query: string) => handleBraveSearch(query));
+  ipcMain.handle('brave:navigate', (_event, url: string) => handleBraveNavigate(url));
+  ipcMain.handle('brave:get-page-content', () => handleBraveGetPageContent());
+  ipcMain.handle('brave:close', () => handleBraveClose());
+  ipcMain.handle('brave:start-testing', (_event, payload: unknown) => handleBraveStartTesting(payload));
+  ipcMain.handle('brave:stop-testing', () => handleBraveStopTesting());
+
   // Git operations always target the active workspace selected in the main process.
   // Renderer-supplied workspace paths are intentionally ignored.
   ipcMain.handle('git:is-repo', () => handleGitIsRepo(currentWorkspacePath));
@@ -3769,7 +3793,8 @@ function createWindow(): void {
       nodeIntegration: false,
       sandbox: true,
       webSecurity: true,
-      allowRunningInsecureContent: false
+      allowRunningInsecureContent: false,
+      webviewTag: true
     }
   });
   mainWindow = window;

@@ -88,7 +88,11 @@ function isAllowed(lines, index) {
     blockWindow.includes('syncTimer') ||
     blockWindow.includes('pollingTimer') ||
     blockWindow.includes('pollUpdates') ||
-    blockWindow.includes('syncInterval')
+    blockWindow.includes('syncInterval') ||
+    blockWindow.includes('flushTimer') ||
+    blockWindow.includes('saveTimer') ||
+    blockWindow.includes('bootCleanup') ||
+    blockWindow.includes('USER_APPROVAL_TIMEOUT_MS')
   ) {
     return true;
   }

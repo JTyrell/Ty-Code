@@ -25,21 +25,33 @@ const rootDir = path.resolve(scriptDir, '..');
 const WORKER_ENTRIES = ['static-worker', 'arch-worker', 'dynamic-sandbox'];
 
 export async function buildDebuggerWorkers(root = rootDir) {
-  await Promise.all(
-    WORKER_ENTRIES.map((name) =>
-      build({
-        entryPoints: [path.join(root, 'src/main/services/debugger-engines/workers', `${name}.ts`)],
-        bundle: true,
-        platform: 'node',
-        target: 'node20',
-        format: 'cjs',
-        external: ['electron'],
-        outfile: path.join(root, 'dist/main/workers', `${name}.js`),
-        sourcemap: true,
-        logLevel: 'warning'
-      })
-    )
+  const debuggerTasks = WORKER_ENTRIES.map((name) =>
+    build({
+      entryPoints: [path.join(root, 'src/main/services/debugger-engines/workers', `${name}.ts`)],
+      bundle: true,
+      platform: 'node',
+      target: 'node20',
+      format: 'cjs',
+      external: ['electron'],
+      outfile: path.join(root, 'dist/main/workers', `${name}.js`),
+      sourcemap: true,
+      logLevel: 'warning'
+    })
   );
+
+  const braveWorkerTask = build({
+    entryPoints: [path.join(root, 'src/main/services/brave-engine/brave-worker.ts')],
+    bundle: true,
+    platform: 'node',
+    target: 'node20',
+    format: 'cjs',
+    external: ['electron', 'playwright-core'],
+    outfile: path.join(root, 'dist/main/workers/brave-worker.js'),
+    sourcemap: true,
+    logLevel: 'warning'
+  });
+
+  await Promise.all([...debuggerTasks, braveWorkerTask]);
 }
 
 const invokedDirectly =

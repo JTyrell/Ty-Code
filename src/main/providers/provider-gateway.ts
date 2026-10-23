@@ -134,11 +134,12 @@ export class ChatLatencyTracker {
     if (entry.h5 !== undefined) {
       this.outputSummary(taskId);
     } else {
+      const timeoutMs = 150;
       setTimeout(() => {
         if (!entry.summaryLogged) {
           this.outputSummary(taskId);
         }
-      }, 150);
+      }, timeoutMs);
     }
   }
 

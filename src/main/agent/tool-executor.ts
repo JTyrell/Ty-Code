@@ -65,6 +65,9 @@ export class ToolExecutor {
         case 'git_log': return await this.gitLog(args);
         case 'git_merge': return await this.gitMerge(args);
         case 'generate_presentation': return await this.generatePresentation(args);
+        case 'brave_web_search':
+        case 'web_search':
+          return await this.braveWebSearch(args);
         case 'seo_analytics_query':
         case 'audit_page_seo':
         case 'query_search_console':
@@ -1067,5 +1070,39 @@ export class ToolExecutor {
       output: result.output,
       isError: result.isError
     };
+  }
+
+  public async braveWebSearch(args: Record<string, unknown>): Promise<ToolExecutionResponse> {
+    const query = String(args.query || args.q || '').trim();
+    if (!query) {
+      return { output: 'Error: search query cannot be empty', isError: true };
+    }
+
+    try {
+      const { braveEngine } = await import('../services/brave-engine');
+      const searchResult = await braveEngine.searchWeb(query);
+
+      const top3 = (searchResult.results || []).slice(0, 3);
+      if (top3.length === 0) {
+        const textSummary = searchResult.text ? searchResult.text.slice(0, 600) : 'No search results found.';
+        return {
+          output: `Search executed via Brave Guest Mode (${searchResult.engine}) for "${query}".\n\nTitle: ${searchResult.title}\nURL: ${searchResult.url}\n\nSnippet/Summary:\n${textSummary}`
+        };
+      }
+
+      const formatted = top3
+        .map((r, i) => `${i + 1}. **${r.title}**\n   URL: ${r.url}\n   Snippet: ${r.snippet}`)
+        .join('\n\n');
+
+      return {
+        output: `Search results for "${query}" (via Brave Guest Mode - ${searchResult.engine}):\n\n${formatted}`
+      };
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      return {
+        output: `Failed to execute web search via Brave: ${errorMsg}`,
+        isError: true
+      };
+    }
   }
 }

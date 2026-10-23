@@ -92,7 +92,18 @@ const api: ElectronAPI = {
     ipcRenderer.invoke('agent:respond-approval', { approvalId, approved: response === 'APPROVED', ...(feedback !== undefined ? { feedback } : {}) }),
   userApproveDiff: (payload: { approvalId?: string; diffId?: string; approved?: boolean } | boolean) => ipcRenderer.invoke('user_approve_diff', payload),
   onAgentStream: (callback) => {
-    const listener = (_event: IpcRendererEvent, chunk: AgentStreamChunk) => callback(chunk);
+    const listener = (_event: IpcRendererEvent, chunk: AgentStreamChunk) => {
+      // Step 2: Lightweight manual check bypassing Zod for high-frequency stream tokens
+      if (chunk && typeof chunk === 'object') {
+        if (chunk.type === 'token' || chunk.type === 'thought') {
+          if (typeof chunk.content === 'string') {
+            callback(chunk);
+          }
+        } else {
+          callback(chunk);
+        }
+      }
+    };
     ipcRenderer.on('agent:stream', listener);
     return () => ipcRenderer.removeListener('agent:stream', listener);
   },
@@ -834,6 +845,24 @@ const api: ElectronAPI = {
     const handler = (_event: any, state: any) => callback(state);
     ipcRenderer.on('agent:state', handler);
     return () => ipcRenderer.removeListener('agent:state', handler);
+  },
+
+  // Brave Browser Integration & Automation
+  detectBraveBrowser: () => ipcRenderer.invoke('brave:detect'),
+  installBraveBrowser: (options) => ipcRenderer.invoke('brave:install', options),
+  getBraveStatus: () => ipcRenderer.invoke('brave:get-status'),
+  setBraveEnabled: (enabled: boolean) => ipcRenderer.invoke('brave:set-enabled', enabled),
+  braveSearch: (query: string) => ipcRenderer.invoke('brave:search', query),
+  braveNavigate: (url: string) => ipcRenderer.invoke('brave:navigate', url),
+  braveGetPageContent: () => ipcRenderer.invoke('brave:get-page-content'),
+  braveClose: () => ipcRenderer.invoke('brave:close'),
+  startBraveTesting: (url: string, options?: { openVisibleWindow?: boolean }) =>
+    ipcRenderer.invoke('brave:start-testing', { url, ...(options || {}) }),
+  stopBraveTesting: () => ipcRenderer.invoke('brave:stop-testing'),
+  onBraveTestingUpdate: (callback: (data: any) => void) => {
+    const handler = (_event: any, data: any) => callback(data);
+    ipcRenderer.on('brave:testing-update', handler);
+    return () => ipcRenderer.removeListener('brave:testing-update', handler);
   }
 };
 

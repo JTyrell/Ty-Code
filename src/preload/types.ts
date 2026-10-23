@@ -1437,6 +1437,19 @@ export interface ElectronAPI {
   initiateCopilotDeviceFlow?: () => Promise<{ success: boolean; data?: { device_code: string; user_code: string; verification_uri: string; expires_in: number; interval: number }; error?: string }>;
   pollCopilotToken?: (deviceCode: string) => Promise<{ success: boolean; token?: string; error?: string }>;
   onProviderHandoff?: (cb: (data: { fromProvider: string; toProvider: string; newModel: string }) => void) => () => void;
+
+  // Brave Browser Integration & Automation
+  detectBraveBrowser?: () => Promise<IpcResponse<{ installed: boolean; executablePath: string | null }>>;
+  installBraveBrowser?: (options?: { silent?: boolean }) => Promise<IpcResponse<{ success: boolean; installed: boolean; executablePath: string | null; error?: string }>>;
+  getBraveStatus?: () => Promise<IpcResponse<{ installed: boolean; executablePath: string | null; enabled: boolean }>>;
+  setBraveEnabled?: (enabled: boolean) => Promise<IpcResponse<{ enabled: boolean }>>;
+  braveSearch?: (query: string) => Promise<IpcResponse<any>>;
+  braveNavigate?: (url: string) => Promise<IpcResponse<{ url: string; title: string; status: number; ok: boolean }>>;
+  braveGetPageContent?: () => Promise<IpcResponse<{ content: string }>>;
+  braveClose?: () => Promise<IpcResponse<{ closed: boolean }>>;
+  startBraveTesting?: (url: string, options?: { openVisibleWindow?: boolean }) => Promise<IpcResponse<{ active: boolean; url: string; title?: string; status?: number }>>;
+  stopBraveTesting?: () => Promise<IpcResponse<{ active: boolean }>>;
+  onBraveTestingUpdate?: (callback: (data: { active: boolean; url: string; title?: string; status?: number; error?: string }) => void) => () => void;
 }
 
 export interface BootSchedulerTaskPayload {

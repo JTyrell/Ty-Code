@@ -29,7 +29,8 @@ import {
   Zap,
   X,
   ShieldCheck,
-  Gauge
+  Gauge,
+  Globe
 } from 'lucide-react';
 import {
   useDebuggerStore,
@@ -44,13 +45,14 @@ import { useChatStore } from '../../state/chat-store';
 import { DebuggerToolbar } from './DebuggerToolbar';
 import { WorkspaceGate } from '../common/WorkspaceGate';
 import { useWorkspaceStore } from '../../state/workspace-store';
+import { BraveTestingView } from '../testing/BraveTestingView';
 import './OmniDebugger.css';
 
 interface OmniDebuggerProps {
   isStandalone?: boolean;
 }
 
-type ViewTab = 'findings' | 'engines' | 'metrics';
+type ViewTab = 'findings' | 'engines' | 'metrics' | 'testing';
 
 export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false }) => {
   // Mount store listener for IPC synchronization
@@ -505,6 +507,16 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
           >
             <BarChart3 size={12} />
             <span>Health Matrix</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('testing')}
+            className={`omni-tab-btn ${activeTab === 'testing' ? 'active' : ''}`}
+            style={activeTab === 'testing' ? { borderColor: '#ff5500', color: '#ff6622' } : {}}
+          >
+            <Globe size={12} />
+            <span>AI Local Testing</span>
           </button>
         </div>
 
@@ -1208,6 +1220,13 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
                   </div>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* TAB 4: AI LOCAL TESTING VIEW */}
+          {activeTab === 'testing' && (
+            <div style={{ flex: 1, width: '100%', height: '100%', overflow: 'hidden' }}>
+              <BraveTestingView />
             </div>
           )}
         </main>

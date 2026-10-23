@@ -179,6 +179,7 @@ You have direct access to tools that interact with the user's project:
 11. git_log: Inspect recent commit history.
 12. git_merge: Merge branches and handle conflicts. Merge requires user approval.
 13. generate_presentation: Generate an interactive, self-contained single-file HTML presentation from a topic and outline and save it to the workspace.
+14. brave_web_search: Search the web via privacy-respecting Brave Browser in isolated Guest Mode. Extracts top search results and text snippets without accessing personal cookies or history.
 
 LARGE FILE HANDLING (CRITICAL):
 - If read_file returns a partial result with a hint like "use startLine/endLine to continue", you MUST continue reading the file in chunks until you have read the ENTIRE file.
@@ -513,6 +514,24 @@ export const AGENT_TOOLS_DEFINITIONS = [
           priority: { type: 'string', enum: ['low', 'medium', 'high'], default: 'medium' }
         },
         required: ['agentName', 'task']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'brave_web_search',
+      description:
+        'Search the web for documentation, APIs, error solutions, or library guides using an isolated, ephemeral Brave Browser Guest session. Extracts the top 3 results and returns their titles, URLs, and text snippets.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: {
+            type: 'string',
+            description: 'The search query or keywords to look up on the web.'
+          }
+        },
+        required: ['query']
       }
     }
   }

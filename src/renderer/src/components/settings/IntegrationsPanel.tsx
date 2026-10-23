@@ -41,6 +41,7 @@ import type {
   ConnectorsOverview
 } from '../../../../preload/types';
 import { toast } from '../../state/toast-store';
+import { BraveIntegrationCard } from './BraveIntegrationCard';
 
 export const IntegrationsPanel: React.FC = () => {
   const [modules, setModules] = useState<ExternalModuleInfo[]>([]);
@@ -701,6 +702,9 @@ export const IntegrationsPanel: React.FC = () => {
           <span>{error}</span>
         </div>
       )}
+
+      {/* Brave Browser Privacy Integration */}
+      <BraveIntegrationCard />
 
       {/* Phase FCC-3: Free Model Supply Endpoint, Subscriptions & Harness Interoperability */}
       <div

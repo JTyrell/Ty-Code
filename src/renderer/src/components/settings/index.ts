@@ -14,3 +14,4 @@ export { DiagnosticsPanel } from './DiagnosticsPanel';
 export { SettingRow, type SettingRowProps } from './SettingRow';
 export { SectionHeader, type SectionHeaderProps } from './SectionHeader';
 export { HelpTooltip, type HelpTooltipProps } from './HelpTooltip';
+export { BraveIntegrationCard, type BraveIntegrationCardProps } from './BraveIntegrationCard';
