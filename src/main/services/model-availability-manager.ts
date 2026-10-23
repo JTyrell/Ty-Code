@@ -18,10 +18,11 @@
 
 import { getVerifiedModels, type VerifiedModelConfig } from './verified-models';
 import { providerHasOwnKey } from '../providers/provider-gateway';
-import { hasCommunityKey, warmUpCommunityKey, getCommunityKeyCooldownRemainingSec } from './credential-vault';
+import { getKey, getAllVaultKeys, hasCommunityKey, getCommunityKey, warmUpCommunityKey, getCommunityKeyCooldownRemainingSec } from './credential-vault';
 import { fccManager } from './orchestration/fcc-manager';
 import { getAllPreconfiguredProviders } from '../config/provider-registry';
 import { opencodeBridge } from './opencode-bridge';
+import { credentialStore } from './auth/credential-store';
 
 export type ModelAvailabilityStatus = 'available' | 'key_required' | 'service_unavailable';
 
@@ -94,10 +95,12 @@ async function probeLocalBackend(url: string): Promise<boolean> {
   if (entry && Date.now() - entry.at < LOCAL_PROBE_TTL_MS) return entry.ok;
   let ok = false;
   try {
-    const response = await fetch(`${origin}/models`, {
+    const isOllama = origin.includes('11434') || /ollama/i.test(origin);
+    const probePath = isOllama ? `${origin}/api/tags` : `${origin}/models`;
+    const response = await fetch(probePath, {
       method: 'GET',
       headers: { Accept: 'application/json' },
-      signal: AbortSignal.timeout(800)
+      signal: AbortSignal.timeout(1000)
     });
     ok = response.ok;
   } catch {
@@ -107,33 +110,53 @@ async function probeLocalBackend(url: string): Promise<boolean> {
   return ok;
 }
 
+export async function hasSavedKeyForProvider(providerId: string): Promise<boolean> {
+  const p = (providerId || '').toLowerCase().trim();
+  if (providerHasOwnKey(p)) return true;
+  try {
+    const key = await getKey(p);
+    if (key && key.trim()) return true;
+  } catch {}
+  try {
+    const all = getAllVaultKeys();
+    if (all[p] && all[p].trim()) return true;
+  } catch {}
+  try {
+    const stored = credentialStore.getDecryptedKey(p);
+    if (stored && stored.trim()) return true;
+  } catch {}
+  return false;
+}
+
 let availabilityCache: { models: AvailableModelConfig[]; at: number } | null = null;
 const AVAILABILITY_TTL_MS = 15_000;
 
-function classifySync(model: VerifiedModelConfig, providerIdLower: string): ModelAvailabilityStatus {
-  if (providerIdLower === 'ty-code-free' || providerIdLower === 'tycode-free') {
-    // Zero-friction tier: available as soon as the rotating Community Key
-    // card exists in the encrypted vault (no user input involved).
-    return providerHasOwnKey(providerIdLower) ? 'available' : 'key_required';
+async function classify(model: VerifiedModelConfig, providerIdLower: string): Promise<ModelAvailabilityStatus> {
+  // 1. Localhost backends (Ollama, local models) must actually answer
+  const isLocal = providerIdLower === 'ollama' || providerIdLower === 'ollama-free' || LOCAL_HOST_PATTERN.test(model.url);
+  if (isLocal) {
+    const running = await probeLocalBackend(model.url);
+    return running ? 'available' : 'service_unavailable';
   }
+
+  // 2. Ty-Code Free (Community Key tier)
+  if (providerIdLower === 'ty-code-free' || providerIdLower === 'tycode-free') {
+    if (hasCommunityKey()) return 'available';
+    try {
+      const commKey = await getCommunityKey();
+      if (commKey && commKey.trim()) return 'available';
+    } catch {}
+    const hasOwnOpenRouter = await hasSavedKeyForProvider('openrouter');
+    return hasOwnOpenRouter ? 'available' : 'key_required';
+  }
+
+  // 3. FCC sidecar managed models
   if (providerIdLower === 'fcc' || providerIdLower === 'fcc-proxy') {
     const status = fccManager.getStatus();
-    return status.running && status.health !== 'stopped' ? 'available' : 'service_unavailable';
+    return (status.running && status.health !== 'stopped') ? 'available' : 'service_unavailable';
   }
-  if (!model.requiresKey) {
-    // Free tier via OpenKilo/OpenCode/FCC anonymous supply, or OpenCode CLI
-    // bridged models (already present only when the CLI check succeeded).
-    return 'available';
-  }
-  return providerHasOwnKey(providerIdLower) ? 'available' : 'key_required';
-}
 
-async function classify(model: VerifiedModelConfig, providerIdLower: string): Promise<ModelAvailabilityStatus> {
-  const popped = classifySync(model, providerIdLower);
-  if (popped === 'key_required') return popped;
-  // CLI-bridged free tier: the models are only "available" when the real
-  // opencode CLI is installed and runnable - otherwise they are locked, and
-  // the picker routes the user to the one-click auto-installer.
+  // 4. OpenCode CLI bridged models
   if (providerIdLower === 'opencode-free') {
     try {
       return (await opencodeBridge.isCliAvailable()) ? 'available' : 'key_required';
@@ -141,13 +164,23 @@ async function classify(model: VerifiedModelConfig, providerIdLower: string): Pr
       return 'key_required';
     }
   }
-  // Localhost backends must actually answer (Ollama detected entries come
-  // from the detector itself and are inherently verified - others probe).
-  if (LOCAL_HOST_PATTERN.test(model.url)) {
-    if (providerIdLower === 'ollama' || providerIdLower === 'ollama-free') return 'available';
-    return (await probeLocalBackend(model.url)) ? 'available' : 'service_unavailable';
+
+  // 5. Explicit free models (requiresKey === false)
+  if (!model.requiresKey) {
+    return 'available';
   }
-  return popped;
+
+  // 6. Keyed models (requiresKey === true)
+  const hasKey = await hasSavedKeyForProvider(providerIdLower);
+  return hasKey ? 'available' : 'key_required';
+}
+
+export async function getAvailableModels(onlyAvailable: boolean = false): Promise<AvailableModelConfig[]> {
+  const models = await getModelsAvailability();
+  if (onlyAvailable) {
+    return models.filter((m) => m.availabilityStatus === 'available' && m.isSelectable);
+  }
+  return models;
 }
 
 export async function getModelsAvailability(): Promise<AvailableModelConfig[]> {

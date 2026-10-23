@@ -53,6 +53,8 @@ export const ERROR_CODE_DESCRIPTIONS: Record<DiagnosticErrorCode, string> = {
  * Standard suggested fallback providers for rate limits or outages
  */
 export const DEFAULT_FALLBACK_PROVIDERS: Record<string, string> = {
+  'opencode-free': 'Ty-Code Free (zero-config community free tier)',
+  'opencode': 'Ty-Code Free (zero-config community free tier)',
   'openrouter-free': 'OpenKilo (zero-config anonymous free tier)',
   'groq-free': 'OpenKilo or OpenRouter Free',
   'together-ai-free': 'Groq (Free Tier) or OpenKilo',
@@ -290,6 +292,11 @@ export function classifyDiagnosticError(
   // 9. NETWORK_BLOCKED (DNS, connection refused, proxy, offline, fetch failed)
   if (
     lowerMsg.includes('econnrefused') ||
+    lowerMsg.includes('econnreset') ||
+    lowerMsg.includes('wsarecv') ||
+    lowerMsg.includes('wsasend') ||
+    lowerMsg.includes('forcibly closed') ||
+    lowerMsg.includes('connection reset') ||
     lowerMsg.includes('enotfound') ||
     lowerMsg.includes('eai_again') ||
     lowerMsg.includes('fetch failed') ||
@@ -300,13 +307,17 @@ export function classifyDiagnosticError(
     lowerMsg.includes('certificate') ||
     lowerMsg.includes('ssl')
   ) {
+    const isOpenCode = (providerId || '').toLowerCase().includes('opencode') || lowerMsg.includes('opencode') || lowerMsg.includes('cloudcode');
     return {
       code: 'NETWORK_BLOCKED',
       humanMessage: 'DNS/conn/CSP/proxy failure',
-      remedy: `Network path blocked: ${errMsg || 'Connection refused or DNS failure'}; check proxy/firewall`,
-      suggestedAction: 'check-network',
-      actionLabel: 'Retry',
-      actionUrl: 'ty-code://action/retry',
+      remedy: isOpenCode
+        ? `OpenCode CLI connection was interrupted (${errMsg.slice(0, 120)}). Switch to Ty-Code Free for built-in community access.`
+        : `Network path blocked: ${errMsg || 'Connection refused or DNS failure'}; check proxy/firewall`,
+      suggestedAction: isOpenCode ? 'open-settings' : 'check-network',
+      actionLabel: isOpenCode ? 'Switch to Ty-Code Free' : 'Retry',
+      actionUrl: isOpenCode ? 'ty-code://switch-provider/ty-code-free' : 'ty-code://action/retry',
+      suggestedFallback: 'ty-code-free',
       rawEvidence: errMsg || 'Network unreachable'
     };
   }

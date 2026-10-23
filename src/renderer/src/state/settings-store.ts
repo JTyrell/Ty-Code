@@ -78,9 +78,10 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
   },
 
   setActiveProvider: (providerId, modelId) => {
+    const defaultModel = providerId === TY_CODE_FREE_PROVIDER ? TY_CODE_FREE_MODEL : undefined;
     set({
       activeProviderId: providerId || DEFAULTS.activeProviderId,
-      activeModelId: modelId !== undefined ? modelId : get().activeModelId
+      activeModelId: modelId !== undefined ? modelId : (defaultModel || get().activeModelId)
     });
   },
 

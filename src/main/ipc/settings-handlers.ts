@@ -73,15 +73,19 @@ export function decryptSecret(encryptedValue: string): string {
   if (!encryptedValue) return '';
   const storage = getCredentialStorageStatus();
   if (!storage.available) return '';
-  if (encryptedValue.startsWith('electron_safe_storage_v1:')) {
-    return safeStorage.decryptString(Buffer.from(encryptedValue.slice('electron_safe_storage_v1:'.length), 'base64'));
+  try {
+    if (encryptedValue.startsWith('electron_safe_storage_v1:')) {
+      return safeStorage.decryptString(Buffer.from(encryptedValue.slice('electron_safe_storage_v1:'.length), 'base64'));
+    }
+    if (isLegacyBase64Fallback(encryptedValue)) {
+      const decoded = Buffer.from(encryptedValue, 'base64').toString('utf8');
+      return Buffer.from(decoded.slice('safestorage_fallback:'.length), 'base64').toString('utf8');
+    }
+    // Older Electron safeStorage values were stored as untagged base64 buffers.
+    return safeStorage.decryptString(Buffer.from(encryptedValue, 'base64'));
+  } catch {
+    return '';
   }
-  if (isLegacyBase64Fallback(encryptedValue)) {
-    const decoded = Buffer.from(encryptedValue, 'base64').toString('utf8');
-    return Buffer.from(decoded.slice('safestorage_fallback:'.length), 'base64').toString('utf8');
-  }
-  // Older Electron safeStorage values were stored as untagged base64 buffers.
-  return safeStorage.decryptString(Buffer.from(encryptedValue, 'base64'));
 }
 
 async function removeLegacyBase64Credentials(filePath: string, parsed: Record<string, unknown>): Promise<Record<string, unknown>> {
@@ -224,7 +228,12 @@ async function readEffectiveSettings(): Promise<ProviderSettings> {
   // Union the hardware-backed credential store into the effective key map so
   // main-internal consumers (agent gateway requests) resolve keys saved by ANY
   // writer, even if the vault file never received that provider id.
-  const storeKeys = credentialStore.getAllDecryptedKeys();
+  let storeKeys: Record<string, string> = {};
+  try {
+    storeKeys = credentialStore.getAllDecryptedKeys();
+  } catch (err) {
+    console.warn('[settings-handlers] Failed to read decrypted keys from credentialStore:', err);
+  }
   let vaultKeys: Record<string, string> = {};
   try {
     vaultKeys = getAllVaultKeys();
@@ -281,12 +290,16 @@ export async function getSettings(): Promise<IpcResponse<ProviderSettings>> {
         apiKeysConfigured[norm] = true;
       }
     }
-    for (const entry of credentialStore.listConfigured()) {
-      if (entry.configured) {
-        apiKeysConfigured[entry.providerId as ProviderType] = true;
-        const norm = entry.providerId.replace(/-free$/, '') as ProviderType;
-        apiKeysConfigured[norm] = true;
+    try {
+      for (const entry of credentialStore.listConfigured()) {
+        if (entry.configured) {
+          apiKeysConfigured[entry.providerId as ProviderType] = true;
+          const norm = entry.providerId.replace(/-free$/, '') as ProviderType;
+          apiKeysConfigured[norm] = true;
+        }
       }
+    } catch (err) {
+      console.warn('[settings-handlers] Failed to list configured credentials from credentialStore:', err);
     }
     return { success: true, data: { ...settings, apiKeys: {}, apiKeysConfigured } };
   } catch (error: unknown) {

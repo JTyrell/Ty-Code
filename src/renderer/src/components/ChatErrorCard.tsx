@@ -63,6 +63,12 @@ export const ChatErrorCard: React.FC<ChatErrorCardProps> = ({ errorCard, error, 
         setQuickConnectOpen(true);
       } else if (actionUrl === 'ty-code://dashboard/quota') {
         openSettings('analytics');
+      } else if (actionUrl?.startsWith('ty-code://switch-provider/')) {
+        const targetProvider = actionUrl.slice('ty-code://switch-provider/'.length);
+        if (targetProvider) {
+          void useChatStore.getState().switchProvider(targetProvider);
+          useChatStore.getState().dismissErrorCard();
+        }
       } else if (actionUrl && /^https?:\/\//i.test(actionUrl)) {
         // Async IPC: do not await on the click path; surface failure afterwards.
         void window.electronAPI.openExternal(actionUrl).then((res) => {
@@ -125,7 +131,7 @@ export const ChatErrorCard: React.FC<ChatErrorCardProps> = ({ errorCard, error, 
         {card.actionLabel ? (
           <button type="button" onClick={runAction}
             style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', fontSize: 12, fontWeight: 600, borderRadius: 5, border: `1px solid ${border}`, background: isAmber ? 'var(--accent-amber)' : 'var(--accent-primary, #6366f1)', color: '#fff', cursor: 'pointer' }}>
-            {card.actionLabel === 'Retry' ? <RotateCcw size={12} /> : <ExternalLink size={12} />}
+            {card.actionLabel === 'Retry' || card.actionUrl?.startsWith('ty-code://switch-provider/') ? <RotateCcw size={12} /> : <ExternalLink size={12} />}
             <span>{card.actionLabel}</span>
           </button>
         ) : onRetry ? (
@@ -134,6 +140,19 @@ export const ChatErrorCard: React.FC<ChatErrorCardProps> = ({ errorCard, error, 
             <RotateCcw size={12} /><span>Retry</span>
           </button>
         ) : null}
+        {card.suggestedFallback && !card.actionUrl?.startsWith('ty-code://switch-provider/') && (
+          <button
+            type="button"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', fontSize: 12, fontWeight: 600, borderRadius: 5, border: '1px solid rgba(99,102,241,0.4)', background: 'rgba(99,102,241,0.25)', color: '#c7d2fe', cursor: 'pointer' }}
+            onClick={() => timed('button_click', () => {
+              void useChatStore.getState().switchProvider('ty-code-free');
+              useChatStore.getState().dismissErrorCard();
+            })}
+          >
+            <RotateCcw size={12} />
+            <span>Switch to Free Tier</span>
+          </button>
+        )}
         <button type="button" style={secondary} onClick={() => timed('button_click', () => openSettings('providers'))}><Settings size={11} /><span>Settings</span></button>
         <button type="button" style={secondary} onClick={() => timed('button_click', () => openSettings('diagnostics'))}><Activity size={11} /><span>Diagnostics</span></button>
       </div>

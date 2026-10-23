@@ -178,29 +178,33 @@ export class CredentialStore {
    */
   public decrypt(encryptedValue: string): string {
     if (!encryptedValue) return '';
-    if (encryptedValue.startsWith('safe_storage_v1:')) {
-      if (!this.isEncryptionAvailable()) return '';
-      const b64 = encryptedValue.slice('safe_storage_v1:'.length);
-      return safeStorage.decryptString(Buffer.from(b64, 'base64'));
-    }
-    if (encryptedValue.startsWith('fallback_aes_v1:')) {
-      const raw = Buffer.from(encryptedValue.slice('fallback_aes_v1:'.length), 'base64');
-      const tag = raw.slice(0, 16);
-      const data = raw.slice(16);
-      const hmac = crypto.createHash('sha256').update(getUserDataPath()).digest('hex').slice(0, 32);
-      const decipher = crypto.createDecipheriv('aes-256-gcm', Buffer.from(hmac, 'utf8'), Buffer.alloc(12, 0));
-      decipher.setAuthTag(tag);
-      return Buffer.concat([decipher.update(data), decipher.final()]).toString('utf8');
-    }
-    // Backward compatibility for legacy base64 buffers
-    if (this.isEncryptionAvailable()) {
-      try {
-        return safeStorage.decryptString(Buffer.from(encryptedValue, 'base64'));
-      } catch {
-        return '';
+    try {
+      if (encryptedValue.startsWith('safe_storage_v1:')) {
+        if (!this.isEncryptionAvailable()) return '';
+        const b64 = encryptedValue.slice('safe_storage_v1:'.length);
+        return safeStorage.decryptString(Buffer.from(b64, 'base64'));
       }
+      if (encryptedValue.startsWith('fallback_aes_v1:')) {
+        const raw = Buffer.from(encryptedValue.slice('fallback_aes_v1:'.length), 'base64');
+        const tag = raw.slice(0, 16);
+        const data = raw.slice(16);
+        const hmac = crypto.createHash('sha256').update(getUserDataPath()).digest('hex').slice(0, 32);
+        const decipher = crypto.createDecipheriv('aes-256-gcm', Buffer.from(hmac, 'utf8'), Buffer.alloc(12, 0));
+        decipher.setAuthTag(tag);
+        return Buffer.concat([decipher.update(data), decipher.final()]).toString('utf8');
+      }
+      // Backward compatibility for legacy base64 buffers
+      if (this.isEncryptionAvailable()) {
+        try {
+          return safeStorage.decryptString(Buffer.from(encryptedValue, 'base64'));
+        } catch {
+          return '';
+        }
+      }
+      return '';
+    } catch {
+      return '';
     }
-    return '';
   }
 
   /**
@@ -277,8 +281,12 @@ export class CredentialStore {
     for (const id of aliases) {
       const record = this.cache.credentials[id];
       if (record?.encryptedKey) {
-        const decrypted = this.decrypt(record.encryptedKey);
-        if (decrypted) return decrypted;
+        try {
+          const decrypted = this.decrypt(record.encryptedKey);
+          if (decrypted) return decrypted;
+        } catch {
+          // ignore corrupted/undecryptable key
+        }
       }
     }
     return null;
@@ -291,8 +299,12 @@ export class CredentialStore {
     this.ensureLoadedOrPending();
     const result: Record<string, string> = {};
     for (const [providerId, record] of Object.entries(this.cache.credentials)) {
-      const decrypted = this.decrypt(record.encryptedKey);
-      if (decrypted) result[providerId] = decrypted;
+      try {
+        const decrypted = this.decrypt(record.encryptedKey);
+        if (decrypted) result[providerId] = decrypted;
+      } catch (err) {
+        console.warn(`[credential-store] Skipping undecryptable key for ${providerId}:`, err);
+      }
     }
     return result;
   }

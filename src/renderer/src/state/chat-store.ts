@@ -53,6 +53,7 @@ interface ChatState {
   acceptSessionResume: (session: AgentSessionSummary) => void;
   dismissSessionResume: () => void;
   clearChat: () => void;
+  switchProvider: (providerId: string, modelId?: string) => Promise<boolean>;
   toggleSettings: () => void;
   openSettings: (tab?: string) => void;
   activeSettingsTab?: string;
@@ -546,6 +547,22 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
       return true;
     } catch (err) { console.error('Failed to save settings:', err); return false; }
+  },
+
+  switchProvider: async (providerId: string, modelId?: string) => {
+    try {
+      const { useSettingsStore, TY_CODE_FREE_MODEL } = await import('./settings-store');
+      const targetModel = modelId || (providerId === 'ty-code-free' ? TY_CODE_FREE_MODEL : undefined);
+      useSettingsStore.getState().setActiveProvider(providerId, targetModel);
+      await get().saveSettings({
+        activeProvider: providerId as any,
+        ...(targetModel ? { activeModel: targetModel } : {})
+      });
+      return true;
+    } catch (err) {
+      console.error('Failed to switch provider:', err);
+      return false;
+    }
   },
 
   sendMessage: async (prompt, workspacePath, activeFilePath, activeFileContent, appendUserMessage = true, traceOptions, images) => {
@@ -1070,14 +1087,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
       openCodeBridgeRouteActive = true;
       const bridgeErrorCard = (messageText: string): ChatErrorCard => {
         const notInstalled = /not installed|not found/i.test(messageText);
+        const isNetwork = /network|offline|econnrefused|econnreset|wsarecv|wsasend|forcibly closed|connection reset|fetch|connect|timeout|enotfound|dns/i.test(messageText);
         return {
           taxonomyCode: notInstalled ? 'CONFIG_MISSING' : 'NETWORK_BLOCKED',
           message: messageText,
           remedy: notInstalled
-            ? 'Install the OpenCode CLI (npm install -g @opencode-ai/cli) and run `opencode` once to sync its free model config.'
-            : 'Check your OpenCode config file and connectivity, then retry.',
-          actionLabel: 'Retry',
-          actionUrl: 'ty-code://action/retry',
+            ? 'Install OpenCode CLI (npm install -g @opencode-ai/cli) or switch to Ty-Code Free for built-in community access.'
+            : isNetwork
+              ? 'OpenCode connection was interrupted or unreachable. You can switch to Ty-Code Free for immediate access or verify your OpenCode setup.'
+              : 'Check your OpenCode config file and connectivity, or switch to Ty-Code Free.',
+          actionLabel: 'Switch to Ty-Code Free',
+          actionUrl: 'ty-code://switch-provider/ty-code-free',
+          suggestedFallback: 'ty-code-free',
           providerId: currentTaskProviderId
         };
       };
@@ -1196,13 +1217,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
         const state = get();
         const partial = finalizePartialMessage(state.messages, state.streamingText, state.currentThought);
         const errorText = response.error || 'Unknown error';
-        const isNetwork = /network|offline|econnrefused|fetch|connect|timeout|enotfound|dns/i.test(errorText);
+        const isNetwork = /network|offline|econnrefused|econnreset|wsarecv|wsasend|forcibly closed|connection reset|fetch|connect|timeout|enotfound|dns/i.test(errorText);
+        const isOpenCode = (currentTaskProviderId || '').toLowerCase().includes('opencode') || (get().settings?.activeProvider || '').toLowerCase().includes('opencode');
         const fallbackCard: ChatErrorCard = {
           taxonomyCode: isNetwork ? 'NETWORK_BLOCKED' : 'CONFIG_MISSING',
           message: errorText,
-          remedy: isNetwork ? 'Check your internet connection or proxy settings, then retry.' : 'Verify provider configuration in Settings.',
-          actionLabel: isNetwork ? 'Retry' : 'Connect Provider',
-          actionUrl: isNetwork ? 'ty-code://action/retry' : 'ty-code://settings/providers',
+          remedy: isOpenCode
+            ? 'OpenCode connection was interrupted. Switch to Ty-Code Free for built-in community access.'
+            : isNetwork
+              ? 'Check your internet connection or proxy settings, then retry.'
+              : 'Verify provider configuration in Settings.',
+          actionLabel: isOpenCode ? 'Switch to Ty-Code Free' : (isNetwork ? 'Retry' : 'Connect Provider'),
+          actionUrl: isOpenCode ? 'ty-code://switch-provider/ty-code-free' : (isNetwork ? 'ty-code://action/retry' : 'ty-code://settings/providers'),
+          suggestedFallback: isOpenCode ? 'ty-code-free' : undefined,
           providerId: get().settings?.activeProvider
         };
         set({
@@ -1222,13 +1249,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const state = get();
       const partial = finalizePartialMessage(state.messages, state.streamingText, state.currentThought);
       const message = err instanceof Error ? err.message : String(err);
-      const isNetwork = /network|offline|econnrefused|fetch|connect|timeout|enotfound|dns/i.test(message);
+      const isNetwork = /network|offline|econnrefused|econnreset|wsarecv|wsasend|forcibly closed|connection reset|fetch|connect|timeout|enotfound|dns/i.test(message);
+      const isOpenCode = (currentTaskProviderId || '').toLowerCase().includes('opencode') || (get().settings?.activeProvider || '').toLowerCase().includes('opencode');
       const fallbackCard: ChatErrorCard = {
         taxonomyCode: isNetwork ? 'NETWORK_BLOCKED' : 'CONFIG_MISSING',
         message,
-        remedy: isNetwork ? 'Check your internet connection or proxy settings, then retry.' : 'Verify provider configuration in Settings.',
-        actionLabel: isNetwork ? 'Retry' : 'Connect Provider',
-        actionUrl: isNetwork ? 'ty-code://action/retry' : 'ty-code://settings/providers',
+        remedy: isOpenCode
+          ? 'OpenCode connection was interrupted. Switch to Ty-Code Free for built-in community access.'
+          : isNetwork
+            ? 'Check your internet connection or proxy settings, then retry.'
+            : 'Verify provider configuration in Settings.',
+        actionLabel: isOpenCode ? 'Switch to Ty-Code Free' : (isNetwork ? 'Retry' : 'Connect Provider'),
+        actionUrl: isOpenCode ? 'ty-code://switch-provider/ty-code-free' : (isNetwork ? 'ty-code://action/retry' : 'ty-code://settings/providers'),
+        suggestedFallback: isOpenCode ? 'ty-code-free' : undefined,
         providerId: get().settings?.activeProvider
       };
       set({

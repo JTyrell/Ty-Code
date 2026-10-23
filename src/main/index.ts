@@ -98,7 +98,7 @@ import { moduleRegistry } from './services/module-registry';
 import { mcpManager } from './services/mcp-manager';
 import { freeProviderRegistry } from './services/providers/free-provider-registry';
 import { getVerifiedModels, type VerifiedModelConfig } from './services/verified-models';
-import { getModelsAvailability, getModelAvailabilitySummary, clearAvailabilityCache } from './services/model-availability-manager';
+import { getAvailableModels, getModelsAvailability, getModelAvailabilitySummary, clearAvailabilityCache } from './services/model-availability-manager';
 import type { FreeProvider, FreeProviderId, FreeAuthType, FreeProviderCapabilities } from '../shared/types/free-providers';
 import { modelClassifier } from './services/providers/model-classifier';
 import { providerHealthMonitor } from './services/providers/health-monitor';
@@ -1934,10 +1934,20 @@ function registerIpcHandlers(): void {
 
   // Availability-gated model catalog (Provider Series Prompt 1): every entry
   // carries availabilityStatus so the picker can hide/lock unusable models.
-  ipcMain.handle('models:get-available-models', async (event) => {
+  ipcMain.handle('models:get-available-models', async (event, options?: { onlyAvailable?: boolean }) => {
     if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
     try {
-      const models = await getModelsAvailability();
+      const models = await getAvailableModels(Boolean(options?.onlyAvailable));
+      return { success: true, data: models };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('get-available-models', async (event, options?: { onlyAvailable?: boolean }) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      const models = await getAvailableModels(Boolean(options?.onlyAvailable));
       return { success: true, data: models };
     } catch (err: unknown) {
       return { success: false, error: err instanceof Error ? err.message : String(err) };
@@ -1945,6 +1955,15 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle('models:get-availability-summary', async (event) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      return { success: true, data: await getModelAvailabilitySummary() };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('get-model-availability-summary', async (event) => {
     if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
     try {
       return { success: true, data: await getModelAvailabilitySummary() };

@@ -200,12 +200,15 @@ export interface IpcResponse<T = unknown> {
 
 export type ModelAvailabilityStatus = 'available' | 'key_required' | 'service_unavailable';
 
-export interface AvailableModelConfig {
+export interface VerifiedModelConfig {
   modelId: string;
   name: string;
   url: string;
   requiresKey: boolean;
   providerId: string;
+}
+
+export interface AvailableModelConfig extends VerifiedModelConfig {
   availabilityStatus: ModelAvailabilityStatus;
   providerName: string;
   isSelectable: boolean;
