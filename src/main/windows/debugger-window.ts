@@ -14,6 +14,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import { runFullAnalysis } from '../services/debugger-orchestrator';
+import { debuggerModelRouter, type DebuggerModelPreferences } from '../services/debugger-engines/debugger-model-router';
 
 export type AnalysisSeverity = 'critical' | 'high' | 'medium' | 'low' | 'info';
 export type AnalysisEngine = 'static' | 'dynamic' | 'arch' | 'ai';
@@ -259,6 +260,50 @@ export class DebuggerSyncManager {
         };
         const results = await this.runAnalysis(payload.filePath, payload.role);
         return { success: true, data: results };
+      } catch (err: unknown) {
+        return { success: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    });
+
+    // 6. Get Debugger Model Preferences
+    ipcMain.handle('debugger:get-model-preferences', async (event): Promise<IpcResult<DebuggerModelPreferences>> => {
+      if (this.isTrustedSender && !this.isTrustedSender(event)) {
+        return { success: false, error: 'Untrusted renderer frame.' };
+      }
+      return { success: true, data: debuggerModelRouter.getDebuggerModelPreferences() };
+    });
+
+    // 7. Set Debugger Model Mode (Auto vs Manual)
+    ipcMain.handle('debugger:set-model-mode', async (event, rawPayload: unknown): Promise<IpcResult<DebuggerModelPreferences>> => {
+      if (this.isTrustedSender && !this.isTrustedSender(event)) {
+        return { success: false, error: 'Untrusted renderer frame.' };
+      }
+      try {
+        const payload = (rawPayload && typeof rawPayload === 'object' ? rawPayload : {}) as {
+          mode: 'auto' | 'manual';
+          modelId?: string;
+          providerId?: string;
+        };
+        const prefs = debuggerModelRouter.setDebuggerModelPreferences(
+          payload.mode || 'auto',
+          payload.modelId,
+          payload.providerId
+        );
+        this.broadcast('debugger:model-preferences-changed', prefs);
+        return { success: true, data: prefs };
+      } catch (err: unknown) {
+        return { success: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    });
+
+    // 8. Get Debugger Task Model Selections (Current resolved models per task)
+    ipcMain.handle('debugger:get-task-models', async (event): Promise<IpcResult<any>> => {
+      if (this.isTrustedSender && !this.isTrustedSender(event)) {
+        return { success: false, error: 'Untrusted renderer frame.' };
+      }
+      try {
+        const models = await debuggerModelRouter.getAllTaskModelSelections();
+        return { success: true, data: models };
       } catch (err: unknown) {
         return { success: false, error: err instanceof Error ? err.message : String(err) };
       }

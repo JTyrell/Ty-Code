@@ -4,6 +4,7 @@ import path from 'node:path';
 import { BrowserWindow, ipcMain } from 'electron';
 import { runDynamicAnalysis, mapDynamicResultToFindings } from './debugger-engines/dynamic-engine';
 import { generateRoleBasedReport } from './debugger-engines/ai-analyst';
+import { debuggerModelRouter } from './debugger-engines/debugger-model-router';
 import type { ArchProjectReport } from './debugger-engines/arch-engine';
 import { resolveWorkerRuntimeFile } from './debugger-engines/runtime-paths';
 import type { AnalysisResult, AnalysisRole, AnalysisSeverity } from '../windows/debugger-window';
@@ -24,6 +25,7 @@ export interface FullAnalysisPayload {
   results: AnalysisResult[];
   engineErrors: EngineErrorRecord[];
   arch?: ArchProjectReport;
+  selectedModels?: Record<'static' | 'dynamic' | 'arch' | 'ai_reasoning', { modelId: string; providerId: string }>;
 }
 
 export interface FullAnalysisOptions {
@@ -193,8 +195,26 @@ export async function runFullAnalysis(
       : (await walkUpForPackageJson(process.cwd())) ?? process.cwd();
   const runId = `run-${startedAt}`;
 
+  // Step 3: Model router selection for each engine/phase (Auto vs Manual)
+  const [staticModel, dynamicModel, archModel, aiModel] = await Promise.all([
+    debuggerModelRouter.selectBestModelForTask('static'),
+    debuggerModelRouter.selectBestModelForTask('dynamic'),
+    debuggerModelRouter.selectBestModelForTask('arch'),
+    debuggerModelRouter.selectBestModelForTask('ai_reasoning')
+  ]);
+
+  // Logging requirement: report chosen model for each task phase
+  console.log(`[DEBUGGER] static analysis using model: ${staticModel.modelId} (${staticModel.providerId})`);
+  console.log(`[DEBUGGER] dynamic analysis using model: ${dynamicModel.modelId} (${dynamicModel.providerId})`);
+  console.log(`[DEBUGGER] arch analysis using model: ${archModel.modelId} (${archModel.providerId})`);
+  console.log(`[DEBUGGER] ai_reasoning analysis using model: ${aiModel.modelId} (${aiModel.providerId})`);
+
   const staticStep: Promise<WorkerOutcome<AnalysisResult[]> | WorkerFailure> = targetFile
-    ? runWorkerJob<AnalysisResult[]>('static-worker.js', { kind: 'static', filePath: targetFile }, STATIC_ENGINE_BUDGET_MS)
+    ? runWorkerJob<AnalysisResult[]>(
+        'static-worker.js',
+        { kind: 'static', filePath: targetFile, model: staticModel.modelId, provider: staticModel.providerId },
+        STATIC_ENGINE_BUDGET_MS
+      )
     : Promise.resolve({ ok: true, result: [] as AnalysisResult[] });
 
   const dynamicStep: Promise<AnalysisResult[]> = targetFile
@@ -207,7 +227,11 @@ export async function runFullAnalysis(
   const [staticOutcome, dynamicOutcome, archOutcome] = await Promise.allSettled([
     staticStep,
     dynamicStep,
-    runWorkerJob<ArchProjectReport>('arch-worker.js', { kind: 'arch', projectRoot }, ARCH_ENGINE_BUDGET_MS)
+    runWorkerJob<ArchProjectReport>(
+      'arch-worker.js',
+      { kind: 'arch', projectRoot, model: archModel.modelId, provider: archModel.providerId },
+      ARCH_ENGINE_BUDGET_MS
+    )
   ]);
 
   const results: AnalysisResult[] = [];
@@ -285,6 +309,7 @@ export async function runFullAnalysis(
     const report = await generateRoleBasedReport(resultsForAi, effectiveRole, {
       targetFile,
       arch,
+      modelConfig: { providerId: aiModel.providerId, modelId: aiModel.modelId },
       onToken: (chunk) => relayAiFrame({ runId, role: effectiveRole, phase: 'token', chunk }),
       abortSignal: undefined
     });
@@ -305,7 +330,13 @@ export async function runFullAnalysis(
     durationMs: Date.now() - startedAt,
     results: combinedResults,
     engineErrors,
-    arch
+    arch,
+    selectedModels: {
+      static: { modelId: staticModel.modelId, providerId: staticModel.providerId },
+      dynamic: { modelId: dynamicModel.modelId, providerId: dynamicModel.providerId },
+      arch: { modelId: archModel.modelId, providerId: archModel.providerId },
+      ai_reasoning: { modelId: aiModel.modelId, providerId: aiModel.providerId }
+    }
   };
 
   // 'complete' snapshot: engines + AI insights in one authoritative update

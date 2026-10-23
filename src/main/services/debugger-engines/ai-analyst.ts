@@ -56,6 +56,8 @@ export interface RoleReportContextOptions {
   /** Streaming token callback (raw chunks, exactly like canvas-agent-engine). */
   onToken?: (chunk: string) => void;
   abortSignal?: AbortSignal;
+  /** Optional model configuration override from the debugger model router. */
+  modelConfig?: { providerId: string; modelId: string };
 }
 
 export interface RoleReportResult {
@@ -402,7 +404,9 @@ export async function generateRoleBasedReport(
 ): Promise<RoleReportResult> {
   const rawResults = rawResultsIn ?? [];
   const startedAt = Date.now();
-  const { provider, model } = await resolveProviderModel();
+  const { provider, model } = options?.modelConfig
+    ? { provider: options.modelConfig.providerId, model: options.modelConfig.modelId }
+    : await resolveProviderModel();
 
   try {
     const systemPrompt = buildRoleSchemaPrompt(role);

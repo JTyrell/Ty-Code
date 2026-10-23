@@ -1,4 +1,4 @@
-﻿/**
+/**
  * RealConnect 2: First-Run Onboarding Modal
  *
  * Appears on a clean install (no credentials.json or no configured providers).
@@ -292,6 +292,32 @@ export const FirstRunOnboardingModal: React.FC = () => {
     }
   };
 
+  const handleStartFreeZeroKey = async () => {
+    setIsSaving(true);
+    try {
+      if (window.electronAPI?.openkiloEnableAnonymous) {
+        await window.electronAPI.openkiloEnableAnonymous();
+      }
+      if (window.electronAPI?.orchestrationSetFreeMode) {
+        await window.electronAPI.orchestrationSetFreeMode(true);
+      }
+      await saveSettings({
+        activeProvider: 'ty-code-free' as any,
+        activeModel: 'google/gemma-4-31b-it:free',
+        freeMode: true,
+        hasCompletedOnboarding: true
+      });
+      localStorage.setItem('ty_code_first_run_completed', 'true');
+      localStorage.setItem('ty_code_onboarding_completed', 'true');
+      void refreshStats();
+      setIsOpen(false);
+    } catch (err) {
+      console.error('Failed to start with free models:', err);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const activeProviderObj = [...FREE_CLOUD_PROVIDERS, ...BYOK_PRO_PROVIDERS].find((p) => p.id === selectedProviderId);
 
   if (!isOpen) return null;
@@ -353,9 +379,55 @@ export const FirstRunOnboardingModal: React.FC = () => {
                 Welcome to Ty-Code: Connect Your AI Provider
               </h2>
               <p style={{ margin: '4px 0 0', fontSize: '13px', color: 'var(--text-muted)' }}>
-                Keys are encrypted with OS hardware-backed <span style={{ color: 'var(--accent-cyan)' }}>safeStorage</span> (DPAPI / Keychain) and never leave your machine.
+                Keys are encrypted with OS hardware-backed <span style={{ color: 'var(--accent-cyan)' }}>safeStorage</span> (DPAPI / Keychain). Built-in OpenCode free models require zero keys.
               </p>
             </div>
+          </div>
+
+          {/* Quick Zero-Key Banner */}
+          <div
+            style={{
+              marginTop: '16px',
+              padding: '10px 14px',
+              borderRadius: '8px',
+              background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.12) 0%, rgba(99, 102, 241, 0.08) 100%)',
+              border: '1px solid var(--border-subtle)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '12px',
+              flexWrap: 'wrap'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Sparkles style={{ width: '16px', height: '16px', color: 'var(--accent-cyan)', flexShrink: 0 }} />
+              <div>
+                <span style={{ fontSize: '12.5px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                  Zero Configuration?
+                </span>
+                <span style={{ fontSize: '12px', color: 'var(--text-muted)', marginLeft: '6px' }}>
+                  Built-in OpenCode Zen models &amp; OpenKilo fallback gateway ready with zero keys.
+                </span>
+              </div>
+            </div>
+            <button
+              type="button"
+              id="btn-onboarding-skip-free"
+              onClick={() => void handleStartFreeZeroKey()}
+              style={{
+                padding: '5px 12px',
+                borderRadius: '6px',
+                background: 'var(--accent-cyan)',
+                border: 'none',
+                color: '#ffffff',
+                fontSize: '11.5px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                whiteSpace: 'nowrap'
+              }}
+            >
+              Start Free (No Key Needed)
+            </button>
           </div>
 
           {/* 3 Tier Selection Tabs */}
@@ -364,7 +436,7 @@ export const FirstRunOnboardingModal: React.FC = () => {
               display: 'grid',
               gridTemplateColumns: 'repeat(3, 1fr)',
               gap: '12px',
-              marginTop: '20px'
+              marginTop: '16px'
             }}
           >
             {/* Tab 1: Free Cloud Tier */}
@@ -374,7 +446,7 @@ export const FirstRunOnboardingModal: React.FC = () => {
               style={{
                 padding: '14px 16px',
                 backgroundColor: selectedTier === 'free_cloud' ? 'rgba(56, 189, 248, 0.15)' : 'var(--surface-2)',
-                border: selectedTier === 'free_cloud' ? '2px solid var(--accent-cyan)' : '1px solid rgba(51, 65, 85, 0.7)',
+                border: selectedTier === 'free_cloud' ? '2px solid var(--accent-cyan)' : '1px solid var(--border-subtle)',
                 borderRadius: '10px',
                 cursor: 'pointer',
                 textAlign: 'left',
@@ -402,7 +474,7 @@ export const FirstRunOnboardingModal: React.FC = () => {
               style={{
                 padding: '14px 16px',
                 backgroundColor: selectedTier === 'byok_pro' ? 'rgba(168, 85, 247, 0.15)' : 'var(--surface-2)',
-                border: selectedTier === 'byok_pro' ? '2px solid var(--accent-primary)' : '1px solid rgba(51, 65, 85, 0.7)',
+                border: selectedTier === 'byok_pro' ? '2px solid var(--accent-primary)' : '1px solid var(--border-subtle)',
                 borderRadius: '10px',
                 cursor: 'pointer',
                 textAlign: 'left',
@@ -430,7 +502,7 @@ export const FirstRunOnboardingModal: React.FC = () => {
               style={{
                 padding: '14px 16px',
                 backgroundColor: selectedTier === 'local_private' ? 'rgba(34, 197, 94, 0.15)' : 'var(--surface-2)',
-                border: selectedTier === 'local_private' ? '2px solid var(--accent-green)' : '1px solid rgba(51, 65, 85, 0.7)',
+                border: selectedTier === 'local_private' ? '2px solid var(--accent-green)' : '1px solid var(--border-subtle)',
                 borderRadius: '10px',
                 cursor: 'pointer',
                 textAlign: 'left',
@@ -719,7 +791,7 @@ export const FirstRunOnboardingModal: React.FC = () => {
                 disabled={isTesting || !apiKey.trim()}
                 style={{
                   padding: '10px 18px',
-                  backgroundColor: 'rgba(51, 65, 85, 0.5)',
+                  backgroundColor: 'var(--surface-3)',
                   border: '1px solid var(--border-default)',
                   borderRadius: '8px',
                   color: 'var(--text-primary)',
@@ -750,7 +822,7 @@ export const FirstRunOnboardingModal: React.FC = () => {
               disabled={isSaving || (selectedTier !== 'local_private' && testSuccess !== true) || (selectedTier === 'local_private' && ollamaAvailable !== true)}
               style={{
                 padding: '10px 22px',
-                backgroundColor: (selectedTier === 'local_private' ? ollamaAvailable === true : testSuccess === true) ? 'var(--accent-cyan)' : 'rgba(51, 65, 85, 0.4)',
+                backgroundColor: (selectedTier === 'local_private' ? ollamaAvailable === true : testSuccess === true) ? 'var(--accent-cyan)' : 'var(--surface-3)',
                 border: 'none',
                 borderRadius: '8px',
                 color: '#ffffff',

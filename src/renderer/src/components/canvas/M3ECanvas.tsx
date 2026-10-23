@@ -1,4 +1,4 @@
-﻿/**
+/**
  * M3E Canvas â€” Visual Editor (M3E Canvas overhaul)
  *
  * Figma-like 3-pane editor living in the dedicated Canvas window:
@@ -93,7 +93,7 @@ const typeGlyphColor = (type: string): string =>
 
 const DEFAULT_TEXT_COLOR = 'var(--text-primary)';
 const CANVAS_GRID_BG =
-  'radial-gradient(circle, rgba(148, 163, 184, 0.12) 1px, transparent 1px)';
+  'radial-gradient(circle, var(--border-subtle) 1px, transparent 1px)';
 
 // ---------------------------------------------------------------------------
 // Small helpers
@@ -167,7 +167,7 @@ const NodeVisual: React.FC<{ node: CanvasNode }> = ({ node }) => {
             alignItems: 'center',
             padding: `0 ${Math.max(8, padding)}px`,
             background: 'var(--surface-2)',
-            border: `1px solid ${checked ? 'var(--accent-primary)' : 'rgba(148, 163, 184, 0.35)'}`,
+            border: `1px solid ${checked ? 'var(--accent-primary)' : 'var(--border-subtle)'}`,
             borderRadius: radius,
             color: 'var(--text-muted)',
             fontSize,
@@ -223,7 +223,7 @@ const NodeVisual: React.FC<{ node: CanvasNode }> = ({ node }) => {
               width: Math.min(height, 22),
               height: Math.min(height, 22),
               borderRadius: 6,
-              border: `1.5px solid ${checked ? 'var(--accent-green)' : 'rgba(148, 163, 184, 0.55)'}`,
+              border: `1.5px solid ${checked ? 'var(--accent-green)' : 'var(--border-subtle)'}`,
               background: checked ? 'rgba(16, 185, 129, 0.25)' : 'transparent',
               display: 'flex',
               alignItems: 'center',
@@ -248,7 +248,7 @@ const NodeVisual: React.FC<{ node: CanvasNode }> = ({ node }) => {
             maxWidth: Math.max(width, 46),
             borderRadius: 999,
             background: checked ? 'rgba(16, 185, 129, 0.35)' : 'var(--border-default)',
-            border: `1px solid ${checked ? 'rgba(16, 185, 129, 0.6)' : 'rgba(148, 163, 184, 0.4)'}`,
+            border: `1px solid ${checked ? 'rgba(16, 185, 129, 0.6)' : 'var(--border-subtle)'}`,
             display: 'flex',
             alignItems: 'center',
             padding: 3,
@@ -275,7 +275,7 @@ const NodeVisual: React.FC<{ node: CanvasNode }> = ({ node }) => {
             height: '100%',
             minHeight: 6,
             borderRadius: 999,
-            background: 'rgba(148, 163, 184, 0.2)',
+            background: 'var(--surface-3)',
             overflow: 'hidden'
           }}
         >
@@ -292,7 +292,7 @@ const NodeVisual: React.FC<{ node: CanvasNode }> = ({ node }) => {
             height: '100%',
             borderRadius: '50%',
             background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.65) 0%, rgba(99, 102, 241, 0.55) 100%)',
-            border: '1.5px solid rgba(255, 255, 255, 0.25)',
+            border: '1.5px solid var(--border-subtle)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -593,7 +593,7 @@ const ColorField: React.FC<ColorFieldProps> = ({ value, onChange, fallbackHex })
           width: 16,
           height: 16,
           borderRadius: 4,
-          border: '1px solid rgba(255, 255, 255, 0.25)',
+          border: '1px solid var(--border-subtle)',
           background: swatchColor,
           flexShrink: 0,
           cursor: 'pointer',
@@ -824,8 +824,8 @@ const FrameForPlatform = (platform: CanvasPlatform): FrameSpec => {
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 14px', fontSize: 9.5, color: 'var(--text-muted)' }}>
             <span>9:41</span>
             <span style={{ display: 'flex', gap: 4 }}>
-              <span style={{ width: 18, height: 8, borderRadius: 3, background: 'rgba(255,255,255,0.22)' }} />
-              <span style={{ width: 18, height: 8, borderRadius: 3, background: 'rgba(255,255,255,0.22)' }} />
+              <span style={{ width: 18, height: 8, borderRadius: 3, background: 'var(--surface-3)' }} />
+              <span style={{ width: 18, height: 8, borderRadius: 3, background: 'var(--surface-3)' }} />
             </span>
           </div>
         )
@@ -837,11 +837,11 @@ const FrameForPlatform = (platform: CanvasPlatform): FrameSpec => {
         contentPadTop: 0,
         scale: true,
         titlebar: (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderBottom: '1px solid var(--border-subtle)' }}>
             <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#ff5f57' }} />
             <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#febc2e' }} />
             <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#28c840' }} />
-            <span style={{ marginLeft: 8, fontSize: 10, color: 'var(--text-muted)' }}>MainActivity.swift â€” Preview</span>
+            <span style={{ marginLeft: 8, fontSize: 10, color: 'var(--text-muted)' }}>MainActivity.swift — Preview</span>
           </div>
         )
       };
@@ -852,7 +852,7 @@ const FrameForPlatform = (platform: CanvasPlatform): FrameSpec => {
         contentPadTop: 0,
         scale: false,
         titlebar: (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 12px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 12px', borderBottom: '1px solid var(--border-subtle)' }}>
             <span style={{ width: 9, height: 9, borderRadius: '50%', background: '#ff5f57' }} />
             <span style={{ width: 9, height: 9, borderRadius: '50%', background: '#febc2e' }} />
             <span style={{ width: 9, height: 9, borderRadius: '50%', background: '#28c840' }} />
@@ -863,12 +863,12 @@ const FrameForPlatform = (platform: CanvasPlatform): FrameSpec => {
                 maxWidth: 320,
                 padding: '3px 10px',
                 borderRadius: 999,
-                background: 'rgba(255,255,255,0.08)',
+                background: 'var(--surface-2)',
                 fontSize: 9.5,
                 color: 'var(--text-muted)'
               }}
             >
-              localhost:3000 â€” preview
+              localhost:3000 — preview
             </span>
           </div>
         )

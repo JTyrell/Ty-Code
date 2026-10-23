@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import {
   Sparkles,
   Code2,
@@ -8,7 +8,8 @@ import {
   ChevronRight,
   ChevronLeft,
   X,
-  CheckCircle2
+  CheckCircle2,
+  Zap
 } from 'lucide-react';
 
 interface OnboardingTourProps {
@@ -31,7 +32,7 @@ const TOUR_STEPS: TourStep[] = [
     badge: 'Introduction',
     icon: <Sparkles size={28} color="var(--accent-primary)" />,
     content:
-      'Ty-Code combines the performance of Monaco Editor with autonomous AI agent capabilities, cross-platform terminal emulator, and native Git integration. Letâ€™s take a 30-second tour of whatâ€™s inside!'
+      'Ty-Code combines the performance of Monaco Editor with autonomous AI agent capabilities, cross-platform terminal emulator, and native Git integration. Let’s take a 30-second tour of what’s inside!'
   },
   {
     title: 'Monaco Editor & Language Server Protocol',
@@ -48,6 +49,14 @@ const TOUR_STEPS: TourStep[] = [
     icon: <Sparkles size={28} color="var(--accent-green)" />,
     content:
       'The AI Agent sidecar can read and write files, execute CLI commands, and generate proposed unified diffs that you can visually inspect, accept, or reject with a single click.'
+  },
+  {
+    title: 'OpenCode Free Models & Multi-Agent Framework',
+    subtitle: 'Built-in Free Coding Supply & Flexible Agent Modes',
+    badge: 'Free Tier & Agents',
+    icon: <Zap size={28} color="var(--accent-cyan)" />,
+    content:
+      'Code immediately with zero API keys using Ty-Code’s built-in OpenCode Zen supply and OpenKilo gateway. Switch between Collaborative pair-programming and Autonomous 3-agent harness (Build, Plan, General) anytime in Settings.'
   },
   {
     title: 'Git Integration & Visual Diff',
@@ -147,7 +156,8 @@ export const OnboardingTour: React.FC<OnboardingTourProps> = ({ isOpen, onClose 
                 textTransform: 'uppercase',
                 padding: '2px 6px',
                 borderRadius: '4px',
-                backgroundColor: 'rgba(139, 92, 246, 0.15)',
+                backgroundColor: 'var(--surface-3)',
+                border: '1px solid var(--border-subtle)',
                 color: 'var(--accent-primary)',
                 letterSpacing: '0.04em'
               }}

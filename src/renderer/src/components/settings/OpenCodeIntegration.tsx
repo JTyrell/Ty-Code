@@ -1,4 +1,4 @@
-﻿/**
+/**
  * OpenCode Integration Panel (Phase 6.3)
  *
  * Full UI for OpenCode synchronization:
@@ -331,8 +331,8 @@ export const OpenCodeIntegration: React.FC<OpenCodeIntegrationProps> = ({
             </div>
             <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: 'var(--text-muted)' }}>
               {detection?.isInstalled
-                ? `Syncing from ${detection.configPath} â€¢ ${detection.providerCount} providers â€¢ ${detection.freeModelCount} free models`
-                : 'Connect OpenCode to automatically import all configured providers and free tier models.'}
+                ? `Syncing from ${detection.configPath} • ${detection.providerCount} providers • ${detection.freeModelCount} free models • Zero API keys required for built-in supply`
+                : 'Connect OpenCode or use the built-in free tier. Automatically imports all configured providers, Zen free supply, and zero-key coding models.'}
             </p>
           </div>
         </div>
@@ -444,13 +444,13 @@ export const OpenCodeIntegration: React.FC<OpenCodeIntegrationProps> = ({
                   : 'Kilo gateway unverified'}
               </span>
               <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                Always included â€¢ not optional
+                Zero-Key Coding Supply • Built-in & Free
               </span>
             </div>
-            <p style={{ margin: '3px 0 0 0', fontSize: '11.5px', color: 'var(--text-muted)' }}>
+            <p style={{ margin: '3px 0 0 0', fontSize: '11.5px', color: 'var(--text-muted)', lineHeight: '1.4' }}>
               {serviceStatus
-                ? `${serviceStatus.zenModelIds.join(', ')} + OpenKilo gateway routed through the FCC orchestration backend â€¢ models in supply: ${serviceStatus.modelsInSupply}${serviceStatus.cliInstalled ? ` â€¢ local CLI adopted (${serviceStatus.cliPath})` : ''}`
-                : 'Loading standard supply statusâ€¦'}
+                ? `Free coding models (${serviceStatus.zenModelIds.join(', ')}) + OpenKilo gateway are always accessible without API keys or accounts. Total models in supply: ${serviceStatus.modelsInSupply}${serviceStatus.cliInstalled ? ` • Local CLI adopted (${serviceStatus.cliPath})` : ''}`
+                : 'Free coding models powered by OpenCode Zen supply and OpenKilo fallback gateway are pre-configured with zero friction.'}
             </p>
           </div>
         </div>
@@ -618,7 +618,7 @@ export const OpenCodeIntegration: React.FC<OpenCodeIntegrationProps> = ({
               OpenCode Free-Tier Access &amp; Models
             </h4>
             <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: 'var(--text-muted)' }}>
-              Automatically discovered free model endpoints configured through OpenCode.
+              Automatically discovered free model endpoints and zero-key coding models configured through OpenCode and cloud providers.
             </p>
           </div>
 
@@ -658,7 +658,7 @@ export const OpenCodeIntegration: React.FC<OpenCodeIntegrationProps> = ({
               padding: '10px 12px',
               borderRadius: '6px',
               background: 'var(--surface-2)',
-              border: '1px solid var(--surface-2)'
+              border: '1px solid var(--border-subtle)'
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -682,7 +682,7 @@ export const OpenCodeIntegration: React.FC<OpenCodeIntegrationProps> = ({
               padding: '10px 12px',
               borderRadius: '6px',
               background: 'var(--surface-2)',
-              border: '1px solid var(--surface-2)'
+              border: '1px solid var(--border-subtle)'
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -706,7 +706,7 @@ export const OpenCodeIntegration: React.FC<OpenCodeIntegrationProps> = ({
               padding: '10px 12px',
               borderRadius: '6px',
               background: 'var(--surface-2)',
-              border: '1px solid var(--surface-2)'
+              border: '1px solid var(--border-subtle)'
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -730,7 +730,7 @@ export const OpenCodeIntegration: React.FC<OpenCodeIntegrationProps> = ({
               padding: '10px 12px',
               borderRadius: '6px',
               background: 'var(--surface-2)',
-              border: '1px solid var(--surface-2)'
+              border: '1px solid var(--border-subtle)'
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -754,7 +754,7 @@ export const OpenCodeIntegration: React.FC<OpenCodeIntegrationProps> = ({
               padding: '10px 12px',
               borderRadius: '6px',
               background: 'var(--surface-2)',
-              border: '1px solid var(--surface-2)'
+              border: '1px solid var(--border-subtle)'
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>

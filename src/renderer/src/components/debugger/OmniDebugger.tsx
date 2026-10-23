@@ -1,4 +1,4 @@
-﻿import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Bug,
   Cpu,
@@ -41,6 +41,7 @@ import {
 } from '../../state/debugger-store';
 import { useEditorNavigationStore } from '../../state/editor-navigation-store';
 import { useChatStore } from '../../state/chat-store';
+import { DebuggerToolbar } from './DebuggerToolbar';
 import './OmniDebugger.css';
 
 interface OmniDebuggerProps {
@@ -344,6 +345,9 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
             </button>
           </div>
 
+          {/* Intelligent Model Selector (Auto vs Manual) */}
+          <DebuggerToolbar />
+
           {/* Action Buttons: Run Sweep & Pop-out */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <button
@@ -354,7 +358,7 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
               title="Execute full static, dynamic, architectural, and AI diagnostic sweep"
             >
               <RotateCw size={13} className={isAnalyzing ? 'animate-spin' : ''} />
-              <span>{isAnalyzing ? 'Sweepingâ€¦' : 'Run Sweep'}</span>
+              <span>{isAnalyzing ? 'Sweeping…' : 'Run Sweep'}</span>
             </button>
 
             <button

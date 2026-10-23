@@ -501,6 +501,17 @@ const api: ElectronAPI = {
       ipcRenderer.removeListener('debugger:ai-stream', listener);
     };
   },
+  setDebuggerModelMode: (mode: 'auto' | 'manual', modelId?: string, providerId?: string) =>
+    ipcRenderer.invoke('debugger:set-model-mode', { mode, modelId, providerId }),
+  getDebuggerModelPreferences: () => ipcRenderer.invoke('debugger:get-model-preferences'),
+  getDebuggerTaskModels: () => ipcRenderer.invoke('debugger:get-task-models'),
+  onDebuggerModelPreferencesChanged: (callback: (prefs: any) => void) => {
+    const listener = (_event: unknown, prefs: any) => callback(prefs);
+    ipcRenderer.on('debugger:model-preferences-changed', listener);
+    return () => {
+      ipcRenderer.removeListener('debugger:model-preferences-changed', listener);
+    };
+  },
 
   // Phase 6.2: Seamless BYOK Interface & Key Management
   byokDetectKeys: () => ipcRenderer.invoke('byok:detect-keys'),

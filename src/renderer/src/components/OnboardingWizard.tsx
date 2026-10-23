@@ -1,4 +1,4 @@
-﻿/**
+/**
  * OnboardingWizard Component (Zero-Friction Edition)
  *
  * Streamlined two-path first-run choice, replacing the legacy multi-step
@@ -568,7 +568,7 @@ export const OnboardingWizard: React.FC = () => {
                     gap: '8px',
                     padding: '11px 24px',
                     borderRadius: '8px',
-                    background: testSuccess === true ? 'var(--accent-primary)' : 'rgba(51, 65, 85, 0.4)',
+                    background: testSuccess === true ? 'var(--accent-primary)' : 'var(--surface-3)',
                     color: '#ffffff',
                     border: 'none',
                     fontSize: '13.5px',

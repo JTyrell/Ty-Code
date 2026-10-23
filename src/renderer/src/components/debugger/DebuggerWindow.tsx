@@ -70,9 +70,9 @@ const WindowControlButton: React.FC<WindowControlButtonProps> = ({ onClick, titl
             ? '#e81123'
             : 'transparent'
           : active
-          ? 'rgba(255, 255, 255, 0.16)'
+          ? 'var(--surface-3)'
           : hovered
-          ? 'rgba(255, 255, 255, 0.08)'
+          ? 'var(--surface-2)'
           : 'transparent',
         color: isClose && hovered ? '#ffffff' : '#94a3b8',
         border: 'none',
@@ -135,7 +135,7 @@ export const DebuggerWindow: React.FC = () => {
           maxHeight: '35px',
           boxSizing: 'border-box',
           backgroundColor: '#0c101c',
-          borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+          borderBottom: '1px solid var(--border-subtle)',
           display: 'flex',
           flexDirection: 'row',
           alignItems: 'center',
@@ -279,8 +279,8 @@ export const DebuggerWindow: React.FC = () => {
               fontSize: '11px',
               fontWeight: 500,
               color: '#cbd5e1',
-              background: 'rgba(255, 255, 255, 0.05)',
-              border: '1px solid rgba(255, 255, 255, 0.1)',
+              background: 'var(--surface-2)',
+              border: '1px solid var(--border-subtle)',
               cursor: 'pointer',
               whiteSpace: 'nowrap',
               transition: 'all 120ms ease',
