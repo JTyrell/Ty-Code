@@ -116,7 +116,7 @@ export const QuickConnectProvider: React.FC<QuickConnectProviderProps> = ({
       // Also persist to renderer chat store settings
       await saveSettings({
         activeProvider: provider as any,
-        apiKeys: { [provider]: cleanKey }
+        ...(cleanKey.includes('•') || cleanKey.includes('****') ? {} : { apiKeys: { [provider]: cleanKey } })
       });
       await initSettings();
 

@@ -8,6 +8,7 @@ import { AgentEngine } from '../agent/agent-engine';
 import { sessionStore } from '../agent/session-store';
 import { OpenCodeAgentManager } from '../services/orchestration/agent-manager';
 import { classifyDiagnosticError } from '../services/diagnostics/error-taxonomy';
+import { AgentDonePayloadSchema } from '../../shared/types/agent-events';
 
 interface ActiveTask {
   controller: AbortController;
@@ -157,7 +158,7 @@ export async function startAgentTask(
       batchTimer = setTimeout(() => {
         batchTimer = null;
         flushBatch();
-      }, 16);
+      }, 32);
     }
   };
 
@@ -224,16 +225,16 @@ export async function startAgentTask(
           }
           break;
         case 'done':
-          mainWindow.webContents.send('agent:done', {
+          mainWindow.webContents.send('agent:done', AgentDonePayloadSchema.parse({
             taskId,
             cancelled: false
-          });
+          }));
           break;
         case 'cancelled':
-          mainWindow.webContents.send('agent:done', {
+          mainWindow.webContents.send('agent:done', AgentDonePayloadSchema.parse({
             taskId,
             cancelled: true
-          });
+          }));
           break;
         case 'error': {
           const classified = classifyDiagnosticError(effectiveSettings.activeProvider, chunk.error || 'Agent error');
@@ -329,7 +330,7 @@ export function stopAgentTask(taskId: string): IpcResponse<void> {
   if (!task.finished && !task.window.isDestroyed() && !task.window.webContents.isDestroyed()) {
     task.window.webContents.send('agent:stream-batch', [{ type: 'cancelled', taskId } satisfies AgentStreamChunk]);
     task.window.webContents.send('agent:stream', { type: 'cancelled', taskId } satisfies AgentStreamChunk);
-    task.window.webContents.send('agent:done', { taskId, cancelled: true });
+    task.window.webContents.send('agent:done', AgentDonePayloadSchema.parse({ taskId, cancelled: true }));
   }
   task.finished = true;
   activeTasks.delete(taskId);

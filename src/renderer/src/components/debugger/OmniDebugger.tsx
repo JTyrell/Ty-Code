@@ -42,6 +42,8 @@ import {
 import { useEditorNavigationStore } from '../../state/editor-navigation-store';
 import { useChatStore } from '../../state/chat-store';
 import { DebuggerToolbar } from './DebuggerToolbar';
+import { WorkspaceGate } from '../common/WorkspaceGate';
+import { useWorkspaceStore } from '../../state/workspace-store';
 import './OmniDebugger.css';
 
 interface OmniDebuggerProps {
@@ -72,6 +74,7 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
     runAnalysis,
     clearResults
   } = useDebuggerStore();
+  const isWorkspaceReady = useWorkspaceStore((s) => s.isWorkspaceReady);
 
   const [activeTab, setActiveTab] = useState<ViewTab>('findings');
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -89,6 +92,7 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
 
   // Hook up live AI stream listener if available
   useEffect(() => {
+    if (!isWorkspaceReady) return;
     if (!window.electronAPI?.onDebuggerAiStream) return;
     const unsubscribe = window.electronAPI.onDebuggerAiStream((frame: any) => {
       if (frame?.token) {
@@ -100,12 +104,13 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
     return () => {
       unsubscribe?.();
     };
-  }, []);
+  }, [isWorkspaceReady]);
 
   // Requirement: If isPopOutMode is true and rendered inside the sidebar, show docked placeholder
   if (isPopOutMode && !isStandalone) {
     return (
-      <div className="omni-docked-placeholder select-none">
+      <WorkspaceGate message="Indexing Workspace for Omni-Debugger...">
+        <div className="omni-docked-placeholder select-none">
         <div className="omni-docked-icon-wrap">
           <Bug size={30} className="text-indigo-400" />
           <span className="omni-docked-badge">LIVE EXT</span>
@@ -140,6 +145,7 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
           </button>
         </div>
       </div>
+    </WorkspaceGate>
     );
   }
 
@@ -287,7 +293,8 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
   };
 
   return (
-    <div className="omni-debugger-root">
+    <WorkspaceGate message="Indexing Workspace for Omni-Debugger...">
+      <div className="omni-debugger-root">
       {/* ===================================================================== */}
       {/* 1. TOP COMMAND BAR */}
       {/* ===================================================================== */}
@@ -1206,5 +1213,6 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
         </main>
       </div>
     </div>
+    </WorkspaceGate>
   );
 };

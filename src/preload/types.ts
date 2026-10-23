@@ -893,6 +893,9 @@ export interface ElectronAPI {
   isWindowMaximized?: () => Promise<boolean>;
   onWindowMaximizeChange?: (callback: (isMaximized: boolean) => void) => () => void;
   selectWorkspaceFolder: () => Promise<IpcResponse<string>>;
+  openFolderInExplorer: (folderPath: string) => Promise<IpcResponse<void>>;
+  onWorkspaceReady?: (callback: (data: { path: string }) => void) => () => void;
+  onOpenFolder?: (callback: (data: { folderPath: string }) => void) => () => void;
   getFilePathForDroppedFile: (file: File) => string;
   getWorkspaceTree: (rootPath: string) => Promise<IpcResponse<FileNode>>;
   getWorkspaceTreeChunked?: (rootPath: string) => Promise<IpcResponse<{ flatTree: FlatFileNodeEntry[]; fromCache: boolean; cacheKey?: string }>>;
@@ -1418,9 +1421,9 @@ export interface ElectronAPI {
   /** Unified verified catalog + availability flags for the AI Providers tab. */
   getVerifiedModels?: () => Promise<IpcResponse<VerifiedModelCatalogSummary>>;
   testVerifiedApi?: (data: { modelId: string; prompt: string; apiKey?: string }) => Promise<any>;
-  onVerifiedApiChunk?: (cb: (chunk: string) => void) => any;
-  onVerifiedApiEnd?: (cb: () => void) => any;
-  onVerifiedApiError?: (cb: (err: string) => void) => any;
+  onVerifiedApiChunk?: (cb: (chunk: string) => void) => () => void;
+  onVerifiedApiEnd?: (cb: () => void) => () => void;
+  onVerifiedApiError?: (cb: (err: string) => void) => () => void;
 
   testGroundTruthApi?: () => Promise<{ success: boolean; error?: string }>;
   onGroundTruthChunk?: (cb: (chunk: string) => void) => () => void;

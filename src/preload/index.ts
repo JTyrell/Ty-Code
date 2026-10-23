@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { IpcRendererEvent } from 'electron';
 import type { AgentStreamChunk, CanvasAgentEventPayloadData, CanvasMessageData, CanvasSnapshotData, CanvasUpdateNotificationData, CommandExecutionOptions, ElectronAPI, ExtensionMetadata, ProposedDiff, PtySpawnOptions } from './types';
+import { AgentDonePayloadSchema } from '../shared/types/agent-events';
 
 const api: ElectronAPI = {
   minimizeWindow: () => ipcRenderer.send('window:minimize'),
@@ -13,6 +14,17 @@ const api: ElectronAPI = {
     return () => ipcRenderer.removeListener('window:maximize-change', handler);
   },
   selectWorkspaceFolder: () => ipcRenderer.invoke('fs:select-workspace'),
+  openFolderInExplorer: (folderPath: string) => ipcRenderer.invoke('workspace:open-folder', folderPath),
+  onWorkspaceReady: (callback: (data: { path: string }) => void) => {
+    const handler = (_: IpcRendererEvent, data: { path: string }) => callback(data);
+    ipcRenderer.on('workspace:ready', handler);
+    return () => ipcRenderer.removeListener('workspace:ready', handler);
+  },
+  onOpenFolder: (callback: (data: { folderPath: string }) => void) => {
+    const handler = (_: IpcRendererEvent, data: { folderPath: string }) => callback(data);
+    ipcRenderer.on('window:open-folder', handler);
+    return () => ipcRenderer.removeListener('window:open-folder', handler);
+  },
   getFilePathForDroppedFile: (file) => webUtils.getPathForFile(file),
   getWorkspaceTree: (rootPath: string) => ipcRenderer.invoke('fs:get-tree', rootPath),
   getWorkspaceTreeChunked: (rootPath: string) => ipcRenderer.invoke('fs:get-tree-chunked', rootPath),
@@ -85,17 +97,42 @@ const api: ElectronAPI = {
     return () => ipcRenderer.removeListener('agent:stream', listener);
   },
   onAgentStreamBatch: (callback) => {
-    const listener = (_event: IpcRendererEvent, chunks: AgentStreamChunk[]) => callback(chunks);
+    const listener = (_event: IpcRendererEvent, chunks: AgentStreamChunk[]) => {
+      // Step 2: Lightweight manual check bypassing Zod for high-frequency stream tokens
+      if (!Array.isArray(chunks)) return;
+      const valid: AgentStreamChunk[] = [];
+      for (const chunk of chunks) {
+        if (!chunk || typeof chunk !== 'object') continue;
+        if (chunk.type === 'token' || chunk.type === 'thought') {
+          if (typeof chunk.content === 'string') {
+            valid.push(chunk);
+          }
+        } else {
+          valid.push(chunk);
+        }
+      }
+      if (valid.length > 0) callback(valid);
+    };
     ipcRenderer.on('agent:stream-batch', listener);
     return () => ipcRenderer.removeListener('agent:stream-batch', listener);
   },
   onAgentStreamToken: (callback) => {
-    const listener = (_event: IpcRendererEvent, payload: any) => callback(payload);
+    const listener = (_event: IpcRendererEvent, payload: any) => {
+      // Step 2: Lightweight manual check (typeof payload.token === 'string') bypassing Zod
+      if (payload && typeof payload === 'object' && typeof payload.token === 'string') {
+        callback(payload);
+      }
+    };
     ipcRenderer.on('agent:stream-token', listener);
     return () => ipcRenderer.removeListener('agent:stream-token', listener);
   },
   onAgentReasoningToken: (callback) => {
-    const listener = (_event: IpcRendererEvent, payload: any) => callback(payload);
+    const listener = (_event: IpcRendererEvent, payload: any) => {
+      // Step 2: Lightweight manual check (typeof payload.token === 'string') bypassing Zod
+      if (payload && typeof payload === 'object' && typeof payload.token === 'string') {
+        callback(payload);
+      }
+    };
     ipcRenderer.on('agent:reasoning-token', listener);
     return () => ipcRenderer.removeListener('agent:reasoning-token', listener);
   },
@@ -115,7 +152,15 @@ const api: ElectronAPI = {
     return () => ipcRenderer.removeListener('agent:diff-proposed', listener);
   },
   onAgentDone: (callback) => {
-    const listener = (_event: IpcRendererEvent, payload: any) => callback(payload);
+    const listener = (_event: IpcRendererEvent, payload: any) => {
+      // Step 2: Retain full Zod validation for terminal 'done' event
+      const parsed = AgentDonePayloadSchema.safeParse(payload);
+      if (parsed.success) {
+        callback(parsed.data);
+      } else {
+        callback(payload);
+      }
+    };
     ipcRenderer.on('agent:done', listener);
     return () => ipcRenderer.removeListener('agent:done', listener);
   },
@@ -719,12 +764,21 @@ const api: ElectronAPI = {
   stopOpenCodeProcess: () => ipcRenderer.invoke('opencode:stop-process'),
   testVerifiedApi: (data: { modelId: string; prompt: string; apiKey?: string }) => 
     ipcRenderer.invoke('test-verified-api', data),
-  onVerifiedApiChunk: (cb: (chunk: string) => void) => 
-    ipcRenderer.on('verified-api-chunk', (_e, chunk) => cb(chunk)),
-  onVerifiedApiEnd: (cb: () => void) => 
-    ipcRenderer.on('verified-api-end', cb),
-  onVerifiedApiError: (cb: (err: string) => void) => 
-    ipcRenderer.on('verified-api-error', (_e, err) => cb(err)),
+  onVerifiedApiChunk: (cb: (chunk: string) => void) => {
+    const listener = (_e: any, chunk: string) => cb(chunk);
+    ipcRenderer.on('verified-api-chunk', listener);
+    return () => ipcRenderer.removeListener('verified-api-chunk', listener);
+  },
+  onVerifiedApiEnd: (cb: () => void) => {
+    const listener = () => cb();
+    ipcRenderer.on('verified-api-end', listener);
+    return () => ipcRenderer.removeListener('verified-api-end', listener);
+  },
+  onVerifiedApiError: (cb: (err: string) => void) => {
+    const listener = (_e: any, err: string) => cb(err);
+    ipcRenderer.on('verified-api-error', listener);
+    return () => ipcRenderer.removeListener('verified-api-error', listener);
+  },
 
   testGroundTruthApi: () => ipcRenderer.invoke('test-ground-truth-api'),
   onGroundTruthChunk: (cb: (chunk: string) => void) => {

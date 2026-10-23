@@ -449,7 +449,7 @@ export async function testKey(
 ): Promise<{ success: boolean; message: string }> {
   const p = providerId.toLowerCase().trim();
   let trimmedKey = (key || '').trim();
-  if (!trimmedKey) {
+  if (!trimmedKey || trimmedKey.includes('•') || trimmedKey.includes('****')) {
     const resolved = await getKey(providerId);
     if (resolved) trimmedKey = resolved.trim();
   }

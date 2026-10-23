@@ -1,5 +1,24 @@
 import { z } from 'zod';
 
+export const AgentStartTaskPayloadSchema = z.object({
+  taskId: z.string().optional(),
+  traceId: z.string().optional(),
+  prompt: z.string(),
+  images: z.array(z.string()).optional(),
+  workspacePath: z.string().optional(),
+  history: z.array(z.any()).optional(),
+  agentMode: z.string().optional(),
+  sessionId: z.string().optional(),
+  activeFilePath: z.string().optional(),
+  activeFileContent: z.string().optional(),
+  openFilePaths: z.array(z.string()).optional(),
+  providerOverride: z.string().optional(),
+  modelOverride: z.string().optional(),
+  resumeSessionId: z.string().optional(),
+  clientSentAt: z.number().optional()
+});
+export type AgentStartTaskPayload = z.infer<typeof AgentStartTaskPayloadSchema>;
+
 export const AgentStreamTokenPayloadSchema = z.object({
   taskId: z.string(),
   token: z.string()

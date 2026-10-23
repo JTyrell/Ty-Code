@@ -48,7 +48,9 @@ export function openCanvasWindow(): BrowserWindow {
       // Hard security boundary for the canvas window
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: true
+      sandbox: true,
+      webSecurity: true,
+      allowRunningInsecureContent: false
     }
   });
 
@@ -96,9 +98,9 @@ export function openCanvasWindow(): BrowserWindow {
 
   const devServerUrl = process.env.VITE_DEV_SERVER_URL;
   if (devServerUrl) {
-    void window.loadURL(`${devServerUrl}#sketcher`);
+    void window.loadURL(`${devServerUrl}#canvas`);
   } else {
-    void window.loadFile(path.join(__dirname, '../renderer/index.html'), { hash: 'sketcher' });
+    void window.loadFile(path.join(__dirname, '../renderer/index.html'), { hash: 'canvas' });
   }
 
   window.once('ready-to-show', () => {

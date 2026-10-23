@@ -169,6 +169,49 @@ export class ChatLatencyTracker {
 export const chatLatencyTracker = new ChatLatencyTracker();
 
 /**
+ * StreamChunkBatcher: Main Process High-Frequency Stream Batcher (Phase 3: 32ms cadence)
+ * Accumulates rapid token / thought chunks from SSE streams and flushes to IPC every 32ms (~30fps)
+ * to avoid IPC bridge saturation while guaranteeing zero token loss.
+ */
+export class StreamChunkBatcher {
+  private queue: string[] = [];
+  private flushTimer: NodeJS.Timeout | null = null;
+  private readonly flushIntervalMs: number;
+  private readonly onFlush: (accumulated: string) => void;
+
+  constructor(onFlush: (accumulated: string) => void, flushIntervalMs = 32) {
+    this.onFlush = onFlush;
+    this.flushIntervalMs = flushIntervalMs;
+  }
+
+  public push(chunk: string): void {
+    if (!chunk) return;
+    this.queue.push(chunk);
+    if (!this.flushTimer) {
+      this.flushTimer = setTimeout(() => {
+        this.flushTimer = null;
+        this.flush();
+      }, this.flushIntervalMs);
+    }
+  }
+
+  public flush(): void {
+    if (this.flushTimer) {
+      clearTimeout(this.flushTimer);
+      this.flushTimer = null;
+    }
+    if (this.queue.length === 0) return;
+    const combined = this.queue.join('');
+    this.queue = [];
+    this.onFlush(combined);
+  }
+
+  public dispose(): void {
+    this.flush();
+  }
+}
+
+/**
  * Direct Multi-Provider Gateway with Vault Integration (KeyHarvest-3)
  * Reads credentials dynamically from credential-vault via safeStorage at request time.
  */
@@ -1077,115 +1120,125 @@ export async function sendChatRequest(
     return text;
   }
 
+    const tokenBatcher = new StreamChunkBatcher((chunk) => {
+      if (onToken) onToken(chunk);
+    }, 32);
+    const reasoningBatcher = new StreamChunkBatcher((chunk) => {
+      if (onReasoning) onReasoning(chunk);
+    }, 32);
+
     const reader = response.body.getReader();
     const decoder = new TextDecoder('utf-8');
     let buffer = '';
     let isFirstChunk = true;
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
 
-      if (isFirstChunk) {
-        isFirstChunk = false;
-        // Record H4 (Network TTFT): when the very first byte/chunk is received from the LLM
-        chatLatencyTracker.recordH4(currentTaskId);
+        if (isFirstChunk) {
+          isFirstChunk = false;
+          // Record H4 (Network TTFT): when the very first byte/chunk is received from the LLM
+          chatLatencyTracker.recordH4(currentTaskId);
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed.startsWith(':')) continue;
+
+          if (trimmed.startsWith('data: ')) {
+            const dataStr = trimmed.slice(6).trim();
+            if (dataStr === '[DONE]') continue;
+
+            try {
+              const json = JSON.parse(dataStr);
+              // Reasoning models stream their chain-of-thought in a dedicated
+              // delta field. Capture it for the reasoning_content echo but never
+              // mix it into the assistant content stream.
+              const reasoningToken: unknown =
+                json.choices?.[0]?.delta?.reasoning_content ??
+                json.choices?.[0]?.delta?.reasoning;
+              if (typeof reasoningToken === 'string' && reasoningToken) {
+                fullThought += reasoningToken;
+                reasoningBatcher.push(reasoningToken);
+              }
+              // OpenAI-style streamed tool calls arrive as fragments:
+              // { index, id?, function?: { name?, arguments? } }
+              const deltaToolCalls: unknown = json.choices?.[0]?.delta?.tool_calls;
+              if (Array.isArray(deltaToolCalls)) {
+                for (const fragment of deltaToolCalls as any[]) {
+                  if (!fragment) continue;
+                  const idx = typeof fragment.index === 'number' ? fragment.index : streamedToolCalls.size;
+                  const slot = streamedToolCalls.get(idx) || { id: '', name: '', arguments: '' };
+                  if (fragment.id) slot.id = fragment.id;
+                  if (fragment.function?.name) slot.name = fragment.function.name;
+                  if (typeof fragment.function?.arguments === 'string') slot.arguments += fragment.function.arguments;
+                  streamedToolCalls.set(idx, slot);
+                }
+              }
+              // Anthropic SSE: content_block_start announces a tool_use block,
+              // input_json_delta streams partial JSON, content_block_stop closes it.
+              if (json.type === 'content_block_start' && json.content_block?.type === 'tool_use') {
+                const idx = typeof json.index === 'number' ? json.index : streamedToolCalls.size;
+                streamedToolCalls.set(idx, {
+                  id: json.content_block.id || `call_gw_an_${idx}`,
+                  name: json.content_block.name,
+                  arguments: ''
+                });
+              } else if (json.type === 'input_json_delta' && typeof json.partial_json === 'string') {
+                const idx = typeof json.index === 'number' ? json.index : Math.max(0, streamedToolCalls.size - 1);
+                const slot = streamedToolCalls.get(idx);
+                if (slot) slot.arguments += json.partial_json;
+              }
+              let token = json.choices?.[0]?.delta?.content;
+              if ((token === undefined || token === null) && json.delta?.text) {
+                token = json.delta.text;
+              }
+
+              if (token) {
+                fullText += token;
+                tokenBatcher.push(token);
+                chatLatencyTracker.recordToken(currentTaskId, token);
+              }
+            } catch (parseErr) {
+              console.warn('[GATEWAY] SSE chunk parse skipped:', parseErr instanceof Error ? parseErr.message : parseErr);
+            }
+          } else {
+            strayNonSseLines.push(trimmed);
+          }
+        }
       }
 
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed || trimmed.startsWith(':')) continue;
-
+      if (buffer.trim()) {
+        const trimmed = buffer.trim();
         if (trimmed.startsWith('data: ')) {
           const dataStr = trimmed.slice(6).trim();
-          if (dataStr === '[DONE]') continue;
-
-          try {
-            const json = JSON.parse(dataStr);
-            // Reasoning models stream their chain-of-thought in a dedicated
-            // delta field. Capture it for the reasoning_content echo but never
-            // mix it into the assistant content stream.
-            const reasoningToken: unknown =
-              json.choices?.[0]?.delta?.reasoning_content ??
-              json.choices?.[0]?.delta?.reasoning;
-            if (typeof reasoningToken === 'string' && reasoningToken) {
-              fullThought += reasoningToken;
-              if (onReasoning) onReasoning(reasoningToken);
-            }
-            // OpenAI-style streamed tool calls arrive as fragments:
-            // { index, id?, function?: { name?, arguments? } }
-            const deltaToolCalls: unknown = json.choices?.[0]?.delta?.tool_calls;
-            if (Array.isArray(deltaToolCalls)) {
-              for (const fragment of deltaToolCalls as any[]) {
-                if (!fragment) continue;
-                const idx = typeof fragment.index === 'number' ? fragment.index : streamedToolCalls.size;
-                const slot = streamedToolCalls.get(idx) || { id: '', name: '', arguments: '' };
-                if (fragment.id) slot.id = fragment.id;
-                if (fragment.function?.name) slot.name = fragment.function.name;
-                if (typeof fragment.function?.arguments === 'string') slot.arguments += fragment.function.arguments;
-                streamedToolCalls.set(idx, slot);
+          if (dataStr !== '[DONE]') {
+            try {
+              const json = JSON.parse(dataStr);
+              const trailingReasoning = json.choices?.[0]?.delta?.reasoning_content ?? json.choices?.[0]?.delta?.reasoning;
+              if (typeof trailingReasoning === 'string' && trailingReasoning) {
+                fullThought += trailingReasoning;
+                reasoningBatcher.push(trailingReasoning);
               }
-            }
-            // Anthropic SSE: content_block_start announces a tool_use block,
-            // input_json_delta streams partial JSON, content_block_stop closes it.
-            if (json.type === 'content_block_start' && json.content_block?.type === 'tool_use') {
-              const idx = typeof json.index === 'number' ? json.index : streamedToolCalls.size;
-              streamedToolCalls.set(idx, {
-                id: json.content_block.id || `call_gw_an_${idx}`,
-                name: json.content_block.name,
-                arguments: ''
-              });
-            } else if (json.type === 'input_json_delta' && typeof json.partial_json === 'string') {
-              const idx = typeof json.index === 'number' ? json.index : Math.max(0, streamedToolCalls.size - 1);
-              const slot = streamedToolCalls.get(idx);
-              if (slot) slot.arguments += json.partial_json;
-            }
-            let token = json.choices?.[0]?.delta?.content;
-            if ((token === undefined || token === null) && json.delta?.text) {
-              token = json.delta.text;
-            }
-
-            if (token) {
-              fullText += token;
-              if (onToken) {
-                onToken(token);
+              const token = json.choices?.[0]?.delta?.content ?? json.delta?.text;
+              if (token) {
+                fullText += token;
+                tokenBatcher.push(token);
+                chatLatencyTracker.recordToken(currentTaskId, token);
               }
-              chatLatencyTracker.recordToken(currentTaskId, token);
-            }
-          } catch (parseErr) {
-            console.warn('[GATEWAY] SSE chunk parse skipped:', parseErr instanceof Error ? parseErr.message : parseErr);
+            } catch {}
           }
-        } else {
-          strayNonSseLines.push(trimmed);
         }
       }
-    }
-
-    if (buffer.trim()) {
-      const trimmed = buffer.trim();
-      if (trimmed.startsWith('data: ')) {
-        const dataStr = trimmed.slice(6).trim();
-        if (dataStr !== '[DONE]') {
-          try {
-            const json = JSON.parse(dataStr);
-            const trailingReasoning = json.choices?.[0]?.delta?.reasoning_content ?? json.choices?.[0]?.delta?.reasoning;
-            if (typeof trailingReasoning === 'string' && trailingReasoning) {
-              fullThought += trailingReasoning;
-              if (onReasoning) onReasoning(trailingReasoning);
-            }
-            const token = json.choices?.[0]?.delta?.content ?? json.delta?.text;
-            if (token) {
-              fullText += token;
-              if (onToken) onToken(token);
-              chatLatencyTracker.recordToken(currentTaskId, token);
-            }
-          } catch {}
-        }
-      }
+    } finally {
+      tokenBatcher.flush();
+      reasoningBatcher.flush();
     }
 
     // FCC responses are not always OpenAI SSE: genuine free-claude-code
@@ -2428,6 +2481,13 @@ export class ProviderGateway {
     const decoder = new TextDecoder('utf-8');
     let buffer = '';
 
+    const tokenBatcher = new StreamChunkBatcher((chunk) => {
+      callbacks.onToken?.(chunk);
+    }, 32);
+    const thoughtBatcher = new StreamChunkBatcher((chunk) => {
+      callbacks.onThought?.(chunk);
+    }, 32);
+
     const consume = (payload: StreamPayload) => {
       if (payload.usage) {
         streamUsage = payload.usage;
@@ -2437,7 +2497,7 @@ export class ProviderGateway {
       if (delta.content) {
         if (!firstChunkReported) console.log('Gateway: First chunk', JSON.stringify(delta.content.slice(0, 80)));
         fullText += delta.content;
-        callbacks.onToken?.(delta.content);
+        tokenBatcher.push(delta.content);
 
         if (traceId && !firstChunkReported) {
           firstChunkReported = true;
@@ -2461,7 +2521,7 @@ export class ProviderGateway {
       const thought = delta.reasoning_content || delta.reasoning;
       if (thought) {
         fullThought += thought;
-        callbacks.onThought?.(thought);
+        thoughtBatcher.push(thought);
       }
       if (!delta.tool_calls) return;
       delta.tool_calls.forEach((toolCall, offset) => {
@@ -2489,7 +2549,11 @@ export class ProviderGateway {
       }
       buffer += decoder.decode();
       if (buffer) parseSSELines(`${buffer}\n`, consume);
+      tokenBatcher.flush();
+      thoughtBatcher.flush();
     } finally {
+      tokenBatcher.flush();
+      thoughtBatcher.flush();
       reader.releaseLock();
     }
 

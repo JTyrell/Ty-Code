@@ -107,8 +107,15 @@ export class GitService {
     }
   }
 
+  public sanitizeCommitMessage(message: string): string {
+    const sanitized = (message || '').replace(/\0/g, '').trim();
+    if (!sanitized) throw new Error('Commit message cannot be empty.');
+    if (sanitized.length > 50_000) throw new Error('Commit message exceeds maximum permitted length (50,000 characters).');
+    return sanitized;
+  }
+
   private assertBranchName(git: SimpleGit, name: string): Promise<string> {
-    const normalized = name.trim();
+    const normalized = (name || '').replace(/\0/g, '').trim();
     if (!normalized || normalized.length > 240 || normalized.startsWith('-')) {
       throw new Error('Enter a valid branch name.');
     }
@@ -116,7 +123,7 @@ export class GitService {
   }
 
   private assertTagName(git: SimpleGit, name: string): Promise<string> {
-    const normalized = name.trim();
+    const normalized = (name || '').replace(/\0/g, '').trim();
     if (!normalized || normalized.length > 240 || normalized.startsWith('-') || normalized.startsWith('refs/')) {
       throw new Error('Enter a valid tag name.');
     }
@@ -389,7 +396,7 @@ export class GitService {
   }
 
   async commit(workspacePath: string, message: string, options?: { amend?: boolean }): Promise<string> {
-    if (!message.trim()) throw new Error('Commit message cannot be empty.');
+    const safeMessage = this.sanitizeCommitMessage(message);
     const { git, root } = await this.getRepoGit(workspacePath);
     const status = await git.status();
     if (status.conflicted.length > 0) throw new Error('Resolve all merge conflicts before committing.');
@@ -402,7 +409,7 @@ export class GitService {
       }
     }
     const commitOptions = options?.amend ? ['--amend'] : [];
-    const result = await git.commit(message.trim(), commitOptions);
+    const result = await git.commit(safeMessage, commitOptions);
     return result.commit || 'committed';
   }
 

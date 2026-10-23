@@ -786,7 +786,7 @@ export class AgentEngine {
           }
 
           // 3b. Plan mode lock: mutating tools stay disabled until the plan is approved
-          const PLAN_MUTATING_TOOLS = new Set(['write_file', 'replace_file_content', 'run_command', 'git_commit', 'git_merge', 'generate_presentation']);
+          const PLAN_MUTATING_TOOLS = new Set(['write_file', 'replace_file_content', 'edit_file', 'run_command', 'git_commit', 'git_merge', 'generate_presentation']);
           const isPlanLockedMutation = stateManager.currentMode === AgentMode.Plan
             && (PLAN_MUTATING_TOOLS.has(toolCall.name)
               || (toolCall.name === 'git_branch' && ['create', 'switch'].includes(String(toolCall.arguments.action || ''))));
@@ -855,11 +855,11 @@ export class AgentEngine {
             const decision = await this.securityPolicy.evaluateTerminalCommand(command);
             policyBlockReason = decision.decision === 'block' ? decision.reason : null;
             approvalReason = decision.decision === 'ask' ? decision.reason : null;
-          } else if (toolCall.name === 'write_file' || toolCall.name === 'replace_file_content') {
+          } else if (toolCall.name === 'write_file' || toolCall.name === 'replace_file_content' || toolCall.name === 'edit_file') {
             try {
               fileReview = await this.securityPolicy.previewFileMutation(toolCall.name, toolCall.arguments);
               const policy = await this.securityPolicy.getPolicy();
-              if (toolCall.name === 'replace_file_content' && policy.reviewPolicy === 'always-ask') {
+              if ((toolCall.name === 'replace_file_content' || toolCall.name === 'edit_file') && policy.reviewPolicy === 'always-ask') {
                 approvalReason = 'Review Policy is set to Always Ask; user confirmation is required before applying diffs to disk.';
               } else {
                 const decision = await this.securityPolicy.evaluateFileMutation(fileReview);
@@ -872,17 +872,15 @@ export class AgentEngine {
                 __approvedOriginalHash: fileReview.originalHash,
                 __approvedOriginalExists: fileReview.originalExists
               };
-              if (fileReview.originalExists) {
-                const proposedDiff: ProposedDiff = {
-                  id: `diff_${toolCall.id}`,
-                  filePath: fileReview.filePath,
-                  originalContent: fileReview.originalContent,
-                  proposedContent: fileReview.proposedContent,
-                  description: `Proposed ${toolCall.name} on ${fileReview.filePath}`,
-                  status: 'pending'
-                };
-                onChunk({ type: 'diff', diff: proposedDiff });
-              }
+              const proposedDiff: ProposedDiff = {
+                id: `diff_${toolCall.id}`,
+                filePath: fileReview.filePath,
+                originalContent: fileReview.originalContent,
+                proposedContent: fileReview.proposedContent,
+                description: `Proposed ${toolCall.name} on ${fileReview.filePath}`,
+                status: 'pending'
+              };
+              onChunk({ type: 'diff', diff: proposedDiff });
             } catch (err: unknown) {
               const msg = err instanceof Error ? err.message : String(err);
               if (msg.includes('Security Exception') || msg.includes('Access denied')) {

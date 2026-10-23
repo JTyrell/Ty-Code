@@ -338,11 +338,19 @@ export class CredentialStore {
    */
   public async revokeCredential(providerId: string): Promise<boolean> {
     if (!this.isLoaded) await this.load();
-    if (!this.cache.credentials[providerId]) return false;
-
-    delete this.cache.credentials[providerId];
-    await this.persist();
-    return true;
+    const aliases = this.getProviderAliases(providerId);
+    let deleted = false;
+    for (const id of aliases) {
+      if (this.cache.credentials[id]) {
+        delete this.cache.credentials[id];
+        deleted = true;
+      }
+    }
+    if (deleted) {
+      await this.persist();
+      return true;
+    }
+    return false;
   }
 
   /**

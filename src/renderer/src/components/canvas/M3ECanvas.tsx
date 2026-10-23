@@ -47,6 +47,8 @@ import {
 import type { CanvasNode, CanvasPlatform, CanvasPropValue } from '../../state/canvas-store';
 import { extractImageCss } from '../../utils/image-to-css';
 import type { ImageCssResult } from '../../utils/image-to-css';
+import { WorkspaceGate } from '../common/WorkspaceGate';
+import { useWorkspaceStore } from '../../state/workspace-store';
 
 // ---------------------------------------------------------------------------
 // Platform + library catalogs
@@ -920,6 +922,7 @@ const LibraryPanel: React.FC<{ onAdd: (type: string) => void }> = ({ onAdd }) =>
 // ---------------------------------------------------------------------------
 
 export const M3ECanvas: React.FC = () => {
+  const isWorkspaceReady = useWorkspaceStore((state) => state.isWorkspaceReady);
   const nodes = useCanvasStore((state) => state.nodes);
   const activePlatform = useCanvasStore((state) => state.activePlatform);
   const selectedNodeId = useCanvasStore((state) => state.selectedNodeId);
@@ -944,15 +947,16 @@ export const M3ECanvas: React.FC = () => {
   const [isProcessingImage, setIsProcessingImage] = useState(false);
   const [copiedCss, setCopiedCss] = useState(false);
 
-  // Wire the store into the main-process CanvasSyncManager exactly once.
+  // Wire the store into the main-process CanvasSyncManager, only when workspace is ready.
   useEffect(() => {
+    if (!isWorkspaceReady) return;
     const stopPush = initCanvasStoreSync();
     const stopRemote = initCanvasRemoteSync();
     return () => {
       stopPush();
       stopRemote();
     };
-  }, []);
+  }, [isWorkspaceReady]);
 
   // Scale-to-fit the device frame inside the center panel.
   useEffect(() => {
@@ -1106,8 +1110,9 @@ export const M3ECanvas: React.FC = () => {
   const deviceHeight = frameIsFill ? (centerRef.current?.clientHeight ?? 600) - 40 : frame.height as number;
 
   return (
-    <div
-      style={{
+    <WorkspaceGate message="Indexing Workspace for Canvas...">
+      <div
+        style={{
         flex: 1,
         minWidth: 0,
         display: 'flex',
@@ -1617,6 +1622,7 @@ export const M3ECanvas: React.FC = () => {
         </aside>
       </div>
     </div>
+    </WorkspaceGate>
   );
 };
 

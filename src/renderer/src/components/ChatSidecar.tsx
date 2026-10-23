@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './ChatSidecar.css';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import hljs from 'highlight.js/lib/core';
@@ -1104,7 +1104,7 @@ export const ChatSidecar: React.FC = () => {
   const [sidecarTab, setSidecarTab] = useState<'chat' | 'pair'>('chat');
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const chatListRef = useRef<ChatMessageListHandle>(null);
-  const { messages, isRunning, currentTaskId, currentStatus, currentThought, streamingText, pendingApproval, sendMessage, stopTask, respondToApproval, clearChat, agentMode, setAgentMode, draftPrompt, setDraftPrompt, activeErrorCard, dismissErrorCard, contextTokens, recentSessions, pendingResume, loadRecentSessions, acceptSessionResume, dismissSessionResume } = useChatStore();
+  const { messages, isRunning, currentTaskId, activeAssistantMessageId, currentStatus, currentThought, streamingText, pendingApproval, sendMessage, stopTask, respondToApproval, clearChat, agentMode, setAgentMode, draftPrompt, setDraftPrompt, activeErrorCard, dismissErrorCard, contextTokens, recentSessions, pendingResume, loadRecentSessions, acceptSessionResume, dismissSessionResume, updateMessage } = useChatStore();
   const { isPairActive, suggestions, togglePairMode, dismissSuggestion, clearSuggestions } = usePairProgrammingStore();
   const communityKeyStatus = useSettingsStore((s) => s.communityKeyStatus);
   const [approvalSending, setApprovalSending] = useState(false);
@@ -1112,27 +1112,103 @@ export const ChatSidecar: React.FC = () => {
   const activeTab = openTabs.find((tab) => tab.path === activeTabPath);
   const groupedMessages = useMemo(() => groupMessagesByTask(messages), [messages]);
 
-  // Diagnostic Telemetry: Track H5 (Renderer Flush - first token painted to DOM)
-  const reportedH5TaskRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!currentTaskId) {
-      reportedH5TaskRef.current = null;
-      return;
-    }
-    const hasTokens = (streamingText && streamingText.length > 0) || messages.some((m) => m.taskId === currentTaskId && m.role === 'assistant' && (m.content.length > 0 || (m.toolExecutions && m.toolExecutions.length > 0)));
-    if (hasTokens && reportedH5TaskRef.current !== currentTaskId) {
-      reportedH5TaskRef.current = currentTaskId;
-      const targetTaskId = currentTaskId;
-      window.requestAnimationFrame(() => {
-        setTimeout(() => {
-          const h5 = performance.timeOrigin + performance.now();
-          window.electronAPI?.perfReportH5?.({ taskId: targetTaskId, h5 });
-        }, 0);
-      });
-    }
-  }, [streamingText, messages, currentTaskId]);
   const lastAssistantId = [...groupedMessages].reverse().find((message) => message.role === 'assistant')?.id;
   const lastUserMessage = [...groupedMessages].reverse().find((message) => message.role === 'user');
+
+  // Step 3: useRef Batching for currently streaming message
+  // Holds currently streaming text in a ref to avoid updating Zustand on every single token chunk.
+  // Flushes to Zustand's updateMessage every 100ms or immediately when the stream completes.
+  const streamingTextRef = useRef<string>('');
+  const lastCommitTimeRef = useRef<number>(0);
+  const commitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activeStreamTargetIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (activeAssistantMessageId) {
+      activeStreamTargetIdRef.current = activeAssistantMessageId;
+    } else if (lastAssistantId && isRunning) {
+      activeStreamTargetIdRef.current = lastAssistantId;
+    }
+  }, [activeAssistantMessageId, lastAssistantId, isRunning]);
+
+  const flushStreamingRef = useCallback((isComplete = false) => {
+    if (commitTimerRef.current) {
+      clearTimeout(commitTimerRef.current);
+      commitTimerRef.current = null;
+    }
+    const targetId = activeStreamTargetIdRef.current || lastAssistantId;
+    if (!targetId || !streamingTextRef.current) return;
+
+    lastCommitTimeRef.current = performance.now();
+    updateMessage(targetId, {
+      content: streamingTextRef.current,
+      ...(isComplete ? { isStreaming: false, statusText: '' } : { isStreaming: true })
+    });
+
+    if (isComplete) {
+      streamingTextRef.current = '';
+      activeStreamTargetIdRef.current = null;
+    }
+  }, [lastAssistantId, updateMessage]);
+
+  const scheduleCommit = useCallback(() => {
+    const elapsed = performance.now() - lastCommitTimeRef.current;
+    const waitTime = Math.max(0, 100 - elapsed);
+
+    if (waitTime === 0) {
+      flushStreamingRef(false);
+    } else if (!commitTimerRef.current) {
+      commitTimerRef.current = setTimeout(() => {
+        commitTimerRef.current = null;
+        flushStreamingRef(false);
+      }, waitTime);
+    }
+  }, [flushStreamingRef]);
+
+  useEffect(() => {
+    if (!window.electronAPI) return;
+
+    const unsubBatch = window.electronAPI.onAgentStreamBatch?.((chunks) => {
+      if (!Array.isArray(chunks)) return;
+      let hasTokens = false;
+      for (const chunk of chunks) {
+        if (chunk && typeof chunk === 'object' && chunk.type === 'token' && typeof chunk.content === 'string') {
+          streamingTextRef.current += chunk.content;
+          hasTokens = true;
+        }
+      }
+      if (hasTokens) {
+        scheduleCommit();
+      }
+    });
+
+    const unsubToken = window.electronAPI.onAgentStreamToken?.((raw) => {
+      if (raw && typeof raw === 'object' && typeof (raw as any).token === 'string') {
+        streamingTextRef.current += (raw as any).token;
+        scheduleCommit();
+      }
+    });
+
+    return () => {
+      unsubBatch?.();
+      unsubToken?.();
+      if (commitTimerRef.current) {
+        clearTimeout(commitTimerRef.current);
+        commitTimerRef.current = null;
+      }
+    };
+  }, [scheduleCommit]);
+
+  const prevIsRunningRef = useRef(isRunning);
+  useEffect(() => {
+    if (prevIsRunningRef.current && !isRunning) {
+      flushStreamingRef(true);
+    } else if (!prevIsRunningRef.current && isRunning) {
+      streamingTextRef.current = '';
+      lastCommitTimeRef.current = performance.now();
+    }
+    prevIsRunningRef.current = isRunning;
+  }, [isRunning, flushStreamingRef]);
 
   useEffect(() => {
     if (!workspacePath || !loadRecentSessions) return;

@@ -72,6 +72,7 @@ win:
   artifactName: Ty-Code-${version}-${arch}.${ext}
 
 nsis:
+  include: build/installer.nsh
   artifactName: Ty-Code-Setup-${version}.${ext}
   oneClick: false
   allowToChangeInstallationDirectory: true
@@ -100,6 +101,13 @@ mac:
   gatekeeperAssess: false
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.inherit.plist
+  extendInfo:
+    CFBundleDocumentTypes:
+      - CFBundleTypeName: Folders
+        CFBundleTypeRole: Editor
+        LSItemContentTypes:
+          - public.folder
+        LSHandlerRank: Alternate
 
 dmg:
   background: null
@@ -123,6 +131,9 @@ linux:
       arch:
         - x64
   category: Development
+  desktop:
+    MimeType: "inode/directory;"
+    Terminal: "false"
 
 deb:
   artifactName: Ty-Code-${version}-x64.${ext}

@@ -17,6 +17,7 @@ interface ChatState {
   isRunning: boolean;
   isStreaming: boolean;
   currentTaskId: string | null;
+  activeAssistantMessageId: string | null;
   pendingApproval: AgentToolApproval | null;
   currentStatus: string;
   currentThought: string;
@@ -24,6 +25,7 @@ interface ChatState {
   activeErrorCard: ChatErrorCard | null;
   dismissErrorCard: () => void;
   setActiveErrorCard: (card: ChatErrorCard | null) => void;
+  updateMessage: (id: string, updates: Partial<ChatMessage>) => void;
   settings: ProviderSettings | null;
   agentMode: AgentMode;
   contextTokens: number;
@@ -437,10 +439,17 @@ export function savePersistedChat(messages: ChatMessage[]): void {
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
-  messages: loadPersistedChat(), isRunning: false, isStreaming: false, currentTaskId: null, pendingApproval: null, currentStatus: '', currentThought: '', streamingText: '',
+  messages: loadPersistedChat(), isRunning: false, isStreaming: false, currentTaskId: null, activeAssistantMessageId: null, pendingApproval: null, currentStatus: '', currentThought: '', streamingText: '',
   activeErrorCard: null,
   dismissErrorCard: () => set({ activeErrorCard: null }),
   setActiveErrorCard: (card: ChatErrorCard | null) => set({ activeErrorCard: card }),
+  updateMessage: (id: string, updates: Partial<ChatMessage>) => {
+    set((state) => ({
+      messages: state.messages.map((m) =>
+        m.id === id ? { ...m, ...updates } : m
+      )
+    }));
+  },
   settings: null, agentMode: 'build', contextTokens: 1200, contextLimit: 128_000, isSettingsOpen: false, isTerminalOpen: false,
   draftPrompt: '',
 
@@ -618,6 +627,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       isRunning: true,
       isStreaming: true,
       currentTaskId: taskId,
+      activeAssistantMessageId: assistantId,
       pendingApproval: null,
       currentStatus: 'Analyzing workspace…',
       currentThought: '',
@@ -641,14 +651,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
 
     // ------------------------------------------------------------------
-    // Double-Buffer Token & Reasoning Flushing (Prompt 2: 24ms batching)
+    // Double-Buffer Token & Reasoning Flushing (Throttled to 100ms via updateMessage)
     // ------------------------------------------------------------------
     let tokenBuffer = '';
     let isFlushing = false;
     let flushTimer: ReturnType<typeof setTimeout> | null = null;
     let flushRaf: number | null = null;
     let lastFlushTime = 0;
-    const FLUSH_INTERVAL_MS = 24;
+    const FLUSH_INTERVAL_MS = 100;
 
     const flushTokenBuffer = () => {
       if (flushTimer) {
@@ -668,27 +678,27 @@ export const useChatStore = create<ChatState>((set, get) => ({
       lastFlushTime = performance.now();
       isFlushing = false;
 
+      // Update message via updateMessage action every 100ms
+      const targetMessage = get().messages.find((m) => m.taskId === taskId && m.role === 'assistant');
+      if (targetMessage) {
+        get().updateMessage(targetMessage.id, {
+          content: targetMessage.content + batch,
+          statusText: '',
+          isStreaming: true,
+          metadata: targetMessage.metadata
+            ? { ...targetMessage.metadata, streamEventCount: currentTaskStreamEvents }
+            : {
+                source: 'provider-stream',
+                providerId: currentTaskProviderId,
+                modelId: currentTaskModelId,
+                streamEventCount: currentTaskStreamEvents
+              }
+        });
+      }
+
       set((state) => ({
         streamingText: state.streamingText + batch,
-        contextTokens: state.contextTokens + Math.ceil(batch.length / 4),
-        messages: state.messages.map((m) =>
-          m.taskId === taskId
-            ? {
-                ...m,
-                content: m.content + batch,
-                statusText: '',
-                isStreaming: true,
-                metadata: m.metadata
-                  ? { ...m.metadata, streamEventCount: currentTaskStreamEvents }
-                  : {
-                      source: 'provider-stream',
-                      providerId: currentTaskProviderId,
-                      modelId: currentTaskModelId,
-                      streamEventCount: currentTaskStreamEvents
-                    }
-              }
-            : m
-        )
+        contextTokens: state.contextTokens + Math.ceil(batch.length / 4)
       }));
     };
 
@@ -739,11 +749,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
       lastReasoningFlushTime = performance.now();
       isReasoningFlushing = false;
 
+      const targetMessage = get().messages.find((m) => m.taskId === taskId && m.role === 'assistant');
+      if (targetMessage) {
+        get().updateMessage(targetMessage.id, {
+          reasoning: (targetMessage.reasoning || '') + batch
+        });
+      }
+
       set((state) => ({
-        currentThought: state.currentThought + batch,
-        messages: state.messages.map((m) =>
-          m.taskId === taskId ? { ...m, reasoning: (m.reasoning || '') + batch } : m
-        )
+        currentThought: state.currentThought + batch
       }));
     };
 
@@ -797,6 +811,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         isRunning: false,
         isStreaming: false,
         currentTaskId: null,
+        activeAssistantMessageId: null,
         pendingApproval: null,
         currentStatus: status,
         streamingText: '',
@@ -849,11 +864,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }));
     }
 
-    // 1. Zod-validated token stream (fallback if non-batched)
+    // 1. High-frequency stream token (bypasses full Zod parsing; lightweight manual check)
     if (window.electronAPI.onAgentStreamToken) {
       activeStreamDisposables.push(window.electronAPI.onAgentStreamToken((raw) => {
-        const parsed = AgentStreamTokenPayloadSchema.safeParse(raw);
-        if (!parsed.success || parsed.data.taskId !== taskId || get().currentTaskId !== taskId) return;
+        if (!raw || typeof raw !== 'object') return;
+        const data = raw as { taskId?: unknown; token?: unknown };
+        if (typeof data.taskId !== 'string' || typeof data.token !== 'string') return;
+        if (data.taskId !== taskId || get().currentTaskId !== taskId) return;
         currentTaskStreamEvents++;
         if (currentTaskStreamEvents === 1) {
           requestAnimationFrame(() => {
@@ -863,18 +880,20 @@ export const useChatStore = create<ChatState>((set, get) => ({
             }, 0);
           });
         }
-        tokenBuffer += parsed.data.token;
+        tokenBuffer += data.token;
         scheduleTokenFlush();
       }));
     }
 
-    // 2. Zod-validated reasoning stream (batched via double-buffer)
+    // 2. High-frequency reasoning stream (bypasses full Zod parsing; lightweight manual check)
     if (window.electronAPI.onAgentReasoningToken) {
       activeStreamDisposables.push(window.electronAPI.onAgentReasoningToken((raw) => {
-        const parsed = AgentReasoningTokenPayloadSchema.safeParse(raw);
-        if (!parsed.success || parsed.data.taskId !== taskId || get().currentTaskId !== taskId) return;
+        if (!raw || typeof raw !== 'object') return;
+        const data = raw as { taskId?: unknown; token?: unknown };
+        if (typeof data.taskId !== 'string' || typeof data.token !== 'string') return;
+        if (data.taskId !== taskId || get().currentTaskId !== taskId) return;
         currentTaskStreamEvents++;
-        reasoningBuffer += parsed.data.token;
+        reasoningBuffer += data.token;
         scheduleReasoningFlush();
       }));
     }

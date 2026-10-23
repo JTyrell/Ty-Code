@@ -4,7 +4,7 @@ import path from 'path';
 import { BrowserWindow } from 'electron';
 import * as pty from 'node-pty';
 import type { CommandExecutionOptions, CommandResult, IpcResponse, PtySessionInfo, PtySpawnOptions, ShellInfo } from '../../preload/types';
-import { SecurityPolicyEngine } from '../services/security-policy';
+import { SecurityPolicyEngine, buildSanitizedPtyEnv } from '../services/security-policy';
 import { settingsManager } from '../services/settings-manager';
 import { buildFccTerminalEnv } from '../fcc-integration';
 
@@ -90,9 +90,7 @@ export function spawnPtySession(mainWindow: BrowserWindow, options: PtySpawnOpti
     const cols = Number.isInteger(options.cols) && options.cols && options.cols > 0 ? Math.min(options.cols, 500) : 80;
     const rows = Number.isInteger(options.rows) && options.rows && options.rows > 0 ? Math.min(options.rows, 300) : 24;
     const cwd = options.cwd && fs.existsSync(options.cwd) && fs.statSync(options.cwd).isDirectory() ? path.resolve(options.cwd) : process.cwd();
-    const ptyEnv: Record<string, string> = Object.fromEntries(
-      Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === 'string')
-    );
+    const ptyEnv = buildSanitizedPtyEnv(process.env);
     ptyEnv.COLORTERM = 'truecolor';
     ptyEnv.TERM = 'xterm-256color';
     if (process.platform !== 'win32') {
@@ -335,7 +333,7 @@ export async function runCommand(options: CommandExecutionOptions): Promise<IpcR
       clearTimeout(timer);
       resolve(response);
     };
-    const child = childSpawn(shell, args, { cwd, env: { ...process.env, PAGER: 'cat' }, windowsHide: true });
+    const child = childSpawn(shell, args, { cwd, env: { ...buildSanitizedPtyEnv(process.env), PAGER: 'cat' }, windowsHide: true });
     timer = setTimeout(() => { timedOut = true; child.kill('SIGTERM'); }, timeout);
     child.stdout.on('data', (chunk: Buffer | string) => { stdout += chunk.toString(); });
     child.stderr.on('data', (chunk: Buffer | string) => { stderr += chunk.toString(); });

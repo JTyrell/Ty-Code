@@ -29,7 +29,8 @@ export class SmartFileReader {
 
   private resolveSafePath(relativePath: string): string {
     const absolutePath = path.resolve(this.workspaceRoot, relativePath);
-    if (!absolutePath.startsWith(this.workspaceRoot)) {
+    const relative = path.relative(this.workspaceRoot, absolutePath);
+    if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
       throw new Error(`Security Exception: Path "${relativePath}" attempts to escape workspace.`);
     }
     return absolutePath;

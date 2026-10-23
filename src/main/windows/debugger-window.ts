@@ -228,17 +228,37 @@ export class DebuggerSyncManager {
       }
     });
 
+const DebuggerSyncStatePayloadSchema = z.object({
+  activeFile: z.string().nullable().optional(),
+  analysisResults: z.array(z.any()).optional(),
+  isPopOutMode: z.boolean().optional(),
+  selectedRole: z.enum(['dev', 'qa', 'pm']).optional(),
+  theme: z.string().optional()
+});
+
+const DebuggerRunAnalysisPayloadSchema = z.object({
+  filePath: z.string().optional(),
+  role: z.enum(['dev', 'qa', 'pm']).optional()
+});
+
+const DebuggerSetModelModePayloadSchema = z.object({
+  mode: z.enum(['auto', 'manual']),
+  modelId: z.string().optional(),
+  providerId: z.string().optional()
+});
+
     // 3. Sync State between windows
     ipcMain.handle('debugger:sync-state', async (event, rawPayload: unknown): Promise<IpcResult<DebuggerStateSnapshot>> => {
       if (this.isTrustedSender && !this.isTrustedSender(event)) {
         return { success: false, error: 'Untrusted renderer frame.' };
       }
       try {
-        if (typeof rawPayload === 'object' && rawPayload !== null) {
-          const snapshot = this.pushStateUpdate(rawPayload as Partial<DebuggerStateSnapshot>, event.sender);
-          return { success: true, data: snapshot };
+        const parsed = DebuggerSyncStatePayloadSchema.safeParse(rawPayload);
+        if (!parsed.success) {
+          return { success: false, error: `Invalid debugger state payload: ${parsed.error.message}` };
         }
-        return { success: false, error: 'Payload must be an object' };
+        const snapshot = this.pushStateUpdate(parsed.data, event.sender);
+        return { success: true, data: snapshot };
       } catch (err: unknown) {
         return { success: false, error: err instanceof Error ? err.message : String(err) };
       }
@@ -258,11 +278,11 @@ export class DebuggerSyncManager {
         return { success: false, error: 'Untrusted renderer frame.' };
       }
       try {
-        const payload = (rawPayload && typeof rawPayload === 'object' ? rawPayload : {}) as {
-          filePath?: string;
-          role?: AnalysisRole;
-        };
-        const results = await this.runAnalysis(payload.filePath, payload.role);
+        const parsed = DebuggerRunAnalysisPayloadSchema.safeParse(rawPayload || {});
+        if (!parsed.success) {
+          return { success: false, error: `Invalid run-analysis payload: ${parsed.error.message}` };
+        }
+        const results = await this.runAnalysis(parsed.data.filePath, parsed.data.role);
         return { success: true, data: results };
       } catch (err: unknown) {
         return { success: false, error: err instanceof Error ? err.message : String(err) };
@@ -283,15 +303,14 @@ export class DebuggerSyncManager {
         return { success: false, error: 'Untrusted renderer frame.' };
       }
       try {
-        const payload = (rawPayload && typeof rawPayload === 'object' ? rawPayload : {}) as {
-          mode: 'auto' | 'manual';
-          modelId?: string;
-          providerId?: string;
-        };
+        const parsed = DebuggerSetModelModePayloadSchema.safeParse(rawPayload);
+        if (!parsed.success) {
+          return { success: false, error: `Invalid set-model-mode payload: ${parsed.error.message}` };
+        }
         const prefs = debuggerModelRouter.setDebuggerModelPreferences(
-          payload.mode || 'auto',
-          payload.modelId,
-          payload.providerId
+          parsed.data.mode,
+          parsed.data.modelId,
+          parsed.data.providerId
         );
         this.broadcast('debugger:model-preferences-changed', prefs);
         return { success: true, data: prefs };
@@ -370,7 +389,9 @@ export function openDebuggerWindow(): BrowserWindow {
       contextIsolation: true,
       nodeIntegration: false,
       preload: resolvedPreload,
-      sandbox: true
+      sandbox: true,
+      webSecurity: true,
+      allowRunningInsecureContent: false
     }
   });
 

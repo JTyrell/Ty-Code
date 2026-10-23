@@ -7,7 +7,7 @@ import { BrowserWindow } from 'electron';
 import * as pty from 'node-pty';
 import type { AgentToolApproval, ProposedDiff, ToolCall } from '../../preload/types';
 import { gitService } from '../services/git-service';
-import { SecurityPolicyEngine } from '../services/security-policy';
+import { SecurityPolicyEngine, buildSanitizedPtyEnv } from '../services/security-policy';
 import { settingsManager } from '../services/settings-manager';
 import { mcpManager } from '../services/mcp-manager';
 import { SmartFileReader } from '../services/tools/smart-file-reader';
@@ -49,10 +49,14 @@ export class ToolExecutor {
       if (abortSignal?.aborted) return { output: 'Tool execution cancelled.', isError: true };
       switch (name) {
         case 'read_file': return await this.readFile(args);
-        case 'replace_file_content': return await this.replaceFileContent(args);
+        case 'replace_file_content':
+        case 'edit_file':
+          return await this.replaceFileContent(args);
         case 'write_file': return await this.writeFile(args);
         case 'run_command': return await this.runCommand(args, abortSignal);
-        case 'list_dir': return await this.listDir(args);
+        case 'list_dir':
+        case 'list_directory':
+          return await this.listDir(args);
         case 'grep_search': return await this.grepSearch(args);
         case 'git_status': return await this.gitStatus();
         case 'git_diff': return await this.gitDiff(args);
@@ -107,8 +111,8 @@ export class ToolExecutor {
 
   public async replaceFileContent(args: Record<string, unknown>): Promise<ToolExecutionResponse> {
     const filePath = String(args.filePath || args.path || '');
-    const targetContent = String(args.targetContent || args.old_str || args.oldContent || '');
-    const replacementContent = String(args.replacementContent ?? args.new_str ?? args.newContent ?? '');
+    const targetContent = String(args.targetContent || args.oldString || args.old_str || args.oldContent || '');
+    const replacementContent = String(args.replacementContent ?? args.newString ?? args.new_str ?? args.newContent ?? '');
     if (!filePath) return { output: 'Error: filePath is required', isError: true };
     if (!targetContent) return { output: 'Error: targetContent is required', isError: true };
     const allowed = await this.securityPolicy.isFileAllowed(filePath);
@@ -270,9 +274,7 @@ export class ToolExecutor {
           ? (process.env.ComSpec || path.join(root, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'))
           : (process.env.SHELL || '/bin/bash');
         const shellArgs = isWin ? ['-NoProfile', '-Command', command] : ['-c', command];
-        const ptyEnv: Record<string, string> = Object.fromEntries(
-          Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === 'string')
-        );
+        const ptyEnv = buildSanitizedPtyEnv(process.env);
         ptyEnv.TERM = 'xterm-256color';
 
         ptyProcess = pty.spawn(shell, shellArgs, {
@@ -303,7 +305,7 @@ export class ToolExecutor {
       } catch {
         const shell = isWin ? 'powershell.exe' : '/bin/bash';
         const shellArgs = isWin ? ['-NoProfile', '-Command', command] : ['-c', command];
-        child = spawn(shell, shellArgs, { cwd: subCwd, env: { ...process.env, PAGER: 'cat' }, windowsHide: true });
+        child = spawn(shell, shellArgs, { cwd: subCwd, env: { ...buildSanitizedPtyEnv(process.env), PAGER: 'cat' }, windowsHide: true });
 
         child.stdout?.on('data', (chunk: Buffer | string) => {
           const str = chunk.toString();

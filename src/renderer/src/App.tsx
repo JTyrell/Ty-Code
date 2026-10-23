@@ -531,7 +531,7 @@ const MainWorkbench: React.FC = () => {
 export const App: React.FC = () => {
   useThemeSync();
 
-  const isSketcher = typeof window !== 'undefined' && window.location.hash.includes('sketcher');
+  const isSketcher = typeof window !== 'undefined' && (window.location.hash.includes('sketcher') || window.location.hash.includes('canvas'));
   if (isSketcher) {
     return <SketcherWindow />;
   }

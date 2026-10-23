@@ -23,8 +23,10 @@ interface WorkspaceState {
   openTabs: EditorTab[];
   activeTabPath: string | null;
   diffReview: DiffReviewState | null;
+  isWorkspaceReady: boolean;
 
   // Actions
+  setIsWorkspaceReady: (ready: boolean) => void;
   setWorkspacePath: (path: string) => void;
   setFileTree: (tree: FileNode | null) => void;
   setFlatTree: (flat: FlatFileNodeEntry[] | null) => void;
@@ -171,8 +173,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   openTabs: initialPersisted.openTabs,
   activeTabPath: initialPersisted.activeTabPath,
   diffReview: null,
+  isWorkspaceReady: false,
 
-  setWorkspacePath: (path: string) => set({ workspacePath: path }),
+  setIsWorkspaceReady: (ready: boolean) => set({ isWorkspaceReady: ready }),
+  setWorkspacePath: (path: string) => set({ workspacePath: path, isWorkspaceReady: false }),
   setFileTree: (tree) => set({ fileTree: tree }),
   setFlatTree: (flat) => set({ flatTree: flat }),
   appendTreeChunk: (chunk) => set((state) => ({ flatTree: [...(state.flatTree || []), ...chunk] })),
@@ -345,24 +349,45 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
   refreshFileTree: async () => {
     const { workspacePath } = get();
-    if (!workspacePath) return;
+    if (!workspacePath) {
+      set({ isWorkspaceReady: false });
+      return;
+    }
+    set({ isWorkspaceReady: false });
     try {
-      if (window.electronAPI.getWorkspaceTreeChunked) {
+      if (window.electronAPI?.getWorkspaceTreeChunked) {
         const chunkRes = await window.electronAPI.getWorkspaceTreeChunked(workspacePath);
         if (chunkRes.success && chunkRes.data?.flatTree) {
           set({ flatTree: chunkRes.data.flatTree });
           const nested = buildNestedTreeFromFlat(chunkRes.data.flatTree);
-          set({ fileTree: nested });
+          set({ fileTree: nested, isWorkspaceReady: true });
           return;
         }
       }
 
-      const res = await window.electronAPI.getWorkspaceTree(workspacePath);
-      if (res.success && res.data) {
-        set({ fileTree: res.data });
+      const res = await window.electronAPI?.getWorkspaceTree(workspacePath);
+      if (res?.success && res.data) {
+        set({ fileTree: res.data, isWorkspaceReady: true });
       }
     } catch (err) {
       console.error('Failed to refresh tree:', err);
     }
   }
 }));
+
+// Global IPC event listeners for workspace readiness and folder open
+if (typeof window !== 'undefined' && window.electronAPI) {
+  window.electronAPI.onWorkspaceReady?.((data) => {
+    useWorkspaceStore.getState().setIsWorkspaceReady(true);
+    if (data?.path && useWorkspaceStore.getState().workspacePath !== data.path) {
+      useWorkspaceStore.setState({ workspacePath: data.path });
+    }
+  });
+
+  window.electronAPI.onOpenFolder?.((data) => {
+    if (data?.folderPath) {
+      useWorkspaceStore.getState().setWorkspacePath(data.folderPath);
+      void useWorkspaceStore.getState().refreshFileTree();
+    }
+  });
+}

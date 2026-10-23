@@ -17,22 +17,93 @@ export interface FileMutationReview {
   originalHash: string;
 }
 
+export function buildSanitizedPtyEnv(baseEnv: NodeJS.ProcessEnv = process.env): Record<string, string> {
+  const SENSITIVE_PATTERNS = [
+    /key/i,
+    /token/i,
+    /secret/i,
+    /password/i,
+    /credential/i,
+    /auth/i,
+    /jwt/i,
+    /private/i
+  ];
+
+  const SAFE_ALLOWLIST = new Set([
+    'SSH_AUTH_SOCK',
+    'COLORTERM',
+    'TERM',
+    'PATH',
+    'Path',
+    'PATHEXT',
+    'SHELL',
+    'SystemRoot',
+    'SYSTEMROOT',
+    'ComSpec',
+    'COMSPEC',
+    'WINDIR',
+    'windir',
+    'HOME',
+    'USERPROFILE',
+    'APPDATA',
+    'LOCALAPPDATA',
+    'TMP',
+    'TEMP',
+    'TMPDIR',
+    'LANG',
+    'LC_ALL',
+    'USER',
+    'LOGNAME',
+    'HOSTNAME',
+    'CI'
+  ]);
+
+  const sanitized: Record<string, string> = {};
+  for (const [key, value] of Object.entries(baseEnv)) {
+    if (typeof value !== 'string') continue;
+    if (SAFE_ALLOWLIST.has(key)) {
+      sanitized[key] = value;
+      continue;
+    }
+    if (SENSITIVE_PATTERNS.some((pat) => pat.test(key))) {
+      continue;
+    }
+    if (key === 'NODE_OPTIONS' || key === 'ELECTRON_RUN_AS_NODE') {
+      continue;
+    }
+    sanitized[key] = value;
+  }
+  sanitized.TERM = 'xterm-256color';
+  return sanitized;
+}
+
 const SAFE_COMMANDS = [
-  /^(?:ls|dir)(?:\s+(?!\/|[a-z]:|~|.*\.\.)[\w./\\-]+)?$/i,
-  /^cat\s+(?!\/|[a-z]:|~|.*\.\.)[\w./\\-]+$/i,
-  /^git(?:\.exe)?\s+status(?:\s+(?:--short|-s|--branch))?$/i,
+  /^(?:ls|dir)(?:\s+(?!\/|[a-z]:|~|.*\.\.)[\w./\\-]+)*$/i,
+  /^(?:cat|type)\s+(?!\/|[a-z]:|~|.*\.\.)[\w./\\-]+$/i,
+  /^(?:pwd|cd)$/i,
+  /^git(?:\.exe)?\s+(?:status|log|diff|branch|show)(?:\s+[^\n;&|`]+)*$/i,
+  /^node(?:\.exe)?\s+(?:--version|-v)$/i,
+  /^npm(?:\.exe)?\s+(?:--version|-v)$/i,
+  /^python(?:\.exe)?\s+(?:--version|-V)$/i,
+  /^git(?:\.exe)?\s+--version$/i,
+  /^echo\s+[^\n;&|`]+$/i,
   /^npm\s+(?:install|i)(?:\s+--(?:no-audit|no-fund|prefer-offline))*$/i
 ];
 
-const HIGH_RISK_COMMANDS = [
-  /\brm\s+-(?:rf|fr)\b/i,
-  /\bsudo\b/i,
-  /\b(?:curl|wget|iwr|invoke-webrequest)\b[^\n]*\|\s*(?:bash|sh|powershell|pwsh)\b/i,
-  /\b(?:invoke-expression|iex)\b/i,
-  /\bremove-item\b[^\n]*-recurse/i,
-  /\bdel\s+\/s\s+\/q\b/i,
+const DESTRUCTIVE_COMMANDS = [
+  /\b(?:rm|del|erase|rmdir|rd)\b/i,
+  /\bremove-item\b/i,
+  /\b(?:kill|pkill|killall|taskkill)\b/i,
+  /\b(?:stop-process)\b/i,
   /\bformat\s+[a-z]:/i,
-  /\bdd\s+if=/i
+  /\bdd\s+if=/i,
+  /\bmkfs\b/i,
+  /\b(?:fdisk|diskpart)\b/i,
+  /\b(?:shutdown|reboot|init\s+0)\b/i,
+  /\bsudo\b/i,
+  /\brunas\b/i,
+  /\b(?:curl|wget|iwr|invoke-webrequest)\b[^\n]*\|\s*(?:bash|sh|powershell|pwsh)\b/i,
+  /\b(?:invoke-expression|iex)\b/i
 ];
 
 function isWithin(root: string, target: string): boolean {
@@ -66,21 +137,40 @@ export class SecurityPolicyEngine {
 
   public async evaluateTerminalCommand(command: string): Promise<{ decision: PolicyDecision; reason: string }> {
     const policy = await this.getPolicy();
-    if (policy.fileAccessPolicy === 'workspace-only' && this.referencesOutsideWorkspace(command)) {
+    const trimmed = (command || '').trim();
+
+    const enforceWorkspaceOnly = policy.fileAccessPolicy !== 'system-access' || !policy.systemAccessConfirmed;
+    if (enforceWorkspaceOnly && this.referencesOutsideWorkspace(trimmed)) {
       return { decision: 'block', reason: 'The command references a path outside the active workspace, which is blocked by Workspace Only access.' };
     }
-    if (policy.terminalPolicy === 'always-proceed') return { decision: 'allow', reason: 'Always Proceed is enabled.' };
-    if (policy.terminalPolicy === 'always-ask') return { decision: 'ask', reason: 'Always Ask requires approval for every command.' };
-    if (SAFE_COMMANDS.some((pattern) => pattern.test(command.trim()))) {
-      return { decision: 'allow', reason: 'This command matches the Restricted Mode safe-command allowlist.' };
+
+    const isDestructive = DESTRUCTIVE_COMMANDS.some((pattern) => pattern.test(trimmed));
+    const isReadOnly = SAFE_COMMANDS.some((pattern) => pattern.test(trimmed));
+
+    // Restricted Mode: Auto-approves read-only (ls, cat), blocks destructive (rm, kill)
+    if (policy.terminalPolicy === 'restricted') {
+      if (isDestructive) {
+        return { decision: 'block', reason: 'Destructive command is blocked by Restricted Mode security policy.' };
+      }
+      if (isReadOnly) {
+        return { decision: 'allow', reason: 'Command matches the Restricted Mode read-only allowlist.' };
+      }
+      return { decision: 'ask', reason: 'State-altering command requires user approval in Restricted Mode.' };
     }
-    const highRisk = HIGH_RISK_COMMANDS.some((pattern) => pattern.test(command));
-    return {
-      decision: 'ask',
-      reason: highRisk
-        ? 'This command matches a high-risk pattern and requires explicit approval.'
-        : 'This command is not on the Restricted Mode safe-command allowlist.'
-    };
+
+    // Always Ask: Halts for state-altering commands and any unconfirmed execution
+    if (policy.terminalPolicy === 'always-ask') {
+      if (isDestructive) {
+        return { decision: 'block', reason: 'Destructive command is blocked. Execute manually in the integrated terminal if required.' };
+      }
+      return { decision: 'ask', reason: 'Always Ask policy requires explicit approval for all terminal commands.' };
+    }
+
+    // Always Proceed
+    if (isDestructive) {
+      return { decision: 'ask', reason: 'Destructive command requires confirmation even in Always Proceed mode.' };
+    }
+    return { decision: 'allow', reason: 'Always Proceed is enabled.' };
   }
 
   public async checkTerminalCommand(command: string): Promise<{
@@ -120,8 +210,8 @@ export class SecurityPolicyEngine {
     const policy = await this.getPolicy();
     if (policy.reviewPolicy === 'always-ask') return { decision: 'ask', reason: 'Always Ask is enabled for agent file changes.' };
     const changes = review.addedLines + review.removedLines;
-    if (changes < 5) return { decision: 'allow', reason: `Auto-Apply Safe permits this ${changes}-line change.` };
-    return { decision: 'ask', reason: `This change affects ${changes} lines; changes of 5 or more lines require review.` };
+    if (changes <= 5) return { decision: 'allow', reason: `Auto-Apply Safe permits this ${changes}-line change.` };
+    return { decision: 'ask', reason: `This change affects ${changes} lines; changes modifying more than 5 lines require DiffEditor review.` };
   }
 
   private referencesOutsideWorkspace(command: string): boolean {
@@ -149,13 +239,14 @@ export class SecurityPolicyEngine {
     const absolute = path.isAbsolute(filePath) || path.win32.isAbsolute(filePath)
       ? path.resolve(filePath)
       : path.resolve(workspaceRoot, filePath);
-    if (policy.fileAccessPolicy === 'workspace-only' && !isWithin(workspaceRoot, absolute)) {
+    const enforceWorkspaceOnly = policy.fileAccessPolicy !== 'system-access' || !policy.systemAccessConfirmed;
+    if (enforceWorkspaceOnly && !isWithin(workspaceRoot, absolute)) {
       throw new Error(`Security Exception: Access denied to path outside workspace: "${filePath}"`);
     }
 
     try {
       const realPath = await fs.realpath(absolute);
-      if (policy.fileAccessPolicy === 'workspace-only' && !isWithin(workspaceRoot, realPath)) {
+      if (enforceWorkspaceOnly && !isWithin(workspaceRoot, realPath)) {
         throw new Error(`Security Exception: Path resolves outside workspace: "${filePath}"`);
       }
       return realPath;
@@ -165,7 +256,7 @@ export class SecurityPolicyEngine {
       while (parent !== path.dirname(parent)) {
         try {
           const realParent = await fs.realpath(parent);
-          if (policy.fileAccessPolicy === 'workspace-only' && !isWithin(workspaceRoot, realParent)) {
+          if (enforceWorkspaceOnly && !isWithin(workspaceRoot, realParent)) {
             throw new Error(`Security Exception: Parent path resolves outside workspace: "${filePath}"`);
           }
           return absolute;
@@ -174,7 +265,7 @@ export class SecurityPolicyEngine {
           parent = path.dirname(parent);
         }
       }
-      if (policy.fileAccessPolicy === 'workspace-only' && !isWithin(workspaceRoot, absolute)) {
+      if (enforceWorkspaceOnly && !isWithin(workspaceRoot, absolute)) {
         throw new Error(`Security Exception: Access denied to path outside workspace: "${filePath}"`);
       }
       return absolute;
@@ -219,8 +310,8 @@ export class SecurityPolicyEngine {
   }
 
   public async previewFileMutation(toolName: string, args: Record<string, unknown>): Promise<FileMutationReview> {
-    if (toolName !== 'write_file' && toolName !== 'replace_file_content') throw new Error('Unsupported file mutation review.');
-    const requestedPath = String(args.filePath || '');
+    if (toolName !== 'write_file' && toolName !== 'replace_file_content' && toolName !== 'edit_file') throw new Error('Unsupported file mutation review.');
+    const requestedPath = String(args.filePath || args.path || '');
     if (!requestedPath) throw new Error('filePath is required.');
     const absolutePath = await this.resolveFilePath(requestedPath, true);
     let originalContent = '';
@@ -237,9 +328,9 @@ export class SecurityPolicyEngine {
       if (originalContent && args.overwrite !== true) throw new Error(`File ${requestedPath} already exists. Set overwrite: true to replace it.`);
       proposedContent = String(args.content ?? '');
     } else {
-      const targetContent = String(args.targetContent || '');
+      const targetContent = String(args.targetContent || args.oldString || args.old_str || args.oldContent || '');
       if (!targetContent) throw new Error('targetContent is required.');
-      const replacementContent = String(args.replacementContent ?? '');
+      const replacementContent = String(args.replacementContent ?? args.newString ?? args.new_str ?? args.newContent ?? '');
       const occurrences = originalContent.split(targetContent).length - 1;
       if (occurrences !== 1) throw new Error(occurrences === 0
         ? `targetContent was not found in ${requestedPath}.`

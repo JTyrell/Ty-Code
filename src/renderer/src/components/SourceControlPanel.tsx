@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { useGitStore } from '../state/git-store';
 import { useWorkspaceStore } from '../state/workspace-store';
+import { WorkspaceGate } from './common/WorkspaceGate';
 import { NoProjectEmptyState } from './NoProjectEmptyState';
 import type { GitFileChange } from '../../../preload/types';
 import './SourceControlPanel.css';
@@ -44,6 +45,7 @@ export const SourceControlPanel: React.FC = () => {
     stashChanges, popStash, dropStash, loadConflict, closeConflict, resolveConflict, abortMerge
    } = useGitStore();
   const { workspacePath, openFile } = useWorkspaceStore();
+  const isWorkspaceReady = useWorkspaceStore((s) => s.isWorkspaceReady);
   const resetStatus = useGitStore((s) => s.resetStatus);
   const [view, setView] = useState<SourceControlView>('changes');
   const [branchMenuOpen, setBranchMenuOpen] = useState(false);
@@ -62,15 +64,15 @@ export const SourceControlPanel: React.FC = () => {
   const branchTriggerRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
-    if (!workspacePath) {
-      // No project loaded: keep Git store pristine instead of probing a phantom repo
+    if (!workspacePath || !isWorkspaceReady) {
+      // No project loaded or workspace is still indexing: keep Git store pristine
       resetStatus();
       return;
     }
     void refreshStatus(true);
     const timer = window.setInterval(() => { void refreshStatus(); }, 5000);
     return () => window.clearInterval(timer);
-  }, [refreshStatus, resetStatus, workspacePath]);
+  }, [refreshStatus, resetStatus, workspacePath, isWorkspaceReady]);
 
   useEffect(() => {
     if (view !== 'history') return;
@@ -238,7 +240,9 @@ export const SourceControlPanel: React.FC = () => {
   const remoteConfigured = remotes.length > 0;
   const isNestedWorkspace = Boolean(status?.repositoryRoot && workspacePath && normalizePath(status.repositoryRoot) !== normalizePath(workspacePath));
 
-  return <div className="source-control-panel">
+  return (
+    <WorkspaceGate message="Indexing Workspace for Git...">
+      <div className="source-control-panel">
     <header className="source-control-header">
       <span>Source Control</span>
       <div className="source-control-header-actions">
@@ -401,5 +405,7 @@ export const SourceControlPanel: React.FC = () => {
         </div>
       </section>
     </div>}
-  </div>;
+      </div>
+    </WorkspaceGate>
+  );
 };

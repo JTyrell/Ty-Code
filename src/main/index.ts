@@ -122,6 +122,60 @@ import type { RouterUserPreferences } from '../shared/types/model-router';
 import { usageAnalytics } from './services/orchestration/usage-analytics';
 import { TelemetryManager } from './services/telemetry-manager';
 import type { TelemetryFeature } from '../preload/types';
+import { z } from 'zod';
+import { AgentStartTaskPayloadSchema } from '../shared/types/agent-events';
+
+const AgentRespondApprovalPayloadSchema = z.object({
+  approvalId: z.string().min(1),
+  approved: z.boolean(),
+  feedback: z.string().optional()
+});
+
+const UserApproveDiffPayloadSchema = z.union([
+  z.boolean(),
+  z.object({
+    approvalId: z.string().optional(),
+    diffId: z.string().optional(),
+    approved: z.boolean().optional()
+  })
+]);
+
+const PtyResolveApprovalPayloadSchema = z.object({
+  approvalId: z.string().min(1),
+  approved: z.boolean()
+});
+
+const PtyWritePayloadSchema = z.object({
+  ptyId: z.string().min(1),
+  data: z.string()
+});
+
+const PtyResizePayloadSchema = z.object({
+  ptyId: z.string().min(1),
+  cols: z.number().int().positive(),
+  rows: z.number().int().positive()
+});
+
+const PtySyncCwdPayloadSchema = z.object({
+  ptyId: z.string().min(1),
+  targetCwd: z.string().min(1),
+  shellId: z.string()
+});
+
+const PtySpawnOptionsSchema = z.object({
+  shellId: z.string().optional(),
+  cwd: z.string().optional(),
+  profileId: z.string().optional()
+});
+
+const AgentApplyDiffPayloadSchema = z.object({
+  id: z.string().optional(),
+  filePath: z.string().min(1),
+  originalContent: z.string(),
+  proposedContent: z.string(),
+  description: z.string().optional(),
+  status: z.enum(['pending', 'applied', 'rejected']).optional()
+});
 
 import { recordLspDiagnostics } from './services/orchestration/tools/diagnostics';
 import { diagnosticService } from './services/diagnostics/diagnostic-service';
@@ -139,6 +193,18 @@ import { getCanvasWindow } from './windows/canvas-window';
 import { openCanvasWindow } from './windows/canvas-window';
 import { debuggerSyncManager, openDebuggerWindow, closeDebuggerWindow } from './windows/debugger-window';
 import { opencodeServiceManager } from './opencode-integration';
+import { workspaceManager } from './services/workspace-manager';
+
+/**
+ * Single instance lock: Ensure only one Ty-Code process runs at a time.
+ * If another instance is launched (e.g. via OS context menu), its commandLine
+ * arguments are forwarded to the primary instance's 'second-instance' handler,
+ * and the secondary instance quits immediately.
+ */
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.quit();
+}
 
 function isAppOrSystemDir(dirPath: string): boolean {
   if (!dirPath) return true;
@@ -153,7 +219,53 @@ function isAppOrSystemDir(dirPath: string): boolean {
   );
 }
 
+/**
+ * Extracts a target folder path from command line arguments (e.g., Windows Explorer context menu).
+ */
+export function extractFolderFromArgs(args: string[], cwd?: string): string | null {
+  for (let i = 1; i < args.length; i++) {
+    const candidate = args[i]?.trim();
+    if (!candidate) continue;
+    if (candidate === '.' || candidate === './' || candidate === '.\\') {
+      if (!app.isPackaged && i === 1) continue;
+    }
+    if (candidate.startsWith('-')) continue;
+    if (candidate.startsWith('ty-code://')) continue;
+    const cleanPath = candidate.replace(/^["'](.*)["']$/, '$1');
+    try {
+      const resolved = cwd ? path.resolve(cwd, cleanPath) : path.resolve(cleanPath);
+      if (fsSync.existsSync(resolved) && fsSync.statSync(resolved).isDirectory()) {
+        if (!isAppOrSystemDir(resolved)) {
+          return resolved;
+        }
+      }
+    } catch {
+      // Ignore unresolvable args
+    }
+  }
+  return null;
+}
+
+let pendingMacOpenPath: string | null = null;
+app.on('open-file', (event, filePath) => {
+  event.preventDefault();
+  try {
+    const resolved = path.resolve(filePath);
+    if (fsSync.existsSync(resolved) && fsSync.statSync(resolved).isDirectory()) {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        void workspaceManager.openWorkspace(resolved);
+      } else {
+        pendingMacOpenPath = resolved;
+      }
+    }
+  } catch (err) {
+    console.error('[MACOS-OPEN-FILE] Failed to parse folder path:', err);
+  }
+});
+
 function getInitialWorkspacePath(): string {
+  const argFolder = extractFolderFromArgs(process.argv);
+  if (argFolder) return argFolder;
   const cwd = process.cwd();
   if (isAppOrSystemDir(cwd)) {
     // No folder is auto-selected. The user must explicitly choose a folder
@@ -479,24 +591,23 @@ function registerIpcHandlers(): void {
     const response = await selectWorkspaceFolder(mainWindow);
     if (response.success && response.data) {
       currentWorkspacePath = response.data;
-      await settingsManager.setWorkspacePath(currentWorkspacePath);
-      updateAiServicesWorkspace(currentWorkspacePath);
-      getRecentWorkspacesManager().addRecent(response.data);
-      setupWorkspaceWatcher(currentWorkspacePath, (type, relPath) => {
-        mainWindow?.webContents.send('fs:tree-updated', { type, relPath });
-      });
+      await workspaceManager.openWorkspace(response.data);
     }
     return response;
   });
+  ipcMain.handle('workspace:open-folder', async (_event, folderPath: string) => {
+    if (!folderPath) return { success: false, error: 'Invalid folder path' };
+    const result = await workspaceManager.openWorkspace(folderPath);
+    if (result.success) {
+      currentWorkspacePath = workspaceManager.currentWorkspacePath;
+    }
+    return result;
+  });
   ipcMain.handle('fs:set-workspace', async (_event, folderPath: string) => {
     if (!folderPath) return { success: false, error: 'Invalid folder path' };
+    const result = await workspaceManager.openWorkspace(folderPath);
+    if (!result.success) return { success: false, error: result.error };
     currentWorkspacePath = folderPath;
-    await settingsManager.setWorkspacePath(currentWorkspacePath);
-    updateAiServicesWorkspace(currentWorkspacePath);
-    getRecentWorkspacesManager().addRecent(folderPath);
-    setupWorkspaceWatcher(currentWorkspacePath, (type, relPath) => {
-      mainWindow?.webContents.send('fs:tree-updated', { type, relPath });
-    });
     return getWorkspaceTree(folderPath);
   });
   ipcMain.handle('fs:get-tree', async () => {
@@ -568,12 +679,42 @@ function registerIpcHandlers(): void {
       return { success: false, error: err?.message || 'Failed to release voice engine' };
     }
   });
-  ipcMain.handle('fs:write-file', (_event, filePath: string, content: string) => writeFile(filePath, content, currentWorkspacePath));
-  ipcMain.handle('fs:create-file', (_event, filePath: string) => createFile(filePath, currentWorkspacePath));
-  ipcMain.handle('fs:create-directory', (_event, dirPath: string) => createDirectory(dirPath, currentWorkspacePath));
-  ipcMain.handle('fs:delete-path', (_event, targetPath: string) => deletePath(targetPath, currentWorkspacePath));
-  ipcMain.handle('fs:rename-path', (_event, oldPath: string, newPath: string) => renamePath(oldPath, newPath, currentWorkspacePath));
-  ipcMain.handle('fs:search-files', (_event, query: string) => searchWorkspaceFiles(currentWorkspacePath, query));
+  ipcMain.handle('fs:write-file', (_event, filePath: unknown, content: unknown) => {
+    if (typeof filePath !== 'string' || typeof content !== 'string') {
+      return { success: false, error: 'Invalid parameters: filePath and content must be strings' };
+    }
+    return writeFile(filePath, content, currentWorkspacePath);
+  });
+  ipcMain.handle('fs:create-file', (_event, filePath: unknown) => {
+    if (typeof filePath !== 'string') {
+      return { success: false, error: 'Invalid parameter: filePath must be a string' };
+    }
+    return createFile(filePath, currentWorkspacePath);
+  });
+  ipcMain.handle('fs:create-directory', (_event, dirPath: unknown) => {
+    if (typeof dirPath !== 'string') {
+      return { success: false, error: 'Invalid parameter: dirPath must be a string' };
+    }
+    return createDirectory(dirPath, currentWorkspacePath);
+  });
+  ipcMain.handle('fs:delete-path', (_event, targetPath: unknown) => {
+    if (typeof targetPath !== 'string') {
+      return { success: false, error: 'Invalid parameter: targetPath must be a string' };
+    }
+    return deletePath(targetPath, currentWorkspacePath);
+  });
+  ipcMain.handle('fs:rename-path', (_event, oldPath: unknown, newPath: unknown) => {
+    if (typeof oldPath !== 'string' || typeof newPath !== 'string') {
+      return { success: false, error: 'Invalid parameters: oldPath and newPath must be strings' };
+    }
+    return renamePath(oldPath, newPath, currentWorkspacePath);
+  });
+  ipcMain.handle('fs:search-files', (_event, query: unknown) => {
+    if (typeof query !== 'string') {
+      return { success: false, error: 'Invalid query parameter: query must be a string' };
+    }
+    return searchWorkspaceFiles(currentWorkspacePath, query);
+  });
   ipcMain.handle('fs:search-in-files', (_event, options: SearchInFilesOptions) => searchInWorkspaceFiles(currentWorkspacePath, options));
   ipcMain.handle('fs:replace-in-files', (_event, options: ReplaceInFilesOptions) => {
     if (!options?.dryRun) return { success: false, error: 'Workspace replacements must be previewed and explicitly applied.' };
@@ -872,15 +1013,23 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle('agent:start-task', async (_event, params) => {
+    // Step 2: Validate initial chat/task request payload with Zod
+    const validation = AgentStartTaskPayloadSchema.safeParse(params);
+    if (!validation.success) {
+      console.error('[MAIN] Invalid agent task payload:', validation.error.format());
+      return { success: false, error: `Invalid agent task payload: ${validation.error.message}` };
+    }
+    const validatedParams = validation.data;
+
     const h2 = performance.timeOrigin + performance.now();
-    const taskId = params?.taskId || `task_${Date.now()}`;
+    const taskId = validatedParams.taskId || `task_${Date.now()}`;
     chatLatencyTracker.setActiveTaskId(taskId);
-    if (params?.clientSentAt) {
-      chatLatencyTracker.recordH1(taskId, params.clientSentAt);
+    if (validatedParams.clientSentAt) {
+      chatLatencyTracker.recordH1(taskId, validatedParams.clientSentAt);
     }
     chatLatencyTracker.recordH2(taskId, h2);
 
-    console.log('Main: Received task', { taskId: params?.taskId, promptLen: params?.prompt?.length, agentMode: params?.agentMode });
+    console.log('Main: Received task', { taskId: validatedParams.taskId, promptLen: validatedParams.prompt?.length, agentMode: validatedParams.agentMode });
     if (!mainWindow) return { success: false, error: 'No main window' };
     if (params?.traceId) {
       connectivityTracer.recordHop(params.traceId, 'H3', {
@@ -898,10 +1047,34 @@ function registerIpcHandlers(): void {
     return result;
   });
   ipcMain.handle('agent:stop-task', (_event, taskId: string) => stopAgentTask(taskId));
-  ipcMain.handle('agent:respond-approval', (_event, payload: { approvalId: string; approved: boolean; feedback?: string }) => respondAgentApproval(payload.approvalId, payload.approved, payload.feedback));
-  ipcMain.handle('user_approve_diff', (_event, payload: { approvalId?: string; diffId?: string; approved?: boolean } | boolean) => handleUserApproveDiff(payload));
-  ipcMain.handle('pty:resolve-approval', (_event, payload: { approvalId: string; approved: boolean }) => resolvePtyApproval(payload.approvalId, payload.approved));
-  ipcMain.handle('agent:apply-diff', (_event, diff: ProposedDiff) => applyDiff(currentWorkspacePath, diff));
+  ipcMain.handle('agent:respond-approval', (_event, payload: unknown) => {
+    const parsed = AgentRespondApprovalPayloadSchema.safeParse(payload);
+    if (!parsed.success) {
+      return { success: false, error: `Invalid approval payload: ${parsed.error.message}` };
+    }
+    return respondAgentApproval(parsed.data.approvalId, parsed.data.approved, parsed.data.feedback);
+  });
+  ipcMain.handle('user_approve_diff', (_event, payload: unknown) => {
+    const parsed = UserApproveDiffPayloadSchema.safeParse(payload);
+    if (!parsed.success) {
+      return { success: false, error: `Invalid diff approval payload: ${parsed.error.message}` };
+    }
+    return handleUserApproveDiff(parsed.data);
+  });
+  ipcMain.handle('pty:resolve-approval', (_event, payload: unknown) => {
+    const parsed = PtyResolveApprovalPayloadSchema.safeParse(payload);
+    if (!parsed.success) {
+      return { success: false, error: `Invalid pty approval payload: ${parsed.error.message}` };
+    }
+    return resolvePtyApproval(parsed.data.approvalId, parsed.data.approved);
+  });
+  ipcMain.handle('agent:apply-diff', (_event, diff: unknown) => {
+    const parsed = AgentApplyDiffPayloadSchema.safeParse(diff);
+    if (!parsed.success) {
+      return { success: false, error: `Invalid diff payload: ${parsed.error.message}` };
+    }
+    return applyDiff(currentWorkspacePath, parsed.data as ProposedDiff);
+  });
   ipcMain.on('perf:report-h5', (_event, data: { taskId: string; h5: number }) => {
     if (data?.taskId) {
       chatLatencyTracker.recordH5(data.taskId, data.h5);
@@ -1545,7 +1718,7 @@ function registerIpcHandlers(): void {
       const { keys } = await readStoredCredentials();
       const key = keys[providerId] || keys[providerId.replace('-free', '')] || keys[`${providerId}-free`];
       if (!key) return { success: false, error: `No key stored for ${providerId}.` };
-      return { success: true, data: key };
+      return { success: true, data: maskKey(key) };
     } catch (err: unknown) {
       return { success: false, error: err instanceof Error ? err.message : String(err) };
     }
@@ -2297,7 +2470,12 @@ function registerIpcHandlers(): void {
     cwd: options.cwd || currentWorkspacePath
   }));
   ipcMain.handle('pty:get-shells', () => ({ success: true, data: getAvailableShells() }));
-  ipcMain.handle('pty:spawn', async (_event, options: PtySpawnOptions) => {
+  ipcMain.handle('pty:spawn', async (_event, rawOptions: unknown) => {
+    const parsed = PtySpawnOptionsSchema.safeParse(rawOptions || {});
+    if (!parsed.success) {
+      return { success: false, error: `Invalid pty spawn options: ${parsed.error.message}` };
+    }
+    const options = parsed.data;
     if (!mainWindow) return { success: false, error: 'No main window' };
     const response = await getSettings();
     const settings = response.data;
@@ -2307,11 +2485,32 @@ function registerIpcHandlers(): void {
     const cwd = options.cwd || currentWorkspacePath;
     return spawnPtySession(mainWindow, { ...options, shellId, cwd }, profile?.customShellPath);
   });
-  ipcMain.handle('pty:attach', (_event, ptyId: string) => attachPty(ptyId));
-  ipcMain.on('pty:write', (_event, payload: { ptyId: string; data: string }) => writePty(payload.ptyId, payload.data));
-  ipcMain.on('pty:resize', (_event, payload: { ptyId: string; cols: number; rows: number }) => resizePty(payload.ptyId, payload.cols, payload.rows));
-  ipcMain.on('pty:sync-cwd', (_event, payload: { ptyId: string; targetCwd: string; shellId: string }) => syncPtyCwd(payload.ptyId, payload.targetCwd, payload.shellId));
-  ipcMain.handle('pty:kill', (_event, ptyId: string) => killPty(ptyId));
+  ipcMain.handle('pty:attach', (_event, ptyId: unknown) => {
+    if (typeof ptyId !== 'string') return { success: false, error: 'ptyId must be a string' };
+    return attachPty(ptyId);
+  });
+  ipcMain.on('pty:write', (_event, payload: unknown) => {
+    const parsed = PtyWritePayloadSchema.safeParse(payload);
+    if (parsed.success) {
+      writePty(parsed.data.ptyId, parsed.data.data);
+    }
+  });
+  ipcMain.on('pty:resize', (_event, payload: unknown) => {
+    const parsed = PtyResizePayloadSchema.safeParse(payload);
+    if (parsed.success) {
+      resizePty(parsed.data.ptyId, parsed.data.cols, parsed.data.rows);
+    }
+  });
+  ipcMain.on('pty:sync-cwd', (_event, payload: unknown) => {
+    const parsed = PtySyncCwdPayloadSchema.safeParse(payload);
+    if (parsed.success) {
+      syncPtyCwd(parsed.data.ptyId, parsed.data.targetCwd, parsed.data.shellId);
+    }
+  });
+  ipcMain.handle('pty:kill', (_event, ptyId: unknown) => {
+    if (typeof ptyId !== 'string') return { success: false, error: 'ptyId must be a string' };
+    return killPty(ptyId);
+  });
 
   // Marketplace Connection Layer IPC (Open VSX)
   ipcMain.handle('marketplace:search', (event, options: unknown) => isTrustedExtensionFrame(event)
@@ -3398,10 +3597,15 @@ function registerFccHandlers(): void {
     const provider = typeof arg1 === 'object' && arg1 !== null ? arg1.provider : arg1;
     const key = typeof arg1 === 'object' && arg1 !== null ? arg1.key : arg2;
     if (!provider || !key || !String(key).trim()) return { success: false, error: 'Provider and key are required.' };
+    const strKey = String(key).trim();
+    if (strKey.includes('•') || strKey.includes('****')) {
+      // Masked key placeholder sent from renderer - keep existing vault credential intact
+      return { success: true };
+    }
     try {
-      await saveKey(provider, String(key).trim());
-      await credentialStore.saveCredential(provider, String(key).trim(), `${String(provider).toUpperCase()} Key`);
-      await mergeStoredApiKeys({ [String(provider).toLowerCase().trim()]: String(key).trim() });
+      await saveKey(provider, strKey);
+      await credentialStore.saveCredential(provider, strKey, `${String(provider).toUpperCase()} Key`);
+      await mergeStoredApiKeys({ [String(provider).toLowerCase().trim()]: strKey });
       return { success: true };
     } catch (err: unknown) {
       return { success: false, error: err instanceof Error ? err.message : String(err) };
@@ -3410,7 +3614,8 @@ function registerFccHandlers(): void {
 
   ipcMain.handle('get-provider-key', async (_event, arg1: any) => {
     const provider = typeof arg1 === 'object' && arg1 !== null ? arg1.provider : arg1;
-    return await getKey(provider);
+    const rawKey = await getKey(provider);
+    return rawKey ? maskKey(rawKey) : null;
   });
 
   ipcMain.handle('initiate-copilot-device-flow', async () => {
@@ -3562,10 +3767,13 @@ function createWindow(): void {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: true
+      sandbox: true,
+      webSecurity: true,
+      allowRunningInsecureContent: false
     }
   });
   mainWindow = window;
+  workspaceManager.setMainWindow(window);
   connectivityTracer.setMainWindow(window);
   bootProfiler.recordMark('window_created');
 
@@ -3598,6 +3806,15 @@ function createWindow(): void {
   if (devServerUrl) void window.loadURL(devServerUrl);
   else void window.loadFile(path.join(__dirname, '../renderer/index.html'));
 
+  // Trigger workspace opening if launched with a folder path
+  window.webContents.once('did-finish-load', () => {
+    const targetFolder = pendingMacOpenPath || extractFolderFromArgs(process.argv);
+    if (targetFolder) {
+      pendingMacOpenPath = null;
+      void workspaceManager.openWorkspace(targetFolder);
+    }
+  });
+
   window.on('close', (event) => {
     if (!isQuittingApp && backgroundTaskSupervisor.isRunInBackgroundEnabled()) {
       event.preventDefault();
@@ -3607,7 +3824,10 @@ function createWindow(): void {
   });
 
   window.on('closed', () => {
-    if (mainWindow === window) mainWindow = null;
+    if (mainWindow === window) {
+      mainWindow = null;
+      workspaceManager.setMainWindow(null);
+    }
   });
 
   // Initialize tray presence
@@ -4083,8 +4303,8 @@ app.on('open-url', (event, url) => {
   void providerOAuth.handleDeepLinkCallback(url);
 });
 
-// Deep-link capture on Windows / Linux via second-instance
-app.on('second-instance', (_event, commandLine) => {
+// Deep-link & Folder Opening capture on Windows / Linux via second-instance
+app.on('second-instance', (_event, commandLine, workingDirectory) => {
   if (mainWindow) {
     if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.focus();
@@ -4092,6 +4312,11 @@ app.on('second-instance', (_event, commandLine) => {
   const deepLinkArg = commandLine.find((arg) => arg.startsWith('ty-code://'));
   if (deepLinkArg) {
     void providerOAuth.handleDeepLinkCallback(deepLinkArg);
+  }
+
+  const folderPath = extractFolderFromArgs(commandLine, workingDirectory);
+  if (folderPath) {
+    void workspaceManager.openWorkspace(folderPath);
   }
 });
 
