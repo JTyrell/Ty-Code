@@ -245,13 +245,13 @@ export const ModelSelectorDropdown: React.FC<ModelSelectorDropdownProps> = ({
             fontSize: '10px',
             fontWeight: 500,
             borderRadius: '4px',
-            backgroundColor: selectedCategory === 'Premium/Reasoning' ? 'rgba(168, 85, 247, 0.2)' : 'var(--bg-hover)',
-            color: selectedCategory === 'Premium/Reasoning' ? '#c084fc' : 'var(--text-secondary)',
-            border: selectedCategory === 'Premium/Reasoning' ? '1px solid #c084fc' : 'none',
+            backgroundColor: selectedCategory === 'Premium/Reasoning' ? 'var(--surface-2)' : 'var(--bg-hover)',
+            color: selectedCategory === 'Premium/Reasoning' ? 'var(--accent-primary)' : 'var(--text-secondary)',
+            border: selectedCategory === 'Premium/Reasoning' ? '1px solid var(--accent-primary)' : 'none',
             cursor: 'pointer'
           }}
         >
-          <Cpu size={11} color="#c084fc" />
+          <Cpu size={11} color="var(--accent-primary)" />
           <span>Reasoning ({categoryCounts.premium})</span>
         </button>
       </div>
@@ -275,11 +275,17 @@ export const ModelSelectorDropdown: React.FC<ModelSelectorDropdownProps> = ({
           filteredModels.map((m) => {
             const isSelected = selectedModelId === m.id;
             const isFree = m.isFree || m.category === 'Free';
+            const availability = availabilityMap?.get(m.id);
+            const isLocked = Boolean(availability && availability !== 'available');
 
             return (
               <div
                 key={m.id}
-                onClick={() => onSelectModel(m.id, m)}
+                onClick={() => {
+                  if (isLocked) return;
+                  onSelectModel(m.id, m);
+                }}
+                title={isLocked ? `${m.id} is locked: the provider still needs a working key or service.` : undefined}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -288,12 +294,14 @@ export const ModelSelectorDropdown: React.FC<ModelSelectorDropdownProps> = ({
                   borderRadius: '6px',
                   backgroundColor: isSelected ? 'var(--bg-hover)' : 'var(--bg-primary)',
                   border: isSelected ? '1px solid var(--accent-primary)' : '1px solid var(--border-subtle)',
-                  cursor: 'pointer',
+                  cursor: isLocked ? 'help' : 'pointer',
+                  opacity: isLocked ? 0.6 : 1,
                   transition: 'background-color 0.1s ease'
                 }}
               >
                 <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, gap: '2px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    {isLocked && <Lock size={10} color="var(--text-muted)" style={{ flexShrink: 0 }} />}
                     <span
                       style={{
                         fontSize: '12px',
@@ -313,7 +321,7 @@ export const ModelSelectorDropdown: React.FC<ModelSelectorDropdownProps> = ({
                         style={{
                           fontSize: '9px',
                           fontWeight: 700,
-                          backgroundColor: 'rgba(16, 185, 129, 0.18)',
+                          backgroundColor: 'var(--surface-2)',
                           color: 'var(--accent-green)',
                           padding: '1px 5px',
                           borderRadius: '4px'
@@ -329,7 +337,7 @@ export const ModelSelectorDropdown: React.FC<ModelSelectorDropdownProps> = ({
                         style={{
                           fontSize: '9px',
                           fontWeight: 600,
-                          backgroundColor: 'rgba(6, 182, 212, 0.15)',
+                          backgroundColor: 'var(--surface-2)',
                           color: 'var(--accent-cyan)',
                           padding: '1px 5px',
                           borderRadius: '4px'
@@ -345,8 +353,8 @@ export const ModelSelectorDropdown: React.FC<ModelSelectorDropdownProps> = ({
                         style={{
                           fontSize: '9px',
                           fontWeight: 600,
-                          backgroundColor: 'rgba(168, 85, 247, 0.15)',
-                          color: '#c084fc',
+                          backgroundColor: 'var(--surface-2)',
+                          color: 'var(--accent-primary)',
                           padding: '1px 5px',
                           borderRadius: '4px'
                         }}

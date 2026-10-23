@@ -195,7 +195,7 @@ export const QuickConnectProvider: React.FC<QuickConnectProviderProps> = ({
             >
               <Key size={16} />
             </div>
-            <h2 id="quick-connect-title" style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: '#f8fafc' }}>
+            <h2 id="quick-connect-title" style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: 'var(--text-primary)' }}>
               Connect Provider
             </h2>
           </div>
@@ -206,7 +206,7 @@ export const QuickConnectProvider: React.FC<QuickConnectProviderProps> = ({
             style={{
               background: 'transparent',
               border: 'none',
-              color: '#94a3b8',
+              color: 'var(--text-secondary)',
               cursor: 'pointer',
               padding: '4px',
               borderRadius: '4px',
@@ -223,7 +223,7 @@ export const QuickConnectProvider: React.FC<QuickConnectProviderProps> = ({
           <div style={{ marginBottom: '16px' }}>
             <label
               htmlFor="quick-connect-provider-select"
-              style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: '#cbd5e1', marginBottom: '6px' }}
+              style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: 'var(--text-secondary)', marginBottom: '6px' }}
             >
               Select Provider
             </label>
@@ -240,14 +240,14 @@ export const QuickConnectProvider: React.FC<QuickConnectProviderProps> = ({
                 padding: '8px 12px',
                 fontSize: '13px',
                 background: 'rgba(255, 255, 255, 0.05)',
-                color: '#f8fafc',
+                color: 'var(--text-primary)',
                 border: '1px solid rgba(255, 255, 255, 0.15)',
                 borderRadius: '6px',
                 outline: 'none'
               }}
             >
               {PROVIDERS.map((p) => (
-                <option key={p.id} value={p.id} style={{ background: '#0f172a', color: '#f8fafc' }}>
+                <option key={p.id} value={p.id} style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>
                   {p.name}
                 </option>
               ))}
@@ -259,7 +259,7 @@ export const QuickConnectProvider: React.FC<QuickConnectProviderProps> = ({
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
               <label
                 htmlFor="quick-connect-key-input"
-                style={{ fontSize: '12px', fontWeight: 500, color: '#cbd5e1' }}
+                style={{ fontSize: '12px', fontWeight: 500, color: 'var(--text-secondary)' }}
               >
                 API Key
               </label>
@@ -275,7 +275,7 @@ export const QuickConnectProvider: React.FC<QuickConnectProviderProps> = ({
                     window.open(currentProviderConfig.keyHelpUrl, '_blank');
                   }
                 }}
-                style={{ fontSize: '11px', color: '#818cf8', textDecoration: 'none' }}
+                style={{ fontSize: '11px', color: 'var(--accent-primary)', textDecoration: 'none' }}
               >
                 Get {currentProviderConfig.name} Key ↗
               </a>
@@ -297,7 +297,7 @@ export const QuickConnectProvider: React.FC<QuickConnectProviderProps> = ({
                   padding: '9px 36px 9px 12px',
                   fontSize: '13px',
                   background: 'rgba(255, 255, 255, 0.05)',
-                  color: '#f8fafc',
+                  color: 'var(--text-primary)',
                   border: '1px solid rgba(255, 255, 255, 0.15)',
                   borderRadius: '6px',
                   outline: 'none',
@@ -312,7 +312,7 @@ export const QuickConnectProvider: React.FC<QuickConnectProviderProps> = ({
                   right: '8px',
                   background: 'transparent',
                   border: 'none',
-                  color: '#94a3b8',
+                  color: 'var(--text-secondary)',
                   cursor: 'pointer',
                   padding: '4px',
                   display: 'flex'
@@ -322,7 +322,7 @@ export const QuickConnectProvider: React.FC<QuickConnectProviderProps> = ({
                 {showKey ? <EyeOff size={15} /> : <Eye size={15} />}
               </button>
             </div>
-            <p style={{ margin: '6px 0 0', fontSize: '11px', color: '#64748b' }}>
+            <p style={{ margin: '6px 0 0', fontSize: '11px', color: 'var(--text-muted)' }}>
               Keys are encrypted locally via OS safeStorage (Windows DPAPI).
             </p>
           </div>
@@ -346,10 +346,10 @@ export const QuickConnectProvider: React.FC<QuickConnectProviderProps> = ({
                       : 'rgba(99, 102, 241, 0.15)',
                 color:
                   status === 'success'
-                    ? '#34d399'
+                    ? 'var(--accent-green)'
                     : status === 'error'
-                      ? '#f87171'
-                      : '#818cf8',
+                      ? 'var(--accent-red)'
+                      : 'var(--accent-primary)',
                 border: `1px solid ${
                   status === 'success'
                     ? 'rgba(16, 185, 129, 0.3)'
@@ -380,7 +380,7 @@ export const QuickConnectProvider: React.FC<QuickConnectProviderProps> = ({
                 padding: '8px 14px',
                 fontSize: '12px',
                 fontWeight: 500,
-                color: '#94a3b8',
+                color: 'var(--text-secondary)',
                 background: 'rgba(255, 255, 255, 0.05)',
                 border: '1px solid rgba(255, 255, 255, 0.1)',
                 borderRadius: '6px',
@@ -400,7 +400,7 @@ export const QuickConnectProvider: React.FC<QuickConnectProviderProps> = ({
                 fontSize: '12px',
                 fontWeight: 600,
                 color: '#ffffff',
-                background: status === 'success' ? '#10b981' : 'var(--accent-primary, #6366f1)',
+                background: status === 'success' ? 'var(--accent-green)' : 'var(--accent-primary, #6366f1)',
                 border: 'none',
                 borderRadius: '6px',
                 cursor: loading || !apiKey.trim() ? 'not-allowed' : 'pointer',

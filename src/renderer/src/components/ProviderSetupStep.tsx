@@ -69,7 +69,7 @@ export const PROVIDER_CATALOG: Record<string, ProviderCatalogEntry> = {
       'google/gemma-4-31b-it:free'
     ],
     badges: ['Most Popular', '10+ free models'],
-    accentColor: '#6366f1'
+    accentColor: 'var(--accent-primary)'
   },
   groq: {
     id: 'groq',
@@ -90,7 +90,7 @@ export const PROVIDER_CATALOG: Record<string, ProviderCatalogEntry> = {
       'llama-3.1-8b-instant'
     ],
     badges: ['Ultra-Fast', '300+ tok/s'],
-    accentColor: '#f97316'
+    accentColor: 'var(--accent-amber)'
   },
   'google-gemini': {
     id: 'google-gemini',
@@ -112,7 +112,7 @@ export const PROVIDER_CATALOG: Record<string, ProviderCatalogEntry> = {
       'gemini-1.5-pro'
     ],
     badges: ['Multimodal', 'Large Context'],
-    accentColor: '#38bdf8'
+    accentColor: 'var(--accent-cyan)'
   },
   ollama: {
     id: 'ollama',
@@ -129,7 +129,7 @@ export const PROVIDER_CATALOG: Record<string, ProviderCatalogEntry> = {
     defaultModel: 'qwen2.5-coder',
     freeModels: ['qwen2.5-coder', 'llama3.2', 'deepseek-coder-v2'],
     badges: ['Offline', 'Private'],
-    accentColor: '#10b981'
+    accentColor: 'var(--accent-green)'
   }
 };
 
@@ -164,7 +164,7 @@ export const ProviderSetupStep: React.FC<ProviderSetupStepProps> = ({
     defaultModel: `${normId}-default`,
     freeModels: [`${normId}-default`],
     badges: ['API Key'],
-    accentColor: '#6366f1'
+    accentColor: 'var(--accent-primary)'
   } as ProviderCatalogEntry;
   const REAL_SIGNUP_URLS: Record<string, string> = {
     anthropic: 'https://console.anthropic.com/settings/keys',
@@ -373,7 +373,7 @@ export const ProviderSetupStep: React.FC<ProviderSetupStepProps> = ({
           </div>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 600, color: '#f8fafc' }}>
+              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 600, color: 'var(--text-primary)' }}>
                 Connect {config.name}
               </h3>
               {isAlreadyConnected && (
@@ -387,7 +387,7 @@ export const ProviderSetupStep: React.FC<ProviderSetupStepProps> = ({
                     fontSize: '11px',
                     fontWeight: 600,
                     background: 'rgba(16, 185, 129, 0.15)',
-                    color: '#34d399',
+                    color: 'var(--accent-green)',
                     border: '1px solid rgba(16, 185, 129, 0.3)'
                   }}
                 >
@@ -396,7 +396,7 @@ export const ProviderSetupStep: React.FC<ProviderSetupStepProps> = ({
                 </span>
               )}
             </div>
-            <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: '#94a3b8' }}>
+            <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: 'var(--text-secondary)' }}>
               {config.tagline}
             </p>
           </div>
@@ -412,7 +412,7 @@ export const ProviderSetupStep: React.FC<ProviderSetupStepProps> = ({
                 padding: '2px 8px',
                 borderRadius: '6px',
                 background: 'rgba(255, 255, 255, 0.06)',
-                color: '#cbd5e1',
+                color: 'var(--text-secondary)',
                 border: '1px solid rgba(255, 255, 255, 0.08)'
               }}
             >
@@ -431,10 +431,10 @@ export const ProviderSetupStep: React.FC<ProviderSetupStepProps> = ({
           border: '1px solid rgba(255, 255, 255, 0.05)'
         }}
       >
-        <div style={{ fontSize: '12px', fontWeight: 600, color: '#cbd5e1', marginBottom: '8px' }}>
+        <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px' }}>
           How to get your free key:
         </div>
-        <ol style={{ margin: 0, paddingLeft: '18px', fontSize: '12px', color: '#94a3b8', lineHeight: 1.6 }}>
+        <ol style={{ margin: 0, paddingLeft: '18px', fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
           {config.instructions.map((step, idx) => (
             <li key={idx} style={{ marginBottom: '4px' }}>
               {step}
@@ -453,7 +453,7 @@ export const ProviderSetupStep: React.FC<ProviderSetupStepProps> = ({
               background: ollamaDetected ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
               border: `1px solid ${ollamaDetected ? 'rgba(16, 185, 129, 0.25)' : 'rgba(239, 68, 68, 0.25)'}`,
               fontSize: '12px',
-              color: ollamaDetected ? '#34d399' : '#f87171',
+              color: ollamaDetected ? 'var(--accent-green)' : 'var(--accent-red)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between'
@@ -499,7 +499,7 @@ export const ProviderSetupStep: React.FC<ProviderSetupStepProps> = ({
                 borderRadius: '8px',
                 background: 'rgba(255, 255, 255, 0.08)',
                 border: '1px solid rgba(255, 255, 255, 0.15)',
-                color: '#f8fafc',
+                color: 'var(--text-primary)',
                 fontSize: '12px',
                 fontWeight: 600,
                 cursor: 'pointer',
@@ -554,7 +554,7 @@ export const ProviderSetupStep: React.FC<ProviderSetupStepProps> = ({
                 style={{
                   background: 'transparent',
                   border: 'none',
-                  color: '#94a3b8',
+                  color: 'var(--text-secondary)',
                   fontSize: '12px',
                   cursor: 'pointer',
                   padding: '6px 10px',
@@ -569,9 +569,9 @@ export const ProviderSetupStep: React.FC<ProviderSetupStepProps> = ({
           {/* Key Input Section */}
           {showKeyInput && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px' }}>
-              <div style={{ fontSize: '11px', color: '#94a3b8', display: 'flex', justifyContent: 'space-between' }}>
+              <div style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'flex', justifyContent: 'space-between' }}>
                 <span>Paste your {config.keyFormat}:</span>
-                <span style={{ color: '#10b981' }}>Saved only to local OS safeStorage</span>
+                <span style={{ color: 'var(--accent-green)' }}>Saved only to local OS safeStorage</span>
               </div>
 
               <KeyInputField
@@ -599,7 +599,7 @@ export const ProviderSetupStep: React.FC<ProviderSetupStepProps> = ({
                     padding: '7px 16px',
                     borderRadius: '6px',
                     background: hasValidTest ? 'var(--accent-primary, #6366f1)' : 'rgba(255, 255, 255, 0.08)',
-                    color: hasValidTest ? '#ffffff' : '#64748b',
+                    color: hasValidTest ? '#ffffff' : 'var(--text-muted)',
                     border: 'none',
                     fontSize: '12px',
                     fontWeight: 600,
@@ -628,7 +628,7 @@ export const ProviderSetupStep: React.FC<ProviderSetupStepProps> = ({
 
       {/* Free Models Included */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', paddingTop: '4px' }}>
-        <span style={{ fontSize: '11px', color: '#64748b' }}>Free models included:</span>
+        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Free models included:</span>
         {config.freeModels.map((m) => (
           <code
             key={m}
@@ -637,7 +637,7 @@ export const ProviderSetupStep: React.FC<ProviderSetupStepProps> = ({
               padding: '2px 6px',
               borderRadius: '4px',
               background: 'rgba(255, 255, 255, 0.04)',
-              color: '#94a3b8',
+              color: 'var(--text-secondary)',
               border: '1px solid rgba(255, 255, 255, 0.06)'
             }}
           >
@@ -665,7 +665,7 @@ export const ProviderSetupStep: React.FC<ProviderSetupStepProps> = ({
               style={{
                 background: 'transparent',
                 border: 'none',
-                color: '#94a3b8',
+                color: 'var(--text-secondary)',
                 fontSize: '12px',
                 cursor: 'pointer',
                 padding: '6px 12px'
@@ -684,7 +684,7 @@ export const ProviderSetupStep: React.FC<ProviderSetupStepProps> = ({
               style={{
                 background: 'transparent',
                 border: 'none',
-                color: '#94a3b8',
+                color: 'var(--text-secondary)',
                 fontSize: '12px',
                 cursor: 'pointer',
                 padding: '6px 12px'

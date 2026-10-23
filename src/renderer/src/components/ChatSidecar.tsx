@@ -396,7 +396,7 @@ export const ConnectProviderCard: React.FC<{ errorCard: ChatErrorCardType; onRet
               <span>{saving ? 'Saving…' : saved ? 'Connected! Retrying…' : 'Save & Connect'}</span>
             </button>
           </div>
-          {saveError && <div style={{ color: '#ef4444', fontSize: '11px', marginTop: '6px' }}>{saveError}</div>}
+          {saveError && <div style={{ color: 'var(--accent-red)', fontSize: '11px', marginTop: '6px' }}>{saveError}</div>}
         </form>
 
         <div className="chat-error-helper-links">
@@ -536,11 +536,11 @@ export const QuotaExhaustedCard: React.FC<{ errorCard: ChatErrorCardType; onRetr
               gap: '8px'
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#c084fc', fontWeight: 600, fontSize: '13px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--accent-primary)', fontWeight: 600, fontSize: '13px' }}>
               <Sparkles size={16} />
               <span>Anonymous tier limit reached — connect your free OpenRouter account for 10x more requests</span>
             </div>
-            <p style={{ margin: 0, fontSize: '12px', color: '#cbd5e1' }}>
+            <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-secondary)' }}>
               Take 2 minutes to connect your free OpenRouter, Groq, or Google AI Studio accounts. No credit card required.
             </p>
             <button
@@ -580,11 +580,11 @@ export const QuotaExhaustedCard: React.FC<{ errorCard: ChatErrorCardType; onRetr
             gap: '8px'
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#34d399', fontWeight: 600, fontSize: '13px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--accent-green)', fontWeight: 600, fontSize: '13px' }}>
             <Sparkles size={16} />
             <span>Connect your Copilot subscription — no extra cost</span>
           </div>
-          <p style={{ margin: 0, fontSize: '12px', color: '#cbd5e1' }}>
+          <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-secondary)' }}>
             Never hit rate limits. Ty-Code supports device-flow authentication for GitHub Copilot and ChatGPT OAuth. Zero API billing.
           </p>
           <div style={{ display: 'flex', gap: '8px', marginTop: '2px' }}>
@@ -596,7 +596,7 @@ export const QuotaExhaustedCard: React.FC<{ errorCard: ChatErrorCardType; onRetr
                 alignItems: 'center',
                 gap: '6px',
                 padding: '6px 14px',
-                background: '#10b981',
+                background: 'var(--accent-green)',
                 color: '#ffffff',
                 border: 'none',
                 borderRadius: '6px',
@@ -616,7 +616,7 @@ export const QuotaExhaustedCard: React.FC<{ errorCard: ChatErrorCardType; onRetr
                 gap: '6px',
                 padding: '6px 14px',
                 background: 'rgba(255, 255, 255, 0.08)',
-                color: '#e2e8f0',
+                color: 'var(--text-secondary)',
                 border: '1px solid rgba(255, 255, 255, 0.15)',
                 borderRadius: '6px',
                 fontSize: '12px',
@@ -1334,7 +1334,7 @@ export const ChatSidecar: React.FC = () => {
               title="Plan Agent: Read-only exploration and planning. Refuses file edits, bash commands require permission."
               aria-pressed={agentMode === 'plan'}
               style={{
-                background: agentMode === 'plan' ? '#f59e0b' : 'transparent',
+                background: agentMode === 'plan' ? 'var(--accent-amber)' : 'transparent',
                 color: agentMode === 'plan' ? '#fff' : 'var(--text-muted)'
               }}
             >
@@ -1359,7 +1359,7 @@ export const ChatSidecar: React.FC = () => {
           alignItems: 'center',
           gap: '6px',
           fontSize: '11px',
-          color: '#f59e0b',
+          color: 'var(--accent-amber)',
           lineHeight: '1.3'
         }}
       >
@@ -1384,7 +1384,7 @@ export const ChatSidecar: React.FC = () => {
               fontWeight: 600,
               borderRadius: 4,
               background: isPairActive ? 'rgba(239, 68, 68, 0.2)' : 'rgba(34, 197, 94, 0.2)',
-              color: isPairActive ? '#ef4444' : '#22c55e',
+              color: isPairActive ? 'var(--accent-red)' : 'var(--accent-green)',
               border: `1px solid ${isPairActive ? 'rgba(239, 68, 68, 0.4)' : 'rgba(34, 197, 94, 0.4)'}`,
               cursor: 'pointer'
             }}
@@ -1404,7 +1404,7 @@ export const ChatSidecar: React.FC = () => {
             {suggestions.map((sug) => (
               <div key={sug.id} style={{ padding: 10, borderRadius: 6, background: 'var(--bg-primary)', border: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: sug.type === 'bug-alert' ? '#ef4444' : sug.type === 'tdd-step' ? '#f59e0b' : '#38bdf8' }}>{sug.title}</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: sug.type === 'bug-alert' ? 'var(--accent-red)' : sug.type === 'tdd-step' ? 'var(--accent-amber)' : 'var(--accent-cyan)' }}>{sug.title}</span>
                   <button type="button" onClick={() => dismissSuggestion(sug.id)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 2 }}><X size={11} /></button>
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{sug.message}</div>

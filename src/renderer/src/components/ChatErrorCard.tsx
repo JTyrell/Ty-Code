@@ -25,8 +25,8 @@ export interface ChatErrorCardProps {
   className?: string;
 }
 
-const AMBER = '#f59e0b';
-const RED = '#ef4444';
+const AMBER = 'var(--accent-amber)';
+const RED = 'var(--accent-red)';
 
 function timed(label: string, fn: () => void): void {
   console.time(label);
@@ -84,7 +84,7 @@ export const ChatErrorCard: React.FC<ChatErrorCardProps> = ({ errorCard, error, 
 
   const secondary: React.CSSProperties = {
     display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 10px', fontSize: 11, fontWeight: 500,
-    borderRadius: 5, border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.04)', color: '#cbd5e1', cursor: 'pointer'
+    borderRadius: 5, border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.04)', color: 'var(--text-secondary)', cursor: 'pointer'
   };
 
   return (
@@ -93,7 +93,7 @@ export const ChatErrorCard: React.FC<ChatErrorCardProps> = ({ errorCard, error, 
       role="alert"
       data-taxonomy-code={code}
       style={{
-        margin: '10px 0', padding: '14px 16px', color: '#f1f5f9', borderRadius: 8, border: `1px solid ${border}`,
+        margin: '10px 0', padding: '14px 16px', color: 'var(--text-primary)', borderRadius: 8, border: `1px solid ${border}`,
         background: 'linear-gradient(180deg, rgba(18,24,38,0.95), rgba(12,16,23,0.98))', boxShadow: `0 4px 20px ${isAmber ? 'rgba(245,158,11,0.12)' : 'rgba(239,68,68,0.12)'}`,
         maxWidth: '100%', boxSizing: 'border-box', overflowWrap: 'anywhere', wordBreak: 'break-word', minWidth: 0
       }}
@@ -102,18 +102,18 @@ export const ChatErrorCard: React.FC<ChatErrorCardProps> = ({ errorCard, error, 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <Icon size={15} color={accent} />
           <span style={{ padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 700, fontFamily: 'var(--font-mono, monospace)', color: accent, border: `1px solid ${border}`, background: isAmber ? 'rgba(245,158,11,0.15)' : 'rgba(239,68,68,0.15)' }}>{code}</span>
-          {card.providerId && <span style={{ fontSize: 11, color: '#94a3b8' }}>{card.providerId}</span>}
+          {card.providerId && <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{card.providerId}</span>}
         </div>
         {onDismiss && (
           <button type="button" aria-label="Dismiss error card" onClick={() => timed('button_click', onDismiss)}
-            style={{ background: 'transparent', border: 'none', color: '#64748b', cursor: 'pointer', padding: 4 }}><X size={14} /></button>
+            style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 4 }}><X size={14} /></button>
         )}
       </div>
 
-      <p style={{ margin: '0 0 10px', fontSize: 13, lineHeight: 1.5, fontWeight: 500, color: '#f8fafc', overflowWrap: 'anywhere', wordBreak: 'break-word', minWidth: 0 }}>{card.message}</p>
+      <p style={{ margin: '0 0 10px', fontSize: 13, lineHeight: 1.5, fontWeight: 500, color: 'var(--text-primary)', overflowWrap: 'anywhere', wordBreak: 'break-word', minWidth: 0 }}>{card.message}</p>
 
       {card.remedy && (
-        <div style={{ display: 'flex', gap: 8, padding: '8px 10px', marginBottom: 12, fontSize: 12, lineHeight: 1.4, color: '#cbd5e1', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 6, minWidth: 0, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
+        <div style={{ display: 'flex', gap: 8, padding: '8px 10px', marginBottom: 12, fontSize: 12, lineHeight: 1.4, color: 'var(--text-secondary)', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 6, minWidth: 0, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
           <Lightbulb size={14} color={AMBER} style={{ flexShrink: 0, marginTop: 2 }} />
           <span style={{ minWidth: 0, overflowWrap: 'anywhere', wordBreak: 'break-word', flex: 1 }}><strong style={{ color: AMBER }}>Remedy:</strong> {card.remedy}</span>
         </div>
@@ -124,13 +124,13 @@ export const ChatErrorCard: React.FC<ChatErrorCardProps> = ({ errorCard, error, 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         {card.actionLabel ? (
           <button type="button" onClick={runAction}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', fontSize: 12, fontWeight: 600, borderRadius: 5, border: `1px solid ${border}`, background: isAmber ? '#d97706' : 'var(--accent-primary, #6366f1)', color: '#fff', cursor: 'pointer' }}>
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', fontSize: 12, fontWeight: 600, borderRadius: 5, border: `1px solid ${border}`, background: isAmber ? 'var(--accent-amber)' : 'var(--accent-primary, #6366f1)', color: '#fff', cursor: 'pointer' }}>
             {card.actionLabel === 'Retry' ? <RotateCcw size={12} /> : <ExternalLink size={12} />}
             <span>{card.actionLabel}</span>
           </button>
         ) : onRetry ? (
           <button type="button" onClick={() => timed('button_click', onRetry)}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', fontSize: 12, fontWeight: 600, borderRadius: 5, border: `1px solid ${border}`, background: '#d97706', color: '#fff', cursor: 'pointer' }}>
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', fontSize: 12, fontWeight: 600, borderRadius: 5, border: `1px solid ${border}`, background: 'var(--accent-amber)', color: '#fff', cursor: 'pointer' }}>
             <RotateCcw size={12} /><span>Retry</span>
           </button>
         ) : null}

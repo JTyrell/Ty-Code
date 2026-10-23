@@ -327,7 +327,7 @@ export const ProviderSetupCard: React.FC<ProviderSetupCardProps> = ({
         borderRadius: '12px',
         padding: '16px 20px',
         boxShadow: '0 10px 30px -10px rgba(0, 0, 0, 0.7), 0 0 20px rgba(56, 189, 248, 0.15)',
-        color: '#f8fafc',
+        color: 'var(--text-primary)',
         fontFamily: 'inherit'
       }}
       role="alert"
@@ -336,7 +336,7 @@ export const ProviderSetupCard: React.FC<ProviderSetupCardProps> = ({
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '6px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <span style={{ fontSize: '16px' }}>🔑</span>
-          <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: '#f8fafc' }}>
+          <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: 'var(--text-primary)' }}>
             Connect Provider: {meta.name}
           </h3>
         </div>
@@ -344,7 +344,7 @@ export const ProviderSetupCard: React.FC<ProviderSetupCardProps> = ({
           <span
             style={{
               fontSize: '11px',
-              color: '#38bdf8',
+              color: 'var(--accent-cyan)',
               backgroundColor: 'rgba(56, 189, 248, 0.15)',
               border: '1px solid rgba(56, 189, 248, 0.3)',
               borderRadius: '4px',
@@ -364,7 +364,7 @@ export const ProviderSetupCard: React.FC<ProviderSetupCardProps> = ({
             style={{
               background: 'none',
               border: 'none',
-              color: '#94a3b8',
+              color: 'var(--text-secondary)',
               cursor: 'pointer',
               padding: '2px',
               display: 'flex',
@@ -377,8 +377,8 @@ export const ProviderSetupCard: React.FC<ProviderSetupCardProps> = ({
       </div>
 
       {/* Subheader */}
-      <div style={{ fontSize: '12px', color: '#94a3b8', marginBottom: '12px' }}>
-        Model: <span style={{ color: '#e2e8f0', fontFamily: 'monospace' }}>{activeModel}</span>
+      <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '12px' }}>
+        Model: <span style={{ color: 'var(--text-secondary)', fontFamily: 'monospace' }}>{activeModel}</span>
       </div>
 
       {/* Auto-detect prompt banner */}
@@ -394,7 +394,7 @@ export const ProviderSetupCard: React.FC<ProviderSetupCardProps> = ({
           marginBottom: '12px'
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#cbd5e1' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--text-secondary)' }}>
           <Zap size={14} color="#38bdf8" />
           <span>Have keys in your environment or configs?</span>
         </div>
@@ -404,7 +404,7 @@ export const ProviderSetupCard: React.FC<ProviderSetupCardProps> = ({
           onClick={handleAutoDetect}
           style={{
             padding: '5px 12px',
-            backgroundColor: isAutoDetecting ? '#0369a1' : '#0284c7',
+            backgroundColor: isAutoDetecting ? 'var(--accent-cyan)' : 'var(--accent-cyan)',
             border: 'none',
             borderRadius: '5px',
             color: '#ffffff',
@@ -440,7 +440,7 @@ export const ProviderSetupCard: React.FC<ProviderSetupCardProps> = ({
               backgroundColor: 'rgba(30, 41, 59, 0.8)',
               border: errorMessage ? '1px solid #ef4444' : '1px solid rgba(56, 189, 248, 0.3)',
               borderRadius: '6px',
-              color: '#f8fafc',
+              color: 'var(--text-primary)',
               fontSize: '13px',
               fontFamily: 'monospace',
               outline: 'none',
@@ -457,7 +457,7 @@ export const ProviderSetupCard: React.FC<ProviderSetupCardProps> = ({
                 background: 'rgba(51, 65, 85, 0.7)',
                 border: 'none',
                 borderRadius: '4px',
-                color: '#94a3b8',
+                color: 'var(--text-secondary)',
                 padding: '4px 6px',
                 cursor: 'pointer',
                 display: 'flex',
@@ -476,7 +476,7 @@ export const ProviderSetupCard: React.FC<ProviderSetupCardProps> = ({
               style={{
                 background: 'none',
                 border: 'none',
-                color: '#94a3b8',
+                color: 'var(--text-secondary)',
                 padding: '4px',
                 cursor: 'pointer'
               }}
@@ -494,7 +494,7 @@ export const ProviderSetupCard: React.FC<ProviderSetupCardProps> = ({
               border: '1px solid rgba(239, 68, 68, 0.4)',
               borderRadius: '6px',
               padding: '8px 12px',
-              color: '#f87171',
+              color: 'var(--accent-red)',
               fontSize: '12px',
               display: 'flex',
               alignItems: 'center',
@@ -513,7 +513,7 @@ export const ProviderSetupCard: React.FC<ProviderSetupCardProps> = ({
               border: '1px solid rgba(34, 197, 94, 0.4)',
               borderRadius: '6px',
               padding: '8px 12px',
-              color: '#4ade80',
+              color: 'var(--accent-green)',
               fontSize: '12px',
               display: 'flex',
               alignItems: 'center',
@@ -533,7 +533,7 @@ export const ProviderSetupCard: React.FC<ProviderSetupCardProps> = ({
             style={{
               background: 'none',
               border: 'none',
-              color: '#38bdf8',
+              color: 'var(--accent-cyan)',
               cursor: 'pointer',
               fontSize: '12px',
               display: 'flex',
@@ -552,7 +552,7 @@ export const ProviderSetupCard: React.FC<ProviderSetupCardProps> = ({
             disabled={!apiKey.trim() || isTesting || isSaving}
             style={{
               padding: '8px 16px',
-              backgroundColor: isSaving || successMessage ? '#16a34a' : '#0284c7',
+              backgroundColor: isSaving || successMessage ? 'var(--accent-green)' : 'var(--accent-cyan)',
               border: 'none',
               borderRadius: '6px',
               color: '#ffffff',
@@ -602,7 +602,7 @@ export const ProviderSetupCard: React.FC<ProviderSetupCardProps> = ({
           flexWrap: 'wrap'
         }}
       >
-        <span style={{ fontSize: '11px', color: '#94a3b8' }}>Or switch to free alternative:</span>
+        <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Or switch to free alternative:</span>
         <button
           type="button"
           onClick={() => handleSwitchAlternative('openkilo')}
@@ -611,7 +611,7 @@ export const ProviderSetupCard: React.FC<ProviderSetupCardProps> = ({
             backgroundColor: 'rgba(56, 189, 248, 0.15)',
             border: '1px solid rgba(56, 189, 248, 0.4)',
             borderRadius: '4px',
-            color: '#38bdf8',
+            color: 'var(--accent-cyan)',
             fontSize: '11px',
             fontWeight: 600,
             cursor: 'pointer',
@@ -632,7 +632,7 @@ export const ProviderSetupCard: React.FC<ProviderSetupCardProps> = ({
               backgroundColor: 'rgba(51, 65, 85, 0.6)',
               border: '1px solid rgba(148, 163, 184, 0.3)',
               borderRadius: '4px',
-              color: '#f8fafc',
+              color: 'var(--text-primary)',
               fontSize: '11px',
               cursor: 'pointer',
               display: 'flex',
@@ -653,7 +653,7 @@ export const ProviderSetupCard: React.FC<ProviderSetupCardProps> = ({
               backgroundColor: 'rgba(51, 65, 85, 0.6)',
               border: '1px solid rgba(148, 163, 184, 0.3)',
               borderRadius: '4px',
-              color: '#f8fafc',
+              color: 'var(--text-primary)',
               fontSize: '11px',
               cursor: 'pointer',
               display: 'flex',
@@ -674,7 +674,7 @@ export const ProviderSetupCard: React.FC<ProviderSetupCardProps> = ({
               backgroundColor: 'rgba(51, 65, 85, 0.6)',
               border: '1px solid rgba(148, 163, 184, 0.3)',
               borderRadius: '4px',
-              color: '#f8fafc',
+              color: 'var(--text-primary)',
               fontSize: '11px',
               cursor: 'pointer',
               display: 'flex',

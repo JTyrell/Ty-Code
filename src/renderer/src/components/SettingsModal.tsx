@@ -965,7 +965,7 @@ export const SettingsModal: React.FC = () => {
           <button
             className={activeTab === 'byok' ? 'is-active' : ''}
             onClick={() => setActiveTab('byok')}
-            style={{ color: activeTab === 'byok' ? '#f43f5e' : undefined }}
+            style={{ color: activeTab === 'byok' ? 'var(--accent-red)' : undefined }}
             id="tab-btn-byok"
             data-tab="byok"
           >
@@ -974,7 +974,7 @@ export const SettingsModal: React.FC = () => {
           <button
             className={activeTab === 'usage' ? 'is-active' : ''}
             onClick={() => setActiveTab('usage')}
-            style={{ color: activeTab === 'usage' ? '#10b981' : undefined }}
+            style={{ color: activeTab === 'usage' ? 'var(--accent-green)' : undefined }}
             id="tab-btn-usage"
             data-tab="usage"
           >
@@ -983,7 +983,7 @@ export const SettingsModal: React.FC = () => {
           <button
             className={activeTab === 'opencode' ? 'is-active' : ''}
             onClick={() => setActiveTab('opencode')}
-            style={{ color: activeTab === 'opencode' ? '#06b6d4' : undefined }}
+            style={{ color: activeTab === 'opencode' ? 'var(--accent-cyan)' : undefined }}
             id="tab-btn-opencode"
             data-tab="opencode"
           >
@@ -992,7 +992,7 @@ export const SettingsModal: React.FC = () => {
           <button
             className={activeTab === 'orchestration' ? 'is-active' : ''}
             onClick={() => setActiveTab('orchestration')}
-            style={{ color: activeTab === 'orchestration' ? '#38bdf8' : undefined }}
+            style={{ color: activeTab === 'orchestration' ? 'var(--accent-cyan)' : undefined }}
             id="tab-btn-orchestration"
             data-tab="orchestration"
           >
@@ -1001,7 +1001,7 @@ export const SettingsModal: React.FC = () => {
           <button
             className={activeTab === 'openkilo' ? 'is-active' : ''}
             onClick={() => setActiveTab('openkilo')}
-            style={{ color: activeTab === 'openkilo' ? '#10b981' : undefined }}
+            style={{ color: activeTab === 'openkilo' ? 'var(--accent-green)' : undefined }}
             id="tab-btn-openkilo"
             data-tab="openkilo"
           >
@@ -1010,7 +1010,7 @@ export const SettingsModal: React.FC = () => {
           <button
             className={activeTab === 'fcc' ? 'is-active' : ''}
             onClick={() => setActiveTab('fcc')}
-            style={{ color: activeTab === 'fcc' ? '#f59e0b' : undefined }}
+            style={{ color: activeTab === 'fcc' ? 'var(--accent-amber)' : undefined }}
             id="tab-btn-fcc"
             data-tab="fcc"
           >
@@ -1019,7 +1019,7 @@ export const SettingsModal: React.FC = () => {
           <button
             className={activeTab === 'integrations' ? 'is-active' : ''}
             onClick={() => setActiveTab('integrations')}
-            style={{ color: activeTab === 'integrations' ? '#c084fc' : undefined }}
+            style={{ color: activeTab === 'integrations' ? 'var(--accent-primary)' : undefined }}
             id="tab-btn-integrations"
             data-tab="integrations"
           >
@@ -1092,7 +1092,7 @@ export const SettingsModal: React.FC = () => {
           <button
             className={activeTab === 'diagnostics' ? 'is-active' : ''}
             onClick={() => setActiveTab('diagnostics')}
-            style={{ color: activeTab === 'diagnostics' ? '#38bdf8' : undefined }}
+            style={{ color: activeTab === 'diagnostics' ? 'var(--accent-cyan)' : undefined }}
             id="tab-btn-diagnostics"
             data-tab="diagnostics"
           >
@@ -1154,7 +1154,7 @@ export const SettingsModal: React.FC = () => {
                       width: '100%',
                       maxWidth: '680px',
                       maxHeight: '88vh',
-                      backgroundColor: '#0f172a',
+                      backgroundColor: 'var(--bg-primary)',
                       border: '1px solid rgba(255, 255, 255, 0.15)',
                       borderRadius: '12px',
                       boxShadow: '0 25px 60px -15px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.1)',
@@ -1190,10 +1190,10 @@ export const SettingsModal: React.FC = () => {
                           <Key size={16} color="#818cf8" />
                         </div>
                         <div>
-                          <h3 id="provider-modal-title" style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: '#f8fafc' }}>
+                          <h3 id="provider-modal-title" style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: 'var(--text-primary)' }}>
                             {isCustomSelected ? 'Configure Custom OpenAI Provider' : `Configure & Test: ${currentProvider.name}`}
                           </h3>
-                          <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: '#94a3b8' }}>
+                          <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: 'var(--text-secondary)' }}>
                             {isCustomSelected
                               ? 'Enter endpoint URL and test connectivity for your local/remote server'
                               : (currentProvider.notes || `Set up API key and verify connection for ${currentProvider.name}`)}
@@ -1210,7 +1210,7 @@ export const SettingsModal: React.FC = () => {
                           background: 'rgba(255, 255, 255, 0.05)',
                           border: 'none',
                           borderRadius: '6px',
-                          color: '#94a3b8',
+                          color: 'var(--text-secondary)',
                           cursor: 'pointer',
                           padding: '6px',
                           display: 'flex',
@@ -1339,7 +1339,7 @@ export const SettingsModal: React.FC = () => {
                       fontWeight: 600,
                       border: 'none',
                       background: byokSubTab === st.id ? 'var(--accent-primary)' : 'transparent',
-                      color: byokSubTab === st.id ? '#ffffff' : '#94a3b8',
+                      color: byokSubTab === st.id ? '#ffffff' : 'var(--text-secondary)',
                       cursor: 'pointer',
                       transition: 'all 0.15s ease'
                     }}
@@ -1432,11 +1432,11 @@ export const SettingsModal: React.FC = () => {
                 }}
               >
                 <div>
-                  <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <Layers size={16} color="#38bdf8" />
                     Automated Model Orchestration &amp; Quota Balancing
                   </h3>
-                  <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#94a3b8' }}>
+                  <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: 'var(--text-secondary)' }}>
                     Ty-Code automatically selects the optimal free model for code generation, reasoning, large context, vision, and quick responses.
                   </p>
                 </div>
@@ -1453,7 +1453,7 @@ export const SettingsModal: React.FC = () => {
                     gap: '6px',
                     padding: '8px 14px',
                     borderRadius: '6px',
-                    background: '#0ea5e9',
+                    background: 'var(--accent-cyan)',
                     color: '#ffffff',
                     border: 'none',
                     fontWeight: 600,
@@ -1505,7 +1505,7 @@ export const SettingsModal: React.FC = () => {
                       left: 0,
                       right: 0,
                       bottom: 0,
-                      backgroundColor: freeMode ? '#10b981' : '#334155',
+                      backgroundColor: freeMode ? 'var(--accent-green)' : 'var(--bg-active)',
                       borderRadius: '22px',
                       transition: '0.2s'
                     }}
@@ -1541,7 +1541,7 @@ export const SettingsModal: React.FC = () => {
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>Automatic Provider Failover &amp; Rotation</span>
-                    <span style={{ fontSize: '10px', padding: '1px 6px', borderRadius: '4px', backgroundColor: autoRotateProviders ? 'rgba(56, 189, 248, 0.2)' : 'rgba(255, 255, 255, 0.05)', color: autoRotateProviders ? '#38bdf8' : '#94a3b8', fontWeight: 600 }}>
+                    <span style={{ fontSize: '10px', padding: '1px 6px', borderRadius: '4px', backgroundColor: autoRotateProviders ? 'rgba(56, 189, 248, 0.2)' : 'rgba(255, 255, 255, 0.05)', color: autoRotateProviders ? 'var(--accent-cyan)' : 'var(--text-secondary)', fontWeight: 600 }}>
                       {autoRotateProviders ? 'ENABLED' : 'MANUAL'}
                     </span>
                   </div>
@@ -1564,7 +1564,7 @@ export const SettingsModal: React.FC = () => {
                       left: 0,
                       right: 0,
                       bottom: 0,
-                      backgroundColor: autoRotateProviders ? '#0ea5e9' : '#334155',
+                      backgroundColor: autoRotateProviders ? 'var(--accent-cyan)' : 'var(--bg-active)',
                       borderRadius: '22px',
                       transition: '0.2s'
                     }}
@@ -1601,7 +1601,7 @@ export const SettingsModal: React.FC = () => {
                   <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>
                     Quota Warning Threshold
                   </span>
-                  <span style={{ fontSize: '12px', fontWeight: 600, color: '#38bdf8' }}>
+                  <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--accent-cyan)' }}>
                     {quotaAlertThreshold}% Used
                   </span>
                 </div>
@@ -1775,7 +1775,7 @@ export const SettingsModal: React.FC = () => {
                       color: 'var(--text-primary)'
                     }}
                   >
-                    <div style={{ fontWeight: 600, color: '#818cf8', marginBottom: '4px' }}>
+                    <div style={{ fontWeight: 600, color: 'var(--accent-primary)', marginBottom: '4px' }}>
                       Free-Claude-Code Supply Layer
                     </div>
                     <div style={{ fontSize: '11px', color: 'var(--text-secondary)', lineHeight: 1.5, wordBreak: 'break-all' }}>
@@ -2231,7 +2231,7 @@ export const SettingsModal: React.FC = () => {
                   style={{
                     padding: '6px 12px',
                     fontSize: '11px',
-                    backgroundColor: '#a855f7',
+                    backgroundColor: 'var(--accent-primary)',
                     color: '#ffffff',
                     border: 'none',
                     borderRadius: '4px',
@@ -2270,7 +2270,7 @@ export const SettingsModal: React.FC = () => {
                   style={{
                     padding: '6px 12px',
                     fontSize: '11px',
-                    backgroundColor: '#0ea5e9',
+                    backgroundColor: 'var(--accent-cyan)',
                     color: '#ffffff',
                     border: 'none',
                     borderRadius: '4px',
@@ -2333,7 +2333,7 @@ export const SettingsModal: React.FC = () => {
                 width: '100%',
                 maxWidth: '680px',
                 maxHeight: '88vh',
-                backgroundColor: '#0f172a',
+                backgroundColor: 'var(--bg-primary)',
                 border: '1px solid rgba(255, 255, 255, 0.15)',
                 borderRadius: '12px',
                 boxShadow: '0 25px 60px -15px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.1)',
@@ -2353,7 +2353,7 @@ export const SettingsModal: React.FC = () => {
                   flexShrink: 0
                 }}
               >
-                <span style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc' }}>
+                <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>
                   Connect a Provider — API Key Wizard
                 </span>
                 <button
@@ -2368,7 +2368,7 @@ export const SettingsModal: React.FC = () => {
                     background: 'rgba(255, 255, 255, 0.05)',
                     border: 'none',
                     borderRadius: '6px',
-                    color: '#94a3b8',
+                    color: 'var(--text-secondary)',
                     cursor: 'pointer',
                     padding: '6px',
                     display: 'flex'
