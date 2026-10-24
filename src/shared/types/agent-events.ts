@@ -85,9 +85,22 @@ export const ChatErrorCardSchema = z.object({
 });
 export type ChatErrorCard = z.infer<typeof ChatErrorCardSchema>;
 
+export const ScopeRejectionCardSchema = z.object({
+  toolName: z.string(),
+  mode: z.string(),
+  scope: z.string(),
+  reason: z.string(),
+  remedy: z.string(),
+  actionLabel: z.string().optional(),
+  actionCommand: z.string().optional(),
+  targetPath: z.string().optional()
+});
+export type ScopeRejectionCard = z.infer<typeof ScopeRejectionCardSchema>;
+
 export const AgentErrorPayloadSchema = z.object({
   taskId: z.string(),
   error: z.string(),
-  errorCard: ChatErrorCardSchema.optional()
+  errorCard: ChatErrorCardSchema.optional(),
+  scopeRejectionCard: ScopeRejectionCardSchema.optional()
 });
 export type AgentErrorPayload = z.infer<typeof AgentErrorPayloadSchema>;

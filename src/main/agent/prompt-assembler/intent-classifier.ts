@@ -113,11 +113,18 @@ async function smallModelRefine(userPrompt: string, activeFiles: string[]): Prom
   }
 }
 
+const classifyCache = new Map<string, ClassifyResult>();
+const MAX_CLASSIFY_CACHE = 1000;
+
 export function classify(
   userPrompt: string,
   activeFiles: string[] = [],
   prefs: ClassifyPrefs = {}
 ): ClassifyResult {
+  const cacheKey = `${userPrompt}\0${activeFiles.join(',')}\0${JSON.stringify(prefs)}`;
+  const cached = classifyCache.get(cacheKey);
+  if (cached) return cached;
+
   const signalRoles = signalHits(userPrompt);
   const fileRoles = fileHintRoles(activeFiles);
 
@@ -163,7 +170,13 @@ export function classify(
   const scope = mostRestrictiveScope(roles);
   const taskClass = inferTaskClass(userPrompt, roles);
 
-  return { roles, mode, taskClass, confidence, scope, degraded: false };
+  const result: ClassifyResult = { roles, mode, taskClass, confidence, scope, degraded: false };
+  if (classifyCache.size >= MAX_CLASSIFY_CACHE) {
+    const firstKey = classifyCache.keys().next().value;
+    if (firstKey) classifyCache.delete(firstKey);
+  }
+  classifyCache.set(cacheKey, result);
+  return result;
 }
 
 /**

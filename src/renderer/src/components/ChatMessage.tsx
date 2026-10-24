@@ -40,6 +40,8 @@ import {
 import type { ChatMessage, ProposedDiff, ToolExecutionRecord } from '../../../preload/types';
 import { ChatErrorCard } from './ChatErrorCard';
 import { MessageRenderer } from './chat/MessageRenderer';
+import { useChatStore } from '../state/chat-store';
+import { useWorkspaceStore } from '../state/workspace-store';
 
 // ---------------------------------------------------------------------------
 // Syntax Highlighting setup
@@ -699,6 +701,29 @@ export const ChatMessageItem: React.FC<ChatMessageProps> = ({
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+            {message.modeEscalation && (
+              <span
+                id="mode-escalated-chip"
+                className="mode-escalated-chip"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  padding: '2px 8px',
+                  borderRadius: '999px',
+                  fontSize: '10px',
+                  fontWeight: 700,
+                  background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.25) 0%, rgba(59, 130, 246, 0.25) 100%)',
+                  border: '1px solid var(--accent-primary)',
+                  color: 'var(--accent-primary)',
+                  boxShadow: '0 0 10px rgba(139, 92, 246, 0.2)',
+                  letterSpacing: '0.02em'
+                }}
+              >
+                <Zap size={10} style={{ color: 'var(--accent-primary)' }} />
+                <span>Mode escalated: {message.modeEscalation.from} → {message.modeEscalation.to}</span>
+              </span>
+            )}
             {message.isCached && (
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '2px 6px', borderRadius: '5px', fontSize: '10px', fontWeight: 600, background: 'var(--surface-2)', color: 'var(--accent-cyan)', border: '1px solid var(--border-subtle)' }}>
                 <Zap size={9} />
@@ -824,7 +849,133 @@ export const ChatMessageItem: React.FC<ChatMessageProps> = ({
         {/* 4. MAIN TEXT RESPONSE (Deferred Markdown / Plain Stream via MessageRenderer) */}
         {message.content ? (
           <MessageRenderer content={message.content} isStreaming={isStreaming} />
+        ) : !isThinking && !message.errorCard && (!message.proposedDiffs || message.proposedDiffs.length === 0) && (!message.toolExecutions || message.toolExecutions.length === 0) && !message.scopeRejectionCard ? (
+          <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontStyle: 'italic', padding: '4px 0' }}>
+            I am ready to help. Please provide your task or prompt.
+          </div>
         ) : null}
+
+        {/* 4b. SCOPE REJECTION CARD */}
+        {message.scopeRejectionCard && (
+          <div
+            id="scope-rejection-card"
+            style={{
+              margin: '10px 0',
+              padding: '12px',
+              borderRadius: '10px',
+              border: '1px solid rgba(239, 68, 68, 0.35)',
+              borderLeft: '4px solid var(--accent-red)',
+              background: 'rgba(239, 68, 68, 0.08)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '8px'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <AlertCircle size={14} style={{ color: 'var(--accent-red)' }} />
+                <span style={{ fontWeight: 700, fontSize: '12px', color: 'var(--accent-red)' }}>
+                  Scope Violation: Tool &ldquo;{message.scopeRejectionCard.toolName}&rdquo; Blocked
+                </span>
+              </div>
+              <span style={{ fontSize: '10px', padding: '2px 6px', borderRadius: '4px', background: 'rgba(239, 68, 68, 0.15)', color: 'var(--accent-red)', fontWeight: 600 }}>
+                {message.scopeRejectionCard.mode} Mode ({message.scopeRejectionCard.scope})
+              </span>
+            </div>
+
+            <div style={{ fontSize: '11px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+              {message.scopeRejectionCard.reason}
+            </div>
+            <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+              {message.scopeRejectionCard.remedy}
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
+              <button
+                id="btn-escalate-mode-build"
+                type="button"
+                onClick={() => {
+                  try {
+                    const wsPath = useWorkspaceStore.getState().workspacePath || '';
+                    useChatStore.getState().setAgentMode?.('build');
+                    void useChatStore.getState().sendMessage(`Switch to BUILD mode and execute ${message.scopeRejectionCard?.toolName}.`, wsPath);
+                  } catch (e) {
+                    console.error('Failed to trigger BUILD escalation', e);
+                  }
+                }}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '5px 12px',
+                  borderRadius: '6px',
+                  background: 'var(--accent-primary)',
+                  color: '#ffffff',
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontWeight: 600,
+                  fontSize: '11px'
+                }}
+              >
+                <Zap size={11} />
+                <span>Switch to BUILD Mode &amp; Execute</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* 4c. TRUNCATION CONTINUATION BANNER & BUTTON */}
+        {(message.truncated || message.actions?.includes('Continue')) && (
+          <div
+            id="truncated-continuation-banner"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '12px',
+              margin: '10px 0 6px',
+              padding: '8px 12px',
+              borderRadius: '8px',
+              background: 'rgba(234, 179, 8, 0.1)',
+              border: '1px solid rgba(234, 179, 8, 0.3)',
+              color: 'var(--accent-amber)'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11px', fontWeight: 600 }}>
+              <Clock size={13} style={{ flexShrink: 0 }} />
+              <span>Response paused at token limit.</span>
+            </div>
+            <button
+              id="continue-generation-btn"
+              type="button"
+              onClick={() => {
+                try {
+                  const wsPath = useWorkspaceStore.getState().workspacePath || '';
+                  void useChatStore.getState().sendMessage('Continue exactly where you stopped without repeating previous content.', wsPath);
+                } catch (e) {
+                  console.error('Failed to continue generation', e);
+                }
+              }}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '5px',
+                padding: '4px 12px',
+                borderRadius: '6px',
+                background: 'var(--accent-primary)',
+                color: '#ffffff',
+                border: 'none',
+                cursor: 'pointer',
+                fontWeight: 600,
+                fontSize: '11px',
+                boxShadow: '0 2px 6px rgba(0,0,0,0.2)'
+              }}
+            >
+              <Zap size={10} fill="currentColor" />
+              <span>Continue</span>
+            </button>
+          </div>
+        )}
 
         {/* 5. ERROR CARD */}
         {message.errorCard && (

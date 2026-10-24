@@ -1097,6 +1097,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
       } else if (chunk.type === 'approval_request' && chunk.approvalRequest) {
         set({ pendingApproval: chunk.approvalRequest, currentStatus: 'Waiting for your approval…' });
       }
+      if (chunk.scopeRejectionCard) {
+        set((state) => ({
+          messages: state.messages.map((m) =>
+            m.taskId === taskId ? { ...m, scopeRejectionCard: chunk.scopeRejectionCard } : m
+          )
+        }));
+      }
     }));
 
     // ------------------------------------------------------------------

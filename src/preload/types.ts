@@ -98,6 +98,7 @@ import type {
   AgentDiffProposedPayload,
   AgentDonePayload,
   ChatErrorCard,
+  ScopeRejectionCard,
   AgentErrorPayload
 } from '../shared/types/agent-events';
 import type {
@@ -120,7 +121,7 @@ export type {
   ExtensionInstallState,
   ExtensionEnabledState
 };
-export type { FreeProvider, ModelTier, TierClassification, ProviderHealthStatus };
+export type { FreeProvider, ModelTier, TierClassification, ProviderHealthStatus, ScopeRejectionCard };
 export type {
   DiagnosticErrorCode,
   DiagnosticStep,
@@ -494,6 +495,8 @@ export interface ChatMessage {
   timestamp: number;
   actions?: string[];
   truncated?: boolean;
+  modeEscalation?: { from: string; to: string };
+  scopeRejectionCard?: ScopeRejectionCard;
 }
 
 export interface ProposedDiff {
@@ -640,6 +643,8 @@ export interface AgentStreamChunk {
   state?: AgentLoopState;
   actions?: string[];
   truncated?: boolean;
+  modeEscalation?: { from: string; to: string };
+  scopeRejectionCard?: ScopeRejectionCard;
 }
 
 export interface CommandExecutionOptions {

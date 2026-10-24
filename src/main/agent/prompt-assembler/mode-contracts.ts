@@ -37,6 +37,51 @@ export function classifyMode(userPrompt: string): ModeId {
   return 'BUILD';
 }
 
+/**
+ * Detects whether the user is giving a direct mandate to execute, build, or implement
+ * what was previously proposed, planned, or reviewed.
+ */
+export function isEscalationIntent(userPrompt: string): boolean {
+  const trimmed = userPrompt.trim().toLowerCase();
+  return (
+    /^(do it then|do it|do this|implement it|implement this|make the changes|apply (it|this|them|these|changes)|go ahead|proceed|build it|execute it|make it happen|fix it then|ship it|start now|apply them|do that)$/i.test(trimmed) ||
+    /\b(do it then|please do it|go ahead and (do|implement|apply|fix|build)|proceed with (it|this|the changes)|apply the changes now)\b/i.test(trimmed)
+  );
+}
+
+/**
+ * Checks if the user prompt triggers a mode escalation from a read-only/planning mode
+ * (such as PLAN, REVIEW, EXPLAIN, DESIGN) to BUILD.
+ */
+export function detectModeEscalation(
+  userPrompt: string,
+  currentMode: ModeId | string = 'BUILD',
+  history?: Array<{ role: string; content?: string }>
+): { escalated: boolean; fromMode: string; toMode: ModeId } {
+  if (!isEscalationIntent(userPrompt)) {
+    return { escalated: false, fromMode: String(currentMode), toMode: (currentMode as ModeId) || 'BUILD' };
+  }
+  const normCurrent = String(currentMode).toUpperCase();
+  const isReadOnlyOrPlanning = ['PLAN', 'REVIEW', 'EXPLAIN', 'DESIGN'].includes(normCurrent);
+
+  // If current mode is planning or review, or if the last assistant message proposed a solution/plan
+  let hasPriorProposal = false;
+  if (Array.isArray(history) && history.length > 0) {
+    const lastAssistant = [...history].reverse().find((m) => m.role === 'assistant');
+    if (lastAssistant && typeof lastAssistant.content === 'string') {
+      const content = lastAssistant.content.toLowerCase();
+      hasPriorProposal = /propos|plan|step|recommend|could|can|approach|solution|here's how|options|faster|improv/i.test(content);
+    }
+  }
+
+  if (isReadOnlyOrPlanning || hasPriorProposal) {
+    const fromMode = normCurrent === 'BUILD' ? 'PLAN' : normCurrent;
+    return { escalated: true, fromMode, toMode: 'BUILD' };
+  }
+
+  return { escalated: true, fromMode: 'PLAN', toMode: 'BUILD' };
+}
+
 export const PERSONA_MODE_MAP: Record<string, ModeId> = {
   'plan agent': 'REVIEW',
   'plan': 'REVIEW',
