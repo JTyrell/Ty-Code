@@ -10,6 +10,7 @@
  */
 
 import { AgentEngine } from '../../src/main/agent/agent-engine';
+import { ProviderGateway } from '../../src/main/providers/provider-gateway';
 import { startLiveTestServer } from './test-server';
 import os from 'node:os';
 import path from 'node:path';
@@ -56,6 +57,8 @@ export async function runAgenticFileTest(): Promise<{
     let toolCallReceived = false;
 
     const engine = new AgentEngine(testDir);
+    ProviderGateway.setActiveModel({ providerId: 'fcc-proxy', modelId: 'llama-3.3-70b-versatile', isAutoMode: false });
+    ProviderGateway.setEndpointOverride('fcc-proxy', instance.baseUrl);
     console.log(`  Executing agent prompt: "Create file live-check.md with line verified"...`);
 
     await engine.run({
@@ -69,8 +72,20 @@ export async function runAgenticFileTest(): Promise<{
           toolCallReceived = true;
           console.log(`  Tool card received: ${chunk.toolCall.name}(${JSON.stringify(chunk.toolCall.arguments)})`);
         }
+        if (chunk.type === 'status' && chunk.content) {
+          console.log(`  [status] ${chunk.content}`);
+        }
+        if (chunk.type === 'error') {
+          console.error(`  [engine_error] ${String((chunk as any).error ?? '')}`);
+        }
+        if (chunk.type === 'approval_request' && chunk.approvalRequest) {
+          console.log(`  [approval] ${chunk.approvalRequest.approvalKind}: ${chunk.approvalRequest.reason}`);
+        }
+        if (chunk.type === 'tool_result' && chunk.toolResult) {
+          console.log(`  [tool_result] ${chunk.toolResult.name}: ${String(chunk.toolResult.output).slice(0, 140)}`);
+        }
       },
-      requestApproval: async () => true
+      requestApproval: async () => ({ approved: true })
     });
 
     // Verify on disk using both fsSync and fs promises

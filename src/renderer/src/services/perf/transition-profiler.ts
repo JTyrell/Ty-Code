@@ -243,7 +243,7 @@ export class TransitionProfiler {
     };
     this.importCosts.push(cost);
 
-    if (window.electronAPI?.perfRecordRendererMark) {
+    if (typeof window !== 'undefined' && window.electronAPI?.perfRecordRendererMark) {
       void window.electronAPI.perfRecordRendererMark({
         name: `import:${moduleName}`,
         timestamp: cost.timestamp,

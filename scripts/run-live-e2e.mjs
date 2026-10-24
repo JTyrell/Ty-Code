@@ -66,7 +66,7 @@ async function run() {
         platform: 'node',
         format: 'cjs',
         target: 'node20',
-        external: ['electron', 'node-pty', 'simple-git']
+        external: ['electron', 'node-pty', 'simple-git', 'playwright-core']
       });
 
     await Promise.all([

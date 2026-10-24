@@ -285,7 +285,7 @@ export const ProviderHealthDashboard: React.FC = () => {
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <Sparkles size={14} color="#c084fc" />
-          <span style={{ fontWeight: 600, color: '#f8fafc' }}>
+          <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
             Free-model supply layer powered by free-claude-code (FCC) — AGPL-3.0 / MIT —{' '}
             <a
               href="https://github.com/Alishahryar1/free-claude-code"
@@ -328,7 +328,7 @@ export const ProviderHealthDashboard: React.FC = () => {
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Server size={18} color="var(--accent-primary, #818cf8)" />
-              <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: '#f8fafc' }}>
+              <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)' }}>
                 FCC Model Supply Fleet
               </h3>
               <span
@@ -473,9 +473,9 @@ export const ProviderHealthDashboard: React.FC = () => {
             gap: '10px'
           }}
         >
-          <div style={{ padding: '10px', background: 'rgba(255, 255, 255, 0.03)', borderRadius: '6px', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
-            <span style={{ fontSize: '10px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 600 }}>Total Providers</span>
-            <div style={{ fontSize: '18px', fontWeight: 700, color: '#f8fafc', marginTop: '2px' }}>
+          <div style={{ padding: '10px', background: 'var(--bg-tertiary, rgba(255, 255, 255, 0.03))', borderRadius: '6px', border: '1px solid var(--border-subtle, rgba(255, 255, 255, 0.06))' }}>
+            <span style={{ fontSize: '10px', color: 'var(--text-secondary, #94a3b8)', textTransform: 'uppercase', fontWeight: 600 }}>Total Providers</span>
+            <div style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text-primary)', marginTop: '2px' }}>
               {fleetSummary?.providersCount ?? 0}
             </div>
             <span style={{ fontSize: '10px', color: '#38bdf8' }}>Catalog snapshot entries</span>
@@ -508,8 +508,8 @@ export const ProviderHealthDashboard: React.FC = () => {
 
         {/* Free Tokens Allowance Bar */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#94a3b8' }}>
-            <span>Aggregate Monthly Free Token Pool: <strong style={{ color: '#f8fafc' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-secondary, #94a3b8)' }}>
+            <span>Aggregate Monthly Free Token Pool: <strong style={{ color: 'var(--text-primary)' }}>
               {(((fleetSummary?.aggregateFreeTokens || 0) / 1_000_000_000).toFixed(2))} Billion tokens
             </strong></span>
             <span>Used: {((fleetSummary?.usedTokens ?? 0) / 1_000_000).toFixed(1)}M / {(fleetSummary?.aggregateFreeTokens ?? 0) / 1_000_000}M</span>
@@ -550,10 +550,10 @@ export const ProviderHealthDashboard: React.FC = () => {
               style={{
                 width: '100%',
                 padding: '6px 10px 6px 30px',
-                background: 'rgba(255, 255, 255, 0.05)',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
+                background: 'var(--bg-tertiary, rgba(255, 255, 255, 0.05))',
+                border: '1px solid var(--border-subtle, rgba(255, 255, 255, 0.1))',
                 borderRadius: '6px',
-                color: '#fff',
+                color: 'var(--text-primary)',
                 fontSize: '12px'
               }}
             />
@@ -569,9 +569,9 @@ export const ProviderHealthDashboard: React.FC = () => {
               gap: '6px',
               padding: '6px 12px',
               borderRadius: '6px',
-              background: 'rgba(255, 255, 255, 0.06)',
-              border: '1px solid rgba(255, 255, 255, 0.12)',
-              color: '#e2e8f0',
+              background: 'var(--bg-tertiary, rgba(255, 255, 255, 0.06))',
+              border: '1px solid var(--border-subtle, rgba(255, 255, 255, 0.12))',
+              color: 'var(--text-primary)',
               fontSize: '11px',
               fontWeight: 600,
               cursor: 'pointer'
@@ -683,7 +683,7 @@ export const ProviderHealthDashboard: React.FC = () => {
                       boxShadow: p.enabled && p.health === 'healthy' ? '0 0 6px #10b981' : undefined                    }}
                   />
                   <div>
-                    <div style={{ fontWeight: 600, fontSize: '13px', color: '#f8fafc' }}>
+                    <div style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text-primary)' }}>
                       {p.name}
                     </div>
                     <span style={{ fontSize: '10px', color: '#94a3b8', textTransform: 'capitalize' }}>
@@ -726,12 +726,12 @@ export const ProviderHealthDashboard: React.FC = () => {
                         zIndex: 100,
                         width: '220px',
                         padding: '8px',
-                        backgroundColor: '#1e1e28',
+                        backgroundColor: 'var(--bg-secondary, #1e1e28)',
                         border: '1px solid rgba(239, 68, 68, 0.4)',
                         borderRadius: '6px',
                         boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)',
                         fontSize: '10px',
-                        color: '#f8fafc',
+                        color: 'var(--text-primary)',
                         lineHeight: '1.4'
                       }}
                     >
@@ -748,15 +748,15 @@ export const ProviderHealthDashboard: React.FC = () => {
                   display: 'flex',
                   justifyContent: 'space-between',
                   padding: '6px 8px',
-                  backgroundColor: 'rgba(255, 255, 255, 0.02)',
+                  backgroundColor: 'var(--bg-tertiary, rgba(255, 255, 255, 0.02))',
                   borderRadius: '6px',
                   fontSize: '10px',
-                  color: '#94a3b8'
+                  color: 'var(--text-secondary, #94a3b8)'
                 }}
               >
-                <span>Latency: <strong style={{ color: '#f8fafc' }}>{p.health === 'untested' ? '—' : `${p.latencyMs}ms`}</strong></span>
-                <span>Success: <strong style={{ color: '#f8fafc' }}>{p.successRate > 0 ? `${p.successRate}%` : '—'}</strong></span>
-                <span>Quota: <strong style={{ color: '#f8fafc' }}>{p.quotaRemainingPercent > 0 ? `${p.quotaRemainingPercent}%` : '—'}</strong></span>
+                <span>Latency: <strong style={{ color: 'var(--text-primary)' }}>{p.health === 'untested' ? '—' : `${p.latencyMs}ms`}</strong></span>
+                <span>Success: <strong style={{ color: 'var(--text-primary)' }}>{p.successRate > 0 ? `${p.successRate}%` : '—'}</strong></span>
+                <span>Quota: <strong style={{ color: 'var(--text-primary)' }}>{p.quotaRemainingPercent > 0 ? `${p.quotaRemainingPercent}%` : '—'}</strong></span>
               </div>
 
               {/* Free Tokens Banner */}
@@ -798,9 +798,9 @@ export const ProviderHealthDashboard: React.FC = () => {
                     flexDirection: 'column',
                     gap: '6px',
                     padding: '8px',
-                    backgroundColor: 'rgba(0, 0, 0, 0.25)',
+                    backgroundColor: 'var(--bg-tertiary, rgba(0, 0, 0, 0.25))',
                     borderRadius: '6px',
-                    border: '1px solid rgba(255, 255, 255, 0.05)'
+                    border: '1px solid var(--border-subtle, rgba(255, 255, 255, 0.05))'
                   }}
                 >
                   {p.models.map((m) => (
@@ -815,7 +815,7 @@ export const ProviderHealthDashboard: React.FC = () => {
                       }}
                     >
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <span style={{ fontSize: '11px', fontWeight: 600, color: '#f8fafc' }}>
+                        <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-primary)' }}>
                           {m.name}
                         </span>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -873,9 +873,9 @@ export const ProviderHealthDashboard: React.FC = () => {
                     style={{
                       padding: '4px 8px',
                       borderRadius: '4px',
-                      background: 'rgba(255, 255, 255, 0.06)',
-                      border: '1px solid rgba(255, 255, 255, 0.1)',
-                      color: '#e2e8f0',
+                      background: 'var(--bg-tertiary, rgba(255, 255, 255, 0.06))',
+                      border: '1px solid var(--border-subtle, rgba(255, 255, 255, 0.1))',
+                      color: 'var(--text-primary)',
                       fontSize: '10px',
                       fontWeight: 600,
                       cursor: 'pointer',
@@ -981,7 +981,7 @@ export const ProviderHealthDashboard: React.FC = () => {
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Terminal size={16} color="#818cf8" />
-                <span style={{ fontWeight: 600, fontSize: '13px', color: '#f8fafc' }}>
+                <span style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text-primary)' }}>
                   FCC Sidecar Process Logs (Port {fccStatus?.port || 8082})
                 </span>
                 <span style={{ fontSize: '10px', color: '#94a3b8' }}>

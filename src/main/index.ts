@@ -1,6 +1,13 @@
 import { bootProfiler } from './services/perf/boot-profiler';
 import { openProfiler } from './services/perf/open-profiler';
 import { bootScheduler } from './services/boot/boot-scheduler';
+
+process.on('uncaughtException', (err) => {
+  console.error('[CRITICAL] Uncaught exception in main process:', err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[CRITICAL] Unhandled promise rejection in main process:', reason);
+});
 import { app, BrowserWindow, ipcMain, session, shell, dialog, type IpcMainInvokeEvent } from 'electron';
 import path from 'path';
 import os from 'os';
@@ -76,7 +83,7 @@ import { WindowStateManager } from './services/window-state';
 import { getUpdateManager, type UpdateChannel } from './services/update-manager';
 import { getRecentWorkspacesManager } from './services/recent-workspaces';
 import { MyersDiff } from './services/myers-diff';
-import { WorkspaceEditPreviewService } from './services/workspace-edit-preview';
+import { getWorkspaceEditPreviewService, setWorkspaceEditPreviewWorkspace } from './services/workspace-edit-preview';
 import { fromFileUri } from './services/lsp-path-utils';
 import { loadDocument, persistDocument, parseMarkdownSections, listDocuments, type AgentDocument } from './services/document-parser';
 import type { CommandExecutionOptions, ProposedDiff, PtySpawnOptions, ReplaceInFilesOptions, SearchInFilesOptions, TelemetryEvent, WorkspaceEditOrigin } from '../preload/types';
@@ -289,8 +296,7 @@ function getInitialWorkspacePath(): string {
 
 let mainWindow: BrowserWindow | null = null;
 let currentWorkspacePath = getInitialWorkspacePath();
-let workspaceEditPreviewService: WorkspaceEditPreviewService | null = null;
-let workspaceEditPreviewWorkspace = '';
+setWorkspaceEditPreviewWorkspace(currentWorkspacePath);
 let ipcRegistered = false;
 let diagnosticsManager: ReturnType<typeof getLspManager> | null = null;
 let diagnosticsUnsubscribe: (() => void) | null = null;
@@ -321,13 +327,6 @@ function ensureLspDiagnosticsBridge(): void {
   });
 }
 
-export function getWorkspaceEditPreviewService(): WorkspaceEditPreviewService {
-  if (!workspaceEditPreviewService || workspaceEditPreviewWorkspace !== currentWorkspacePath) {
-    workspaceEditPreviewWorkspace = currentWorkspacePath;
-    workspaceEditPreviewService = new WorkspaceEditPreviewService(currentWorkspacePath, getLspManager(currentWorkspacePath));
-  }
-  return workspaceEditPreviewService;
-}
 const windowStateManager = new WindowStateManager();
 
 function isTrustedExtensionFrame(event: IpcMainInvokeEvent): boolean {
@@ -599,17 +598,22 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle('fs:select-workspace', async () => {
-    if (!mainWindow) return { success: false, error: 'No main window' };
-    const response = await workspaceManager.openFolderDialog(mainWindow);
+    const targetWin = BrowserWindow.getFocusedWindow() || mainWindow;
+    const response = await workspaceManager.openFolderDialog(targetWin);
     if (response.success && response.data) {
       currentWorkspacePath = response.data;
+      setWorkspaceEditPreviewWorkspace(response.data);
+      debuggerSyncManager.pushStateUpdate({ workspacePath: response.data });
     }
     return response;
   });
   ipcMain.handle('workspace:open-folder-dialog', async () => {
-    const response = await workspaceManager.openFolderDialog(mainWindow);
+    const targetWin = BrowserWindow.getFocusedWindow() || mainWindow;
+    const response = await workspaceManager.openFolderDialog(targetWin);
     if (response.success && response.data) {
       currentWorkspacePath = response.data;
+      setWorkspaceEditPreviewWorkspace(response.data);
+      debuggerSyncManager.pushStateUpdate({ workspacePath: response.data });
     }
     return response;
   });
@@ -618,6 +622,8 @@ function registerIpcHandlers(): void {
     const result = await workspaceManager.openWorkspace(folderPath);
     if (result.success) {
       currentWorkspacePath = workspaceManager.currentWorkspacePath;
+      setWorkspaceEditPreviewWorkspace(workspaceManager.currentWorkspacePath);
+      debuggerSyncManager.pushStateUpdate({ workspacePath: workspaceManager.currentWorkspacePath });
     }
     return result;
   });
@@ -626,6 +632,8 @@ function registerIpcHandlers(): void {
     const result = await workspaceManager.openWorkspace(folderPath);
     if (!result.success) return { success: false, error: result.error };
     currentWorkspacePath = folderPath;
+    setWorkspaceEditPreviewWorkspace(folderPath);
+    debuggerSyncManager.pushStateUpdate({ workspacePath: folderPath });
     return getWorkspaceTree(folderPath);
   });
   ipcMain.handle('fs:get-tree', async () => {
@@ -1442,8 +1450,11 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle('ledger:query', async (_event, filter?: any) => {
     try {
-      const res = await ledgerQueryService.queryLedger(filter);
-      return { success: true, data: res };
+      const [records, summary] = await Promise.all([
+        ledgerQueryService.getRecords(filter),
+        ledgerQueryService.aggregate(filter)
+      ]);
+      return { success: true, data: { records, summary } };
     } catch (err: unknown) {
       return { success: false, error: err instanceof Error ? err.message : String(err) };
     }
@@ -2584,35 +2595,6 @@ function registerIpcHandlers(): void {
     try {
       const report = await connectivityTracer.scanMockPaths(currentWorkspacePath);
       return { success: true, data: report };
-    } catch (err: unknown) {
-      return { success: false, error: err instanceof Error ? err.message : String(err) };
-    }
-  });
-
-  // Enterprise Policy & Usage Ledger IPC Handlers
-  ipcMain.handle('policy:get-effective', async () => {
-    try {
-      const policy = policyEngine.getEffectivePolicy();
-      return { success: true, data: policy };
-    } catch (err: unknown) {
-      return { success: false, error: err instanceof Error ? err.message : String(err) };
-    }
-  });
-
-  ipcMain.handle('ledger:query', async (_event, filter) => {
-    try {
-      const records = await ledgerQueryService.getRecords(filter);
-      const agg = await ledgerQueryService.aggregate(filter);
-      return { success: true, data: { records, summary: agg } };
-    } catch (err: unknown) {
-      return { success: false, error: err instanceof Error ? err.message : String(err) };
-    }
-  });
-
-  ipcMain.handle('ledger:insights', async (_event, filter) => {
-    try {
-      const insights = await ledgerQueryService.getInsights(filter);
-      return { success: true, data: insights };
     } catch (err: unknown) {
       return { success: false, error: err instanceof Error ? err.message : String(err) };
     }
@@ -4102,6 +4084,7 @@ app.whenReady().then(async () => {
         // Leave the workspace empty until the user picks a folder. The
         // Explorer then shows its empty state instead of the home tree.
         currentWorkspacePath = '';
+        setWorkspaceEditPreviewWorkspace('');
       }
       await settingsManager.setWorkspacePath(currentWorkspacePath);
     }
@@ -4446,6 +4429,8 @@ app.whenReady().then(async () => {
   })();
 
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
+}).catch((err) => {
+  console.error('[FATAL] app.whenReady encountered an error during startup:', err);
 });
 
 let isQuittingApp = false;

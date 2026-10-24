@@ -173,8 +173,8 @@ export const SketcherWindow: React.FC = () => {
         flexDirection: 'column',
         width: '100vw',
         height: '100vh',
-        backgroundColor: '#121316',
-        color: '#e5e7eb',
+        backgroundColor: 'var(--bg-primary, #121316)',
+        color: 'var(--text-primary, #e5e7eb)',
         overflow: 'hidden',
         position: 'relative'
       }}
@@ -183,7 +183,7 @@ export const SketcherWindow: React.FC = () => {
       <header
         style={{
           height: '34px',
-          backgroundColor: '#18191e',
+          backgroundColor: 'var(--bg-secondary, #18191e)',
           borderBottom: '1px solid var(--border-subtle, #272a34)',
           display: 'flex',
           alignItems: 'center',
@@ -207,7 +207,7 @@ export const SketcherWindow: React.FC = () => {
           }}
         >
           <TyCodeMicrochipLogo size={16} />
-          <span style={{ fontSize: '12px', fontWeight: 700, color: '#f3f4f6', letterSpacing: '-0.2px' }}>
+          <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary, #f3f4f6)', letterSpacing: '-0.2px' }}>
             Ty-Code
           </span>
           <span
@@ -385,7 +385,7 @@ export const SketcherWindow: React.FC = () => {
       <footer
         style={{
           height: '24px',
-          backgroundColor: '#15161c',
+          backgroundColor: 'var(--bg-secondary, #15161c)',
           borderTop: '1px solid var(--border-subtle, #272a34)',
           display: 'flex',
           alignItems: 'center',
@@ -407,9 +407,9 @@ export const SketcherWindow: React.FC = () => {
               boxShadow: '0 0 6px rgba(16, 185, 129, 0.6)'
             }}
           />
-          <span style={{ fontWeight: 500, color: '#e5e7eb' }}>IPC Bridge Active</span>
-          <span style={{ color: '#6b7280' }}>•</span>
-          <span style={{ color: '#9ca3af' }}>Synced with main IDE chat sidecar</span>
+          <span style={{ fontWeight: 500, color: 'var(--text-primary, #e5e7eb)' }}>IPC Bridge Active</span>
+          <span style={{ color: 'var(--text-muted, #6b7280)' }}>•</span>
+          <span style={{ color: 'var(--text-secondary, #9ca3af)' }}>Synced with main IDE chat sidecar</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10.5px' }}>
           <span>Click <strong style={{ color: '#d8b4fe' }}>Send to Ty-Code Chat</strong> in the canvas toolbar</span>

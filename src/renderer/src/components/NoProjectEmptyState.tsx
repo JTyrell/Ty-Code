@@ -89,13 +89,13 @@ export const NoProjectEmptyState: React.FC<NoProjectEmptyStateProps> = ({ hint }
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          color: '#818cf8'
+          color: 'var(--accent-primary, #818cf8)'
         }}
       >
         <FolderOpen size={20} />
       </div>
-      <div style={{ fontSize: 13, fontWeight: 600, color: '#f3f4f6' }}>No project loaded</div>
-      <div style={{ fontSize: 11.5, color: '#9ca3af', lineHeight: 1.5, maxWidth: 220 }}>
+      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>No project loaded</div>
+      <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', lineHeight: 1.5, maxWidth: 220 }}>
         {hint}
       </div>
 
@@ -127,8 +127,8 @@ export const NoProjectEmptyState: React.FC<NoProjectEmptyStateProps> = ({ hint }
           display: 'flex',
           alignItems: 'center',
           gap: 6,
-          background: 'transparent',
-          color: '#9ca3af',
+          background: 'var(--bg-tertiary, transparent)',
+          color: 'var(--text-secondary)',
           border: '1px solid var(--border-subtle)',
           borderRadius: 6,
           padding: '6px 12px',
@@ -150,11 +150,11 @@ export const NoProjectEmptyState: React.FC<NoProjectEmptyStateProps> = ({ hint }
             overflowY: 'auto',
             border: '1px solid var(--border-subtle)',
             borderRadius: 6,
-            background: 'rgba(0, 0, 0, 0.2)'
+            background: 'var(--bg-tertiary)'
           }}
         >
           {recentWorkspaces.length === 0 ? (
-            <div style={{ padding: '10px 12px', fontSize: 11, color: '#6b7280', textAlign: 'left' }}>
+            <div style={{ padding: '10px 12px', fontSize: 11, color: 'var(--text-muted)', textAlign: 'left' }}>
               No recent workspaces found
             </div>
           ) : (
@@ -175,11 +175,11 @@ export const NoProjectEmptyState: React.FC<NoProjectEmptyStateProps> = ({ hint }
                   cursor: 'pointer'
                 }}
               >
-                <div style={{ fontSize: 11.5, fontWeight: 600, color: '#e5e7eb' }}>{recent.name}</div>
+                <div style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--text-primary)' }}>{recent.name}</div>
                 <div
                   style={{
                     fontSize: 10,
-                    color: '#6b7280',
+                    color: 'var(--text-muted)',
                     whiteSpace: 'nowrap',
                     overflow: 'hidden',
                     textOverflow: 'ellipsis'

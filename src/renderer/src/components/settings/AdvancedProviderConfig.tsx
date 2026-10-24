@@ -152,19 +152,19 @@ export const AdvancedProviderConfig: React.FC<AdvancedProviderConfigProps> = ({
         flexDirection: 'column',
         gap: '16px',
         padding: '20px',
-        background: 'rgba(15, 23, 42, 0.75)',
+        background: 'var(--bg-secondary, rgba(15, 23, 42, 0.75))',
         borderRadius: '10px',
-        border: '1px solid rgba(255, 255, 255, 0.08)'
+        border: '1px solid var(--border-subtle, rgba(255, 255, 255, 0.08))'
       }}
     >
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
         <div>
-          <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Code2 size={16} color="var(--accent-primary)" />
             Advanced Provider JSON Configuration
           </h3>
-          <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#94a3b8' }}>
+          <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: 'var(--text-secondary, #94a3b8)' }}>
             Define custom endpoints, custom auth headers, base URL overrides, and custom model lists directly.
           </p>
         </div>
@@ -180,9 +180,9 @@ export const AdvancedProviderConfig: React.FC<AdvancedProviderConfigProps> = ({
               gap: '5px',
               padding: '6px 10px',
               borderRadius: '6px',
-              background: 'rgba(255, 255, 255, 0.05)',
-              border: '1px solid rgba(255, 255, 255, 0.1)',
-              color: '#cbd5e1',
+              background: 'var(--bg-tertiary, rgba(255, 255, 255, 0.05))',
+              border: '1px solid var(--border-subtle, rgba(255, 255, 255, 0.1))',
+              color: 'var(--text-primary, #cbd5e1)',
               fontSize: '11px',
               cursor: 'pointer'
             }}
@@ -208,9 +208,9 @@ export const AdvancedProviderConfig: React.FC<AdvancedProviderConfigProps> = ({
               gap: '5px',
               padding: '6px 10px',
               borderRadius: '6px',
-              background: 'rgba(255, 255, 255, 0.05)',
-              border: '1px solid rgba(255, 255, 255, 0.1)',
-              color: '#cbd5e1',
+              background: 'var(--bg-tertiary, rgba(255, 255, 255, 0.05))',
+              border: '1px solid var(--border-subtle, rgba(255, 255, 255, 0.1))',
+              color: 'var(--text-primary, #cbd5e1)',
               fontSize: '11px',
               cursor: 'pointer'
             }}
@@ -229,9 +229,9 @@ export const AdvancedProviderConfig: React.FC<AdvancedProviderConfigProps> = ({
               gap: '5px',
               padding: '6px 10px',
               borderRadius: '6px',
-              background: 'rgba(255, 255, 255, 0.05)',
-              border: '1px solid rgba(255, 255, 255, 0.1)',
-              color: '#cbd5e1',
+              background: 'var(--bg-tertiary, rgba(255, 255, 255, 0.05))',
+              border: '1px solid var(--border-subtle, rgba(255, 255, 255, 0.1))',
+              color: 'var(--text-primary, #cbd5e1)',
               fontSize: '11px',
               cursor: 'pointer'
             }}
@@ -272,9 +272,9 @@ export const AdvancedProviderConfig: React.FC<AdvancedProviderConfigProps> = ({
             width: '100%',
             padding: '12px',
             borderRadius: '8px',
-            border: syntaxError ? '1px solid rgba(239, 68, 68, 0.5)' : '1px solid rgba(255, 255, 255, 0.12)',
-            background: '#090d16',
-            color: '#f8fafc',
+            border: syntaxError ? '1px solid rgba(239, 68, 68, 0.5)' : '1px solid var(--border-subtle, rgba(255, 255, 255, 0.12))',
+            background: 'var(--bg-primary, #090d16)',
+            color: 'var(--text-primary, #f8fafc)',
             fontFamily: 'Consolas, Monaco, monospace',
             fontSize: '12px',
             lineHeight: '1.5',
@@ -306,8 +306,8 @@ export const AdvancedProviderConfig: React.FC<AdvancedProviderConfigProps> = ({
               padding: '8px 14px',
               borderRadius: '6px',
               background: 'transparent',
-              border: '1px solid rgba(255, 255, 255, 0.12)',
-              color: '#cbd5e1',
+              border: '1px solid var(--border-subtle, rgba(255, 255, 255, 0.12))',
+              color: 'var(--text-secondary, #cbd5e1)',
               fontSize: '12px',
               cursor: 'pointer'
             }}

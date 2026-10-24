@@ -68,11 +68,11 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
             margin: '16px auto',
             maxWidth: '680px',
             padding: '20px 24px',
-            backgroundColor: 'rgba(15, 23, 42, 0.95)',
+            backgroundColor: 'var(--bg-secondary, rgba(15, 23, 42, 0.95))',
             border: '1px solid rgba(239, 68, 68, 0.35)',
             borderRadius: '10px',
-            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5), 0 0 20px rgba(239, 68, 68, 0.1)',
-            color: '#f1f5f9',
+            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.25), 0 0 20px rgba(239, 68, 68, 0.1)',
+            color: 'var(--text-primary, #f1f5f9)',
             fontFamily: 'system-ui, -apple-system, sans-serif'
           }}
         >
@@ -92,10 +92,10 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
               <AlertTriangle size={18} color="#ef4444" />
             </div>
             <div>
-              <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: '#f8fafc' }}>
+              <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: 'var(--text-primary, #f8fafc)' }}>
                 {fallbackTitle}
               </h3>
-              <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#94a3b8' }}>
+              <p style={{ margin: '2px 0 0', fontSize: '12px', color: 'var(--text-secondary, #94a3b8)' }}>
                 An unhandled rendering exception occurred. You can reload this view without restarting the application.
               </p>
             </div>
@@ -104,8 +104,8 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
           <div
             style={{
               padding: '10px 12px',
-              backgroundColor: 'rgba(0, 0, 0, 0.4)',
-              border: '1px solid rgba(255, 255, 255, 0.08)',
+              backgroundColor: 'var(--bg-tertiary, rgba(0, 0, 0, 0.4))',
+              border: '1px solid var(--border-subtle, rgba(255, 255, 255, 0.08))',
               borderRadius: '6px',
               fontFamily: 'var(--font-mono, monospace)',
               fontSize: '11px',

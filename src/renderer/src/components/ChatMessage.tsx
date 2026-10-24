@@ -219,13 +219,228 @@ const markdownComponents: Components = {
 };
 
 // ---------------------------------------------------------------------------
-// Tool Execution Block (Compact & Collapsible)
+// Tool Execution & Action Grouping (Antigravity-style mid-process actions)
 // ---------------------------------------------------------------------------
-interface ToolBlockProps {
-  tool: ToolExecutionRecord;
+
+type ToolCategory = 'command' | 'read' | 'edit' | 'search' | 'dir' | 'other';
+
+interface ToolActionInfo {
+  category: ToolCategory;
+  verb: string;
+  target: string;
+  fullTarget: string;
+  previewText: string;
 }
 
-const ToolExecutionBlock: React.FC<ToolBlockProps> = ({ tool }) => {
+function extractTarget(tool: ToolExecutionRecord): { target: string; fullTarget: string } {
+  const args = tool.arguments || {};
+
+  // 1. Explicit toolSummary or toolAction from agents
+  if (typeof args.toolSummary === 'string' && args.toolSummary.trim()) {
+    const summary = args.toolSummary.trim();
+    return { target: summary, fullTarget: summary };
+  }
+
+  // 2. File path parameters (view_file, write_to_file, replace_file_content, etc.)
+  const rawPath = (
+    args.AbsolutePath ||
+    args.TargetFile ||
+    args.targetFile ||
+    args.filePath ||
+    args.filepath ||
+    args.path ||
+    args.file ||
+    args.filename ||
+    args.uri ||
+    args.target ||
+    (typeof args.Url === 'string' ? args.Url : undefined) ||
+    (typeof args.url === 'string' ? args.url : undefined)
+  );
+
+  const isCmdTool = [
+    'run_command', 'exec', 'terminal', 'bash', 'sh', 'cmd', 'powershell', 'ls', 'npm', 'git', 'node'
+  ].includes(tool.name.toLowerCase());
+
+  // 3. Command lines (run_command, bash, etc.)
+  const rawCmd = (
+    args.CommandLine ||
+    args.commandLine ||
+    args.command ||
+    args.cmd ||
+    args.script
+  );
+
+  if (isCmdTool && rawCmd && typeof rawCmd === 'string') {
+    const firstLine = rawCmd.trim().split('\n')[0].trim();
+    return {
+      target: firstLine.length > 42 ? firstLine.slice(0, 39) + '…' : firstLine,
+      fullTarget: rawCmd
+    };
+  }
+
+  // 4. `ls` tool
+  if (tool.name.toLowerCase() === 'ls') {
+    if (typeof rawPath === 'string' && rawPath.trim() && rawPath.trim() !== '.') {
+      return { target: `ls ${rawPath.trim()}`, fullTarget: `ls ${rawPath.trim()}` };
+    }
+    return { target: 'ls', fullTarget: 'ls' };
+  }
+
+  // 5. File path formatting
+  if (typeof rawPath === 'string' && rawPath.trim()) {
+    const full = rawPath.trim().replace(/\\/g, '/');
+    const parts = full.split('/').filter(Boolean);
+    const basename = parts[parts.length - 1] || full;
+    return { target: basename, fullTarget: full };
+  }
+
+  // 6. Search queries (grep, find)
+  const rawQuery = (
+    args.Query ||
+    args.query ||
+    args.pattern ||
+    args.searchTerm ||
+    args.text
+  );
+  if (typeof rawQuery === 'string' && rawQuery.trim()) {
+    const full = rawQuery.trim();
+    const compact = full.length > 30 ? `"${full.slice(0, 27)}…"` : `"${full}"`;
+    return { target: compact, fullTarget: full };
+  }
+
+  // 7. Directory paths (list_dir)
+  const rawDir = args.DirectoryPath || args.directoryPath || args.dir;
+  if (typeof rawDir === 'string' && rawDir.trim()) {
+    const full = rawDir.trim().replace(/\\/g, '/');
+    const parts = full.split('/').filter(Boolean);
+    return { target: parts.slice(-2).join('/') || full, fullTarget: full };
+  }
+
+  return { target: '', fullTarget: '' };
+}
+
+function resolveToolAction(tool: ToolExecutionRecord): ToolActionInfo {
+  const name = tool.name.toLowerCase();
+  const isFailed = tool.status === 'error' || tool.isError;
+  const isRunning = tool.status === 'running';
+  const { target, fullTarget } = extractTarget(tool);
+
+  let category: ToolCategory = 'other';
+  if (
+    [
+      'run_command', 'exec', 'terminal', 'bash', 'sh', 'cmd', 'powershell',
+      'ls', 'npm', 'git', 'node', 'spawn'
+    ].includes(name)
+  ) {
+    category = 'command';
+  } else if (
+    [
+      'view', 'view_file', 'read', 'read_file', 'read_url_content', 'read_resource',
+      'cat', 'head', 'tail', 'open_file'
+    ].includes(name)
+  ) {
+    category = 'read';
+  } else if (
+    [
+      'write', 'write_to_file', 'edit', 'edit_file', 'replace', 'replace_file_content',
+      'multi_replace_file_content', 'apply_diff', 'patch', 'create_file'
+    ].includes(name)
+  ) {
+    category = 'edit';
+  } else if (
+    [
+      'grep', 'grep_search', 'search', 'search_files', 'find', 'find_files',
+      'rg', 'search_docs'
+    ].includes(name)
+  ) {
+    category = 'search';
+  } else if (
+    ['list_dir', 'dir', 'tree', 'list_directory'].includes(name)
+  ) {
+    category = 'dir';
+  }
+
+  let verb = '';
+  switch (category) {
+    case 'read':
+      verb = isRunning ? 'Viewing' : isFailed ? 'Failed to view' : 'Viewed';
+      break;
+    case 'edit':
+      verb = isRunning ? 'Editing' : isFailed ? 'Failed to edit' : 'Edited';
+      break;
+    case 'command':
+      verb = isRunning ? 'Running' : isFailed ? 'Failed' : 'Ran';
+      break;
+    case 'search':
+      verb = isRunning ? 'Searching' : isFailed ? 'Search failed' : 'Searched';
+      break;
+    case 'dir':
+      verb = isRunning ? 'Listing' : isFailed ? 'Failed to list' : 'Listed';
+      break;
+    default:
+      verb = isRunning ? 'Running' : isFailed ? 'Failed' : 'Executed';
+      break;
+  }
+
+  const previewText = target ? `${verb} ${target}` : `${verb} ${tool.name}`;
+
+  return {
+    category,
+    verb,
+    target,
+    fullTarget,
+    previewText
+  };
+}
+
+interface ToolActionGroup {
+  id: string;
+  category: ToolCategory;
+  tools: ToolExecutionRecord[];
+}
+
+function groupConsecutiveTools(tools: ToolExecutionRecord[]): ToolActionGroup[] {
+  if (!tools || tools.length === 0) return [];
+
+  const groups: ToolActionGroup[] = [];
+  let currentGroup: ToolActionGroup | null = null;
+
+  for (const tool of tools) {
+    const { category } = resolveToolAction(tool);
+
+    if (currentGroup && currentGroup.category === category) {
+      currentGroup.tools.push(tool);
+    } else {
+      currentGroup = {
+        id: `group-${tool.id}-${groups.length}`,
+        category,
+        tools: [tool]
+      };
+      groups.push(currentGroup);
+    }
+  }
+
+  return groups;
+}
+
+function getToolCategoryIcon(category: ToolCategory, name: string) {
+  const lower = name.toLowerCase();
+  const iconStyle = { flexShrink: 0 } as const;
+  if (category === 'read') return <FileText size={13} style={{ ...iconStyle, color: 'var(--accent-cyan)' }} />;
+  if (category === 'edit') return <FileCode size={13} style={{ ...iconStyle, color: 'var(--accent-green)' }} />;
+  if (category === 'command') return <Terminal size={13} style={{ ...iconStyle, color: 'var(--accent-amber)' }} />;
+  if (category === 'search') return <Search size={13} style={{ ...iconStyle, color: 'var(--accent-primary)' }} />;
+  if (category === 'dir') return <Folder size={13} style={{ ...iconStyle, color: 'var(--accent-blue)' }} />;
+  if (lower.includes('presentation')) return <Presentation size={13} style={{ ...iconStyle, color: 'var(--accent-primary)' }} />;
+  return <Wrench size={13} style={{ ...iconStyle, color: 'var(--text-muted)' }} />;
+}
+
+interface ToolBlockProps {
+  tool: ToolExecutionRecord;
+  isNested?: boolean;
+}
+
+const ToolExecutionBlock: React.FC<ToolBlockProps> = ({ tool, isNested = false }) => {
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -234,20 +449,9 @@ const ToolExecutionBlock: React.FC<ToolBlockProps> = ({ tool }) => {
   const isSuccess = tool.status === 'success' && !tool.isError;
 
   const argCount = Object.keys(tool.arguments || {}).length;
+  const action = resolveToolAction(tool);
 
   const statusColor = isFailed ? 'var(--accent-red)' : isRunning ? 'var(--accent-blue)' : 'var(--accent-green)';
-
-  const getToolIcon = (name: string) => {
-    const lower = name.toLowerCase();
-    const iconStyle = { color: 'var(--accent-cyan)', flexShrink: 0 } as const;
-    if (lower.includes('grep') || lower.includes('search')) return <Search size={13} style={{ ...iconStyle, color: 'var(--accent-primary)' }} />;
-    if (lower.includes('read') || lower.includes('view')) return <FileText size={13} style={iconStyle} />;
-    if (lower.includes('write') || lower.includes('replace') || lower.includes('edit')) return <FileCode size={13} style={{ ...iconStyle, color: 'var(--accent-green)' }} />;
-    if (lower.includes('command') || lower.includes('terminal') || lower.includes('bash')) return <Terminal size={13} style={{ ...iconStyle, color: 'var(--accent-amber)' }} />;
-    if (lower.includes('dir') || lower.includes('tree') || lower.includes('folder')) return <Folder size={13} style={{ ...iconStyle, color: 'var(--accent-blue)' }} />;
-    if (lower.includes('presentation')) return <Presentation size={13} style={{ ...iconStyle, color: 'var(--accent-primary)' }} />;
-    return <Wrench size={13} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />;
-  };
 
   const handleCopyOutput = () => {
     if (tool.output) {
@@ -260,12 +464,12 @@ const ToolExecutionBlock: React.FC<ToolBlockProps> = ({ tool }) => {
   return (
     <div
       style={{
-        borderRadius: '10px',
+        borderRadius: isNested ? '8px' : '10px',
         border: '1px solid var(--border-subtle)',
-        borderLeft: `3px solid ${statusColor}`,
-        background: 'var(--bg-secondary)',
+        borderLeft: `${isNested ? 2.5 : 3}px solid ${statusColor}`,
+        background: isNested ? 'var(--bg-primary)' : 'var(--bg-secondary)',
         transition: 'all 0.18s ease',
-        margin: '5px 0',
+        margin: isNested ? '2px 0' : '5px 0',
         overflow: 'hidden',
         fontSize: '11px'
       }}
@@ -279,7 +483,7 @@ const ToolExecutionBlock: React.FC<ToolBlockProps> = ({ tool }) => {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: '6px 12px',
+          padding: isNested ? '5px 10px' : '6px 12px',
           textAlign: 'left',
           userSelect: 'none',
           cursor: 'pointer',
@@ -293,13 +497,32 @@ const ToolExecutionBlock: React.FC<ToolBlockProps> = ({ tool }) => {
           <span style={{ color: 'var(--text-muted)', display: 'inline-flex' }}>
             {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
           </span>
-          {getToolIcon(tool.name)}
-          <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '11.5px' }}>
-            {tool.name}
-          </span>
-          <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', flexShrink: 0 }}>
-            ({argCount} {argCount === 1 ? 'arg' : 'args'})
-          </span>
+          {getToolCategoryIcon(action.category, tool.name)}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '5px', minWidth: 0 }}>
+            <span style={{ fontWeight: 500, color: 'var(--text-secondary)', fontSize: '11px', flexShrink: 0 }}>
+              {action.verb}
+            </span>
+            <span
+              style={{
+                fontFamily: 'var(--font-mono)',
+                fontWeight: 600,
+                color: 'var(--text-primary)',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                fontSize: '11.5px',
+                maxWidth: isNested ? '260px' : '360px'
+              }}
+              title={action.fullTarget || action.target || tool.name}
+            >
+              {action.target || tool.name}
+            </span>
+          </div>
+          {argCount > 1 && !action.target && (
+            <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', flexShrink: 0 }}>
+              ({argCount} args)
+            </span>
+          )}
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0, marginLeft: '8px' }}>
@@ -360,11 +583,179 @@ const ToolExecutionBlock: React.FC<ToolBlockProps> = ({ tool }) => {
                   <span>{copied ? 'Copied' : 'Copy'}</span>
                 </button>
               </div>
-              <pre style={{ margin: 0, padding: '8px', borderRadius: '8px', fontFamily: 'var(--font-mono)', fontSize: '10.5px', maxHeight: '192px', overflowY: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-word', userSelect: 'text', ...(isFailed ? { background: 'var(--accent-red)', color: '#ffffff', opacity: 0.92 } : { background: 'var(--bg-primary)', border: '1px solid var(--border-subtle)', color: 'var(--text-secondary)' }) }}>
+              <pre style={{ margin: 0, padding: '8px', borderRadius: '8px', fontFamily: 'var(--font-mono)', fontSize: '10.5px', maxHeight: '192px', overflowY: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-word', userSelect: 'text', ...(isFailed ? { background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.4)', color: 'var(--accent-red)' } : { background: 'var(--bg-primary)', border: '1px solid var(--border-subtle)', color: 'var(--text-secondary)' }) }}>
                 {tool.output || '(No output produced)'}
               </pre>
             </div>
           )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+interface ToolActionGroupProps {
+  group: ToolActionGroup;
+}
+
+const ToolActionGroupBlock: React.FC<ToolActionGroupProps> = ({ group }) => {
+  // If only 1 action in this group, render standalone tool block
+  if (group.tools.length === 1) {
+    return <ToolExecutionBlock tool={group.tools[0]} />;
+  }
+
+  const hasRunning = group.tools.some((t) => t.status === 'running');
+  const failCount = group.tools.filter((t) => t.status === 'error' || t.isError).length;
+  const isSuccess = !hasRunning && failCount === 0;
+
+  const groupStatusColor = failCount > 0 ? 'var(--accent-red)' : hasRunning ? 'var(--accent-blue)' : 'var(--accent-green)';
+
+  const [groupExpanded, setGroupExpanded] = useState<boolean>(() => hasRunning || failCount > 0);
+
+  // Auto-expand if a command inside starts running or fails
+  useEffect(() => {
+    if (hasRunning || failCount > 0) {
+      setGroupExpanded(true);
+    }
+  }, [hasRunning, failCount]);
+
+  const groupTitle = useMemo(() => {
+    const count = group.tools.length;
+    switch (group.category) {
+      case 'read':
+        return hasRunning ? `Viewing ${count} files` : `Viewed ${count} files`;
+      case 'edit':
+        return hasRunning ? `Editing ${count} files` : `Edited ${count} files`;
+      case 'command':
+        return hasRunning ? `Running ${count} commands` : `Ran ${count} commands`;
+      case 'search':
+        return hasRunning ? `Searching (${count} queries)` : `Searched (${count} queries)`;
+      case 'dir':
+        return hasRunning ? `Listing ${count} directories` : `Listed ${count} directories`;
+      default:
+        return hasRunning ? `Executing ${count} actions` : `Executed ${count} actions`;
+    }
+  }, [group.category, group.tools.length, hasRunning]);
+
+  const distinctTargets = useMemo(() => {
+    return Array.from(new Set(group.tools.map((t) => resolveToolAction(t).target).filter(Boolean)));
+  }, [group.tools]);
+
+  const targetsPreview = useMemo(() => {
+    if (distinctTargets.length === 0) return '';
+    const slice = distinctTargets.slice(0, 3).join(', ');
+    return distinctTargets.length > 3 ? `${slice} +${distinctTargets.length - 3}` : slice;
+  }, [distinctTargets]);
+
+  return (
+    <div
+      style={{
+        borderRadius: '10px',
+        border: '1px solid var(--border-subtle)',
+        borderLeft: `3px solid ${groupStatusColor}`,
+        background: 'var(--bg-secondary)',
+        transition: 'all 0.18s ease',
+        margin: '6px 0',
+        overflow: 'hidden',
+        fontSize: '11px'
+      }}
+    >
+      {/* Group Header: Antigravity-style consolidated group row */}
+      <button
+        type="button"
+        onClick={() => setGroupExpanded(!groupExpanded)}
+        style={{
+          width: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '7px 12px',
+          textAlign: 'left',
+          userSelect: 'none',
+          cursor: 'pointer',
+          background: 'transparent'
+        }}
+        aria-expanded={groupExpanded}
+        onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--surface-2)'; }}
+        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+          <span style={{ color: 'var(--text-muted)', display: 'inline-flex' }}>
+            {groupExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+          </span>
+          {getToolCategoryIcon(group.category, group.tools[0].name)}
+          <span style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '11.5px', flexShrink: 0 }}>
+            {groupTitle}
+          </span>
+          {targetsPreview && (
+            <span
+              style={{
+                fontSize: '10.5px',
+                color: 'var(--text-muted)',
+                fontFamily: 'var(--font-mono)',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                maxWidth: '220px'
+              }}
+              title={distinctTargets.join(', ')}
+            >
+              ({targetsPreview})
+            </span>
+          )}
+          <span
+            style={{
+              fontSize: '9.5px',
+              fontWeight: 700,
+              padding: '1px 6px',
+              borderRadius: '10px',
+              background: 'var(--surface-3)',
+              color: 'var(--text-secondary)',
+              border: '1px solid var(--border-subtle)',
+              flexShrink: 0
+            }}
+          >
+            {group.tools.length}
+          </span>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0, marginLeft: '8px' }}>
+          {hasRunning && (
+            <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: 'var(--accent-blue)', fontWeight: 600 }}>
+              <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} />
+              <span>Running</span>
+            </span>
+          )}
+          {failCount > 0 && (
+            <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: 'var(--accent-red)', fontWeight: 700 }}>
+              <XCircle size={11} />
+              <span>{failCount} failed{group.tools.length > failCount ? `, ${group.tools.length - failCount} passed` : ''}</span>
+            </span>
+          )}
+          {isSuccess && (
+            <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: 'var(--accent-green)', fontWeight: 600 }}>
+              <Check size={11} />
+              <span>Success</span>
+            </span>
+          )}
+        </div>
+      </button>
+
+      {/* Expanded group items */}
+      {groupExpanded && (
+        <div
+          style={{
+            padding: '6px 8px 8px 12px',
+            borderTop: '1px solid var(--border-subtle)',
+            background: 'var(--surface-2)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '4px'
+          }}
+        >
+          {group.tools.map((tool) => (
+            <ToolExecutionBlock key={tool.id} tool={tool} isNested={true} />
+          ))}
         </div>
       )}
     </div>
@@ -527,7 +918,10 @@ export const ChatMessageItem: React.FC<ChatMessageProps> = ({
     if (message.statusText) return message.statusText;
     if (currentStatus) return currentStatus;
     const runningTool = toolList.find((t) => t.status === 'running');
-    if (runningTool) return `Running ${runningTool.name}…`;
+    if (runningTool) {
+      const action = resolveToolAction(runningTool);
+      return `${action.verb} ${action.target || runningTool.name}…`;
+    }
     return 'Thinking…';
   }, [message.statusText, currentStatus, toolList]);
 
@@ -540,9 +934,13 @@ export const ChatMessageItem: React.FC<ChatMessageProps> = ({
     [message.reasoning]
   );
   const activitySteps = toolList.length + (reasoningWords > 0 ? 1 : 0);
+  const toolGroups = useMemo(() => groupConsecutiveTools(toolList), [toolList]);
+
   const runningToolLabel = useMemo(() => {
     const running = toolList.find((t) => t.status === 'running');
-    return running ? `Running ${running.name}…` : null;
+    if (!running) return null;
+    const action = resolveToolAction(running);
+    return `${action.verb} ${action.target || running.name}…`;
   }, [toolList]);
 
   useEffect(() => {
@@ -832,9 +1230,9 @@ export const ChatMessageItem: React.FC<ChatMessageProps> = ({
                   </details>
                 )}
 
-                {/* Tool use / command execution records */}
-                {toolList.map((tool) => (
-                  <ToolExecutionBlock key={tool.id} tool={tool} />
+                {/* Tool use / command execution records grouped by consecutive category */}
+                {toolGroups.map((group) => (
+                  <ToolActionGroupBlock key={group.id} group={group} />
                 ))}
 
                 {/* Harness notices (failover announcements) */}

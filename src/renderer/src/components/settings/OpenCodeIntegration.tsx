@@ -140,7 +140,7 @@ export const OpenCodeIntegration: React.FC<OpenCodeIntegrationProps> = ({
           setActionNotice(
             res.data.hostedReachable
               ? 'OpenCode standard supply verified live.'
-              : 'OpenCode standard supply host unreachable right now â€” retry shortly.'
+              : 'OpenCode standard supply host unreachable right now — retry shortly.'
           );
           setTimeout(() => setActionNotice(null), 4000);
         } else {
@@ -406,7 +406,7 @@ export const OpenCodeIntegration: React.FC<OpenCodeIntegrationProps> = ({
           <Server size={20} color="var(--accent-green)" style={{ flexShrink: 0 }} />
           <div style={{ minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-              <span style={{ fontSize: '13px', fontWeight: 600 }}>Standard Supply â€” Active</span>
+              <span style={{ fontSize: '13px', fontWeight: 600 }}>Standard Supply — Active</span>
               <span
                 id="badge-opencode-supply-live"
                 style={{
@@ -422,7 +422,7 @@ export const OpenCodeIntegration: React.FC<OpenCodeIntegrationProps> = ({
                 }}
               >
                 {(serviceStatus?.hostedReachable ?? false)
-                  ? `Zen endpoint live â€¢ ${serviceStatus?.hostedLatencyMs ?? 'â€“'}ms`
+                  ? `Zen endpoint live • ${serviceStatus?.hostedLatencyMs ?? '–'}ms`
                   : 'Zen endpoint unverified'}
               </span>
               <span
@@ -440,7 +440,7 @@ export const OpenCodeIntegration: React.FC<OpenCodeIntegrationProps> = ({
                 }}
               >
                 {(serviceStatus?.kiloReachable ?? false)
-                  ? `Kilo gateway live â€¢ ${serviceStatus?.kiloLatencyMs ?? 'â€“'}ms`
+                  ? `Kilo gateway live • ${serviceStatus?.kiloLatencyMs ?? '–'}ms`
                   : 'Kilo gateway unverified'}
               </span>
               <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
@@ -475,7 +475,7 @@ export const OpenCodeIntegration: React.FC<OpenCodeIntegrationProps> = ({
           }}
         >
           <RotateCw size={13} className={isRefreshingSupply ? 'spinning' : ''} />
-          {isRefreshingSupply ? 'Checkingâ€¦' : 'Verify Supply'}
+          {isRefreshingSupply ? 'Checking…' : 'Verify Supply'}
         </button>
       </div>
 

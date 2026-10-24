@@ -18,6 +18,7 @@ import assert from 'node:assert';
 import fs from 'node:fs/promises';
 import fsSync from 'node:fs';
 import path from 'node:path';
+import './live-e2e/sandbox-env';
 import { CredentialStore, CREDENTIALS_FILE } from '../src/main/services/auth/credential-store';
 import { UsageLedgerService } from '../src/main/services/usage/ledger';
 

@@ -50,7 +50,7 @@ const FREE_DEFAULT_MODEL = 'google/gemma-4-31b-it:free';
 const PREMIUM_DEFAULT_MODEL = 'openai/gpt-4o';
 
 const FCC_CREDIT_STRING =
-  'Free-model supply layer powered by free-claude-code (FCC) â€” AGPL-3.0 / MIT â€” https://github.com/Alishahryar1/free-claude-code';
+  'Free-model supply layer powered by free-claude-code (FCC) — AGPL-3.0 / MIT — https://github.com/Alishahryar1/free-claude-code';
 
 type OnboardingView = 'choose' | 'premium';
 
@@ -307,7 +307,7 @@ export const OnboardingWizard: React.FC = () => {
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                   <span style={{ fontSize: '20px' }} role="img" aria-label="Lightning">
-                    âš¡
+                    ⚡
                   </span>
                   <h2 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: 'var(--accent-cyan)' }}>
                     Ty-Code Free Tier

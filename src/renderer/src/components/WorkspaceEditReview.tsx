@@ -7,6 +7,7 @@ import { useWorkspaceStore } from '../state/workspace-store';
 import { toast } from '../state/toast-store';
 import { undoWorkspaceEditTransaction, updateOpenTabsFromTransaction } from '../services/workspace-edit-commands';
 import { ensureMonaco, useMonacoRuntime } from '../services/monaco-runtime';
+import { useThemeSync, getMonacoTheme } from '../hooks/useThemeSync';
 import './WorkspaceEditReview.css';
 
 function fullPath(workspacePath: string, relativePath: string): string {
@@ -20,6 +21,8 @@ function normalizePath(filePath: string): string {
 }
 
 export const WorkspaceEditReview: React.FC = () => {
+  const theme = useThemeSync();
+  const monacoTheme = getMonacoTheme(theme);
   const { request, clearRequest, updatePreview, refreshRecentEdits, markTransactionApplied } = useWorkspaceEditStore();
   const { workspacePath, openTabs, refreshFileTree } = useWorkspaceStore();
   const [selectedFile, setSelectedFile] = useState(0);
@@ -133,7 +136,7 @@ export const WorkspaceEditReview: React.FC = () => {
             original={selected.originalContent}
             modified={selected.modifiedContent}
             language={openTabs.find((tab) => normalizePath(tab.path) === normalizePath(fullPath(workspacePath, selected.filePath)))?.language || 'plaintext'}
-            theme="vs-dark"
+            theme={monacoTheme}
             options={{ readOnly: true, renderSideBySide: true, automaticLayout: true, scrollBeyondLastLine: false, minimap: { enabled: false }, fontSize: 13, fontFamily: 'var(--font-mono)' }}
           />}
         </div>

@@ -115,9 +115,13 @@ if (typeof window !== 'undefined' && window.electronAPI?.onCommunityKeyStatusCha
 
 let lastSyncedSignature = '';
 let syncInFlight = false;
+let pendingSync: { providerId: string; modelId: string } | null = null;
 
 async function syncActiveConfigToMain(providerId: string, modelId: string): Promise<boolean> {
-  if (syncInFlight) return false;
+  if (syncInFlight) {
+    pendingSync = { providerId, modelId };
+    return true;
+  }
   syncInFlight = true;
   useSettingsStore.setState({ syncing: true });
   try {
@@ -141,6 +145,26 @@ async function syncActiveConfigToMain(providerId: string, modelId: string): Prom
         'Provider key missing',
         `Switched to Ty-Code Free (${summary.providerId}) so chat keeps working. Add your ${providerId} key in Settings > API Keys.`
       );
+    }
+
+    // Persist to main settings layer
+    try {
+      if (window.electronAPI?.saveSettings) {
+        await window.electronAPI.saveSettings({
+          activeProvider: summary.providerId as any,
+          activeModel: summary.modelId
+        });
+      }
+    } catch {
+      // Optional persistence
+    }
+
+    // Mirror into the active model store
+    try {
+      const { useActiveModelStore } = await import('./active-model-store');
+      await useActiveModelStore.getState().setActiveModel(summary.providerId, summary.modelId);
+    } catch {
+      // Ignore if not loaded
     }
 
     // Mirror into the chat sidecar store so its dropdown reflects the change.
@@ -170,6 +194,11 @@ async function syncActiveConfigToMain(providerId: string, modelId: string): Prom
   } finally {
     syncInFlight = false;
     useSettingsStore.setState({ syncing: false });
+    if (pendingSync) {
+      const next = pendingSync;
+      pendingSync = null;
+      void syncActiveConfigToMain(next.providerId, next.modelId);
+    }
   }
 }
 
@@ -193,7 +222,7 @@ function armSettingsSyncWatcher(): void {
 
     void (async () => {
       const ok = await syncActiveConfigToMain(state.activeProviderId, state.activeModelId);
-      if (!ok) {
+      if (!ok && !pendingSync) {
         const previousSignature = configSignature(revertPair.providerId, revertPair.modelId);
         if (previousSignature !== lastSyncedSignature) {
           reverting = true;

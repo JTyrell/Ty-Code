@@ -312,7 +312,7 @@ export const KeyInputField: React.FC<KeyInputFieldProps> = ({
             background: 'transparent',
             border: 'none',
             outline: 'none',
-            color: '#f8fafc',
+            color: 'var(--text-primary, #f8fafc)',
             fontSize: '13px',
             fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
             padding: '4px 0',

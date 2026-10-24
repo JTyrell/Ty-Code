@@ -180,8 +180,24 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   hasWorkspace: false,
 
   setIsWorkspaceReady: (ready: boolean) => set({ isWorkspaceReady: ready }),
-  setWorkspacePath: (path: string) => set({ workspacePath: path, workspaceRoot: path, isWorkspaceReady: false, hasWorkspace: !!path }),
-  setFileTree: (tree) => set({ fileTree: tree }),
+  setWorkspacePath: (path: string) => {
+    const isNew = get().workspacePath !== path;
+    set({
+      workspacePath: path,
+      workspaceRoot: path,
+      hasWorkspace: Boolean(path),
+      isWorkspaceReady: Boolean(path && get().fileTree && get().workspacePath === path)
+    });
+    if (isNew && path) {
+      void get().refreshFileTree();
+    }
+  },
+  setFileTree: (tree) =>
+    set({
+      fileTree: tree,
+      isWorkspaceReady: Boolean(tree),
+      hasWorkspace: Boolean(tree || get().workspacePath)
+    }),
   setFlatTree: (flat) => set({ flatTree: flat }),
   appendTreeChunk: (chunk) => set((state) => ({ flatTree: [...(state.flatTree || []), ...chunk] })),
 
@@ -379,15 +395,50 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   }
 }));
 
-// Global IPC event listeners for workspace readiness and folder open
+// Global IPC event listeners for workspace readiness, folder open, and tree synchronization
 if (typeof window !== 'undefined' && window.electronAPI) {
-  window.electronAPI.onWorkspaceReady?.((data) => {
-    useWorkspaceStore.getState().setIsWorkspaceReady(true);
-    if (data?.path && useWorkspaceStore.getState().workspacePath !== data.path) {
-      useWorkspaceStore.setState({ workspacePath: data.path, workspaceRoot: data.path, hasWorkspace: true });
+  // 1. Initial workspace hydration on mount (works across main window and all secondary windows)
+  void window.electronAPI.getWorkspaceTree?.('').then((res) => {
+    if (res?.success && res.data?.path) {
+      useWorkspaceStore.setState({
+        workspacePath: res.data.path,
+        workspaceRoot: res.data.path,
+        fileTree: res.data,
+        isWorkspaceReady: true,
+        hasWorkspace: true
+      });
     }
   });
 
+  // 2. Tree chunk streaming listener
+  window.electronAPI.onTreeChunk?.((payload: any) => {
+    if (payload?.entries && Array.isArray(payload.entries)) {
+      useWorkspaceStore.getState().appendTreeChunk(payload.entries);
+      if (payload.isComplete) {
+        useWorkspaceStore.getState().setIsWorkspaceReady(true);
+      }
+    }
+  });
+
+  // 3. Tree updated from FS watcher
+  window.electronAPI.onTreeUpdated?.(() => {
+    void useWorkspaceStore.getState().refreshFileTree();
+  });
+
+  // 4. Workspace ready listener
+  window.electronAPI.onWorkspaceReady?.((data) => {
+    useWorkspaceStore.getState().setIsWorkspaceReady(true);
+    if (data?.path && useWorkspaceStore.getState().workspacePath !== data.path) {
+      useWorkspaceStore.setState({
+        workspacePath: data.path,
+        workspaceRoot: data.path,
+        hasWorkspace: true
+      });
+      void useWorkspaceStore.getState().refreshFileTree();
+    }
+  });
+
+  // 5. Open folder listener
   window.electronAPI.onOpenFolder?.((data) => {
     if (data?.folderPath) {
       useWorkspaceStore.getState().setWorkspacePath(data.folderPath);

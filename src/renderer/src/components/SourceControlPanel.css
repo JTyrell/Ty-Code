@@ -278,3 +278,11 @@
   .source-control-branch-trigger { max-width: 126px; }
   .source-control-commit-box { padding: 7px; }
 }
+
+body.theme-light .source-control-conflict-title,
+body.theme-group-light .source-control-conflict-title { color: #be185d; }
+body.theme-light .source-control-count.is-conflict,
+body.theme-group-light .source-control-count.is-conflict { color: #be185d; background: rgba(190, 24, 93, .12); }
+body.theme-light .source-control-status-letter.is-C,
+body.theme-group-light .source-control-status-letter.is-C { color: #be185d; }
+

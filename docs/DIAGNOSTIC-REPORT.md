@@ -1,19 +1,17 @@
 # Ty-Code Remediation Report — Plain-Language "What Is Needed"
-**Generated**: 2026-10-23T15:32:08.173Z
+**Generated**: 2026-10-24T19:36:28.746Z
 **Status**: ACTION REQUIRED
 
 ## 1. RECOMMENDED NEXT ACTION (Single Highest-Value Step)
 > [!IMPORTANT]
-> **Start coding immediately with OpenKilo (Kilo Gateway)**
-> OpenKilo (Kilo Gateway) is fully operational (2560ms TTFT - Streaming & tool-calling verified). You can start coding right now without waiting.
+> **Regenerate key at OpenRouter (Free Tier) portal**
+> OpenRouter (Free Tier) requires an action from you: API key for OpenRouter (Free Tier) was rejected (HTTP 401/403). It may be expired or revoked.
 
 ## 2. WORKING NOW (Providers & Models Ready Immediately)
 > [!NOTE]
-> **Working Path Status**: 1 operational provider(s) ready immediately: OpenKilo (Kilo Gateway) (kilo-auto/free).
+> **Working Path Status**: No operational provider paths currently available. Causes: OpenRouter (Free Tier): API key for OpenRouter (Free Tier) was rejected (HTTP 401/403). It may be expired or revoked. | Groq (Free Tier): Selected model 'llama-3.3-70b-versatile' is not available or not free on Groq (Free Tier) (HTTP 404). | Google AI Studio (Gemini Free Tier): API key for Google AI Studio (Gemini Free Tier) was rejected (HTTP 401/403). It may be expired or revoked.. Action needed: Add an API key in Settings > Providers or start local Ollama on http://localhost:11434.
 
-| Provider | Model | Auth Mode | Latency | Status |
-| :--- | :--- | :--- | :--- | :--- |
-| **OpenKilo (Kilo Gateway)** | `kilo-auto/free` | `anonymous` | 2560ms | **READY TO USE** |
+*No providers are currently operational. Review the missing items below to restore connectivity.*
 
 ## 3. MISSING FROM YOU (User Action Required)
 - [ ] **OpenRouter (Free Tier)** (`CONFIG_INVALID`): API key for OpenRouter (Free Tier) was rejected (HTTP 401/403). It may be expired or revoked.
@@ -33,6 +31,10 @@
   - **Status URL**: [https://status.openrouter.ai](https://status.openrouter.ai)
   - **Next Retry Schedule**: Automatic failover engaged; exponential backoff: 30s, 60s, 120s
   - **Suggested Fallback**: `OpenKilo (zero-config anonymous tier)`
+- **OpenKilo (Kilo Gateway)** (`PROVIDER_DOWN`): Provider outage; auto-failover engaged
+  - **Status URL**: [https://openkilo.com](https://openkilo.com)
+  - **Next Retry Schedule**: Automatic failover engaged; exponential backoff: 30s, 60s, 120s
+  - **Suggested Fallback**: `OpenKilo (Kilo Gateway Free Tier)`
 
 ## AI Coder Handoff Prompt Block
 Copy and paste this block directly into the assistant chat:

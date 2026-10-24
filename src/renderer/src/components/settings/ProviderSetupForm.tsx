@@ -474,10 +474,10 @@ export const ProviderSetupForm: React.FC<ProviderSetupFormProps> = ({
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Share2 size={16} color="#818cf8" />
               <div>
-                <div style={{ fontSize: '13px', fontWeight: 600, color: '#f1f5f9' }}>
+                <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>
                   One-Click OpenRouter Connect (PKCE)
                 </div>
-                <div style={{ fontSize: '11px', color: '#94a3b8' }}>
+                <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
                   Authorize directly in your browser. No API key copying or pasting required.
                 </div>
               </div>
@@ -543,10 +543,10 @@ export const ProviderSetupForm: React.FC<ProviderSetupFormProps> = ({
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Box size={16} color="#ec4899" />
               <div>
-                <div style={{ fontSize: '13px', fontWeight: 600, color: '#f1f5f9' }}>
+                <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>
                   OpenKilo Gateway (Free Tier &amp; OAuth)
                 </div>
-                <div style={{ fontSize: '11px', color: '#94a3b8' }}>
+                <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
                   Instant zero-click access to 40+ free models, or browser sign-in for 350+ models.
                 </div>
               </div>
@@ -625,10 +625,10 @@ export const ProviderSetupForm: React.FC<ProviderSetupFormProps> = ({
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Cpu size={16} color="#38bdf8" />
               <div>
-                <div style={{ fontSize: '13px', fontWeight: 600, color: '#f1f5f9' }}>
+                <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>
                   GitHub Copilot Device Code Connect
                 </div>
-                <div style={{ fontSize: '11px', color: '#94a3b8' }}>
+                <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
                   Authenticate via standard GitHub device code (RFC 8628).
                 </div>
               </div>
@@ -673,7 +673,7 @@ export const ProviderSetupForm: React.FC<ProviderSetupFormProps> = ({
               }}
               id="copilot-device-prompt"
             >
-              <div style={{ fontSize: '12px', color: '#f1f5f9' }}>
+              <div style={{ fontSize: '12px', color: 'var(--text-primary)' }}>
                 Enter this code on GitHub to authorize Ty-Code:
               </div>
 
@@ -705,9 +705,9 @@ export const ProviderSetupForm: React.FC<ProviderSetupFormProps> = ({
                     padding: '8px 12px',
                     fontSize: '11px',
                     fontWeight: 500,
-                    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-                    color: '#f1f5f9',
-                    border: 'none',
+                    backgroundColor: 'var(--bg-tertiary)',
+                    color: 'var(--text-primary)',
+                    border: '1px solid var(--border-subtle)',
                     borderRadius: '6px',
                     cursor: 'pointer'
                   }}

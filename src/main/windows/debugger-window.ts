@@ -40,6 +40,7 @@ export interface DebuggerStateSnapshot {
   isPopOutMode: boolean;
   selectedRole: AnalysisRole;
   theme?: string;
+  workspacePath?: string | null;
   updatedAt: number;
 }
 
@@ -60,6 +61,7 @@ export class DebuggerSyncManager {
   private isPopOutMode = true;
   private selectedRole: AnalysisRole = 'dev';
   private theme = 'dark';
+  private workspacePath: string | null = null;
   private updatedAt = Date.now();
   private windowResolver: (() => WebContents[]) | null = null;
   private isTrustedSender: TrustedSenderCheck | null = null;
@@ -80,6 +82,7 @@ export class DebuggerSyncManager {
       isPopOutMode: this.isPopOutMode,
       selectedRole: this.selectedRole,
       theme: this.theme,
+      workspacePath: this.workspacePath,
       updatedAt: this.updatedAt
     };
   }
@@ -96,6 +99,7 @@ export class DebuggerSyncManager {
     if (partial.isPopOutMode !== undefined) this.isPopOutMode = partial.isPopOutMode;
     if (partial.selectedRole !== undefined) this.selectedRole = partial.selectedRole;
     if (partial.theme !== undefined) this.theme = partial.theme;
+    if (partial.workspacePath !== undefined) this.workspacePath = partial.workspacePath;
     this.updatedAt = Date.now();
   }
 
@@ -233,7 +237,8 @@ const DebuggerSyncStatePayloadSchema = z.object({
   analysisResults: z.array(z.any()).optional(),
   isPopOutMode: z.boolean().optional(),
   selectedRole: z.enum(['dev', 'qa', 'pm']).optional(),
-  theme: z.string().optional()
+  theme: z.string().optional(),
+  workspacePath: z.string().nullable().optional()
 });
 
 const DebuggerRunAnalysisPayloadSchema = z.object({
@@ -440,7 +445,8 @@ export function openDebuggerWindow(): BrowserWindow {
   // Load app with #debugger hash route
   const devServerUrl = process.env.VITE_DEV_SERVER_URL;
   if (devServerUrl) {
-    void window.loadURL(`${devServerUrl}#debugger`);
+    const formattedUrl = devServerUrl.endsWith('/') ? `${devServerUrl}#debugger` : `${devServerUrl}/#debugger`;
+    void window.loadURL(formattedUrl);
   } else {
     void window.loadFile(path.join(__dirname, '../renderer/index.html'), { hash: 'debugger' });
   }

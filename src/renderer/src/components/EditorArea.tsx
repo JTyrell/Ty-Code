@@ -42,6 +42,7 @@ import { useExtensionPromptStore } from '../state/extension-prompt-store';
 import { LazyModelManager } from '../services/lazy-model-manager';
 import { useDocumentReviewStore } from '../state/document-review-store';
 import { DocumentReviewPane } from './documents/DocumentReviewPane';
+import { useThemeSync, getMonacoTheme } from '../hooks/useThemeSync';
 
 interface SplitPaneState {
   isSplit: boolean;
@@ -50,6 +51,8 @@ interface SplitPaneState {
 }
 
 export const EditorArea: React.FC = () => {
+  const theme = useThemeSync();
+  const monacoTheme = getMonacoTheme(theme);
   // Zustand selector audit: narrow slices to eliminate render storms
   const openTabs = useWorkspaceStore((s) => s.openTabs);
   const activeTabPath = useWorkspaceStore((s) => s.activeTabPath);
@@ -839,7 +842,7 @@ export const EditorArea: React.FC = () => {
             original={diffReview.diff.originalContent}
             modified={diffReview.diff.proposedContent}
             language="typescript"
-            theme="vs-dark"
+            theme={monacoTheme}
             options={{
               renderSideBySide: true,
               fontSize: 13,
@@ -858,7 +861,7 @@ export const EditorArea: React.FC = () => {
                 path={monaco?.Uri.file(activeTab.path).toString() ?? activeTab.path}
                 language={activeTab.language}
                 value={activeTab.content}
-                theme="vs-dark"
+                theme={monacoTheme}
                 onMount={handleEditorMount}
                 onChange={(val) => {
                   if (val !== undefined) handleContentChange(activeTab.path, val);
@@ -925,7 +928,7 @@ export const EditorArea: React.FC = () => {
                     path={monaco?.Uri.file(secondaryTab.path).toString() ?? secondaryTab.path}
                     language={secondaryTab.language}
                     value={secondaryTab.content}
-                    theme="vs-dark"
+                    theme={monacoTheme}
                     onChange={(val) => {
                       if (val !== undefined) handleContentChange(secondaryTab.path, val);
                     }}

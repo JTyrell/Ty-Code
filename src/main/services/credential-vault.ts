@@ -3,7 +3,25 @@ import fs from 'fs';
 import path from 'path';
 
 function getCredentialsFilePath(): string {
+  if (typeof (app as { getPath?: unknown } | undefined)?.getPath !== 'function') {
+    throw new Error('CREDENTIAL_VAULT_UNAVAILABLE');
+  }
   return path.join(app.getPath('userData'), 'credentials.enc');
+}
+
+/**
+ * True only when running inside the Electron main process with safeStorage.
+ * Outside Electron (e.g. bundled E2E harnesses in plain Node) the vault has no
+ * secure OS storage, so read paths degrade to an empty keyring instead of
+ * crashing the caller.
+ */
+function isVaultAvailable(): boolean {
+  try {
+    if (typeof (app as { getPath?: unknown } | undefined)?.getPath !== 'function') return false;
+    return Boolean(safeStorage?.isEncryptionAvailable?.());
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -21,7 +39,13 @@ export function clearKeyCache(providerId?: string): void {
 }
 
 function loadAllKeys(): Record<string, string> {
-  const filePath = getCredentialsFilePath();
+  if (!isVaultAvailable()) return {};
+  let filePath: string;
+  try {
+    filePath = getCredentialsFilePath();
+  } catch {
+    return {};
+  }
   if (!fs.existsSync(filePath)) {
     return {};
   }
@@ -60,8 +84,7 @@ export function getAllVaultKeys(): Record<string, string> {
 
 export async function saveKey(providerId: string, key: string): Promise<void> {
   console.log('[VAULT] Encrypting key with safeStorage...');
-  if (!safeStorage.isEncryptionAvailable()) {
-    console.warn('[VAULT] safeStorage encryption FAILED: safeStorage encryption is not available');
+  if (!isVaultAvailable()) {
     throw new Error('safeStorage encryption is not available');
   }
 

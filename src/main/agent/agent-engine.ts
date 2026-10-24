@@ -137,6 +137,17 @@ async function resolveModelContextLimit(providerId: string, modelId: string): Pr
  * workspace-dependent tools. Heuristic only - when in doubt, returns false
  * so scoping stays available for complex or mutating requests.
  */
+function normalizeApprovalDecision(raw: unknown): AgentApprovalDecision {
+  if (raw === true) return { approved: true };
+  if (raw === false || raw == null) return { approved: false };
+  if (typeof raw === 'object') {
+    const candidate = raw as Partial<AgentApprovalDecision>;
+    const feedback = typeof candidate.feedback === 'string' && candidate.feedback.trim() ? candidate.feedback : undefined;
+    return { approved: Boolean(candidate.approved), ...(feedback ? { feedback } : {}) };
+  }
+  return { approved: false };
+}
+
 function looksLikeSimpleQuery(prompt: string): boolean {
   const lower = prompt.trim().toLowerCase();
 
@@ -237,10 +248,18 @@ export class AgentEngine {
 
     // ===== STEP 1: O(1) ENVIRONMENT STATE (before any tool planning) =====
     // Synchronous singleton read - no disk I/O, no PTY spawns.
-    const hasWorkspace = Boolean(workspaceManager.isWorkspaceReady && workspaceManager.currentWorkspacePath);
+    // Prefer the explicit workspace passed by the caller; fall back to the
+    // workspace-manager singleton when the caller did not provide one.
+    const callerWorkspace = workspacePath && workspacePath.trim() ? workspacePath : null;
+    const hasWorkspace = Boolean(
+      callerWorkspace || (workspaceManager.isWorkspaceReady && workspaceManager.currentWorkspacePath)
+    );
+    const workspaceRoot = hasWorkspace
+      ? (callerWorkspace || workspaceManager.currentWorkspacePath)
+      : null;
     const envContext: EnvironmentContext = {
       hasWorkspace,
-      workspaceRoot: hasWorkspace ? workspaceManager.currentWorkspacePath : null,
+      workspaceRoot,
       activeFiles: hasWorkspace
         ? (params.openFilePaths?.length ? [...params.openFilePaths] : params.activeFilePath ? [params.activeFilePath] : [])
         : []
@@ -383,7 +402,7 @@ export class AgentEngine {
         approvalKind: 'tool_permission'
       };
       onChunk({ type: 'status', content: 'Waiting for your approval…' });
-      const decision = (await requestApproval?.(approval)) || { approved: false };
+      const decision = normalizeApprovalDecision(await requestApproval?.(approval));
       if (decision.approved) approvalState.userApproved = true;
       return decision;
     });
@@ -594,7 +613,7 @@ export class AgentEngine {
         const match = trimmed.match(/^[-*•]\s*\*\*Phase\s*\d+[^*]*\*\*\s*[:\-–—]?\s*(.+)$/i) ||
                       trimmed.match(/^[-*•]\s*\*\*(Discovery|Implementation|Verification)\*\*\s*[:\-–—]?\s*(.+)$/i);
         if (match) {
-          const task = match[2].replace(/\*\*/g, '').trim();
+          const task = (match[2] ?? match[1]).replace(/\*\*/g, '').trim();
           if (task.length > 3 && task.length < 300) stateManager.addTodo(task, 'medium');
         }
       }
@@ -952,7 +971,41 @@ export class AgentEngine {
               document
             });
 
-            const output = `${kind === 'plan' ? 'Plan' : 'Report'} "${title}" (id: ${docId}, ${sections.length} sections) submitted successfully and opened in editor.`;
+            const submittedOutput = `${kind === 'plan' ? 'Plan' : 'Report'} "${title}" (id: ${docId}, ${sections.length} sections) submitted successfully and opened in editor.`;
+            if (kind === 'plan' && stateManager.currentMode === AgentMode.Plan) {
+              const planApproval: AgentToolApproval = {
+                id: `plan_${toolCall.id}`,
+                toolCall: tool,
+                reason: `Review the submitted plan "${title}" before execution.`,
+                approvalKind: 'plan_review',
+                planReport: rawMarkdown
+              };
+              onChunk({ type: 'approval_request', approvalRequest: planApproval });
+              onChunk({ type: 'status', content: 'Waiting for plan approval…' });
+              const decision = normalizeApprovalDecision(await requestApproval?.(planApproval));
+              if (abortSignal?.aborted) {
+                onChunk({ type: 'cancelled' });
+                return;
+              }
+              let output = submittedOutput;
+              if (decision.approved) {
+                stateManager.currentMode = AgentMode.Execute;
+                if (stateManager.todos.length === 0) populateTodosFromPlan(rawMarkdown);
+                onChunk({ type: 'agent_state', state: { todos: stateManager.todos, mode: stateManager.currentMode, iteration: stateManager.iterationCount, maxIterations: stateManager.maxIterations } });
+                onChunk({ type: 'status', content: `Plan approved. Executing ${stateManager.todos.length} planned tasks.` });
+                output += ' APPROVED. Plan mode is lifted: write_file, replace_file_content, run_command, and Git mutations are now allowed. Follow the approved Execution Plan phases in order.';
+              } else {
+                const revisionFeedback = decision.feedback || 'no feedback';
+                output += ` NOT APPROVED. The user sent plan revision feedback: ${revisionFeedback}. Regenerate the plan incorporating this feedback and call submit_plan again. Do not execute any mutating tools yet.`;
+                onChunk({ type: 'status', content: 'Plan revision requested.' });
+              }
+              onChunk({ type: 'tool_result', toolResult: { toolCallId: toolCall.id, name: toolCall.name, output, isError: !decision.approved } });
+              messages.push({ role: 'tool', name: toolCall.name, tool_call_id: toolCall.id, content: output });
+              stateManager.recordToolCall(toolCall.name, toolCall.arguments, output);
+              stateManager.iterationCount++;
+              continue;
+            }
+            const output = submittedOutput;
             onChunk({
               type: 'tool_result',
               toolResult: {
@@ -983,7 +1036,7 @@ export class AgentEngine {
             };
             onChunk({ type: 'approval_request', approvalRequest: planApproval });
             onChunk({ type: 'status', content: 'Waiting for plan approval…' });
-            const decision = (await requestApproval?.(planApproval)) || { approved: false };
+            const decision = normalizeApprovalDecision(await requestApproval?.(planApproval));
             if (abortSignal?.aborted) {
               onChunk({ type: 'cancelled' });
               return;
@@ -1359,6 +1412,9 @@ export class AgentEngine {
           message,
           ...(err instanceof Error && err.stack ? { stack: err.stack.slice(0, 2000) } : {})
         });
+        if (!(err instanceof Error && err.name === 'AbortError')) {
+          console.error(`[AGENT] Task error (provider:${runProvider || currentSettings.activeProvider || 'n/a'}, model:${runModel || currentSettings.activeModel || 'n/a'}): ${message}${err instanceof Error && err.stack ? `\n${err.stack.split('\n').slice(1, 6).join('\n')}` : ''}`);
+        }
         onChunk({ type: 'error', error: message });
         return;
       }

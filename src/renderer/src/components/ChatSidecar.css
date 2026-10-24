@@ -1029,3 +1029,11 @@
   animation: shimmer 2s infinite;
 }
 
+/* Light & Tribal Theme Adaptations */
+body.theme-light .markdown-content code:not(pre code),
+body.theme-group-light .markdown-content code:not(pre code) {
+  color: #0284c7;
+  background: var(--bg-tertiary, rgba(0, 0, 0, 0.05));
+  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.1));
+}
+

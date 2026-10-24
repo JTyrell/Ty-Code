@@ -36,6 +36,7 @@ import {
 } from '../../state/document-review-store';
 import { useChatStore } from '../../state/chat-store';
 import type { AgentDocument, AgentDocumentSection } from '../../../../preload/types';
+import { useThemeSync, getMonacoTheme } from '../../hooks/useThemeSync';
 
 // Register highlight.js languages for code blocks
 const HLJS_LANGS: Record<string, LanguageFn> = {
@@ -241,7 +242,7 @@ const SectionBlock: React.FC<SectionBlockProps> = ({
   }, [section.level]);
 
   return (
-    <section id={section.id} className="group relative my-4 rounded-lg bg-[#14171d]/60 p-3.5 border border-[#23272e] hover:border-[#2e3440] transition-colors">
+    <section id={section.id} className="group relative my-4 rounded-lg doc-review-section bg-[#14171d]/60 p-3.5 border border-[#23272e] hover:border-[#2e3440] transition-colors">
       {/* Heading Row with hover comment bubble */}
       <div className="flex items-center justify-between gap-3 mb-2">
         <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -388,6 +389,8 @@ export const DocumentReviewPane: React.FC = () => {
   const setDraftPrompt = useChatStore((s) => s.setDraftPrompt);
   const queueMessage = useChatStore((s) => s.queueMessage);
 
+  const theme = useThemeSync();
+  const monacoTheme = getMonacoTheme(theme);
   const [editMarkdown, setEditMarkdown] = useState<string>('');
   const [isSaving, setIsSaving] = useState(false);
 
@@ -471,11 +474,11 @@ export const DocumentReviewPane: React.FC = () => {
   const isPlan = activeDocument.kind === 'plan';
 
   return (
-    <div className="flex h-full w-full flex-col bg-[#0f1115] text-gray-100 overflow-hidden font-sans select-text">
+    <div className="flex h-full w-full flex-col doc-review-pane bg-[#0f1115] text-gray-100 overflow-hidden font-sans select-text">
       {/* ------------------------------------------------------------------- */}
       {/* 1. Sticky Header                                                    */}
       {/* ------------------------------------------------------------------- */}
-      <header className="sticky top-0 z-30 flex min-h-[46px] items-center justify-between border-b border-[#23272e] bg-[#14171d]/95 px-4 backdrop-blur-sm shadow-sm">
+      <header className="sticky top-0 z-30 flex min-h-[46px] items-center justify-between border-b border-[#23272e] doc-review-header bg-[#14171d]/95 px-4 backdrop-blur-sm shadow-sm">
         {/* Left: Kind Badge & Title */}
         <div className="flex items-center gap-3 min-w-0 mr-4">
           <span
@@ -578,7 +581,7 @@ export const DocumentReviewPane: React.FC = () => {
               language="markdown"
               value={editMarkdown}
               onChange={(val) => setEditMarkdown(val || '')}
-              theme="vs-dark"
+              theme={monacoTheme}
               options={{
                 fontSize: 13,
                 fontFamily: "'JetBrains Mono', 'Fira Code', monospace",

@@ -5,8 +5,12 @@ import { Check, ChevronDown, ChevronUp, Columns, Minus, Plus, RotateCcw, Split, 
 import { ensureMonaco, useMonacoRuntime } from '../services/monaco-runtime';
 import { useGitStore } from '../state/git-store';
 import { toast } from '../state/toast-store';
+import { useThemeSync, getMonacoTheme } from '../hooks/useThemeSync';
+import './SourceControlPanel.css';
 
 export const DiffViewer: React.FC = () => {
+  const theme = useThemeSync();
+  const monacoTheme = getMonacoTheme(theme);
   // Zustand selector audit: narrow slices to eliminate render storms
   const activeDiff = useGitStore((s) => s.activeDiff);
   const activeHunks = useGitStore((s) => s.activeHunks);
@@ -109,7 +113,7 @@ export const DiffViewer: React.FC = () => {
               }} title="Revert selected hunk"><RotateCcw size={11} />Revert hunk</button>
             </>}
         </>}
-        <button onClick={() => setDiffInline(!diffInline)} title={diffInline ? 'Switch to side-by-side diff' : 'Switch to inline diff'} aria-label={diffInline ? 'Switch to side-by-side diff' : 'Switch to inline diff'} style={{ height: 25, padding: '0 7px', display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--text-secondary)', background: 'var(--bg-tertiary)', fontSize: 9 }}>
+        <button onClick={() => setDiffInline(!diffInline)} title={diffInline ? 'Switch to side-by-side diff' : 'Switch to inline diff'} aria-label={diffInline ? 'Switch to side-by-side diff' : 'Switch to inline diff'} style={{ height: 25, padding: '0 7px', display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--text-secondary)', background: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)', borderRadius: 4, fontSize: 9 }}>
           {diffInline ? <Columns size={12} /> : <Split size={12} />}{diffInline ? 'Side-by-side' : 'Inline'}
         </button>
         {activeDiff.isStaged ? <button className="source-control-subtle-button" onClick={() => void unstageFile(activeDiff.filePath)}><Minus size={11} />Unstage file</button>
@@ -125,7 +129,7 @@ export const DiffViewer: React.FC = () => {
         original={activeDiff.originalContent}
         modified={activeDiff.modifiedContent}
         language={language}
-        theme="vs-dark"
+        theme={monacoTheme}
         onMount={(editor) => { diffEditorRef.current = editor; }}
         options={{
           renderSideBySide: !diffInline,

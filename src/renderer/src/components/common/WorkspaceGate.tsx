@@ -53,11 +53,13 @@ export const WorkspaceGate: React.FC<WorkspaceGateProps> = ({
         const res = await window.electronAPI.openFolderDialog();
         if (res?.success && res.data) {
           useWorkspaceStore.getState().setWorkspacePath(res.data);
+          await useWorkspaceStore.getState().refreshFileTree();
         }
       } else if (window.electronAPI?.selectWorkspaceFolder) {
         const res = await window.electronAPI.selectWorkspaceFolder();
         if (res?.success && res.data) {
           useWorkspaceStore.getState().setWorkspacePath(res.data);
+          await useWorkspaceStore.getState().refreshFileTree();
         }
       }
     } catch (err) {
@@ -83,8 +85,8 @@ export const WorkspaceGate: React.FC<WorkspaceGateProps> = ({
           width: '100%',
           minHeight: '320px',
           padding: '32px 24px',
-          background: 'radial-gradient(ellipse at 50% 45%, rgba(56, 189, 248, 0.05) 0%, rgba(13, 17, 23, 0.98) 75%)',
-          color: 'var(--text-primary, #c9d1d9)',
+          background: 'var(--bg-primary)',
+          color: 'var(--text-primary)',
           boxSizing: 'border-box',
           position: 'relative',
           overflow: 'hidden'
@@ -96,7 +98,8 @@ export const WorkspaceGate: React.FC<WorkspaceGateProps> = ({
             position: 'absolute',
             width: '280px',
             height: '280px',
-            background: 'radial-gradient(circle, rgba(99, 102, 241, 0.12) 0%, transparent 70%)',
+            background: 'radial-gradient(circle, var(--accent-primary, #6366f1) 0%, transparent 70%)',
+            opacity: 0.12,
             top: '35%',
             left: '50%',
             transform: 'translate(-50%, -50%)',
@@ -115,9 +118,9 @@ export const WorkspaceGate: React.FC<WorkspaceGateProps> = ({
             width: '100%',
             padding: '36px 32px',
             borderRadius: '16px',
-            background: 'var(--bg-secondary, rgba(22, 27, 34, 0.85))',
-            border: '1px solid var(--border-subtle, rgba(48, 54, 61, 0.7))',
-            boxShadow: '0 20px 48px -12px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.04)',
+            background: 'var(--bg-secondary)',
+            border: '1px solid var(--border-subtle)',
+            boxShadow: '0 20px 48px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px var(--border-subtle)',
             backdropFilter: 'blur(16px)',
             WebkitBackdropFilter: 'blur(16px)',
             textAlign: 'center',
@@ -148,9 +151,9 @@ export const WorkspaceGate: React.FC<WorkspaceGateProps> = ({
             style={{
               margin: '0 0 10px 0',
               fontSize: '18px',
-              fontWeight: 600,
+              fontWeight: 700,
               letterSpacing: '-0.015em',
-              color: 'var(--text-primary, #f0f6fc)'
+              color: 'var(--text-primary)'
             }}
           >
             No Workspace Open
@@ -161,7 +164,7 @@ export const WorkspaceGate: React.FC<WorkspaceGateProps> = ({
               margin: '0 0 24px 0',
               fontSize: '13px',
               lineHeight: '1.55',
-              color: 'var(--text-muted, #8b949e)',
+              color: 'var(--text-secondary)',
               maxWidth: '340px'
             }}
           >
@@ -238,8 +241,8 @@ export const WorkspaceGate: React.FC<WorkspaceGateProps> = ({
         width: '100%',
         minHeight: '260px',
         padding: '32px 24px',
-        background: 'var(--bg-primary, #0d1117)',
-        color: 'var(--text-primary, #c9d1d9)',
+        background: 'var(--bg-primary)',
+        color: 'var(--text-primary)',
         boxSizing: 'border-box',
         position: 'relative',
         overflow: 'hidden'
@@ -254,9 +257,9 @@ export const WorkspaceGate: React.FC<WorkspaceGateProps> = ({
           maxWidth: '420px',
           padding: '28px 32px',
           borderRadius: '12px',
-          background: 'var(--bg-secondary, rgba(22, 27, 34, 0.75))',
-          border: '1px solid var(--border-subtle, rgba(48, 54, 61, 0.6))',
-          boxShadow: '0 12px 32px rgba(0, 0, 0, 0.35)',
+          background: 'var(--bg-secondary)',
+          border: '1px solid var(--border-subtle)',
+          boxShadow: '0 12px 32px rgba(0, 0, 0, 0.15), 0 0 0 1px var(--border-subtle)',
           backdropFilter: 'blur(8px)',
           textAlign: 'center'
         }}
@@ -292,9 +295,9 @@ export const WorkspaceGate: React.FC<WorkspaceGateProps> = ({
           style={{
             margin: '0 0 8px 0',
             fontSize: '15px',
-            fontWeight: 600,
+            fontWeight: 700,
             letterSpacing: '-0.01em',
-            color: 'var(--text-primary, #f0f6fc)'
+            color: 'var(--text-primary)'
           }}
         >
           {message}
@@ -305,7 +308,7 @@ export const WorkspaceGate: React.FC<WorkspaceGateProps> = ({
             margin: 0,
             fontSize: '12px',
             lineHeight: '1.5',
-            color: 'var(--text-muted, #8b949e)'
+            color: 'var(--text-secondary)'
           }}
         >
           {subtext}
@@ -315,7 +318,7 @@ export const WorkspaceGate: React.FC<WorkspaceGateProps> = ({
           style={{
             width: '100%',
             height: '3px',
-            background: 'var(--bg-tertiary, #21262d)',
+            background: 'var(--bg-tertiary)',
             borderRadius: '2px',
             marginTop: '20px',
             overflow: 'hidden',

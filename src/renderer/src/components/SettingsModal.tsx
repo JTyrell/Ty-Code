@@ -1312,11 +1312,11 @@ export const SettingsModal: React.FC = () => {
                 style={{
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '8px',
+                  gap: '6px',
                   padding: '4px',
-                  background: 'rgba(30, 41, 59, 0.5)',
-                  borderRadius: '8px',
-                  border: '1px solid rgba(255, 255, 255, 0.08)'
+                  background: 'var(--bg-secondary)',
+                  borderRadius: '9px',
+                  border: '1px solid var(--border-subtle)'
                 }}
                 id="byok-subtab-bar"
               >
@@ -1333,13 +1333,15 @@ export const SettingsModal: React.FC = () => {
                     onClick={() => setByokSubTab(st.id as any)}
                     style={{
                       flex: 1,
-                      padding: '7px 12px',
-                      borderRadius: '6px',
+                      padding: '7px 14px',
+                      borderRadius: '7px',
                       fontSize: '12px',
-                      fontWeight: 600,
-                      border: 'none',
-                      background: byokSubTab === st.id ? 'var(--accent-primary)' : 'transparent',
-                      color: byokSubTab === st.id ? '#ffffff' : 'var(--text-secondary)',
+                      fontWeight: byokSubTab === st.id ? 600 : 500,
+                      border: '1px solid',
+                      borderColor: byokSubTab === st.id ? 'var(--border-subtle)' : 'transparent',
+                      background: byokSubTab === st.id ? 'var(--bg-tertiary)' : 'transparent',
+                      color: byokSubTab === st.id ? 'var(--text-primary)' : 'var(--text-muted)',
+                      boxShadow: byokSubTab === st.id ? '0 1px 3px rgba(0, 0, 0, 0.2)' : 'none',
                       cursor: 'pointer',
                       transition: 'all 0.15s ease'
                     }}

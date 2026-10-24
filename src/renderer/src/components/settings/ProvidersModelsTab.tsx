@@ -65,8 +65,9 @@ function providerTag(providerId: string): string {
   return PROVIDER_TAG_LABELS[providerId] || PROVIDER_TAG_LABELS[key] || providerId.replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-function providerIdForSelection(providerId: string): string {
-  if (providerId === 'openrouter-free') return 'openrouter';
+function providerIdForSelection(providerId: string, modelRequiresKey?: boolean, hasOpenRouterKey?: boolean): string {
+  if (providerId === 'openrouter-free') return hasOpenRouterKey ? 'openrouter' : TY_CODE_FREE_PROVIDER;
+  if (providerId === 'openrouter' && !hasOpenRouterKey) return TY_CODE_FREE_PROVIDER;
   return providerId;
 }
 
@@ -348,11 +349,14 @@ export function ProvidersModelsTab({ onOpenApiKeys, onOpenByok, onOpenProviderSe
   const currentActiveModel = useMemo(() => {
     if (!catalog) return null;
     return catalog.models.find(
-      (m) => m.modelId === activeModelId && providerIdForSelection(m.providerId) === activeProviderId
+      (m) => m.modelId === activeModelId && (
+        providerIdForSelection(m.providerId, m.requiresKey, Boolean(catalog.openRouterKeyAvailable)) === activeProviderId ||
+        m.providerId === activeProviderId
+      )
     ) || catalog.models.find((m) => m.modelId === activeModelId) || null;
   }, [catalog, activeModelId, activeProviderId]);
 
-  const handleSelect = (model: CatalogModel): void => {
+  const handleSelect = async (model: CatalogModel): Promise<void> => {
     if (isModelLocked(model)) {
       toast.warning(
         model.providerId === 'openrouter' ? 'One-Key Access required' : 'Provider key required',
@@ -361,10 +365,55 @@ export function ProvidersModelsTab({ onOpenApiKeys, onOpenByok, onOpenProviderSe
       );
       return;
     }
-    const selectionProviderId = providerIdForSelection(model.providerId);
+    const selectionProviderId = providerIdForSelection(
+      model.providerId,
+      model.requiresKey,
+      Boolean(catalog?.openRouterKeyAvailable)
+    );
     setActiveProvider(selectionProviderId, model.modelId);
-    setActiveModel(model.modelId);
-    toast.success('Model Activated', `${model.name} is now served by the ProviderGateway.`);
+
+    try {
+      if (window.electronAPI?.updateActiveProviderConfig) {
+        await window.electronAPI.updateActiveProviderConfig({
+          providerId: selectionProviderId,
+          modelId: model.modelId
+        });
+      }
+      if (window.electronAPI?.saveSettings) {
+        await window.electronAPI.saveSettings({
+          activeProvider: selectionProviderId as any,
+          activeModel: model.modelId
+        });
+      }
+      if (window.electronAPI?.modelRouterSetPreferences) {
+        await window.electronAPI.modelRouterSetPreferences({
+          mode: 'manual',
+          manualModelId: model.modelId,
+          manualProviderId: selectionProviderId
+        });
+      }
+      try {
+        const { useActiveModelStore } = await import('../../state/active-model-store');
+        await useActiveModelStore.getState().setActiveModel(selectionProviderId, model.modelId);
+      } catch {}
+      try {
+        const { useChatStore } = await import('../../state/chat-store');
+        const chatSettings = useChatStore.getState().settings;
+        if (chatSettings) {
+          useChatStore.setState({
+            settings: {
+              ...chatSettings,
+              activeProvider: selectionProviderId as any,
+              activeModel: model.modelId
+            }
+          });
+        }
+      } catch {}
+    } catch (err: unknown) {
+      console.warn('[PROVIDERS-MODELS] Backend selection dispatch error:', err);
+    }
+
+    toast.success('Model Activated', `${model.name} (${providerTag(selectionProviderId)}) is now confirmed and active.`);
   };
 
   const toggleSection = (id: CatalogSection['id']): void => {
@@ -719,7 +768,9 @@ export function ProvidersModelsTab({ onOpenApiKeys, onOpenByok, onOpenProviderSe
                     {filteredModels.map((model) => {
                       const isActive =
                         model.modelId === activeModelId &&
-                        providerIdForSelection(model.providerId) === activeProviderId;
+                        (providerIdForSelection(model.providerId, model.requiresKey, Boolean(catalog?.openRouterKeyAvailable)) === activeProviderId ||
+                         model.providerId === activeProviderId ||
+                         (activeProviderId === TY_CODE_FREE_PROVIDER && model.providerId.startsWith('openrouter')));
                       const locked = isModelLocked(model);
                       const brand = getProviderBrand(model.providerId, model.name);
                       const badges = getModelBadges(model);

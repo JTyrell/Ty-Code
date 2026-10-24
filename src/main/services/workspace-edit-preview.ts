@@ -10,6 +10,7 @@ import type {
   WorkspaceEditTransactionResult
 } from '../../preload/types';
 import { searchInWorkspaceFiles, buildSearchRegex } from '../ipc/fs-handlers';
+import { getLspManager } from '../ipc/lsp-handlers';
 import { MyersDiff } from './myers-diff';
 import { fromFileUri } from './lsp-path-utils';
 import { gitService } from './git-service';
@@ -477,4 +478,22 @@ export class WorkspaceEditPreviewService {
   public getRecentUndo(): Array<{ transactionId: string; origin: WorkspaceEditOrigin; createdAt: number; fileCount: number; autoApplied: true }> {
     return [...this.undoEntries].filter((entry) => entry.autoApplied).reverse().map((entry) => ({ transactionId: entry.transactionId, origin: entry.origin, createdAt: entry.createdAt, fileCount: entry.files.length, autoApplied: true as const }));
   }
+}
+
+let workspaceEditPreviewInstance: WorkspaceEditPreviewService | null = null;
+let workspaceEditPreviewInstanceWorkspace: string | null = null;
+
+export function setWorkspaceEditPreviewWorkspace(workspacePath: string): void {
+  if (workspaceEditPreviewInstanceWorkspace !== workspacePath) {
+    workspaceEditPreviewInstanceWorkspace = workspacePath;
+    workspaceEditPreviewInstance = null;
+  }
+}
+
+export function getWorkspaceEditPreviewService(): WorkspaceEditPreviewService {
+  const workspacePath = workspaceEditPreviewInstanceWorkspace ?? '';
+  if (!workspaceEditPreviewInstance) {
+    workspaceEditPreviewInstance = new WorkspaceEditPreviewService(workspacePath, getLspManager(workspacePath));
+  }
+  return workspaceEditPreviewInstance;
 }

@@ -45,6 +45,17 @@ export const applyAppTheme = (theme: AppTheme, persist = true): void => {
     document.body.classList.remove(`theme-${t.id}`);
   }
   document.body.classList.add(`theme-${theme}`);
+
+  const meta = APP_THEMES.find((t) => t.id === theme);
+  document.body.classList.remove('theme-group-dark', 'theme-group-light', 'theme-group-hc');
+  if (meta?.group === 'Light') {
+    document.body.classList.add('theme-group-light');
+  } else if (meta?.group === 'High contrast') {
+    document.body.classList.add('theme-group-hc');
+  } else {
+    document.body.classList.add('theme-group-dark');
+  }
+
   if (persist && typeof localStorage !== 'undefined') {
     try {
       localStorage.setItem('ty_claude_theme', theme);
@@ -58,6 +69,13 @@ export const applyAppTheme = (theme: AppTheme, persist = true): void => {
       void window.electronAPI.debuggerSyncState({ theme });
     }
   }
+};
+
+export const getMonacoTheme = (theme: AppTheme): 'vs' | 'vs-dark' | 'hc-black' => {
+  const meta = APP_THEMES.find((t) => t.id === theme);
+  if (meta?.group === 'Light') return 'vs';
+  if (meta?.group === 'High contrast') return 'hc-black';
+  return 'vs-dark';
 };
 
 export const getStoredTheme = (): AppTheme => {

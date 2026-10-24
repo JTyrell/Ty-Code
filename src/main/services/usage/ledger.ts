@@ -92,6 +92,9 @@ export interface EncryptedSyncProviderStub {
 }
 
 const getUserDataPath = (): string => {
+  if (process.env.TYCODE_USER_DATA_OVERRIDE) {
+    return process.env.TYCODE_USER_DATA_OVERRIDE;
+  }
   try {
     if (app && typeof app.getPath === 'function') {
       return app.getPath('userData');

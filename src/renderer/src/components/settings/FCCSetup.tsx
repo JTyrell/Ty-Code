@@ -254,8 +254,8 @@ export const FCCSetup: React.FC = () => {
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <Sparkles size={16} color="#818cf8" />
-          <span style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc' }}>
+          <Sparkles size={16} color="var(--accent-primary, #818cf8)" />
+          <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>
             Connecting your free model supply (powered by free-claude-code)
           </span>
         </div>

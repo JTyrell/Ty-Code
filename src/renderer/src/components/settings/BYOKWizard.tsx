@@ -339,11 +339,11 @@ export const BYOKWizard: React.FC<BYOKWizardProps> = ({
         display: 'flex',
         flexDirection: 'column',
         gap: '20px',
-        background: 'rgba(15, 23, 42, 0.8)',
+        background: 'var(--bg-secondary)',
         borderRadius: '12px',
-        border: '1px solid rgba(255, 255, 255, 0.1)',
+        border: '1px solid var(--border-subtle)',
         padding: '24px',
-        color: '#f8fafc'
+        color: 'var(--text-primary)'
       }}
     >
       {/* Wizard Step Progress Tracker */}
@@ -352,7 +352,7 @@ export const BYOKWizard: React.FC<BYOKWizardProps> = ({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+          borderBottom: '1px solid var(--border-subtle)',
           paddingBottom: '16px'
         }}
         id="wizard-step-tracker"
@@ -373,7 +373,7 @@ export const BYOKWizard: React.FC<BYOKWizardProps> = ({
               gap: '6px',
               fontSize: '12px',
               fontWeight: 600,
-              color: step === s.num ? 'var(--accent-primary)' : step > s.num ? '#34d399' : '#64748b'
+              color: step === s.num ? 'var(--accent-primary)' : step > s.num ? '#34d399' : 'var(--text-muted)'
             }}
           >
             <div
@@ -389,9 +389,9 @@ export const BYOKWizard: React.FC<BYOKWizardProps> = ({
                     ? 'var(--accent-primary)'
                     : step > s.num
                       ? 'rgba(16, 185, 129, 0.2)'
-                      : 'rgba(255, 255, 255, 0.05)',
-                color: step === s.num ? '#ffffff' : step > s.num ? '#34d399' : '#64748b',
-                border: step > s.num ? '1px solid #10b981' : 'none'
+                      : 'var(--bg-tertiary)',
+                color: step === s.num ? '#ffffff' : step > s.num ? '#34d399' : 'var(--text-muted)',
+                border: step > s.num ? '1px solid #10b981' : '1px solid var(--border-subtle)'
               }}
             >
               {step > s.num ? <Check size={14} /> : s.num}
@@ -463,11 +463,11 @@ export const BYOKWizard: React.FC<BYOKWizardProps> = ({
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <span style={{ fontWeight: 600, fontSize: '13px', color: '#f8fafc' }}>{p.name}</span>
+                    <span style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text-primary)' }}>{p.name}</span>
                     {isSelected && <CheckCircle2 size={16} color="var(--accent-primary)" />}
                   </div>
 
-                  <span style={{ fontSize: '11px', color: '#94a3b8' }}>
+                  <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
                     {p.setup_instructions}
                   </span>
 
@@ -563,10 +563,10 @@ export const BYOKWizard: React.FC<BYOKWizardProps> = ({
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Sparkles size={16} color="var(--accent-primary)" />
-              <span style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc' }}>Instructions</span>
+              <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>Instructions</span>
             </div>
 
-            <p style={{ margin: 0, fontSize: '12px', color: '#cbd5e1', lineHeight: '1.6' }}>
+            <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-secondary)', lineHeight: '1.6' }}>
               {selectedProvider.setup_instructions}
             </p>
 
@@ -752,9 +752,9 @@ export const BYOKWizard: React.FC<BYOKWizardProps> = ({
                   width: '100%',
                   padding: '9px 40px 9px 12px',
                   borderRadius: '6px',
-                  border: '1px solid rgba(255, 255, 255, 0.15)',
-                  background: 'rgba(15, 23, 42, 0.7)',
-                  color: '#f8fafc',
+                  border: '1px solid var(--border-subtle)',
+                  background: 'var(--bg-tertiary)',
+                  color: 'var(--text-primary)',
                   fontSize: '13px',
                   fontFamily: 'monospace'
                 }}
@@ -793,9 +793,9 @@ export const BYOKWizard: React.FC<BYOKWizardProps> = ({
                 gap: '6px',
                 padding: '8px 14px',
                 borderRadius: '6px',
-                background: 'rgba(255, 255, 255, 0.08)',
-                border: '1px solid rgba(255, 255, 255, 0.15)',
-                color: '#f8fafc',
+                background: 'var(--bg-tertiary)',
+                border: '1px solid var(--border-subtle)',
+                color: 'var(--text-primary)',
                 fontSize: '12px',
                 fontWeight: 600,
                 cursor: isTesting ? 'wait' : 'pointer'
@@ -912,9 +912,9 @@ export const BYOKWizard: React.FC<BYOKWizardProps> = ({
                   width: '100%',
                   padding: '8px 34px 8px 34px',
                   borderRadius: '6px',
-                  border: '1px solid rgba(255, 255, 255, 0.15)',
-                  background: 'rgba(15, 23, 42, 0.7)',
-                  color: '#f8fafc',
+                  border: '1px solid var(--border-subtle)',
+                  background: 'var(--bg-tertiary)',
+                  color: 'var(--text-primary)',
                   fontSize: '12px'
                 }}
               />
@@ -1001,9 +1001,9 @@ export const BYOKWizard: React.FC<BYOKWizardProps> = ({
                     borderRadius: '4px',
                     fontSize: '11px',
                     fontWeight: 500,
-                    background: 'rgba(255, 255, 255, 0.06)',
-                    border: '1px solid rgba(255, 255, 255, 0.15)',
-                    color: '#e2e8f0',
+                    background: 'var(--bg-tertiary)',
+                    border: '1px solid var(--border-subtle)',
+                    color: 'var(--text-primary)',
                     cursor: 'pointer'
                   }}
                 >
@@ -1104,7 +1104,7 @@ export const BYOKWizard: React.FC<BYOKWizardProps> = ({
                         style={{ cursor: 'pointer' }}
                       />
                       <div>
-                        <span style={{ fontSize: '13px', fontWeight: 500, color: '#f8fafc' }}>
+                        <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--text-primary)' }}>
                           {model.name}
                         </span>
                         {model.name !== model.id && (
@@ -1232,10 +1232,10 @@ export const BYOKWizard: React.FC<BYOKWizardProps> = ({
           </div>
 
           <div>
-            <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: '#f8fafc' }}>
+            <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: 'var(--text-primary)' }}>
               {selectedProvider.name} Successfully Connected!
             </h3>
-            <p style={{ margin: '6px 0 0 0', fontSize: '13px', color: '#94a3b8', maxWidth: '420px' }}>
+            <p style={{ margin: '6px 0 0 0', fontSize: '13px', color: 'var(--text-secondary)', maxWidth: '420px' }}>
               Your API key has been encrypted into operating-system safeStorage. Active model set to{' '}
               <strong style={{ color: '#38bdf8' }}>{selectedModel || 'Default Model'}</strong>.
             </p>

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { useEffect } from 'react';
 import { applyAppTheme, normalizeAppTheme } from '../hooks/useThemeSync';
+import { useWorkspaceStore } from './workspace-store';
 
 export type AnalysisSeverity = 'critical' | 'high' | 'medium' | 'low' | 'info';
 export type AnalysisEngine = 'static' | 'dynamic' | 'arch' | 'ai';
@@ -253,6 +254,14 @@ export function useDebuggerStoreListener(): void {
       if (state.theme) {
         applyAppTheme(normalizeAppTheme(state.theme), true);
       }
+      if (state.workspacePath && useWorkspaceStore.getState().workspacePath !== state.workspacePath) {
+        useWorkspaceStore.setState({
+          workspacePath: state.workspacePath,
+          workspaceRoot: state.workspacePath,
+          hasWorkspace: true
+        });
+        void useWorkspaceStore.getState().refreshFileTree();
+      }
     });
 
     // 3. Request initial snapshot if available
@@ -264,6 +273,14 @@ export function useDebuggerStoreListener(): void {
         if (d.selectedRole) setRole(d.selectedRole);
         if (d.isPopOutMode !== undefined) useDebuggerStore.setState({ isPopOutMode: Boolean(d.isPopOutMode) });
         if (d.theme) applyAppTheme(normalizeAppTheme(d.theme), false);
+        if (d.workspacePath && useWorkspaceStore.getState().workspacePath !== d.workspacePath) {
+          useWorkspaceStore.setState({
+            workspacePath: d.workspacePath,
+            workspaceRoot: d.workspacePath,
+            hasWorkspace: true
+          });
+          void useWorkspaceStore.getState().refreshFileTree();
+        }
       }
     });
 

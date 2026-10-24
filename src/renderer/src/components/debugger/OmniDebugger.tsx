@@ -530,7 +530,7 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search rules, messages, filesâ€¦"
+              placeholder="Search rules, messages, files…"
               className="omni-search-input"
             />
             {searchQuery && (
@@ -760,9 +760,9 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
                   <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
                     {filteredResults.length} {filteredResults.length === 1 ? 'Finding' : 'Findings'}
                   </span>
-                  <span>â€¢</span>
+                  <span>•</span>
                   <span>Scope: {activeFile ? activeFile.split('/').pop() : 'All Workspace Files'}</span>
-                  {selectedEngine !== 'all' && <span>â€¢ Engine: {selectedEngine.toUpperCase()}</span>}
+                  {selectedEngine !== 'all' && <span>• Engine: {selectedEngine.toUpperCase()}</span>}
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -968,7 +968,7 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
                                 title="Mark this diagnostic remediation as applied"
                               >
                                 {isFixed ? <Check size={11} /> : <Zap size={11} />}
-                                <span>{isFixed ? 'Applied âœ“' : 'Apply Fix'}</span>
+                                <span>{isFixed ? 'Applied ✓' : 'Apply Fix'}</span>
                               </button>
                             </div>
                           </div>

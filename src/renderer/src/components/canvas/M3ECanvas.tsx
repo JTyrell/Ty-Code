@@ -1,11 +1,11 @@
 /**
- * M3E Canvas â€” Visual Editor (M3E Canvas overhaul)
+ * M3E Canvas — Visual Editor (M3E Canvas overhaul)
  *
  * Figma-like 3-pane editor living in the dedicated Canvas window:
- *   Left   â€” Component Library + Layer Tree (JSON structure of the current UI)
- *   Center â€” Visual Canvas (custom absolutely-positioned renderer with
+ *   Left   — Component Library + Layer Tree (JSON structure of the current UI)
+ *   Center — Visual Canvas (custom absolutely-positioned renderer with
  *            drag/resize/selection and per-platform device frames)
- *   Right  â€” Properties Panel for the selected node
+ *   Right  — Properties Panel for the selected node
  *
  * Platform changes push `activePlatform` into the shared CanvasSyncManager via
  * the canvas-store auto-sync, so the main IDE window stays in lockstep.
@@ -234,7 +234,7 @@ const NodeVisual: React.FC<{ node: CanvasNode }> = ({ node }) => {
               flexShrink: 0
             }}
           >
-            {checked ? 'âœ“' : ''}
+            {checked ? '✓' : ''}
           </div>
           {str(p, 'text', '') !== '' && (
             <span style={{ color: fg, fontSize, whiteSpace: 'nowrap' }}>{label}</span>
@@ -348,7 +348,7 @@ const typeDefaultPadding = (type: string): number => (type === 'input' ? 10 : 8)
 const defaultLabel = (type: string): string => {
   switch (type) {
     case 'button': return 'Get Started';
-    case 'input': return 'Placeholderâ€¦';
+    case 'input': return 'Placeholder…';
     case 'text': return 'Sample text';
     case 'checkbox': return 'Remember me';
     case 'avatar': return 'JT';
@@ -682,7 +682,7 @@ const PropertiesPanel: React.FC<PropsPanelProps> = ({ node, platform }) => {
           </span>
         </div>
         <div style={{ fontSize: 9.5, color: 'var(--text-secondary)', marginTop: 2 }}>
-          id #{node.id.slice(-8)} â€¢ {platformLabel(platform)}
+          id #{node.id.slice(-8)} • {platformLabel(platform)}
         </div>
       </div>
 
@@ -791,7 +791,7 @@ const PropertiesPanel: React.FC<PropsPanelProps> = ({ node, platform }) => {
             type: node.type,
             platform: node.platform,
             props: node.props,
-            ...(node.children.length > 0 ? { children: '[â€¦]' } : {})
+            ...(node.children.length > 0 ? { children: '[…]' } : {})
           },
           null,
           2
@@ -1079,7 +1079,7 @@ export const M3ECanvas: React.FC = () => {
       const result = await extractImageCss(file);
       setImageCss(result);
     } catch (err: unknown) {
-      console.warn('Image â†’ CSS extraction failed:', err);
+      console.warn('Image → CSS extraction failed:', err);
     } finally {
       setIsProcessingImage(false);
       if (cssFileInputRef.current) cssFileInputRef.current.value = '';
@@ -1162,7 +1162,7 @@ export const M3ECanvas: React.FC = () => {
             ))}
           </select>
           <span style={{ fontSize: 10, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
-            {nodes.length} root{nodes.length === 1 ? '' : 's'} â€¢ {countNodes(nodes)} node{countNodes(nodes) === 1 ? '' : 's'}
+            {nodes.length} root{nodes.length === 1 ? '' : 's'} • {countNodes(nodes)} node{countNodes(nodes) === 1 ? '' : 's'}
           </span>
         </div>
 
@@ -1171,7 +1171,7 @@ export const M3ECanvas: React.FC = () => {
             type="button"
             onClick={() => cssFileInputRef.current?.click()}
             disabled={isProcessingImage}
-            title="Extract a color palette â†’ CSS from a picked image"
+            title="Extract a color palette → CSS from a picked image"
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -1187,7 +1187,7 @@ export const M3ECanvas: React.FC = () => {
             }}
           >
             <Palette size={12} />
-            {isProcessingImage ? 'Extractingâ€¦' : 'Img â†’ CSS'}
+            {isProcessingImage ? 'Extracting…' : 'Img → CSS'}
           </button>
           <button
             type="button"
@@ -1239,7 +1239,7 @@ export const M3ECanvas: React.FC = () => {
             {confirmingClear ? 'Confirm clear?' : 'Clear All'}
           </button>
           {!hydrated && (
-            <span style={{ fontSize: 10, color: 'var(--accent-green)', whiteSpace: 'nowrap' }}>Syncing shared stateâ€¦</span>
+            <span style={{ fontSize: 10, color: 'var(--accent-green)', whiteSpace: 'nowrap' }}>Syncing shared state…</span>
           )}
         </div>
       </div>
@@ -1366,7 +1366,7 @@ export const M3ECanvas: React.FC = () => {
                 {platformLabel(activePlatform)} canvas is empty
               </div>
               <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.6, maxWidth: 280 }}>
-                Add containers, buttons or text from the library â€” every change syncs to the main IDE
+                Add containers, buttons or text from the library — every change syncs to the main IDE
                 window, and the shared chat can drive this canvas directly.
               </div>
               <button
@@ -1443,7 +1443,7 @@ export const M3ECanvas: React.FC = () => {
             </div>
           )}
 
-          {/* Hidden image input for Img â†’ CSS extraction */}
+          {/* Hidden image input for Img → CSS extraction */}
           <input
             ref={cssFileInputRef}
             type="file"
@@ -1452,7 +1452,7 @@ export const M3ECanvas: React.FC = () => {
             style={{ display: 'none' }}
           />
 
-          {/* Image â†’ CSS result panel */}
+          {/* Image → CSS result panel */}
           {imageCss && (
             <div
               style={{

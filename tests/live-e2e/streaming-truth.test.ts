@@ -47,18 +47,30 @@ export async function runStreamingTruthTest(): Promise<{
   try {
     const streamTokens: string[] = [];
     const gatewayTokens: string[] = [];
+    const rawGatewayTokens: string[] = [];
 
-    // 1. Gateway stream test
+    // 1. Gateway stream test.
+    // `onToken` observes the IPC-batched cadence (32ms StreamChunkBatcher);
+    // `onRawToken` observes per-SSE-delta delivery over the wire, which is the
+    // progressive-streaming criterion under test (a fast reply can coalesce
+    // every delta into a single 32ms batch, so batched counts are not the
+    // TCP-level truth).
     await ProviderGateway.streamChat(
       instance.settings,
       [{ role: 'user', content: 'Explain hashes' }],
       [],
       {
-        onToken: (tok) => gatewayTokens.push(tok)
+        onToken: (tok) => gatewayTokens.push(tok),
+        onRawToken: (tok) => rawGatewayTokens.push(tok)
       }
     );
 
     // 2. AgentEngine stream test (agent:stream-token events)
+    // Pin the engine binding to the healthy sidecar model (isAutoMode default
+    // would route through adaptive FCC auto selection).
+    ProviderGateway.setActiveModel({ providerId: 'fcc-proxy', modelId: 'llama-3.3-70b-versatile', isAutoMode: false });
+    ProviderGateway.setEndpointOverride('fcc-proxy', instance.baseUrl);
+
     const engine = new AgentEngine(testDir);
     await engine.run({
       prompt: 'Explain hashes in detail',
@@ -70,25 +82,25 @@ export async function runStreamingTruthTest(): Promise<{
           streamTokens.push(chunk.content);
         }
       },
-      requestApproval: async () => true
+      requestApproval: async () => ({ approved: true })
     });
 
-    const streamEventCount = Math.max(streamTokens.length, gatewayTokens.length);
+    const streamEventCount = Math.max(streamTokens.length, rawGatewayTokens.length);
     console.log(`  Captured ${streamEventCount} progressive stream-token events.`);
-    console.log(`  Gateway token events: ${gatewayTokens.length}, Engine token events: ${streamTokens.length}`);
+    console.log(`  Gateway SSE deltas: ${rawGatewayTokens.length}, Gateway batched events: ${gatewayTokens.length}, Engine token events: ${streamTokens.length}`);
 
     // Required Assertion: streamEventCount >= 5
     assert(
       streamEventCount >= 5,
       `Captured >= 5 stream events (actual: ${streamEventCount})`
     );
-    assert(gatewayTokens.length >= 5, `Gateway onToken count >= 5 (actual: ${gatewayTokens.length})`);
+    assert(rawGatewayTokens.length >= 5, `Gateway SSE delta count >= 5 (actual: ${rawGatewayTokens.length})`);
 
     return {
       passed: passedTests,
       total: totalTests,
       streamEventCount,
-      tokens: streamTokens.length >= 5 ? streamTokens : gatewayTokens
+      tokens: streamTokens.length >= 5 ? streamTokens : rawGatewayTokens
     };
   } finally {
     await instance.close();

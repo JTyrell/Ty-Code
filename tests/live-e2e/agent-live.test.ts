@@ -206,6 +206,8 @@ export async function runAgentLiveTests(): Promise<{ passed: number; total: numb
 
     const agentEngine = new AgentEngine(testWorkspaceDir);
     const agentChunks: AgentStreamChunk[] = [];
+    ProviderGateway.setActiveModel({ providerId: 'fcc-proxy', modelId: 'claude-3-5-sonnet-20241022', isAutoMode: false });
+    ProviderGateway.setEndpointOverride('fcc-proxy', `http://127.0.0.1:${testPort}/v1`);
 
     // Set up a filesystem watcher to detect the EXACT moment the disk file changes
     const watcher = fsSync.watch(liveCheckFile, () => {
@@ -235,7 +237,7 @@ export async function runAgentLiveTests(): Promise<{ passed: number; total: numb
       },
       requestApproval: async (approval) => {
         // Auto-approve diff for test
-        return true;
+        return { approved: true };
       }
     });
 

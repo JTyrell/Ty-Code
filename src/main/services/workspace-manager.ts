@@ -59,6 +59,19 @@ export class WorkspaceManager {
     return this.readyPromise;
   }
 
+  private broadcast(channel: string, payload: unknown): void {
+    const windows = BrowserWindow.getAllWindows();
+    for (const win of windows) {
+      if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
+        try {
+          win.webContents.send(channel, payload);
+        } catch {
+          // safe skip
+        }
+      }
+    }
+  }
+
   /**
    * Resets the workspace readiness promise when a new folder begins indexing.
    */
@@ -67,12 +80,10 @@ export class WorkspaceManager {
     this.readyPromise = new Promise<void>((resolve) => {
       this.resolveReadyPromise = resolve;
     });
-    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-      this.mainWindow.webContents.send('workspace:status', {
-        path: this.currentPath,
-        isReady: false
-      });
-    }
+    this.broadcast('workspace:status', {
+      path: this.currentPath,
+      isReady: false
+    });
   }
 
   /**
@@ -81,13 +92,11 @@ export class WorkspaceManager {
   public setWorkspaceReady(workspacePath: string): void {
     this.isReady = true;
     this.resolveReadyPromise();
-    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-      this.mainWindow.webContents.send('workspace:ready', { path: workspacePath });
-      this.mainWindow.webContents.send('workspace:status', {
-        path: workspacePath,
-        isReady: true
-      });
-    }
+    this.broadcast('workspace:ready', { path: workspacePath });
+    this.broadcast('workspace:status', {
+      path: workspacePath,
+      isReady: true
+    });
   }
 
   /**
@@ -97,12 +106,15 @@ export class WorkspaceManager {
    */
   public async openFolderDialog(customWindow?: BrowserWindow | null): Promise<IpcResponse<string>> {
     try {
-      const win = customWindow || this.mainWindow;
+      const win = customWindow || BrowserWindow.getFocusedWindow() || this.mainWindow || undefined;
       const { dialog } = await import('electron');
-      const result = await dialog.showOpenDialog(win!, {
-        properties: ['openDirectory', 'createDirectory'],
+      const dialogOptions = {
+        properties: ['openDirectory', 'createDirectory'] as ('openDirectory' | 'createDirectory')[],
         title: 'Select Project Directory'
-      });
+      };
+      const result = win
+        ? await dialog.showOpenDialog(win, dialogOptions)
+        : await dialog.showOpenDialog(dialogOptions);
 
       if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
         return { success: false, error: 'User canceled directory selection' };
@@ -162,26 +174,20 @@ export class WorkspaceManager {
 
       // Setup file system watcher
       setupWorkspaceWatcher(resolved, (type, relPath) => {
-        if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-          this.mainWindow.webContents.send('fs:tree-updated', { type, relPath });
-        }
+        this.broadcast('fs:tree-updated', { type, relPath });
       });
 
-      // Notify renderer of folder change so Explorer begins loading
-      if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-        this.mainWindow.webContents.send('window:open-folder', { folderPath: resolved });
-      }
+      // Notify all renderers of folder change so Explorer begins loading
+      this.broadcast('window:open-folder', { folderPath: resolved });
 
       // Index the workspace via chunked scanner (non-blocking)
       await getWorkspaceTreeChunked(resolved, (chunk, isComplete, totalSoFar) => {
         if (scanId !== this.activeScanId) return; // Stale scan superseded by a new one
-        if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-          this.mainWindow.webContents.send('fs:tree-chunk', {
-            entries: chunk,
-            isComplete,
-            totalSoFar
-          });
-        }
+        this.broadcast('fs:tree-chunk', {
+          entries: chunk,
+          isComplete,
+          totalSoFar
+        });
         if (isComplete) {
           this.setWorkspaceReady(resolved);
         }

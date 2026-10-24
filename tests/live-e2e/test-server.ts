@@ -84,6 +84,89 @@ export async function startLiveTestServer(): Promise<TestServerInstance> {
           lastMsgObj?.role !== 'tool';
 
         if (isToolCreationRequest) {
+          // Two-phase protocol-faithful replay: the agent engine locks mutating
+          // tools until a Task Scoping Report is approved via request_approval,
+          // so the scripted model must submit the plan first and only then
+          // emit the write_file call (after the approval tool result lands).
+          const hadPlanApproval = Array.isArray(messages) && messages.some(
+            (m: any) => {
+              if (m?.role === 'tool' && String(m?.name || '') === 'request_approval') return true;
+              if (m?.role === 'user' && typeof m?.content === 'string') {
+                return /\[Tool Result for request_approval\]:/.test(m.content);
+              }
+              return false;
+            }
+          );
+          const hadWriteResult = Array.isArray(messages) && messages.some(
+            (m: any) => m?.role === 'user' && typeof m?.content === 'string' && /\[Tool Result for write_file\]/.test(m.content)
+          );
+          if (hadWriteResult) {
+            const summaryChunk = {
+              id: `chatcmpl-${Date.now()}-final`,
+              object: 'chat.completion.chunk',
+              created: Math.floor(Date.now() / 1000),
+              model: 'llama-3.3-70b-versatile',
+              choices: [
+                {
+                  index: 0,
+                  delta: {
+                    content: 'live-check.md was created and verified on disk. Phase 1 checkpoint reached.'
+                  },
+                  finish_reason: 'stop'
+                }
+              ]
+            };
+            res.write(`data: ${JSON.stringify(summaryChunk)}\n\n`);
+            res.write('data: [DONE]\n\n');
+            res.end();
+            return;
+          }
+          if (!hadPlanApproval) {
+            const planToolCallChunk = {
+              id: `chatcmpl-${Date.now()}`,
+              object: 'chat.completion.chunk',
+              created: Math.floor(Date.now() / 1000),
+              model: 'llama-3.3-70b-versatile',
+              choices: [
+                {
+                  index: 0,
+                  delta: {
+                    tool_calls: [
+                      {
+                        index: 0,
+                        id: `call_plan_${Date.now()}`,
+                        type: 'function',
+                        function: {
+                          name: 'request_approval',
+                          arguments: JSON.stringify({
+                            summary: 'Create live-check.md via write_file; single-step plan awaiting approval.',
+                            report: [
+                              '## Ty-Code Task Scoping Report',
+                              '### Complexity & Resource Gauge',
+                              'Simple: one planned task, one write_file invocation, no terminal commands.',
+                              '### Execution Plan (Phased)',
+                              '- **Phase 1 — Implementation**: Create live-check.md containing the single line verified.',
+                              '- **Phase 2 — Verification**: Read the file content back and confirm it matches exactly.',
+                              '### Failure Risks & Mitigations',
+                              'If the write fails, retry once with the same relative path before escalating.',
+                              '### Checkpoint Proposal',
+                              'Checkpoint after Phase 1: verify file content on disk.'
+                            ].join('\n'),
+                            checkpoint: 'after Phase 1 content verification'
+                          })
+                        }
+                      }
+                    ]
+                  },
+                  finish_reason: null
+                }
+              ]
+            };
+            res.write(`data: ${JSON.stringify(planToolCallChunk)}\n\n`);
+            res.write('data: [DONE]\n\n');
+            res.end();
+            return;
+          }
           const toolCallChunk = {
             id: `chatcmpl-${Date.now()}`,
             object: 'chat.completion.chunk',

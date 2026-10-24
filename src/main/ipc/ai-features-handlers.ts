@@ -18,7 +18,7 @@ import { InlineCompletionService } from '../services/inline-completion-service';
 import { AiCodeReviewService } from '../services/ai-code-review-service';
 import { AiRefactorService } from '../services/ai-refactor-service';
 import { NaturalLanguageService } from '../services/natural-language-service';
-import { getWorkspaceEditPreviewService } from '../index';
+import { getWorkspaceEditPreviewService } from '../services/workspace-edit-preview';
 import { getSettings } from './settings-handlers';
 
 let projectIndexer: ProjectIndexer | null = null;

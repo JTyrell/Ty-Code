@@ -7,7 +7,7 @@
   display: flex;
   flex-direction: column;
   gap: 18px;
-  color: #e2e8f0;
+  color: var(--text-primary);
   font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
 }
 
@@ -686,3 +686,152 @@
 .pm-attribution-strip a:hover {
   color: #f1f5f9;
 }
+
+/* -------------------------------------------------------------------------
+   Light Theme & Tribal Theme Adaptations
+   ------------------------------------------------------------------------- */
+body.theme-light .pm-container,
+body.theme-group-light .pm-container {
+  color: var(--text-primary);
+}
+
+body.theme-light .pm-hero-card,
+body.theme-group-light .pm-hero-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  box-shadow: 0 4px 20px -4px rgba(0, 0, 0, 0.08);
+}
+
+body.theme-light .pm-hero-title,
+body.theme-group-light .pm-hero-title {
+  color: var(--text-primary);
+}
+
+body.theme-light .pm-hero-desc,
+body.theme-group-light .pm-hero-desc {
+  color: var(--text-secondary);
+}
+
+body.theme-light .pm-btn-secondary,
+body.theme-group-light .pm-btn-secondary {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle);
+}
+
+body.theme-light .pm-btn-secondary:hover,
+body.theme-group-light .pm-btn-secondary:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+body.theme-light .pm-filter-pill,
+body.theme-group-light .pm-filter-pill {
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+}
+
+body.theme-light .pm-filter-pill:hover,
+body.theme-group-light .pm-filter-pill:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+body.theme-light .pm-section,
+body.theme-group-light .pm-section {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+}
+
+body.theme-light .pm-section-header,
+body.theme-group-light .pm-section-header {
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+body.theme-light .pm-section-header:hover,
+body.theme-group-light .pm-section-header:hover {
+  background: var(--bg-hover);
+}
+
+body.theme-light .pm-section-title,
+body.theme-group-light .pm-section-title {
+  color: var(--text-primary);
+}
+
+body.theme-light .pm-section-subtitle,
+body.theme-group-light .pm-section-subtitle,
+body.theme-light .pm-section-meta,
+body.theme-group-light .pm-section-meta {
+  color: var(--text-secondary);
+}
+
+body.theme-light .pm-model-card,
+body.theme-group-light .pm-model-card {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-subtle);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+body.theme-light .pm-model-card:hover,
+body.theme-group-light .pm-model-card:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+body.theme-light .pm-card-title,
+body.theme-group-light .pm-card-title {
+  color: var(--text-primary);
+}
+
+body.theme-light .pm-model-desc,
+body.theme-group-light .pm-model-desc {
+  color: var(--text-secondary);
+}
+
+body.theme-light .pm-empty-state,
+body.theme-group-light .pm-empty-state {
+  background: var(--bg-secondary);
+  border-color: var(--border-subtle);
+  color: var(--text-secondary);
+}
+
+body.theme-light .pm-attribution-strip,
+body.theme-group-light .pm-attribution-strip {
+  background: var(--bg-secondary);
+  border-color: var(--border-subtle);
+  color: var(--text-muted);
+}
+
+body.theme-light .pm-spotlight-card,
+body.theme-group-light .pm-spotlight-card {
+  background: var(--bg-secondary);
+  border-color: var(--border-subtle);
+}
+
+body.theme-light .pm-spotlight-name,
+body.theme-group-light .pm-spotlight-name {
+  color: var(--text-primary);
+}
+
+body.theme-light .pm-spotlight-desc,
+body.theme-group-light .pm-spotlight-desc {
+  color: var(--text-secondary);
+}
+
+body.theme-light .pm-spotlight-provider-pill,
+body.theme-group-light .pm-spotlight-provider-pill {
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  border-color: var(--border-subtle);
+}
+
+body.theme-light .pm-search-input,
+body.theme-group-light .pm-search-input {
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  border-color: var(--border-subtle);
+}
+

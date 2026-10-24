@@ -51,12 +51,21 @@
   color: #fff;
   background: var(--accent-primary);
   font-weight: 600;
+  border: none;
+  border-radius: 4px;
 }
 .workspace-edit-review__apply:hover:not(:disabled) { background: var(--accent-primary-hover); }
 .workspace-edit-review__cancel,
 .workspace-edit-review__refresh {
   color: var(--text-secondary);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+}
+.workspace-edit-review__cancel:hover:not(:disabled),
+.workspace-edit-review__refresh:hover:not(:disabled) {
   background: var(--bg-hover);
+  color: var(--text-primary);
 }
 .workspace-edit-review__body {
   flex: 1;

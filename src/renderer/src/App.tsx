@@ -400,8 +400,8 @@ const MainWorkbench: React.FC = () => {
                 <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: 'rgba(168, 85, 247, 0.15)', border: '1px solid rgba(168, 85, 247, 0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <Palette size={24} color="#a855f7" />
                 </div>
-                <div style={{ fontSize: '13px', fontWeight: 600, color: '#f3f4f6' }}>M3E UI Sketcher</div>
-                <div style={{ fontSize: '11px', color: '#9ca3af', lineHeight: '1.5', maxWidth: '200px' }}>
+                <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>M3E UI Sketcher</div>
+                <div style={{ fontSize: '11px', color: 'var(--text-secondary)', lineHeight: '1.5', maxWidth: '200px' }}>
                   Visual sketcher runs in a dedicated resizable window.
                 </div>
                 <button

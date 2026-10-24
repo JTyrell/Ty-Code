@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import type { FreeProvider } from '../../../../shared/types/free-providers';
 import type { StoredKeySummary } from '../../../../shared/types/byok';
+import './ProviderCards.css';
 
 export interface ProviderCardsProps {
   freeProviders: FreeProvider[];
@@ -106,50 +107,25 @@ export const ProviderCards: React.FC<ProviderCardsProps> = ({
   }, [freeProviders, keyMap, filter, searchQuery]);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }} id="provider-cards-container">
+    <div className="byok-cards-container" id="provider-cards-container">
       {/* Top action header */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          flexWrap: 'wrap',
-          gap: '12px',
-          padding: '14px 16px',
-          background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.7) 0%, rgba(15, 23, 42, 0.8) 100%)',
-          borderRadius: '10px',
-          border: '1px solid rgba(255, 255, 255, 0.08)'
-        }}
-      >
-        <div>
-          <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '8px' }}>
+      <div className="byok-hero-card">
+        <div className="byok-hero-info">
+          <h3 className="byok-hero-title">
             <Server size={17} color="var(--accent-primary)" />
             AI Providers &amp; Bring-Your-Own-Key (BYOK)
           </h3>
-          <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#94a3b8' }}>
+          <p className="byok-hero-desc">
             Use permanently registered free tier providers, connect custom API keys, or self-host local LLMs.
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: '8px' }}>
+        <div className="byok-hero-actions">
           <button
             type="button"
             id="btn-launch-byok-wizard"
             onClick={onLaunchWizard}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '8px 14px',
-              borderRadius: '6px',
-              background: 'linear-gradient(135deg, #0ea5e9 0%, #6366f1 100%)',
-              color: '#ffffff',
-              border: 'none',
-              fontWeight: 600,
-              fontSize: '12px',
-              cursor: 'pointer',
-              boxShadow: '0 4px 12px rgba(14, 165, 233, 0.3)'
-            }}
+            className="byok-btn-primary"
           >
             <Plus size={14} />
             Add Key / Wizard
@@ -159,18 +135,7 @@ export const ProviderCards: React.FC<ProviderCardsProps> = ({
             type="button"
             id="btn-open-advanced-json"
             onClick={onOpenAdvanced}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '8px 12px',
-              borderRadius: '6px',
-              background: 'rgba(255, 255, 255, 0.06)',
-              color: '#cbd5e1',
-              border: '1px solid rgba(255, 255, 255, 0.12)',
-              fontSize: '12px',
-              cursor: 'pointer'
-            }}
+            className="byok-btn-secondary"
           >
             <Sliders size={13} />
             JSON Config
@@ -179,61 +144,36 @@ export const ProviderCards: React.FC<ProviderCardsProps> = ({
       </div>
 
       {/* Filter and Search Bar */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', gap: '6px' }}>
+      <div className="byok-toolbar">
+        <div className="byok-filter-group">
           {(['all', 'free', 'configured', 'local'] as const).map((tab) => (
             <button
               key={tab}
               type="button"
               id={`filter-tab-${tab}`}
               onClick={() => setFilter(tab)}
-              style={{
-                padding: '5px 12px',
-                borderRadius: '6px',
-                fontSize: '12px',
-                fontWeight: 500,
-                border: filter === tab ? '1px solid var(--accent-primary)' : '1px solid rgba(255, 255, 255, 0.08)',
-                background: filter === tab ? 'rgba(99, 102, 241, 0.15)' : 'rgba(255, 255, 255, 0.03)',
-                color: filter === tab ? '#ffffff' : '#94a3b8',
-                cursor: 'pointer',
-                textTransform: 'capitalize'
-              }}
+              className={`byok-filter-pill ${filter === tab ? 'is-active' : ''}`}
             >
-              {tab === 'free' ? 'Free Tier' : tab === 'local' ? 'Local / Zero-Config' : tab}
+              {tab === 'free' ? 'Free Tier' : tab === 'local' ? 'Local / Zero-Config' : tab === 'configured' ? 'Configured' : 'All'}
             </button>
           ))}
         </div>
 
-        <div style={{ position: 'relative', minWidth: '220px' }}>
-          <Search size={14} color="#64748b" style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)' }} />
+        <div className="byok-search-wrap">
+          <Search size={14} className="byok-search-icon" />
           <input
             type="text"
             id="input-search-providers"
             placeholder="Search providers or models..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            style={{
-              width: '100%',
-              padding: '6px 10px 6px 30px',
-              borderRadius: '6px',
-              border: '1px solid rgba(255, 255, 255, 0.1)',
-              background: 'rgba(15, 23, 42, 0.6)',
-              color: '#f8fafc',
-              fontSize: '12px'
-            }}
+            className="byok-search-input"
           />
         </div>
       </div>
 
       {/* Cards Grid */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))',
-          gap: '12px'
-        }}
-        id="providers-grid"
-      >
+      <div className="byok-cards-grid" id="providers-grid">
         {filteredProviders.map((provider) => {
           const stored = keyMap.get(provider.id);
           const isConfigured = Boolean(stored?.isConfigured);
@@ -245,41 +185,20 @@ export const ProviderCards: React.FC<ProviderCardsProps> = ({
             <div
               key={provider.id}
               id={`provider-card-${provider.id}`}
-              style={{
-                borderRadius: '8px',
-                border: '1px solid rgba(255, 255, 255, 0.08)',
-                background: 'rgba(30, 41, 59, 0.4)',
-                padding: '14px',
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'space-between',
-                transition: 'border-color 0.2s, background-color 0.2s',
-                gap: '12px'
-              }}
+              className="byok-card"
             >
               {/* Header: Logo, Name, Badge */}
               <div>
-                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <div
-                      style={{
-                        width: '36px',
-                        height: '36px',
-                        borderRadius: '8px',
-                        background: 'rgba(255, 255, 255, 0.05)',
-                        border: '1px solid rgba(255, 255, 255, 0.1)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center'
-                      }}
-                    >
+                <div className="byok-card-top">
+                  <div className="byok-card-brand-row">
+                    <div className="byok-card-icon-box">
                       {getProviderIcon(provider.id, 20)}
                     </div>
-                    <div>
-                      <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 600, color: '#f8fafc' }}>
+                    <div className="byok-card-meta">
+                      <h4 className="byok-card-title">
                         {provider.name}
                       </h4>
-                      <span style={{ fontSize: '11px', color: '#94a3b8' }}>
+                      <span className="byok-card-subtitle">
                         {isZeroConfig ? 'Zero Config (No Key)' : isConfigured ? 'Custom Key Active' : 'Key Optional'}
                       </span>
                     </div>
@@ -287,78 +206,49 @@ export const ProviderCards: React.FC<ProviderCardsProps> = ({
 
                   {/* Free tier pill */}
                   {provider.best_free_models && provider.best_free_models.length > 0 && (
-                    <span
-                      style={{
-                        padding: '2px 8px',
-                        borderRadius: '12px',
-                        background: 'rgba(16, 185, 129, 0.15)',
-                        color: '#34d399',
-                        border: '1px solid rgba(16, 185, 129, 0.3)',
-                        fontSize: '11px',
-                        fontWeight: 600,
-                        whiteSpace: 'nowrap'
-                      }}
-                    >
+                    <span className="byok-card-free-pill">
                       {provider.best_free_models.length} Free Model{provider.best_free_models.length === 1 ? '' : 's'}
                     </span>
                   )}
                 </div>
 
                 {/* Status Indicator */}
-                <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px' }}>
+                <div className="byok-card-status-row">
                   {conn?.status === 'connected' ? (
-                    <span style={{ color: '#34d399', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <span className="byok-status-pill byok-status-connected">
                       <CheckCircle2 size={12} />
                       Connected ({conn.latencyMs || 0}ms)
                     </span>
                   ) : conn?.status === 'error' ? (
-                    <span style={{ color: '#f87171', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <span className="byok-status-pill byok-status-error">
                       <AlertCircle size={12} />
                       {conn.error || 'Connection Failed'}
                     </span>
                   ) : isConfigured ? (
-                    <span style={{ color: '#38bdf8', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <span className="byok-status-pill byok-status-configured">
                       <LockKeyhole size={12} />
                       Connected ({stored?.maskedKey || 'Key Saved'})
                     </span>
                   ) : isZeroConfig ? (
-                    <span style={{ color: '#10b981', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <span className="byok-status-pill byok-status-anonymous">
                       <Zap size={12} />
                       Anonymous
                     </span>
                   ) : (
-                    <span style={{ color: '#64748b' }}>Disconnected</span>
+                    <span className="byok-status-disconnected">Disconnected</span>
                   )}
                 </div>
               </div>
 
               {/* Actions Footer */}
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: '6px',
-                  paddingTop: '10px',
-                  borderTop: '1px solid rgba(255, 255, 255, 0.05)'
-                }}
-              >
+              <div className="byok-card-footer">
                 <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                   <button
                     type="button"
                     id={`btn-add-key-${provider.id}`}
                     onClick={() => onAddKey(provider.id)}
                     title={isConfigured ? 'Update provider key' : 'Connect provider'}
-                    style={{
-                      padding: '5px 10px',
-                      borderRadius: '5px',
-                      background: isConfigured ? 'rgba(255, 255, 255, 0.08)' : 'rgba(99, 102, 241, 0.2)',
-                      border: isConfigured ? '1px solid rgba(255, 255, 255, 0.12)' : '1px solid rgba(99, 102, 241, 0.4)',
-                      color: isConfigured ? '#e2e8f0' : '#818cf8',
-                      fontSize: '11px',
-                      fontWeight: 600,
-                      cursor: 'pointer'
-                    }}
+                    className={isConfigured ? 'byok-card-btn-update' : 'byok-card-btn-connect'}
                   >
                     {isConfigured ? 'Update Key' : 'Connect'}
                   </button>
@@ -369,18 +259,7 @@ export const ProviderCards: React.FC<ProviderCardsProps> = ({
                     disabled={isTesting}
                     onClick={() => void onTestConnection(provider.id)}
                     title="Test Connection"
-                    style={{
-                      padding: '5px 8px',
-                      borderRadius: '5px',
-                      background: 'rgba(255, 255, 255, 0.05)',
-                      border: '1px solid rgba(255, 255, 255, 0.1)',
-                      color: '#cbd5e1',
-                      fontSize: '11px',
-                      cursor: isTesting ? 'wait' : 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '4px'
-                    }}
+                    className="byok-card-btn-test"
                   >
                     <RotateCw size={11} className={isTesting ? 'spinning' : ''} />
                     {isTesting ? 'Testing...' : 'Test Connection'}
@@ -392,18 +271,7 @@ export const ProviderCards: React.FC<ProviderCardsProps> = ({
                       id={`btn-remove-${provider.id}`}
                       onClick={() => void onRemoveKey(provider.id)}
                       title="Disconnect provider"
-                      style={{
-                        padding: '5px 8px',
-                        borderRadius: '5px',
-                        background: 'transparent',
-                        border: '1px solid rgba(239, 68, 68, 0.25)',
-                        color: '#f87171',
-                        fontSize: '11px',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '4px'
-                      }}
+                      className="byok-card-btn-disconnect"
                     >
                       <Trash2 size={11} />
                       <span>Disconnect</span>
@@ -417,15 +285,7 @@ export const ProviderCards: React.FC<ProviderCardsProps> = ({
                     id={`btn-settings-${provider.id}`}
                     onClick={() => onOpenSettings(provider.id)}
                     title="Configure models & endpoints"
-                    style={{
-                      padding: '5px 7px',
-                      borderRadius: '5px',
-                      background: 'transparent',
-                      border: '1px solid rgba(255, 255, 255, 0.1)',
-                      color: '#94a3b8',
-                      fontSize: '11px',
-                      cursor: 'pointer'
-                    }}
+                    className="byok-card-btn-icon"
                   >
                     <Sliders size={12} />
                   </button>

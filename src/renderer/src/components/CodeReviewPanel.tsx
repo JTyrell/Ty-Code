@@ -339,7 +339,7 @@ export const CodeReviewPanel: React.FC = () => {
                           fontFamily: 'monospace',
                           fontSize: '11px',
                           overflowX: 'auto',
-                          color: '#e2e8f0'
+                          color: 'var(--text-primary)'
                         }}
                       >
                         Line {finding.line}: {finding.codeSnippet}

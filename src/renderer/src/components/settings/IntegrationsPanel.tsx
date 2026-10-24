@@ -596,7 +596,7 @@ export const IntegrationsPanel: React.FC = () => {
               margin: 0,
               fontSize: '15px',
               fontWeight: 600,
-              color: '#f8fafc',
+              color: 'var(--text-primary)',
               display: 'flex',
               alignItems: 'center',
               gap: '8px'
@@ -605,7 +605,7 @@ export const IntegrationsPanel: React.FC = () => {
             <Layers size={16} color="#c084fc" />
             Modular Skills &amp; External Integration Registry
           </h3>
-          <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#94a3b8', maxWidth: '580px' }}>
+          <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: 'var(--text-secondary)', maxWidth: '580px' }}>
             Extend Ty-Code with specialized workflows, presentation generators, and tool integrations without
             modifying core application logic. Seamlessly compatible with both hosted and local LLMs.
           </p>
@@ -621,9 +621,9 @@ export const IntegrationsPanel: React.FC = () => {
             gap: '6px',
             padding: '7px 12px',
             borderRadius: '6px',
-            background: 'rgba(255, 255, 255, 0.05)',
-            color: '#e2e8f0',
-            border: '1px solid rgba(255, 255, 255, 0.1)',
+            background: 'var(--bg-tertiary)',
+            color: 'var(--text-primary)',
+            border: '1px solid var(--border-subtle)',
             fontSize: '11px',
             fontWeight: 500,
             cursor: loading ? 'default' : 'pointer'
@@ -722,10 +722,10 @@ export const IntegrationsPanel: React.FC = () => {
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Server size={18} color="#38bdf8" />
             <div>
-              <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 600, color: '#f8fafc' }}>
+              <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>
                 Local Model Supply Endpoint &amp; External Interoperability
               </h4>
-              <p style={{ margin: '2px 0 0 0', fontSize: '11px', color: '#94a3b8' }}>
+              <p style={{ margin: '2px 0 0 0', fontSize: '11px', color: 'var(--text-secondary)' }}>
                 Serve Ty-Code's free model supply layer to external CLI harnesses, connect subscriptions at $0, and drive 11 AI coding agents.
               </p>
             </div>
@@ -740,9 +740,9 @@ export const IntegrationsPanel: React.FC = () => {
               gap: '6px',
               padding: '6px 10px',
               borderRadius: '6px',
-              background: 'rgba(255, 255, 255, 0.05)',
-              color: '#e2e8f0',
-              border: '1px solid rgba(255, 255, 255, 0.1)',
+              background: 'var(--bg-tertiary)',
+              color: 'var(--text-primary)',
+              border: '1px solid var(--border-subtle)',
               fontSize: '11px',
               cursor: loadingFcc ? 'default' : 'pointer'
             }}
@@ -860,9 +860,9 @@ export const IntegrationsPanel: React.FC = () => {
                   gap: '4px',
                   padding: '4px 8px',
                   borderRadius: '4px',
-                  backgroundColor: 'rgba(255, 255, 255, 0.08)',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
-                  color: copiedToken ? '#34d399' : '#e2e8f0',
+                  backgroundColor: 'var(--bg-tertiary)',
+                  border: '1px solid var(--border-subtle)',
+                  color: copiedToken ? '#34d399' : 'var(--text-primary)',
                   fontSize: '11px',
                   cursor: 'pointer'
                 }}
@@ -946,7 +946,7 @@ export const IntegrationsPanel: React.FC = () => {
                 flexDirection: 'column',
                 gap: '6px',
                 fontSize: '12px',
-                color: '#e2e8f0'
+                color: 'var(--text-primary)'
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600, color: '#c084fc' }}>
@@ -957,7 +957,7 @@ export const IntegrationsPanel: React.FC = () => {
                 1. Open <a href={copilotFlow.verificationUri} target="_blank" rel="noreferrer" style={{ color: '#38bdf8' }}>{copilotFlow.verificationUri}</a>
               </div>
               <div>
-                2. Enter code: <strong style={{ letterSpacing: '1px', fontSize: '13px', color: '#f8fafc' }}>{copilotFlow.userCode}</strong>
+                2. Enter code: <strong style={{ letterSpacing: '1px', fontSize: '13px', color: 'var(--text-primary)' }}>{copilotFlow.userCode}</strong>
               </div>
             </div>
           )}
@@ -2082,8 +2082,8 @@ export const IntegrationsPanel: React.FC = () => {
                           fontSize: '11px',
                           padding: '3px 8px',
                           borderRadius: '4px',
-                          backgroundColor: 'rgba(255, 255, 255, 0.06)',
-                          color: '#f8fafc',
+                          backgroundColor: 'var(--bg-tertiary)',
+                          color: 'var(--text-primary)',
                           border: '1px solid var(--border-subtle)'
                         }}
                       >
@@ -2220,8 +2220,8 @@ export const IntegrationsPanel: React.FC = () => {
                           fontSize: '11px',
                           padding: '6px 10px',
                           borderRadius: '4px',
-                          backgroundColor: 'rgba(0, 0, 0, 0.25)',
-                          color: '#f8fafc',
+                          backgroundColor: 'var(--bg-tertiary)',
+                          color: 'var(--text-primary)',
                           border: '1px solid var(--border-subtle)',
                           outline: 'none'
                         }}
@@ -2242,8 +2242,8 @@ export const IntegrationsPanel: React.FC = () => {
                           fontSize: '11px',
                           padding: '6px 10px',
                           borderRadius: '4px',
-                          backgroundColor: 'rgba(0, 0, 0, 0.25)',
-                          color: '#f8fafc',
+                          backgroundColor: 'var(--bg-tertiary)',
+                          color: 'var(--text-primary)',
                           border: '1px solid var(--border-subtle)',
                           outline: 'none'
                         }}
@@ -2264,8 +2264,8 @@ export const IntegrationsPanel: React.FC = () => {
                           fontSize: '11px',
                           padding: '6px 10px',
                           borderRadius: '4px',
-                          backgroundColor: 'rgba(0, 0, 0, 0.25)',
-                          color: '#f8fafc',
+                          backgroundColor: 'var(--bg-tertiary)',
+                          color: 'var(--text-primary)',
                           border: '1px solid var(--border-subtle)',
                           outline: 'none'
                         }}

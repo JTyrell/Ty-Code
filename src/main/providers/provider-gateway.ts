@@ -289,6 +289,18 @@ let currentActiveModel: { providerId: string; modelId: string; isAutoMode: boole
 
 let gatewayActiveOverride: { providerId: string; modelId: string } | null = null;
 
+const endpointOverrides: Partial<Record<string, string>> = {};
+
+export function setEndpointOverride(providerId: string, url?: string): void {
+  const key = (providerId || '').toLowerCase().trim();
+  if (!key) return;
+  if (url && url.trim()) {
+    endpointOverrides[key] = url.trim();
+  } else {
+    delete endpointOverrides[key];
+  }
+}
+
 export function setActiveModel(config: { providerId: string; modelId: string; isAutoMode: boolean }): void {
   const p = (config?.providerId || TY_CODE_FREE_PROVIDER).trim();
   const m = (config?.modelId || TY_CODE_FREE_MODEL).trim();
@@ -632,14 +644,29 @@ export async function sendChatRequest(
   );
 
   if (!config) {
-    config = allModels.find(
-      (m) => m.modelId === modelId || m.modelId.toLowerCase() === modelId.toLowerCase()
-    );
+    if (!isFccProxy) {
+      config = allModels.find(
+        (m) => m.modelId === modelId || m.modelId.toLowerCase() === modelId.toLowerCase()
+      );
+    }
   }
 
   // Gracefully fallback to standard endpoints if model is not directly listed
     if (!config) {
       if (isFccProxy) {
+        const overrideKey = (providerId || '').toLowerCase().trim();
+        const overrideUrl = endpointOverrides[overrideKey] || endpointOverrides[norm] || endpointOverrides['fcc-proxy'];
+        if (overrideUrl) {
+          console.log(`[FCC][AUTO] Tier 0 — endpoint override for ${providerId} -> ${overrideUrl}`);
+          const base = overrideUrl.replace(/\/+$/, '');
+          config = {
+            modelId,
+            name: `${providerId} (endpoint override)`,
+            url: /chat\/completions$/.test(base) ? base : `${base}/chat/completions`,
+            requiresKey: false,
+            providerId: 'fcc-proxy'
+          };
+        } else {
         // FCC Auto routing. Tier 0: a live entry from the dynamic FCC catalog
         // (sidecar, supply facade, or connected subscription) while a genuine
         // free-claude-code binary can serve completions. Tier 1: the FCC
@@ -653,7 +680,7 @@ export async function sendChatRequest(
             return false;
           }
         })();
-        console.log(`[FCC][AUTO] provider=${providerId} model=${modelId} genuineBinary=${canServe ? 'up' : 'down'}`);
+          console.log(`[FCC][AUTO] provider=${providerId} model=${modelId} genuineBinary=${canServe ? 'up' : 'down'}`);
         if (canServe) {
           let fccEntry: VerifiedModelConfig | undefined;
           try {
@@ -678,6 +705,7 @@ export async function sendChatRequest(
             console.log('[FCC][AUTO] Tier 3 — sidecar down, no keyed provider found; using anonymous OpenKilo pool');
             config = { modelId, name: modelId, url: KILO_URL, requiresKey: false, providerId: 'openkilo' };
           }
+        }
         }
       } else if (norm === 'openrouter') {
         config = { modelId, name: modelId, url: 'https://openrouter.ai/api/v1/chat/completions', requiresKey: true, providerId: 'openrouter' };
@@ -1097,8 +1125,21 @@ export async function sendChatRequest(
     }
     // Reasoning models (e.g. Kilo Auto / DeepSeek R1) require the reasoning
     // captured alongside each earlier assistant turn to be echoed back.
+    // Preserve OpenAI-style tool_calls on replayed assistant turns: providers
+    // like Cohere (via the Kilo gateway) reject a thinking-only turn whose
+    // tool_calls were dropped, so keep them; a reasoning-only turn with no
+    // tool_calls drops the reasoning to avoid a pending-thought payload.
     if (m.role === 'assistant' && typeof m.reasoning_content === 'string' && m.reasoning_content) {
-      return { role: 'assistant', content: m.content || '', reasoning_content: m.reasoning_content };
+      const hasToolCalls = Array.isArray(m.tool_calls) && m.tool_calls.length > 0;
+      if (!hasToolCalls && !String(m.content || '').trim()) {
+        return { role: 'assistant', content: ' ' };
+      }
+      return {
+        role: 'assistant',
+        content: m.content || '',
+        ...(hasToolCalls ? { tool_calls: m.tool_calls } : {}),
+        reasoning_content: m.reasoning_content
+      };
     }
     return { role: m.role || 'user', content: m.content || '' };
   });
@@ -1152,10 +1193,25 @@ export async function sendChatRequest(
     payload = {
       model: isCopilot ? requestModel : bridgeRequestModel || modelId,
       // Reasoning models (Kilo Auto / DeepSeek R1-style) require every earlier
-      // assistant turn to carry the reasoning returned with it.
+      // assistant turn to carry the reasoning returned with it. Tool-carrying
+      // turns keep their OpenAI tool_calls so Kilo/Cohere does not see a
+      // thinking-only turn; reasoning-only turns with no tool_calls drop the
+      // reasoning (and submit a space placeholder) to satisfy providers that
+      // require a text item after thinking content.
       messages: formattedMessages.map((m: any) => {
         if (m.role === 'assistant' && typeof m.reasoning_content === 'string' && m.reasoning_content) {
+          const hasToolCalls = Array.isArray(m.tool_calls) && m.tool_calls.length > 0;
+          const textContent = String(m.content || '');
+          if (!hasToolCalls && !textContent.trim()) {
+            return { role: m.role, content: ' ' };
+          }
+          if (hasToolCalls) {
+            return { role: m.role, content: m.content, tool_calls: m.tool_calls, reasoning_content: m.reasoning_content };
+          }
           return { role: m.role, content: m.content, reasoning_content: m.reasoning_content };
+        }
+        if (m.role === 'assistant' && Array.isArray(m.tool_calls) && m.tool_calls.length > 0) {
+          return { role: m.role, content: m.content, tool_calls: m.tool_calls };
         }
         return { role: m.role, content: m.content };
       }),
@@ -1853,6 +1909,7 @@ export interface ChatCompletionMessage {
 
 export interface StreamEventCallbacks {
   onToken?: (token: string) => void;
+  onRawToken?: (token: string) => void;
   onThought?: (thought: string) => void;
   onToolCallDelta?: (toolCalls: Array<{ id: string; name: string; arguments: string }>) => void;
   onFailoverNotice?: (notice: { attempt: number; failedProvider: string; nextProvider?: string; nextModel?: string; error: string }) => void;
@@ -1869,6 +1926,7 @@ function appendDelta(existing: string, incoming: string | undefined): string {
 export class ProviderGateway {
   public static sendChatRequest = sendChatRequest;
   public static setActiveModel = setActiveModel;
+  public static setEndpointOverride = setEndpointOverride;
   public static getActiveModel = getActiveModel;
   public static getVerifiedModels = getVerifiedModels;
   public static router: OmniRouteRouter = omniRouteRouter;
@@ -2846,6 +2904,7 @@ export class ProviderGateway {
         if (!firstChunkReported) console.log('Gateway: First chunk', JSON.stringify(delta.content.slice(0, 80)));
         fullText += delta.content;
         tokenBatcher.push(delta.content);
+        callbacks.onRawToken?.(delta.content);
 
         if (traceId && !firstChunkReported) {
           firstChunkReported = true;

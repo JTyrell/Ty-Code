@@ -80,10 +80,10 @@ export const ModelCatalogVerifierPanel: React.FC<ModelCatalogVerifierPanelProps>
     >
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <BadgeCheck size={16} color="#10b981" />
-          <span style={{ fontSize: 13, fontWeight: 600, color: '#f8fafc' }}>Live Model Catalog Verification</span>
+          <BadgeCheck size={16} color="var(--accent-green, #10b981)" />
+          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>Live Model Catalog Verification</span>
           {snapshot && (
-            <span style={{ fontSize: 10.5, color: '#6ee7b7' }}>
+            <span style={{ fontSize: 10.5, color: 'var(--accent-green, #6ee7b7)' }}>
               checked{' '}
               {new Date(snapshot.updatedAt || Date.now()).toLocaleTimeString()}
             </span>
@@ -100,7 +100,7 @@ export const ModelCatalogVerifierPanel: React.FC<ModelCatalogVerifierPanelProps>
             gap: 6,
             padding: '6px 12px',
             borderRadius: 6,
-            background: isVerifying ? 'rgba(16, 185, 129, 0.25)' : '#10b981',
+            background: isVerifying ? 'rgba(16, 185, 129, 0.25)' : 'var(--accent-green, #10b981)',
             border: 'none',
             color: '#ffffff',
             fontSize: 11.5,
@@ -114,13 +114,13 @@ export const ModelCatalogVerifierPanel: React.FC<ModelCatalogVerifierPanelProps>
         </button>
       </div>
 
-      <p style={{ margin: '4px 0 0 0', fontSize: 11, color: '#94a3b8' }}>
+      <p style={{ margin: '4px 0 0 0', fontSize: 11, color: 'var(--text-secondary)' }}>
         Autonomously checks the real names, titles, and availability of every AI offered by your connected
         providers, then corrects our stored models database near instantaneously when reality differs.
       </p>
 
       {correctedCount > 0 && (
-        <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#fbbf24' }}>
+        <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--accent-amber, #fbbf24)' }}>
           <Sparkles size={12} />
           <span>{correctedCount} provider database(s) were corrected after differences were found.</span>
         </div>
@@ -129,9 +129,9 @@ export const ModelCatalogVerifierPanel: React.FC<ModelCatalogVerifierPanelProps>
       {results.length > 0 && (
         <>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8, fontSize: 11, fontWeight: 500 }}>
-            <span style={{ color: '#34d399' }}>{passCount} verified</span>
-            <span style={{ color: '#f87171' }}>{failCount} failed</span>
-            <span style={{ color: '#9ca3af' }}>{noKeyCount} need a key</span>
+            <span style={{ color: 'var(--accent-green, #34d399)' }}>{passCount} verified</span>
+            <span style={{ color: 'var(--accent-red, #f87171)' }}>{failCount} failed</span>
+            <span style={{ color: 'var(--text-muted)' }}>{noKeyCount} need a key</span>
           </div>
 
           <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -144,13 +144,13 @@ export const ModelCatalogVerifierPanel: React.FC<ModelCatalogVerifierPanelProps>
                   style={{
                     padding: '8px 10px',
                     borderRadius: 6,
-                    background: 'rgba(0, 0, 0, 0.25)',
-                    border: pass ? '1px solid rgba(16, 185, 129, 0.25)' : fail ? '1px solid rgba(244, 63, 94, 0.3)' : '1px solid rgba(107, 114, 128, 0.3)'
+                    background: 'var(--bg-secondary)',
+                    border: pass ? '1px solid rgba(16, 185, 129, 0.25)' : fail ? '1px solid rgba(244, 63, 94, 0.3)' : '1px solid var(--border-subtle)'
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                    <span style={{ fontSize: 12, fontWeight: 600, color: '#e5e7eb' }}>{r.providerName}</span>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10.5, fontWeight: 600, color: pass ? '#34d399' : fail ? '#f87171' : '#9ca3af' }}>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>{r.providerName}</span>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10.5, fontWeight: 600, color: pass ? 'var(--accent-green, #34d399)' : fail ? 'var(--accent-red, #f87171)' : 'var(--text-muted)' }}>
                       {pass ? <Check size={11} /> : fail ? <XCircle size={11} /> : null}
                       {pass ? 'MATCHED' : fail ? 'UNREACHABLE' : 'KEY NEEDED'}
                     </span>
@@ -206,7 +206,7 @@ export const ModelCatalogVerifierPanel: React.FC<ModelCatalogVerifierPanelProps>
       )}
 
       {results.length === 0 && (
-        <div style={{ marginTop: 8, fontSize: 11, color: '#9ca3af' }}>
+        <div style={{ marginTop: 8, fontSize: 11, color: 'var(--text-secondary)' }}>
           Not verified yet. Verification runs automatically at startup and whenever you save an API key.
         </div>
       )}

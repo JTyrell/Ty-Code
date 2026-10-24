@@ -788,10 +788,10 @@ export const DiagnosticsPanel: React.FC = () => {
 
           {/* Empty State */}
           {!connSummary && !isConnRunning && (
-            <div className="p-10 text-center rounded-xl bg-zinc-900/40 border border-zinc-800/80 space-y-3">
-              <Server size={32} className="mx-auto text-zinc-600" />
-              <h3 className="text-sm font-semibold text-zinc-300">Ready to diagnose providers</h3>
-              <p className="text-xs text-zinc-500 max-w-md mx-auto">
+            <div className="diag-empty-card">
+              <Server size={32} className="diag-empty-icon" />
+              <h3 className="diag-empty-title">Ready to diagnose providers</h3>
+              <p className="diag-empty-desc">
                 Click &ldquo;Run All Tests&rdquo; to test every built-in free provider and configured key. Anonymous providers will be prioritized first.
               </p>
               <button
@@ -1054,10 +1054,10 @@ export const DiagnosticsPanel: React.FC = () => {
 
           {/* Empty State */}
           {!capSummary && !isCapRunning && (
-            <div className="p-10 text-center rounded-xl bg-zinc-900/40 border border-zinc-800/80 space-y-3">
-              <Brain size={32} className="mx-auto text-zinc-600" />
-              <h3 className="text-sm font-semibold text-zinc-300">Ready to test AI capabilities</h3>
-              <p className="text-xs text-zinc-500 max-w-md mx-auto">
+            <div className="diag-empty-card">
+              <Brain size={32} className="diag-empty-icon" />
+              <h3 className="diag-empty-title">Ready to test AI capabilities</h3>
+              <p className="diag-empty-desc">
                 Validates the connected AI across the 4 core jobs in an isolated temporary scratch workspace (never touches your project files).
               </p>
               <button
@@ -1422,7 +1422,7 @@ export const DiagnosticsPanel: React.FC = () => {
                                 <span className={`text-sm font-semibold ${isChecked ? 'line-through text-zinc-400' : 'text-white'}`}>
                                   {item.providerName}
                                 </span>
-                                <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20">
+                                <span className="diag-code-badge bg-amber-500/10 text-amber-300 border border-amber-500/20">
                                   {item.code}
                                 </span>
                               </div>
@@ -1570,7 +1570,7 @@ export const DiagnosticsPanel: React.FC = () => {
                         <div>
                           <div className="flex items-center gap-2">
                             <span className="font-semibold text-sm text-white">{item.providerName}</span>
-                            <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-orange-500/10 text-orange-400 border border-orange-500/20">
+                            <span className="diag-code-badge bg-orange-500/10 text-orange-400 border border-orange-500/20">
                               {item.code}
                             </span>
                           </div>

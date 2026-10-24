@@ -379,7 +379,7 @@ export const APIKeyManager: React.FC<APIKeyManagerProps> = ({
           <ShieldCheck size={20} color="#34d399" />
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc' }}>
+              <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>
                 Encrypted with Electron safeStorage
               </span>
               <span
@@ -395,7 +395,7 @@ export const APIKeyManager: React.FC<APIKeyManagerProps> = ({
                 {storageStatus?.backend || 'Hardware/OS Keystore'}
               </span>
             </div>
-            <p style={{ margin: '2px 0 0 0', fontSize: '11px', color: '#94a3b8' }}>
+            <p style={{ margin: '2px 0 0 0', fontSize: '11px', color: 'var(--text-secondary)' }}>
               {storageStatus?.message || 'Keys are protected by your operating system keystore (DPAPI / Keychain / Secret Service).'}
             </p>
           </div>
@@ -549,7 +549,7 @@ export const APIKeyManager: React.FC<APIKeyManagerProps> = ({
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-            <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: '#f8fafc' }}>
+            <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)' }}>
               Start Free (Zero Configuration)
             </h3>
             <span
@@ -567,7 +567,7 @@ export const APIKeyManager: React.FC<APIKeyManagerProps> = ({
               Active
             </span>
           </div>
-          <p style={{ margin: '4px 0 0 0', fontSize: '11.5px', color: '#94a3b8', lineHeight: 1.55 }}>
+          <p style={{ margin: '4px 0 0 0', fontSize: '11.5px', color: 'var(--text-secondary)', lineHeight: 1.55 }}>
             Chat immediately with free models — Ty-Code Free (GLM 5.3 Flash, DeepSeek V4.1 Flash, Nemotron 3 Ultra, LongCat 2.0),
             the managed FCC supply, OpenKilo's free gateway, or fully local Ollama. No key entry needed; the router picks a
             healthy free endpoint per request and fails over automatically.
@@ -609,7 +609,7 @@ export const APIKeyManager: React.FC<APIKeyManagerProps> = ({
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-            <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: '#f8fafc' }}>
+            <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)' }}>
               Unlock Premium (One Key)
             </h3>
             {premiumActive ? (
@@ -666,8 +666,8 @@ export const APIKeyManager: React.FC<APIKeyManagerProps> = ({
                 padding: '8px 12px',
                 borderRadius: '6px',
                 border: '1px solid rgba(245, 158, 11, 0.35)',
-                background: 'rgba(15, 23, 42, 0.6)',
-                color: '#f8fafc',
+                background: 'var(--bg-tertiary)',
+                color: 'var(--text-primary)',
                 fontSize: '12px',
                 fontFamily: 'monospace'
               }}
@@ -736,11 +736,11 @@ export const APIKeyManager: React.FC<APIKeyManagerProps> = ({
         }}
       >
         <div>
-          <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Terminal size={15} color="#7dd3fc" />
             OpenCode Premium Providers
           </h3>
-          <p style={{ margin: '3px 0 0 0', fontSize: '11px', color: '#94a3b8', lineHeight: 1.55 }}>
+          <p style={{ margin: '3px 0 0 0', fontSize: '11px', color: 'var(--text-secondary)', lineHeight: 1.55 }}>
             Paid models served by your installed opencode CLI. Saving stores the key encrypted with safeStorage in
             Ty-Code&apos;s vault and syncs it into your local OpenCode config file. Keys are never shown or sent back
             after saving.
@@ -761,13 +761,13 @@ export const APIKeyManager: React.FC<APIKeyManagerProps> = ({
                 gap: '10px',
                 padding: '10px 12px',
                 borderRadius: '8px',
-                background: 'rgba(15, 23, 42, 0.55)',
-                border: synced ? '1px solid rgba(56, 189, 248, 0.35)' : '1px solid rgba(255, 255, 255, 0.08)'
+                background: 'var(--bg-secondary)',
+                border: synced ? '1px solid rgba(56, 189, 248, 0.35)' : '1px solid var(--border-subtle)'
               }}
             >
               <div style={{ minWidth: '150px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ fontSize: '12.5px', fontWeight: 600, color: '#f8fafc' }}>{provider.name}</span>
+                  <span style={{ fontSize: '12.5px', fontWeight: 600, color: 'var(--text-primary)' }}>{provider.name}</span>
                   {synced && (
                     <span
                       id={`opencode-synced-badge-${provider.id}`}
@@ -813,8 +813,8 @@ export const APIKeyManager: React.FC<APIKeyManagerProps> = ({
                   padding: '7px 10px',
                   borderRadius: '6px',
                   border: '1px solid rgba(56, 189, 248, 0.3)',
-                  background: 'rgba(15, 23, 42, 0.7)',
-                  color: '#f8fafc',
+                  background: 'var(--bg-tertiary)',
+                  color: 'var(--text-primary)',
                   fontSize: '12px',
                   fontFamily: 'monospace'
                 }}
@@ -892,11 +892,11 @@ export const APIKeyManager: React.FC<APIKeyManagerProps> = ({
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 600, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Sparkles size={16} color="var(--accent-primary)" />
               Auto-Detected Keys &amp; Local Instances
             </h4>
-            <p style={{ margin: '2px 0 0 0', fontSize: '11px', color: '#94a3b8' }}>
+            <p style={{ margin: '2px 0 0 0', fontSize: '11px', color: 'var(--text-secondary)' }}>
               Discovered from environment variables ($OPENAI_API_KEY), git credentials, and config files.
             </p>
           </div>
@@ -983,10 +983,10 @@ export const APIKeyManager: React.FC<APIKeyManagerProps> = ({
                   )}
 
                   <div>
-                    <span style={{ fontSize: '12px', fontWeight: 600, color: '#f8fafc' }}>
+                    <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)' }}>
                       {item.providerName}
                     </span>
-                    <span style={{ marginLeft: '8px', fontSize: '11px', color: '#94a3b8' }}>
+                    <span style={{ marginLeft: '8px', fontSize: '11px', color: 'var(--text-secondary)' }}>
                       {item.sourceDescription}
                     </span>
                   </div>
@@ -1030,16 +1030,16 @@ export const APIKeyManager: React.FC<APIKeyManagerProps> = ({
       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 600, color: '#f8fafc' }}>
+            <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>
               Stored Provider Keys ({storedKeys.filter((k) => k.isConfigured).length} Configured)
             </h4>
-            <p style={{ margin: '2px 0 0 0', fontSize: '11px', color: '#94a3b8' }}>
+            <p style={{ margin: '2px 0 0 0', fontSize: '11px', color: 'var(--text-secondary)' }}>
               View, reveal, regenerate, or revoke your securely stored credentials.
             </p>
           </div>
 
           <div style={{ position: 'relative', width: '200px' }}>
-            <Search size={13} color="#64748b" style={{ position: 'absolute', left: '8px', top: '50%', transform: 'translateY(-50%)' }} />
+            <Search size={13} color="var(--text-muted)" style={{ position: 'absolute', left: '8px', top: '50%', transform: 'translateY(-50%)' }} />
             <input
               type="text"
               id="input-filter-stored-keys"
@@ -1050,9 +1050,9 @@ export const APIKeyManager: React.FC<APIKeyManagerProps> = ({
                 width: '100%',
                 padding: '5px 8px 5px 26px',
                 borderRadius: '5px',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
-                background: 'rgba(15, 23, 42, 0.6)',
-                color: '#f8fafc',
+                border: '1px solid var(--border-subtle)',
+                background: 'var(--bg-tertiary)',
+                color: 'var(--text-primary)',
                 fontSize: '11px'
               }}
             />
@@ -1081,7 +1081,7 @@ export const APIKeyManager: React.FC<APIKeyManagerProps> = ({
               >
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc' }}>
+                    <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>
                       {item.providerName}
                     </span>
                     {item.isConfigured ? (

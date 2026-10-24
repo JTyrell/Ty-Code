@@ -930,27 +930,27 @@ export const TitleBar: React.FC = () => {
           <div
             onClick={(e) => e.stopPropagation()}
             style={{
-              backgroundColor: '#0f172a',
-              border: '1px solid rgba(255, 255, 255, 0.12)',
+              backgroundColor: 'var(--bg-secondary, #0f172a)',
+              border: '1px solid var(--border-subtle, rgba(255, 255, 255, 0.12))',
               borderRadius: '12px',
               padding: '24px',
               maxWidth: '520px',
               width: '100%',
               boxShadow: '0 20px 40px rgba(0,0,0,0.6)',
-              color: '#f8fafc'
+              color: 'var(--text-primary, #f8fafc)'
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
               <TyCodeMicrochipLogo size={28} boxed={true} />
               <div>
                 <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700 }}>Ty-Code</h3>
-                <div style={{ fontSize: '12px', color: '#94a3b8' }}>
+                <div style={{ fontSize: '12px', color: 'var(--text-muted, #94a3b8)' }}>
                   Version {appInfo?.version || '1.0.0'} • MIT License
                 </div>
               </div>
             </div>
 
-            <p style={{ fontSize: '13px', color: '#cbd5e1', lineHeight: '1.6', margin: '0 0 16px 0' }}>
+            <p style={{ fontSize: '13px', color: 'var(--text-secondary, #cbd5e1)', lineHeight: '1.6', margin: '0 0 16px 0' }}>
               The high-performance, developer-first AI code editor with zero-cost model supply, real extension security, and local safeStorage.
             </p>
 
@@ -961,7 +961,7 @@ export const TitleBar: React.FC = () => {
                 borderRadius: '8px',
                 padding: '12px',
                 fontSize: '12px',
-                color: '#c7d2fe',
+                color: 'var(--text-secondary, #c7d2fe)',
                 marginBottom: '16px',
                 lineHeight: '1.5'
               }}
