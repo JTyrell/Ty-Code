@@ -9,7 +9,7 @@ import { type ModeId } from '../agent/prompt-assembler';
 import { sessionStore } from '../agent/session-store';
 import { OpenCodeAgentManager } from '../services/orchestration/agent-manager';
 import { classifyDiagnosticError } from '../services/diagnostics/error-taxonomy';
-import { AgentDonePayloadSchema } from '../../shared/types/agent-events';
+import { AgentDonePayloadSchema, zDocumentProposed } from '../../shared/types/agent-events';
 
 interface ActiveTask {
   controller: AbortController;
@@ -220,6 +220,16 @@ export async function startAgentTask(
               taskId,
               diff: chunk.diff
             });
+          }
+          break;
+        case 'document_proposed':
+          if (chunk.document) {
+            const validated = zDocumentProposed.parse({
+              taskId,
+              type: 'document_proposed',
+              document: chunk.document
+            });
+            mainWindow.webContents.send('agent:document-proposed', validated);
           }
           break;
         case 'approval_request':

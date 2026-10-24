@@ -184,6 +184,20 @@ const api: ElectronAPI = {
     ipcRenderer.on('agent:diff-proposed', listener);
     return () => ipcRenderer.removeListener('agent:diff-proposed', listener);
   },
+  onAgentDocumentProposed: (callback) => {
+    const listener = (_event: IpcRendererEvent, payload: any) => callback(payload);
+    ipcRenderer.on('agent:document-proposed', listener);
+    return () => ipcRenderer.removeListener('agent:document-proposed', listener);
+  },
+  onDocumentProposed: (callback) => {
+    const listener = (_event: IpcRendererEvent, payload: any) => callback(payload);
+    ipcRenderer.on('agent:document-proposed', listener);
+    return () => ipcRenderer.removeListener('agent:document-proposed', listener);
+  },
+  updateDocument: (payload: { id: string; markdown: string; title?: string }) =>
+    ipcRenderer.invoke('document:update', payload),
+  getLastDocument: () => ipcRenderer.invoke('document:get-last'),
+  loadDocument: (id: string) => ipcRenderer.invoke('document:load', id),
   onAgentDone: (callback) => {
     const listener = (_event: IpcRendererEvent, payload: any) => {
       // Step 2: Retain full Zod validation for terminal 'done' event

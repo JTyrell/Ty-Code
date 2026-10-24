@@ -11,6 +11,7 @@ import {
   type ChatErrorCard
 } from '../../../shared/types/agent-events';
 import { useGitStore } from './git-store';
+import { useWorkspaceStore } from './workspace-store';
 
 interface ChatState {
   messages: ChatMessage[];
@@ -34,6 +35,9 @@ interface ChatState {
   isTerminalOpen: boolean;
   draftPrompt: string;
   setDraftPrompt: (prompt: string) => void;
+  queuedMessages: string[];
+  queueMessage: (text: string) => void;
+  clearQueuedMessages: () => void;
   setAgentMode: (mode: AgentMode) => void;
   setContextTokens: (tokens: number) => void;
   initSettings: () => Promise<void>;
@@ -452,8 +456,21 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
   settings: null, agentMode: 'build', contextTokens: 1200, contextLimit: 128_000, isSettingsOpen: false, isTerminalOpen: false,
   draftPrompt: '',
-
   setDraftPrompt: (prompt: string) => set({ draftPrompt: prompt }),
+  queuedMessages: [],
+  queueMessage: (text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    const isRunning = get().isRunning;
+    if (!isRunning) {
+      const workspacePath = useWorkspaceStore.getState().workspacePath;
+      const activeTab = useWorkspaceStore.getState().openTabs.find((t) => t.path === useWorkspaceStore.getState().activeTabPath);
+      void get().sendMessage(trimmed, workspacePath, activeTab?.path, activeTab?.content);
+    } else {
+      set((state) => ({ queuedMessages: [...state.queuedMessages, trimmed] }));
+    }
+  },
+  clearQueuedMessages: () => set({ queuedMessages: [] }),
   setAgentMode: (mode: AgentMode) => set({ agentMode: mode }),
   setContextTokens: (tokens: number) => set({ contextTokens: tokens }),
 
@@ -820,6 +837,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
           m.taskId === taskId ? { ...m, isStreaming: false, statusText: '' } : m
         )
       }));
+
+      // Process any queued messages after task completion
+      const queued = get().queuedMessages;
+      if (queued.length > 0) {
+        const nextMessage = queued[0];
+        set({ queuedMessages: queued.slice(1) });
+        setTimeout(() => {
+          const workspacePath = useWorkspaceStore.getState().workspacePath;
+          const activeTab = useWorkspaceStore.getState().openTabs.find((t) => t.path === useWorkspaceStore.getState().activeTabPath);
+          void get().sendMessage(nextMessage, workspacePath, activeTab?.path, activeTab?.content);
+        }, 150);
+      }
     };
 
     activeStreamDisposables.forEach((dispose) => {
@@ -982,6 +1011,26 @@ export const useChatStore = create<ChatState>((set, get) => ({
               : m
           )
         }));
+      }));
+    }
+
+    // 5b. Document proposed (Plan or Report)
+    const docListener = window.electronAPI.onDocumentProposed || window.electronAPI.onAgentDocumentProposed;
+    if (docListener) {
+      activeStreamDisposables.push(docListener((raw: any) => {
+        const doc = raw?.document ?? raw;
+        if (doc && doc.id) {
+          set((state) => ({
+            messages: state.messages.map((m) =>
+              m.taskId === taskId
+                ? {
+                    ...m,
+                    proposedDocument: doc
+                  }
+                : m
+            )
+          }));
+        }
       }));
     }
 

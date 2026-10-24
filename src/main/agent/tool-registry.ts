@@ -35,7 +35,7 @@ const READ_ONLY_TOOLS = new Set([
   'git_diff'
 ]);
 
-const ALWAYS_AVAILABLE = ['request_approval', 'request_workspace_open', 'brave_web_search'];
+const ALWAYS_AVAILABLE = ['request_approval', 'request_workspace_open', 'brave_web_search', 'submit_plan', 'submit_report'];
 
 /**
  * Returns the tool names the agent may use given the current environment AND

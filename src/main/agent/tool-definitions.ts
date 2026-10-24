@@ -55,5 +55,59 @@ export const BRAVE_WEB_SEARCH_TOOL: AgentToolSchema = {
   }
 };
 
+/**
+ * Submit Plan Tool Definition
+ * Pushes an execution plan out of the chat sidecar and into the main editor window.
+ */
+export const SUBMIT_PLAN_TOOL: AgentToolSchema = {
+  type: 'function',
+  function: {
+    name: 'submit_plan',
+    description:
+      'Submit an execution plan as a first-class interactive document in the editor. Use this whenever delivering an implementation plan or multi-step execution proposal instead of pasting raw markdown into chat.',
+    parameters: {
+      type: 'object',
+      properties: {
+        title: {
+          type: 'string',
+          description: 'Title of the execution plan.'
+        },
+        markdown: {
+          type: 'string',
+          description: 'Complete markdown of the plan structured with ATX headings (#, ##, ###).'
+        }
+      },
+      required: ['title', 'markdown']
+    }
+  }
+};
+
+/**
+ * Submit Report Tool Definition
+ * Pushes an analysis or review report out of the chat sidecar and into the main editor window.
+ */
+export const SUBMIT_REPORT_TOOL: AgentToolSchema = {
+  type: 'function',
+  function: {
+    name: 'submit_report',
+    description:
+      'Submit an analysis, audit, research, or diagnostic report as a first-class interactive document in the editor. Use this whenever delivering an analysis report or review instead of pasting raw markdown into chat.',
+    parameters: {
+      type: 'object',
+      properties: {
+        title: {
+          type: 'string',
+          description: 'Title of the report.'
+        },
+        markdown: {
+          type: 'string',
+          description: 'Complete markdown of the report structured with ATX headings (#, ##, ###).'
+        }
+      },
+      required: ['title', 'markdown']
+    }
+  }
+};
+
 export { AGENT_TOOLS_DEFINITIONS } from './system-prompt';
 

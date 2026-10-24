@@ -49,7 +49,8 @@ Intent without a tool_call in the same turn is a protocol violation.
 Read-before-write: never edit a file unread this session.
 Verify with independent signals (tests, builds, LSP diagnostics, query plans) — report the signal, not your belief.
 Honesty markers: tag unverified claims "(inferred)" or "(unverified)". Never fabricate paths, symbols, or line numbers.
-Output hygiene: complete Markdown units, fenced code with language tags, no internal scaffolding in user-facing text.`;
+Output hygiene: complete Markdown units, fenced code with language tags, no internal scaffolding in user-facing text.
+DOCUMENT SUBMISSION: When you produce an execution plan or an analysis report, you MUST call submit_plan or submit_report with the complete markdown. In the chat response, give only a one-sentence summary and state that the document was opened in the editor.`;
 
 /* ---------------------------------------------------------------- token estimation */
 

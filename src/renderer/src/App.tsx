@@ -28,6 +28,7 @@ import { useEditorNavigationStore } from './state/editor-navigation-store';
 import { useDebuggerStore } from './state/debugger-store';
 import { useActiveModelSync } from './state/active-model-store';
 import { useThemeSync } from './hooks/useThemeSync';
+import { initDocumentProposedListener } from './state/document-review-store';
 
 import { Palette } from 'lucide-react';
 import { SketcherWindow } from './components/SketcherWindow';
@@ -146,6 +147,11 @@ const MainWorkbench: React.FC = () => {
       void import('./components/TerminalDrawer');
     }, 2000);
     return () => clearTimeout(timer);
+  }, []);
+
+  // Subscribe to document_proposed IPC stream events for Document Review Pane
+  useEffect(() => {
+    return initDocumentProposedListener();
   }, []);
 
   // Listen for user interaction to notify boot scheduler and accelerate Tier 3

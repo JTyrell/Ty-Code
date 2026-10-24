@@ -14,12 +14,13 @@ import powershell from 'highlight.js/lib/languages/powershell';
 import python from 'highlight.js/lib/languages/python';
 import typescript from 'highlight.js/lib/languages/typescript';
 import yaml from 'highlight.js/lib/languages/yaml';
-import { Send, Square, Sparkles, Trash2, ChevronRight, ChevronDown, Terminal, FileCode, Check, Eye, AlertCircle, Copy, RotateCcw, Loader2, ShieldCheck, X, Users, Lightbulb, Hammer, Compass, Info, Palette, Presentation, Play, ExternalLink, Settings, Activity, Key, WifiOff, Clock, RefreshCw, Zap } from 'lucide-react';
+import { Send, Square, Sparkles, Trash2, ChevronRight, ChevronDown, Terminal, FileCode, Check, Eye, AlertCircle, Copy, RotateCcw, Loader2, ShieldCheck, X, Users, Lightbulb, Hammer, Compass, Info, Palette, Presentation, Play, ExternalLink, Settings, Activity, Key, WifiOff, Clock, RefreshCw, Zap, MessageSquare } from 'lucide-react';
 import { useChatStore, groupMessagesByTask } from '../state/chat-store';
 import { useWorkspaceStore } from '../state/workspace-store';
 import { usePairProgrammingStore } from '../state/pair-programming-store';
 import { useOnboardingStore } from '../state/onboarding-store';
 import { useSettingsStore } from '../state/settings-store';
+import { useDocumentReviewStore } from '../state/document-review-store';
 import { ModelSelector } from './ChatInterface/ModelSelector';
 import { ProviderSetupCard } from './ProviderSetupCard';
 import { ChatErrorCard } from './ChatErrorCard';
@@ -1105,6 +1106,13 @@ export const ChatSidecar: React.FC = () => {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const chatListRef = useRef<ChatMessageListHandle>(null);
   const { messages, isRunning, currentTaskId, activeAssistantMessageId, currentStatus, currentThought, streamingText, pendingApproval, sendMessage, stopTask, respondToApproval, clearChat, agentMode, setAgentMode, draftPrompt, setDraftPrompt, activeErrorCard, dismissErrorCard, contextTokens, recentSessions, pendingResume, loadRecentSessions, acceptSessionResume, dismissSessionResume, updateMessage } = useChatStore();
+  const queuedMessages = useChatStore((s) => s.queuedMessages);
+  const clearQueuedMessages = useChatStore((s) => s.clearQueuedMessages);
+  const activeDocument = useDocumentReviewStore((s) => s.activeDocument);
+  const isDocumentTabOpen = useDocumentReviewStore((s) => s.isDocumentTabOpen);
+  const docReviewStatus = useDocumentReviewStore((s) => s.status);
+  const setDocTabActive = useDocumentReviewStore((s) => s.setDocTabActive);
+  const openDocument = useDocumentReviewStore((s) => s.openDocument);
   const { isPairActive, suggestions, togglePairMode, dismissSuggestion, clearSuggestions } = usePairProgrammingStore();
   const communityKeyStatus = useSettingsStore((s) => s.communityKeyStatus);
   const [approvalSending, setApprovalSending] = useState(false);
@@ -1130,6 +1138,14 @@ export const ChatSidecar: React.FC = () => {
       activeStreamTargetIdRef.current = lastAssistantId;
     }
   }, [activeAssistantMessageId, lastAssistantId, isRunning]);
+
+  useEffect(() => {
+    if (draftPrompt) {
+      setInput(draftPrompt);
+      setDraftPrompt('');
+      inputRef.current?.focus();
+    }
+  }, [draftPrompt, setDraftPrompt]);
 
   const flushStreamingRef = useCallback((isComplete = false) => {
     if (commitTimerRef.current) {
@@ -1501,6 +1517,69 @@ export const ChatSidecar: React.FC = () => {
       )}
     </header>
 
+    {/* Step 2: Review-Awaiting Banner */}
+    {activeDocument && isDocumentTabOpen && docReviewStatus === 'pending' && (
+      <div
+        id="review-awaiting-banner"
+        style={{
+          padding: '8px 12px',
+          background: 'linear-gradient(90deg, rgba(99, 102, 241, 0.12), rgba(168, 85, 247, 0.08))',
+          borderBottom: '1px solid rgba(99, 102, 241, 0.25)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '8px',
+          fontSize: '11px',
+          color: 'var(--text-primary)',
+          lineHeight: '1.4'
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '7px', minWidth: 0, overflow: 'hidden' }}>
+          <span
+            style={{
+              fontSize: '9px',
+              fontWeight: 700,
+              padding: '1px 5px',
+              borderRadius: '3px',
+              textTransform: 'uppercase',
+              letterSpacing: '0.04em',
+              backgroundColor: activeDocument.kind === 'plan' ? 'rgba(99, 102, 241, 0.25)' : 'rgba(16, 185, 129, 0.25)',
+              color: activeDocument.kind === 'plan' ? '#a5b4fc' : '#6ee7b7'
+            }}
+          >
+            {activeDocument.kind}
+          </span>
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            Awaiting your review: <strong style={{ color: '#fff' }}>{activeDocument.title}</strong>
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            openDocument(activeDocument);
+            setDocTabActive(true);
+          }}
+          style={{
+            flexShrink: 0,
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '4px',
+            padding: '3px 8px',
+            borderRadius: '4px',
+            background: 'var(--accent-primary, #6366f1)',
+            color: '#ffffff',
+            border: 'none',
+            fontSize: '10.5px',
+            fontWeight: 600,
+            cursor: 'pointer'
+          }}
+        >
+          <span>Open in Editor</span>
+          <ExternalLink size={10} />
+        </button>
+      </div>
+    )}
+
     {sidecarTab === 'chat' && agentMode === 'plan' && (
       <div
         style={{
@@ -1763,6 +1842,100 @@ export const ChatSidecar: React.FC = () => {
     )}
 
     <BackgroundAgentsPanel />
+
+    {/* Step 3: Queued Section Comments Shelf */}
+    {queuedMessages.length > 0 && (
+      <div
+        id="queued-messages-shelf"
+        style={{
+          padding: '8px 12px',
+          background: 'var(--bg-secondary)',
+          borderTop: '1px solid var(--border-subtle)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '6px',
+          maxHeight: '140px',
+          overflowY: 'auto'
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '10.5px', color: 'var(--text-muted)' }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: '5px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            <MessageSquare size={11} className="text-indigo-400" />
+            Queued Feedback ({queuedMessages.length})
+          </span>
+          <button
+            type="button"
+            onClick={clearQueuedMessages}
+            style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '10px' }}
+            title="Clear queued feedback"
+          >
+            Clear all
+          </button>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          {queuedMessages.map((msg, idx) => {
+            const match = msg.match(/^\[FEEDBACK ON SECTION:\s*([^\]]+)\]\s*(.*)$/s);
+            if (match) {
+              const [, heading, text] = match;
+              return (
+                <div
+                  key={idx}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '4px 8px',
+                    borderRadius: '6px',
+                    background: 'rgba(99, 102, 241, 0.1)',
+                    border: '1px solid rgba(99, 102, 241, 0.25)',
+                    fontSize: '11px',
+                    color: 'var(--text-primary)'
+                  }}
+                >
+                  <span
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '3px',
+                      padding: '1px 6px',
+                      borderRadius: '4px',
+                      background: 'rgba(99, 102, 241, 0.25)',
+                      color: '#c7d2fe',
+                      fontWeight: 600,
+                      fontSize: '10px',
+                      flexShrink: 0
+                    }}
+                  >
+                    § {heading}
+                  </span>
+                  <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text-secondary)' }}>
+                    {text}
+                  </span>
+                </div>
+              );
+            }
+            return (
+              <div
+                key={idx}
+                style={{
+                  padding: '4px 8px',
+                  borderRadius: '6px',
+                  background: 'var(--bg-tertiary)',
+                  border: '1px solid var(--border-subtle)',
+                  fontSize: '11px',
+                  color: 'var(--text-secondary)',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                {msg}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    )}
 
     <ChatInput
       input={input}

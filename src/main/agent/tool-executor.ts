@@ -5,12 +5,13 @@ import path from 'path';
 import { spawn } from 'child_process';
 import { BrowserWindow } from 'electron';
 import * as pty from 'node-pty';
-import type { AgentToolApproval, ProposedDiff, ToolCall } from '../../preload/types';
+import type { AgentDocument, AgentToolApproval, ProposedDiff, ToolCall } from '../../preload/types';
 import { gitService } from '../services/git-service';
 import { SecurityPolicyEngine, buildSanitizedPtyEnv } from '../services/security-policy';
 import { settingsManager } from '../services/settings-manager';
 import { mcpManager } from '../services/mcp-manager';
 import { SmartFileReader } from '../services/tools/smart-file-reader';
+import { parseMarkdownSections, persistDocument } from '../services/document-parser';
 
 export interface ToolExecutionResponse {
   output: string;
@@ -74,12 +75,35 @@ export class ToolExecutor {
         case 'inspect_keyword_rankings':
         case 'check_core_web_vitals':
           return await this.executeSeoQuery(name, args);
+        case 'submit_plan':
+        case 'submit_report':
+          return await this.submitDocument(name, args);
         default: return { output: `Unknown tool: "${name}"`, isError: true };
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       return { output: `Error executing tool "${name}": ${message}`, isError: true };
     }
+  }
+
+  public async submitDocument(name: string, args: Record<string, unknown>): Promise<ToolExecutionResponse> {
+    const kind: 'plan' | 'report' = name === 'submit_plan' ? 'plan' : 'report';
+    const title = String(args.title || (kind === 'plan' ? 'Execution Plan' : 'Analysis Report')).trim();
+    const markdown = String(args.markdown || '').trim();
+    const sections = parseMarkdownSections(markdown);
+    const docId = `doc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const document: AgentDocument = {
+      id: docId,
+      kind,
+      title,
+      markdown,
+      sections,
+      createdAt: Date.now()
+    };
+    await persistDocument(document);
+    return {
+      output: `${kind === 'plan' ? 'Plan' : 'Report'} "${title}" (id: ${docId}, ${sections.length} sections) submitted successfully and opened in editor.`
+    };
   }
 
   public async readFile(args: Record<string, unknown>): Promise<ToolExecutionResponse> {

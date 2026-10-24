@@ -78,6 +78,7 @@ import { getRecentWorkspacesManager } from './services/recent-workspaces';
 import { MyersDiff } from './services/myers-diff';
 import { WorkspaceEditPreviewService } from './services/workspace-edit-preview';
 import { fromFileUri } from './services/lsp-path-utils';
+import { loadDocument, persistDocument, parseMarkdownSections, listDocuments, type AgentDocument } from './services/document-parser';
 import type { CommandExecutionOptions, ProposedDiff, PtySpawnOptions, ReplaceInFilesOptions, SearchInFilesOptions, TelemetryEvent, WorkspaceEditOrigin } from '../preload/types';
 import { fileURLToPath } from 'url';
 
@@ -1078,6 +1079,49 @@ function registerIpcHandlers(): void {
       return { success: false, error: `Invalid diff approval payload: ${parsed.error.message}` };
     }
     return handleUserApproveDiff(parsed.data);
+  });
+  ipcMain.handle('document:update', async (_event, payload: unknown) => {
+    try {
+      const data = payload as { id?: string; markdown?: string; title?: string };
+      if (!data?.id || typeof data.markdown !== 'string') {
+        return { success: false, error: 'Invalid document update payload' };
+      }
+      const existing = await loadDocument(data.id);
+      const sections = parseMarkdownSections(data.markdown);
+      const updatedDoc: AgentDocument = {
+        id: data.id,
+        kind: existing?.kind || 'plan',
+        title: data.title || existing?.title || 'Document',
+        markdown: data.markdown,
+        sections,
+        createdAt: existing?.createdAt || Date.now()
+      };
+      await persistDocument(updatedDoc);
+      return { success: true, data: updatedDoc };
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { success: false, error: message };
+    }
+  });
+  ipcMain.handle('document:get-last', async () => {
+    try {
+      const docs = await listDocuments();
+      if (docs.length > 0) {
+        const fullDoc = await loadDocument(docs[0].id);
+        return { success: true, data: fullDoc };
+      }
+      return { success: true, data: null };
+    } catch (err: unknown) {
+      return { success: false, error: String(err) };
+    }
+  });
+  ipcMain.handle('document:load', async (_event, id: string) => {
+    try {
+      const doc = await loadDocument(id);
+      return { success: true, data: doc };
+    } catch (err: unknown) {
+      return { success: false, error: String(err) };
+    }
   });
   ipcMain.handle('pty:resolve-approval', (_event, payload: unknown) => {
     const parsed = PtyResolveApprovalPayloadSchema.safeParse(payload);

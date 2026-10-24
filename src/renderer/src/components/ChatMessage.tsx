@@ -42,6 +42,7 @@ import { ChatErrorCard } from './ChatErrorCard';
 import { MessageRenderer } from './chat/MessageRenderer';
 import { useChatStore } from '../state/chat-store';
 import { useWorkspaceStore } from '../state/workspace-store';
+import { useDocumentReviewStore } from '../state/document-review-store';
 
 // ---------------------------------------------------------------------------
 // Syntax Highlighting setup
@@ -469,6 +470,22 @@ export const ChatMessageItem: React.FC<ChatMessageProps> = ({
   const isSystem = message.role === 'system';
   const isStreaming = propIsStreaming ?? Boolean(message.isStreaming ?? (isLastAssistant && isRunning));
 
+  const activeDocument = useDocumentReviewStore((s) => s.activeDocument);
+  const openDocument = useDocumentReviewStore((s) => s.openDocument);
+  const setDocTabActive = useDocumentReviewStore((s) => s.setDocTabActive);
+  const docReviewStatus = useDocumentReviewStore((s) => s.status);
+  const setDocReviewStatus = useDocumentReviewStore((s) => s.setStatus);
+  const setAgentMode = useChatStore((s) => s.setAgentMode);
+  const respondToApproval = useChatStore((s) => s.respondToApproval);
+  const pendingApproval = useChatStore((s) => s.pendingApproval);
+
+  const proposedDoc = message.proposedDocument || (
+    activeDocument && (
+      message.taskId === activeDocument.id ||
+      message.toolExecutions?.some((t) => (t.name === 'submit_plan' || t.name === 'submit_report') && t.status !== 'error')
+    ) ? activeDocument : null
+  );
+
   // Normalize tools: extract from toolExecutions or legacy toolCall/toolCalls
   const toolList: ToolExecutionRecord[] = useMemo(() => {
     if (message.toolExecutions && message.toolExecutions.length > 0) {
@@ -846,8 +863,120 @@ export const ChatMessageItem: React.FC<ChatMessageProps> = ({
           </div>
         )}
 
-        {/* 4. MAIN TEXT RESPONSE (Deferred Markdown / Plain Stream via MessageRenderer) */}
-        {message.content ? (
+        {/* 4. MAIN TEXT RESPONSE: Compact Document Card when proposed, else Deferred Markdown */}
+        {proposedDoc ? (
+          <div
+            id={`compact-doc-card-${proposedDoc.id}`}
+            style={{
+              margin: '8px 0',
+              padding: '10px 12px',
+              borderRadius: '8px',
+              background: 'rgba(20, 23, 29, 0.95)',
+              border: `1px solid ${proposedDoc.kind === 'plan' ? 'rgba(99, 102, 241, 0.4)' : 'rgba(16, 185, 129, 0.4)'}`,
+              boxShadow: '0 4px 14px rgba(0, 0, 0, 0.25)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '10px',
+              fontSize: '12px'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, overflow: 'hidden' }}>
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  padding: '2px 7px',
+                  borderRadius: '4px',
+                  fontSize: '10px',
+                  fontWeight: 700,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.04em',
+                  background: proposedDoc.kind === 'plan' ? 'rgba(99, 102, 241, 0.25)' : 'rgba(16, 185, 129, 0.25)',
+                  color: proposedDoc.kind === 'plan' ? '#a5b4fc' : '#6ee7b7',
+                  border: `1px solid ${proposedDoc.kind === 'plan' ? 'rgba(99, 102, 241, 0.4)' : 'rgba(16, 185, 129, 0.4)'}`,
+                  flexShrink: 0
+                }}
+              >
+                📄 {proposedDoc.kind.toUpperCase()}
+              </span>
+              <div style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                  &ldquo;{proposedDoc.title}&rdquo;
+                </span>
+                <span style={{ color: 'var(--text-muted)', fontSize: '11px', marginLeft: '6px' }}>
+                  — {proposedDoc.sections.length} section{proposedDoc.sections.length === 1 ? '' : 's'} · opened in editor
+                </span>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+              <button
+                type="button"
+                onClick={() => {
+                  openDocument(proposedDoc);
+                  setDocTabActive(true);
+                }}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  padding: '4px 9px',
+                  borderRadius: '5px',
+                  background: 'var(--bg-tertiary, #1e222b)',
+                  color: 'var(--text-primary)',
+                  border: '1px solid var(--border-subtle)',
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+                title="Open and view full document in editor"
+              >
+                <Eye size={11} />
+                <span>View in Editor</span>
+              </button>
+
+              {proposedDoc.kind === 'plan' && (
+                <button
+                  type="button"
+                  disabled={docReviewStatus === 'approved'}
+                  onClick={async () => {
+                    if (pendingApproval) {
+                      await respondToApproval(true);
+                    } else if (window.electronAPI?.sendApprovalResponse) {
+                      try {
+                        await window.electronAPI.sendApprovalResponse(`plan_${proposedDoc.id}`, 'APPROVED');
+                      } catch {}
+                    }
+                    setAgentMode('build' as any);
+                    if (window.electronAPI?.setAgentMode) {
+                      void window.electronAPI.setAgentMode('execute');
+                    }
+                    setDocReviewStatus('approved');
+                  }}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    padding: '4px 10px',
+                    borderRadius: '5px',
+                    background: docReviewStatus === 'approved' ? 'rgba(16, 185, 129, 0.2)' : 'var(--accent-green, #10b981)',
+                    color: docReviewStatus === 'approved' ? '#6ee7b7' : '#ffffff',
+                    border: docReviewStatus === 'approved' ? '1px solid rgba(16, 185, 129, 0.4)' : 'none',
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    cursor: docReviewStatus === 'approved' ? 'default' : 'pointer'
+                  }}
+                  title="Approve plan and proceed with execution"
+                >
+                  <Check size={11} />
+                  <span>{docReviewStatus === 'approved' ? 'Approved' : 'Proceed'}</span>
+                </button>
+              )}
+            </div>
+          </div>
+        ) : message.content ? (
           <MessageRenderer content={message.content} isStreaming={isStreaming} />
         ) : !isThinking && !message.errorCard && (!message.proposedDiffs || message.proposedDiffs.length === 0) && (!message.toolExecutions || message.toolExecutions.length === 0) && !message.scopeRejectionCard ? (
           <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontStyle: 'italic', padding: '4px 0' }}>

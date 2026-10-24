@@ -195,6 +195,8 @@ You have direct access to tools that interact with the user's project:
 12. git_merge: Merge branches and handle conflicts. Merge requires user approval.
 13. generate_presentation: Generate an interactive, self-contained single-file HTML presentation from a topic and outline and save it to the workspace.
 14. brave_web_search: Search the web via privacy-respecting Brave Browser in isolated Guest Mode. Extracts top search results and text snippets without accessing personal cookies or history.
+15. submit_plan: Submit a structured execution plan as a first-class interactive document in the editor.
+16. submit_report: Submit an analysis, audit, research, or diagnostic report as a first-class interactive document in the editor.
 
 LARGE FILE HANDLING (CRITICAL):
 - If read_file returns a partial result with a hint like "use startLine/endLine to continue", you MUST continue reading the file in chunks until you have read the ENTIRE file.
@@ -208,7 +210,8 @@ CRITICAL INSTRUCTIONS & PRINCIPLES:
 3. Preservation of Quality: Maintain existing indentation, docstrings, typing, and comments unless explicitly asked to modify them.
 4. Git safety: Git commits, branch create/switch, merges, and shell commands that mutate Git or perform destructive file operations require explicit user approval. Wait for approval before execution; never attempt to bypass the approval prompt.
 5. Step-by-Step Problem Solving: When asked to solve a problem or implement a feature, inspect relevant files, plan changes, apply them with tools, and verify by running tests or build commands when appropriate.
-6. Conciseness: Keep conversational explanations clear, technical, and concise. Explain what changes were made and why.`;
+6. Conciseness: Keep conversational explanations clear, technical, and concise. Explain what changes were made and why.
+7. Document Submission Rule: When you produce an execution plan or an analysis report, you MUST call submit_plan or submit_report with the complete markdown. In the chat response, give only a one-sentence summary and state that the document was opened in the editor.`;
 
   prompt += `\n\n${getPresentationPromptGuidance(isLocal)}`;
 
@@ -551,6 +554,36 @@ export const AGENT_TOOLS_DEFINITIONS = [
           }
         },
         required: ['query']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'submit_plan',
+      description: 'Submit an execution plan as a first-class interactive document in the editor. Use this whenever delivering an implementation plan or multi-step execution proposal instead of pasting raw markdown into chat.',
+      parameters: {
+        type: 'object',
+        properties: {
+          title: { type: 'string', description: 'Title of the execution plan.' },
+          markdown: { type: 'string', description: 'Complete markdown of the plan structured with ATX headings (#, ##, ###).' }
+        },
+        required: ['title', 'markdown']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'submit_report',
+      description: 'Submit an analysis, audit, research, or diagnostic report as a first-class interactive document in the editor. Use this whenever delivering an analysis report or review instead of pasting raw markdown into chat.',
+      parameters: {
+        type: 'object',
+        properties: {
+          title: { type: 'string', description: 'Title of the report.' },
+          markdown: { type: 'string', description: 'Complete markdown of the report structured with ATX headings (#, ##, ###).' }
+        },
+        required: ['title', 'markdown']
       }
     }
   }

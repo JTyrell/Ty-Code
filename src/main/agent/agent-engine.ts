@@ -1,8 +1,11 @@
-import type { AgentApprovalDecision, AgentHarnessType, AgentStreamChunk, AgentToolApproval, ChatMessage, ProposedDiff, ProviderSettings, ToolCall } from '../../preload/types';
+import type { AgentApprovalDecision, AgentDocument, AgentDocumentSection, AgentHarnessType, AgentStreamChunk, AgentToolApproval, ChatMessage, ProposedDiff, ProviderSettings, ToolCall } from '../../preload/types';
+export type { AgentDocument, AgentDocumentSection, AgentStreamChunk };
 import { ProviderGateway, type ChatCompletionMessage, type GatewayToolCall, type GatewayToolSchema, getVerifiedModels, isFreeModel, providerHasOwnKey } from '../providers/provider-gateway';
 export { ProviderGateway };
 import { buildSystemPrompt, AGENT_TOOLS_DEFINITIONS, TASK_SCOPING_PROTOCOL, getEccRulesPrompt, getSeoPromptGuidance, isLocalModel, type EnvironmentContext } from './system-prompt';
 import { ToolExecutor, type ToolExecutionResponse } from './tool-executor';
+import { parseMarkdownSections, persistDocument } from '../services/document-parser';
+import { zDocumentProposed } from '../../shared/types/agent-events';
 import { getAvailableTools, isToolAvailable, isDocsOnlyWrite } from './tool-registry';
 import { workspaceManager } from '../services/workspace-manager';
 import { assembleSystemPrompt, classify, buildProjectProfile, saveProjectProfileCache, runConventionsExtractor, pickProviderModel, loadPreferences, invalidateAssemblyCache, type ProjectProfile, type ModeId, type ToolScope, type TaskClass, type RolePreferences } from './prompt-assembler';
@@ -912,6 +915,58 @@ export class AgentEngine {
             }
 
           onChunk({ type: 'tool_call', toolCall: tool });
+
+          // Document submission tools: submit_plan and submit_report
+          if (toolCall.name === 'submit_plan' || toolCall.name === 'submit_report') {
+            const kind: 'plan' | 'report' = toolCall.name === 'submit_plan' ? 'plan' : 'report';
+            const title = String(toolCall.arguments.title || (kind === 'plan' ? 'Execution Plan' : 'Analysis Report')).trim();
+            const rawMarkdown = String(toolCall.arguments.markdown || '').trim();
+
+            const sections = parseMarkdownSections(rawMarkdown);
+            const docId = `doc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+            const document: AgentDocument = {
+              id: docId,
+              kind,
+              title,
+              markdown: rawMarkdown,
+              sections,
+              createdAt: Date.now()
+            };
+
+            const currentTaskId = params.taskId || `task_${Date.now()}`;
+
+            // Validate IPC payload with Zod schema (zDocumentProposed) per IPC security standards
+            zDocumentProposed.parse({
+              taskId: currentTaskId,
+              type: 'document_proposed',
+              document
+            });
+
+            // Persist document to ~/.tycode/documents/{id}.md plus sidecar {id}.json
+            await persistDocument(document);
+
+            // Emit document_proposed through the EXISTING agent stream channel
+            onChunk({
+              taskId: currentTaskId,
+              type: 'document_proposed',
+              document
+            });
+
+            const output = `${kind === 'plan' ? 'Plan' : 'Report'} "${title}" (id: ${docId}, ${sections.length} sections) submitted successfully and opened in editor.`;
+            onChunk({
+              type: 'tool_result',
+              toolResult: {
+                toolCallId: toolCall.id,
+                name: toolCall.name,
+                output,
+                isError: false
+              }
+            });
+            messages.push({ role: 'tool', name: toolCall.name, tool_call_id: toolCall.id, content: output });
+            stateManager.recordToolCall(toolCall.name, toolCall.arguments, output);
+            stateManager.iterationCount++;
+            continue;
+          }
 
           // 3a. request_approval: emit the Task Scoping Report and PAUSE for IPC approval
           if (toolCall.name === 'request_approval') {

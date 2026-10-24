@@ -104,3 +104,28 @@ export const AgentErrorPayloadSchema = z.object({
   scopeRejectionCard: ScopeRejectionCardSchema.optional()
 });
 export type AgentErrorPayload = z.infer<typeof AgentErrorPayloadSchema>;
+
+export const zDocumentSection = z.object({
+  id: z.string(),
+  heading: z.string(),
+  level: z.number().int(),
+  markdown: z.string()
+});
+export type AgentDocumentSectionPayload = z.infer<typeof zDocumentSection>;
+
+export const zDocument = z.object({
+  id: z.string(),
+  kind: z.enum(['plan', 'report']),
+  title: z.string(),
+  markdown: z.string(),
+  sections: z.array(zDocumentSection),
+  createdAt: z.number()
+});
+export type AgentDocumentPayload = z.infer<typeof zDocument>;
+
+export const zDocumentProposed = z.object({
+  taskId: z.string(),
+  type: z.literal('document_proposed').optional(),
+  document: zDocument
+});
+export type DocumentProposedPayload = z.infer<typeof zDocumentProposed>;

@@ -486,6 +486,7 @@ export interface ChatMessage {
   toolExecutions?: ToolExecutionRecord[];
   statusText?: string;
   proposedDiffs?: ProposedDiff[];
+  proposedDocument?: AgentDocument;
   reasoning?: string;
   errorCard?: ChatErrorCard;
   metadata?: AssistantStreamMetadata;
@@ -631,8 +632,24 @@ export interface AgentPerformanceReport {
   };
 }
 
+export interface AgentDocumentSection {
+  id: string;
+  heading: string;
+  level: number;
+  markdown: string;
+}
+
+export interface AgentDocument {
+  id: string;
+  kind: 'plan' | 'report';
+  title: string;
+  markdown: string;
+  sections: AgentDocumentSection[];
+  createdAt: number;
+}
+
 export interface AgentStreamChunk {
-  type: 'token' | 'thought' | 'tool_call' | 'tool_result' | 'diff' | 'status' | 'approval_request' | 'done' | 'cancelled' | 'error' | 'agent_state';
+  type: 'token' | 'thought' | 'tool_call' | 'tool_result' | 'diff' | 'status' | 'approval_request' | 'done' | 'cancelled' | 'error' | 'agent_state' | 'document_proposed';
   taskId?: string;
   content?: string;
   toolCall?: ToolCall;
@@ -645,6 +662,13 @@ export interface AgentStreamChunk {
   truncated?: boolean;
   modeEscalation?: { from: string; to: string };
   scopeRejectionCard?: ScopeRejectionCard;
+  document?: AgentDocument;
+}
+
+export interface DocumentProposedChunk {
+  taskId: string;
+  type: 'document_proposed';
+  document: AgentDocument;
 }
 
 export interface CommandExecutionOptions {
@@ -975,6 +999,11 @@ export interface ElectronAPI {
   onAgentToolStart?: (callback: (payload: AgentToolStartPayload) => void) => () => void;
   onAgentToolResult?: (callback: (payload: AgentToolResultPayload) => void) => () => void;
   onAgentDiffProposed?: (callback: (payload: AgentDiffProposedPayload) => void) => () => void;
+  onAgentDocumentProposed?: (callback: (payload: { taskId: string; document: AgentDocument }) => void) => () => void;
+  onDocumentProposed?: (callback: (payload: { taskId: string; document: AgentDocument }) => void) => () => void;
+  updateDocument?: (payload: { id: string; markdown: string; title?: string }) => Promise<IpcResponse<AgentDocument>>;
+  getLastDocument?: () => Promise<IpcResponse<AgentDocument | null>>;
+  loadDocument?: (id: string) => Promise<IpcResponse<AgentDocument | null>>;
   onAgentDone?: (callback: (payload: AgentDonePayload) => void) => () => void;
   onAgentError?: (callback: (payload: AgentErrorPayload) => void) => () => void;
   perfReportH5?: (data: { taskId: string; h5: number }) => void;

@@ -40,6 +40,8 @@ import { ensureMonaco, useMonacoRuntime } from '../services/monaco-runtime';
 import { usePairProgrammingStore } from '../state/pair-programming-store';
 import { useExtensionPromptStore } from '../state/extension-prompt-store';
 import { LazyModelManager } from '../services/lazy-model-manager';
+import { useDocumentReviewStore } from '../state/document-review-store';
+import { DocumentReviewPane } from './documents/DocumentReviewPane';
 
 interface SplitPaneState {
   isSplit: boolean;
@@ -60,6 +62,12 @@ export const EditorArea: React.FC = () => {
   const diffReview = useWorkspaceStore((s) => s.diffReview);
   const closeDiffReview = useWorkspaceStore((s) => s.closeDiffReview);
   const applyDiff = useWorkspaceStore((s) => s.applyDiff);
+
+  const activeDocument = useDocumentReviewStore((s) => s.activeDocument);
+  const isDocumentTabOpen = useDocumentReviewStore((s) => s.isDocumentTabOpen);
+  const isDocTabActive = useDocumentReviewStore((s) => s.isDocTabActive);
+  const setDocTabActive = useDocumentReviewStore((s) => s.setDocTabActive);
+  const clearDocument = useDocumentReviewStore((s) => s.clearDocument);
 
   const monacoRuntime = useMonacoRuntime();
   const monaco = monacoRuntime.monaco;
@@ -572,12 +580,75 @@ export const EditorArea: React.FC = () => {
         >
           {/* Tabs List */}
           <div style={{ display: 'flex', alignItems: 'center', height: '100%', overflowX: 'auto', flex: 1 }}>
+            {/* Pinned Document Review Tab */}
+            {activeDocument && isDocumentTabOpen && (
+              <div
+                onClick={() => setDocTabActive(true)}
+                style={{
+                  height: '100%',
+                  padding: '0 12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  cursor: 'pointer',
+                  fontSize: '12px',
+                  backgroundColor: isDocTabActive ? 'var(--bg-primary)' : 'transparent',
+                  color: isDocTabActive ? 'var(--text-primary)' : 'var(--text-secondary)',
+                  borderRight: '1px solid var(--border-subtle)',
+                  borderTop: isDocTabActive ? '2px solid var(--accent-primary, #6366f1)' : '2px solid transparent',
+                  flexShrink: 0
+                }}
+                title={`Agent ${activeDocument.kind.toUpperCase()}: ${activeDocument.title}`}
+              >
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                  <span
+                    style={{
+                      fontSize: '9px',
+                      fontWeight: 700,
+                      padding: '1px 5px',
+                      borderRadius: '3px',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.05em',
+                      backgroundColor: activeDocument.kind === 'plan' ? 'rgba(99, 102, 241, 0.2)' : 'rgba(16, 185, 129, 0.2)',
+                      color: activeDocument.kind === 'plan' ? '#a5b4fc' : '#6ee7b7',
+                      border: `1px solid ${activeDocument.kind === 'plan' ? 'rgba(99, 102, 241, 0.4)' : 'rgba(16, 185, 129, 0.4)'}`
+                    }}
+                  >
+                    {activeDocument.kind}
+                  </span>
+                  <span>📄 {activeDocument.title}</span>
+                </span>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    clearDocument();
+                  }}
+                  style={{
+                    padding: '2px',
+                    borderRadius: '3px',
+                    color: 'var(--text-muted)',
+                    background: 'transparent',
+                    border: 'none',
+                    cursor: 'pointer'
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text-primary)'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; }}
+                  title="Close document review"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            )}
+
             {openTabs.map((tab) => {
-              const isActive = tab.path === activeTabPath;
+              const isActive = !isDocTabActive && tab.path === activeTabPath;
               return (
                 <div
                   key={tab.path}
-                  onClick={() => setActiveTab(tab.path)}
+                  onClick={() => {
+                    setActiveTab(tab.path);
+                    setDocTabActive(false);
+                  }}
                   onContextMenu={(e) => {
                     e.preventDefault();
                     setTabContextMenu({ x: e.clientX, y: e.clientY, path: tab.path });
@@ -715,7 +786,7 @@ export const EditorArea: React.FC = () => {
       )}
 
       {/* Breadcrumb Navigation Bar */}
-      {activeTab && !diffReview?.isOpen && (
+      {activeTab && !diffReview?.isOpen && !isDocTabActive && (
         <div
           style={{
             height: '24px',
@@ -756,7 +827,9 @@ export const EditorArea: React.FC = () => {
 
       {/* Main Monaco Surface (Single or Split Pane) */}
       <div style={{ flex: 1, position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: splitState.orientation === 'horizontal' ? 'column' : 'row' }}>
-        {(activeTab || diffReview?.isOpen) && !monaco ? (
+        {isDocTabActive && activeDocument && isDocumentTabOpen ? (
+          <DocumentReviewPane />
+        ) : (activeTab || diffReview?.isOpen) && !monaco ? (
           <div role={monacoRuntime.error ? 'alert' : 'status'} style={{ margin: 'auto', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span>{monacoRuntime.error ? `Editor failed to load: ${monacoRuntime.error}` : 'Loading editor…'}</span>
             {monacoRuntime.error && <button type="button" onClick={() => { void ensureMonaco().catch((error) => toast.error('Editor failed to load', String(error))); }}>Retry</button>}
