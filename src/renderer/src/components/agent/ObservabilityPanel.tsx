@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Activity, Download, RefreshCw, Trash2 } from 'lucide-react';
 import type { AgentPerformanceReport, AgentTelemetryRecord } from '../../../../preload/types';
+import { PromptCompositionPanel } from '../observability/PromptCompositionPanel';
 
 const CONTEXT_WINDOW_LIMIT = 128_000;
 const SPARKLINE_POINTS = 40;
@@ -416,6 +417,9 @@ export function ObservabilityPanel() {
           </div>
         </div>
       </div>
+
+      {/* Prompt Composition Stack (Deliverable 1 & Unified Prompt) */}
+      <PromptCompositionPanel />
 
       {report && report.errors.recentMessages.length > 0 ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>

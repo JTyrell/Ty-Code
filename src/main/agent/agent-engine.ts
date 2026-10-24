@@ -1,8 +1,11 @@
 import type { AgentApprovalDecision, AgentHarnessType, AgentStreamChunk, AgentToolApproval, ChatMessage, ProposedDiff, ProviderSettings, ToolCall } from '../../preload/types';
 import { ProviderGateway, type ChatCompletionMessage, type GatewayToolCall, type GatewayToolSchema, getVerifiedModels, isFreeModel, providerHasOwnKey } from '../providers/provider-gateway';
 export { ProviderGateway };
-import { buildSystemPrompt, AGENT_TOOLS_DEFINITIONS, TASK_SCOPING_PROTOCOL, getEccRulesPrompt, getSeoPromptGuidance, isLocalModel } from './system-prompt';
+import { buildSystemPrompt, AGENT_TOOLS_DEFINITIONS, TASK_SCOPING_PROTOCOL, getEccRulesPrompt, getSeoPromptGuidance, isLocalModel, type EnvironmentContext } from './system-prompt';
 import { ToolExecutor, type ToolExecutionResponse } from './tool-executor';
+import { getAvailableTools, isToolAvailable, isDocsOnlyWrite } from './tool-registry';
+import { workspaceManager } from '../services/workspace-manager';
+import { assembleSystemPrompt, classify, buildProjectProfile, saveProjectProfileCache, runConventionsExtractor, pickProviderModel, loadPreferences, invalidateAssemblyCache, type ProjectProfile, type ModeId, type ToolScope, type TaskClass, type RolePreferences } from './prompt-assembler';
 import { getHarness } from '../services/orchestration/harnesses';
 import { getActiveAgentConfig } from './agent-config';
 import { SecurityPolicyEngine } from '../services/security-policy';
@@ -15,7 +18,7 @@ import { optimizationPipeline } from '../providers/optimization-pipeline';
 import { failoverResumeManager, type TurnSnapshot } from './failover-resume';
 import { agentStateManager, AgentMode, type TodoItem } from './agent-state-manager';
 import { compactMessages, estimateContextTokens, estimateTokenCount, generateSummary, shouldCompact, buildFallbackSummary, MODEL_CONTEXT_LIMIT } from './context-compactor';
-import { fileMemoryManager, extractKeySymbols, extractDependencies } from './file-memory';
+import { fileMemoryManager, extractKeySymbols, extractDependencies, isFileMemoryEnabled } from './file-memory';
 import { sessionStore, buildSessionSnapshot, type AgentSessionState } from './session-store';
 import { toolApprovalManager, type ApprovalRule } from './tool-approval-manager';
 import { backgroundAgentOrchestrator } from './background-agent-orchestrator';
@@ -43,6 +46,8 @@ export interface RunAgentParams {
   onProviderHandoff?: (info: { fromProvider: string; toProvider: string; toModel: string }) => void;
   taskId?: string;
   resumeSessionId?: string;
+  onRequestWorkspaceOpen?: () => void;
+  mode?: ModeId;
 }
 
 /**
@@ -119,6 +124,25 @@ async function resolveModelContextLimit(providerId: string, modelId: string): Pr
   if (lower.includes('llama-3-8b') || lower.includes('mistral-7b')) return 8_192;
 
   return MODEL_CONTEXT_LIMIT;
+}
+
+/**
+ * Classifies a user prompt as a simple query (greeting, general knowledge,
+ * explanation) that does not require the Task Scoping Protocol or any
+ * workspace-dependent tools. Heuristic only - when in doubt, returns false
+ * so scoping stays available for complex or mutating requests.
+ */
+function looksLikeSimpleQuery(prompt: string): boolean {
+  const lower = prompt.trim().toLowerCase();
+
+  // Anything mentioning workspace tooling is a complex task.
+  if (/\b(read|write|edit|replace|create|delete|remove|file|folder|directory|run|command|terminal|shell|git|commit|push|pull|merge|branch|grep|search|fix|bug|implement|build|test|deploy|workspace|project|code|script)\b/i.test(lower)) return false;
+
+  // Greetings / general questions.
+  if (/^(hi|hello|hey|yo|greetings|howdy)([,.!?]|\s|$)/i.test(lower)) return true;
+  if (/\b(what is|who is|where is|can you|could you|explain|define|meaning of|difference between|tell me about|help me understand|is it true|true or false)\b/i.test(lower)) return true;
+
+  return false;
 }
 
 export class AgentEngine {
@@ -204,7 +228,108 @@ export class AgentEngine {
   }
 
   async run(params: RunAgentParams): Promise<void> {
-    const { prompt, workspacePath, history, settings, activeFilePath, activeFileContent, onChunk, requestApproval, abortSignal } = params;
+    const { prompt, workspacePath, history, settings, activeFilePath, activeFileContent, onChunk, requestApproval, abortSignal, onRequestWorkspaceOpen, mode = 'BUILD' } = params;
+
+    // ===== STEP 1: O(1) ENVIRONMENT STATE (before any tool planning) =====
+    // Synchronous singleton read - no disk I/O, no PTY spawns.
+    const hasWorkspace = Boolean(workspaceManager.isWorkspaceReady && workspaceManager.currentWorkspacePath);
+    const envContext: EnvironmentContext = {
+      hasWorkspace,
+      workspaceRoot: hasWorkspace ? workspaceManager.currentWorkspacePath : null,
+      activeFiles: hasWorkspace
+        ? (params.openFilePaths?.length ? [...params.openFilePaths] : params.activeFilePath ? [params.activeFilePath] : [])
+        : []
+    };
+    const isSimpleQuery = looksLikeSimpleQuery(prompt);
+
+    // ===== DYNAMIC SYSTEM PROMPT (Layer 0-3 assembler) =====
+    // Rebuilt per task; profile build is lazy (<=200ms) and never blocks the first token.
+    let prefs: RolePreferences;
+    try {
+      prefs = await loadPreferences(workspacePath);
+    } catch {
+      prefs = {
+        version: 1,
+        defaultMode: 'BUILD',
+        roleOverrides: { pin: [], ban: [], prefer: {} },
+        scopeOverrides: {},
+        questGate: { autoApproveMedium: false, requireApprovalFrom: 'Large' },
+        tokenBudget: { systemPromptFraction: 0.12, maxRoles: 2 },
+        conventions: { autoExtract: true, refreshOnHeadChange: true },
+        modeBySignal: {}
+      };
+    }
+
+    const classification = classify(prompt, envContext.activeFiles, {
+      pin: prefs.roleOverrides?.pin,
+      ban: prefs.roleOverrides?.ban,
+      prefer: prefs.roleOverrides?.prefer,
+      maxRoles: prefs.tokenBudget?.maxRoles,
+      defaultMode: prefs.defaultMode,
+      modeBySignal: prefs.modeBySignal as Record<string, ModeId> | undefined
+    });
+    const roles = classification.roles;
+    const classifiedMode: ModeId = (params as any).mode ?? classification.mode;
+    const classifiedTaskClass: TaskClass = (params as any).taskClass ?? classification.taskClass;
+    let profile: ProjectProfile | null = null;
+    try {
+      profile = await buildProjectProfile(workspacePath);
+      void saveProjectProfileCache(workspacePath, profile);
+    } catch {
+      profile = null;
+    }
+
+    const assembled = assembleSystemPrompt({
+      taskId: params.taskId || `task_${Date.now()}`,
+      userPrompt: prompt,
+      activeFiles: envContext.activeFiles,
+      workspaceRoot: workspacePath,
+      profile,
+      activeMode: classifiedMode,
+      modelLimitTokens: 128_000,
+      taskClass: classifiedTaskClass,
+      preferences: prefs,
+      envContext,
+      conventionsHash: ''
+    });
+
+    // Scope is the effective tool constraint (mode + roles), enforced below.
+    const scope: ToolScope = assembled.scope;
+    const availableToolNames = new Set(getAvailableTools(envContext, scope));
+
+    // H0: Prompt Assembly tracer hop ahead of H1-H5 Runtime Connectivity Tracer
+    if (params.traceId) {
+      connectivityTracer.recordHop(params.traceId, 'H0', {
+        status: 'PASS',
+        metadata: {
+          assemblyMs: assembled.assemblyMs,
+          roles: roles.join(','),
+          mode: assembled.mode,
+          taskClass: assembled.taskClass,
+          tokens: `${assembled.tokenEstimate}/${assembled.budget}`,
+          degraded: assembled.degraded,
+          cache: assembled.cache
+        }
+      });
+    }
+
+    console.log(`[PROMPT] task=${params.taskId} roles=[${roles.join(',')}] mode=${assembled.mode} taskClass=${assembled.taskClass} tokens=${assembled.tokenEstimate}/${assembled.budget} degraded=${assembled.degraded} cache=${assembled.cache}`);
+
+    // Background conventions extraction enriches the cached profile for subsequent turns.
+    void (async () => {
+      try {
+        if (profile && (prefs.conventions?.autoExtract ?? true)) {
+          const { providerId, modelId } = await pickProviderModel();
+          const conventions = await runConventionsExtractor(workspacePath, providerId, modelId);
+          if (conventions) {
+            await saveProjectProfileCache(workspacePath, profile);
+            invalidateAssemblyCache();
+          }
+        }
+      } catch {
+        // conventions extraction is best-effort only
+      }
+    })();
     const harnessType = params.harness || settings.activeHarness || 'claude-code';
     const harness = getHarness(harnessType);
 
@@ -269,15 +394,7 @@ export class AgentEngine {
     );
     const isLocal = isLocalModel(settings?.activeProvider, settings?.activeModel);
 
-    let systemPrompt = harness.formatSystemPrompt(workspacePath, activeFilePath, activeFileContent) ||
-      buildSystemPrompt(workspacePath, activeFilePath, activeFileContent, {
-        isEccEnabled,
-        isSeoEnabled,
-        isLocal,
-        activeProvider: settings?.activeProvider,
-        activeModel: settings?.activeModel,
-        settings
-      });
+    let systemPrompt = harness.formatSystemPrompt(workspacePath, activeFilePath, activeFileContent) || assembled.systemPrompt;
 
     if (isEccEnabled && !systemPrompt.includes('ADVANCED AGENT WORKFLOWS (ECC')) {
       systemPrompt += `\n\n${getEccRulesPrompt(isLocal)}`;
@@ -285,7 +402,7 @@ export class AgentEngine {
     if (isSeoEnabled && !systemPrompt.includes('OPEN SEO & ANALYTICS MCP')) {
       systemPrompt += `\n\n${getSeoPromptGuidance(isLocal)}`;
     }
-    if (!systemPrompt.includes('TASK SCOPING PROTOCOL')) {
+    if (!isSimpleQuery && !systemPrompt.includes('TASK SCOPING PROTOCOL')) {
       systemPrompt += `\n\n## TASK SCOPING PROTOCOL (MANDATORY)\n\n${TASK_SCOPING_PROTOCOL}`;
     }
 
@@ -326,12 +443,14 @@ export class AgentEngine {
       });
     }
 
-    // Universal tool schema
-    const toolSchemas: GatewayToolSchema[] = AGENT_TOOLS_DEFINITIONS.map((t) => ({
-      name: t.function.name,
-      description: t.function.description,
-      parameters: t.function.parameters
-    }));
+    // Universal tool schema - filtered by environment availability (O(1) short-circuit)
+    const toolSchemas: GatewayToolSchema[] = AGENT_TOOLS_DEFINITIONS
+      .filter((t) => availableToolNames.has(t.function.name))
+      .map((t) => ({
+        name: t.function.name,
+        description: t.function.description,
+        parameters: t.function.parameters
+      }));
 
     // Step 1: LAZY CONTEXT INJECTION (Asynchronous & Non-blocking)
     // Run the heavy workspace scan, file reading, and memory loading in the background.
@@ -666,6 +785,13 @@ export class AgentEngine {
           (streamText || '').trim().length > 0 &&
           /\b(let me|i'll|i will|now i need to|i need to|let's|allow me to|i'm going to|i am going to|going to)\s+(read|check|search|run|execute|inspect|view|open|look at|examine|find|grep|list)\b/i.test(streamText || '');
 
+        // Simple queries need no tools or scoping - answer directly and finish.
+        if (isSimpleQuery && !hasToolCalls) {
+          onChunk({ type: 'done' });
+          persistSessionState(true);
+          return;
+        }
+
         if (looksLikeIntentWithoutAction) {
           const nudgeMessage = 'You stated an intent but did not call a tool. Please execute the tool call now.';
           messages.push({ role: 'system', content: nudgeMessage });
@@ -754,7 +880,35 @@ export class AgentEngine {
             onChunk({ type: 'cancelled' });
             return;
           }
-          const tool: ToolCall = { id: toolCall.id, name: toolCall.name, arguments: toolCall.arguments };
+            const tool: ToolCall = { id: toolCall.id, name: toolCall.name, arguments: toolCall.arguments };
+
+            // Runtime short-circuit: never execute workspace-dependent tools without a workspace
+            // (zero disk I/O, zero PTY spawns against an empty cwd).
+            // Also enforce scope gating (read-only in REVIEW/EXPLAIN, docs-only in DESIGN / docs roles).
+            if (!isToolAvailable(tool.name, envContext, scope)) {
+              const output = !envContext.hasWorkspace
+                ? `Tool "${tool.name}" is disabled: no workspace is loaded. Open a folder (File > Open Folder / Ctrl+O) or call request_workspace_open to launch the Open Folder dialog, then retry.`
+                : `Protocol violation: Tool "${tool.name}" is disabled under current scope "${scope}" (${mode} mode).`;
+              onChunk({ type: 'tool_result', toolResult: { toolCallId: tool.id, name: tool.name, output, isError: true } });
+              messages.push({ role: 'tool', name: tool.name, tool_call_id: tool.id, content: output });
+              stateManager.recordToolCall(tool.name, tool.arguments, output);
+              stateManager.iterationCount++;
+              continue;
+            }
+
+            // DESIGN mode or docs-only scope: writes restricted to docs/ only
+            if ((mode === 'DESIGN' || scope === 'docs-only') && (tool.name === 'write_file' || tool.name === 'replace_file_content' || tool.name === 'edit_file')) {
+              const targetPath = String(toolCall.arguments.filePath || toolCall.arguments.path || '');
+              if (!targetPath || !isDocsOnlyWrite(targetPath)) {
+                const output = `Tool "${tool.name}" is restricted in ${mode === 'DESIGN' ? 'DESIGN mode' : 'docs-only scope'}: writes are limited to the docs/ directory. Target "${targetPath}" is outside docs/.`;
+                onChunk({ type: 'tool_result', toolResult: { toolCallId: tool.id, name: tool.name, output, isError: true } });
+                messages.push({ role: 'tool', name: tool.name, tool_call_id: tool.id, content: output });
+                stateManager.recordToolCall(tool.name, toolCall.arguments, output);
+                stateManager.iterationCount++;
+                continue;
+              }
+            }
+
           onChunk({ type: 'tool_call', toolCall: tool });
 
           // 3a. request_approval: emit the Task Scoping Report and PAUSE for IPC approval
@@ -849,6 +1003,16 @@ export class AgentEngine {
             onChunk({ type: 'tool_result', toolResult: { toolCallId: toolCall.id, name: toolCall.name, output: delegatedOutput, isError: false } });
             messages.push({ role: 'tool', name: toolCall.name, tool_call_id: toolCall.id, content: delegatedOutput });
             stateManager.recordToolCall(toolCall.name, toolCall.arguments, delegatedOutput);
+            stateManager.iterationCount++;
+            continue;
+          }
+
+          if (toolCall.name === 'request_workspace_open') {
+            await onRequestWorkspaceOpen?.();
+            const output = 'Workspace picker requested: the Open Folder dialog has been shown to the user. Once a folder is selected, the full file and terminal tool suite becomes available.';
+            onChunk({ type: 'tool_result', toolResult: { toolCallId: toolCall.id, name: toolCall.name, output, isError: false } });
+            messages.push({ role: 'tool', name: toolCall.name, tool_call_id: toolCall.id, content: output });
+            stateManager.recordToolCall(toolCall.name, toolCall.arguments, output);
             stateManager.iterationCount++;
             continue;
           }

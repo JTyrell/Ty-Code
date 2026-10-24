@@ -206,6 +206,7 @@ import { openCanvasWindow } from './windows/canvas-window';
 import { debuggerSyncManager, openDebuggerWindow, closeDebuggerWindow } from './windows/debugger-window';
 import { opencodeServiceManager } from './opencode-integration';
 import { workspaceManager, isAppOrSystemDir } from './services/workspace-manager';
+import { registerPromptAssemblerHandlers } from './ipc/preferences-handlers';
 
 /**
  * Single instance lock: Ensure only one Ty-Code process runs at a time.
@@ -547,6 +548,7 @@ function registerIpcHandlers(): void {
   );
 
   // Focus the Canvas window ("View in Canvas" from the main chat).
+  registerPromptAssemblerHandlers();
   ipcMain.handle('canvas:focus-window', async (): Promise<{ ok: boolean; data?: boolean }> => {
     const win = getCanvasWindow();
     if (!win || win.isDestroyed()) return { ok: true, data: false };

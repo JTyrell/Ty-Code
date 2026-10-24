@@ -1886,6 +1886,7 @@ export const DiagnosticsPanel: React.FC = () => {
                   const isPending = !hop || hop.status === 'PENDING';
 
                   const HOP_META: Record<HopId, { title: string; subtitle: string }> = {
+                    H0: { title: 'Prompt Assembly', subtitle: 'Dynamic system prompt assembled from profile, mode, and roles' },
                     H1: { title: 'Renderer Chat Handler', subtitle: 'ChatSidecar send handler invoked' },
                     H2: { title: 'Preload IPC Bridge', subtitle: 'window.electronAPI.startAgentTask called' },
                     H3: { title: 'Main IPC Receiver', subtitle: "ipcMain.handle('agent:start-task') entered" },

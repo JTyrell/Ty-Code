@@ -26,6 +26,11 @@ const api: ElectronAPI = {
     ipcRenderer.on('window:open-folder', handler);
     return () => ipcRenderer.removeListener('window:open-folder', handler);
   },
+  onWorkspaceRequestOpen: (callback: (data: unknown) => void) => {
+    const handler = (_: IpcRendererEvent, _data: unknown) => callback(_data);
+    ipcRenderer.on('workspace:request-open-dialog', handler);
+    return () => ipcRenderer.removeListener('workspace:request-open-dialog', handler);
+  },
   getFilePathForDroppedFile: (file) => webUtils.getPathForFile(file),
   getWorkspaceTree: (rootPath: string) => ipcRenderer.invoke('fs:get-tree', rootPath),
   getWorkspaceTreeChunked: (rootPath: string) => ipcRenderer.invoke('fs:get-tree-chunked', rootPath),
@@ -68,6 +73,22 @@ const api: ElectronAPI = {
     const listener = () => callback();
     ipcRenderer.on('settings:changed', listener);
     return () => ipcRenderer.removeListener('settings:changed', listener);
+  },
+  // Prompt Assembler & Role Preferences
+  getAssemblyHistory: () => ipcRenderer.invoke('prompt:get-assembly-history'),
+  getAssemblyInfo: (taskId: string) => ipcRenderer.invoke('prompt:get-assembly-info', taskId),
+  onAssemblyUpdate: (callback) => {
+    const handler = (_: IpcRendererEvent, assembly: any) => callback(assembly);
+    ipcRenderer.on('prompt:assembly-update', handler);
+    return () => ipcRenderer.removeListener('prompt:assembly-update', handler);
+  },
+  getRolePreferences: (customRoot) => ipcRenderer.invoke('preferences:get', customRoot),
+  setRolePreferences: (prefs, customRoot) => ipcRenderer.invoke('preferences:set', prefs, customRoot),
+  resetRolePreferences: (customRoot) => ipcRenderer.invoke('preferences:reset', customRoot),
+  onPreferencesChanged: (callback) => {
+    const handler = (_: IpcRendererEvent, prefs: any) => callback(prefs);
+    ipcRenderer.on('preferences:changed', handler);
+    return () => ipcRenderer.removeListener('preferences:changed', handler);
   },
   startAgentTask: (params) => {
     console.log('Preload: Forwarding to main', params?.taskId);

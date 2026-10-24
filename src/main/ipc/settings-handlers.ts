@@ -12,7 +12,7 @@ import {
   type WorkspaceSettingsPatch
 } from '../../shared/types/settings';
 import { migrateProviderSettings } from '../services/orchestration/migration';
-import { settingsManager } from '../services/settings-manager';
+import { settingsManager, DEFAULT_SETTINGS } from '../services/settings-manager';
 import { credentialStore } from '../services/auth/credential-store';
 import { getAllVaultKeys } from '../services/credential-vault';
 

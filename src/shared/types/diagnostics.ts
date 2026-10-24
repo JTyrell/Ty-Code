@@ -312,6 +312,7 @@ export interface FailoverNoticeInfo {
 
 // Phase Diagnostics Fix 1: End-to-End Connectivity Trace Types (H1-H10)
 export type HopId =
+  | 'H0'
   | 'H1'
   | 'H2'
   | 'H3'

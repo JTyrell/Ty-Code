@@ -1,8 +1,8 @@
 {
   "phase": "FCC-6",
   "title": "Provable 100% FCC Coverage + Permanent Attribution",
-  "timestamp": "2026-10-17T10:59:15.407Z",
-  "gitCommit": "bb0d31db5e37962045ecce162798077b40167a4c",
+  "timestamp": "2026-10-24T08:18:19.523Z",
+  "gitCommit": "821d1dff2a89cd50bee20898ebde1c42b30cbf90",
   "command": "npm run test:fcc-coverage",
   "summary": {
     "totalCapabilities": 12,
@@ -29,7 +29,7 @@
         ],
         "compliantProviders": 55
       },
-      "timestamp": "2026-10-17T10:59:11.941Z"
+      "timestamp": "2026-10-24T08:18:16.277Z"
     },
     {
       "capabilityId": "fcc_cap_02_tos_flag",
@@ -48,7 +48,7 @@
           "blackbox-web"
         ]
       },
-      "timestamp": "2026-10-17T10:59:11.943Z"
+      "timestamp": "2026-10-24T08:18:16.279Z"
     },
     {
       "capabilityId": "fcc_cap_03_subscription_connect",
@@ -67,7 +67,7 @@
           "copilot/o1-preview"
         ]
       },
-      "timestamp": "2026-10-17T10:59:12.771Z"
+      "timestamp": "2026-10-24T08:18:17.223Z"
     },
     {
       "capabilityId": "fcc_cap_04_harness_spawn",
@@ -101,7 +101,7 @@
           "status": "started"
         }
       },
-      "timestamp": "2026-10-17T10:59:15.041Z"
+      "timestamp": "2026-10-24T08:18:19.159Z"
     },
     {
       "capabilityId": "fcc_cap_05_endpoint_roundtrip",
@@ -109,13 +109,13 @@
       "tier": "External Access",
       "status": "PASS",
       "evidence": {
-        "testPort": 54582,
+        "testPort": 54649,
         "httpStatusCode": 200,
-        "responseId": "chatcmpl-c85f7bc2c54310f4a195bf91",
+        "responseId": "chatcmpl-0082d78b873c6cf338c20450",
         "modelUsed": "auto-free",
         "hasMessageContent": true
       },
-      "timestamp": "2026-10-17T10:59:15.081Z"
+      "timestamp": "2026-10-24T08:18:19.199Z"
     },
     {
       "capabilityId": "fcc_cap_06_failover_resume",
@@ -129,7 +129,7 @@
         "turnContinuityPreserved": true,
         "finalResponseLength": 117
       },
-      "timestamp": "2026-10-17T10:59:15.081Z"
+      "timestamp": "2026-10-24T08:18:19.199Z"
     },
     {
       "capabilityId": "fcc_cap_07_savings_meter",
@@ -144,7 +144,7 @@
         "headroomTokens": 950,
         "cacheTokens": 2200
       },
-      "timestamp": "2026-10-17T10:59:15.103Z"
+      "timestamp": "2026-10-24T08:18:19.221Z"
     },
     {
       "capabilityId": "fcc_cap_08_dashboard_fields",
@@ -161,14 +161,13 @@
           "isFreeTier": true,
           "remainingTokens": 200000,
           "limitTokens": 200000,
-          "remainingRequests": 19,
           "percentUsed": 0,
-          "resetHuman": "active",
+          "resetHuman": "no usage recorded yet",
           "resetsInSeconds": 0,
           "isExhausted": false
         }
       },
-      "timestamp": "2026-10-17T10:59:15.103Z"
+      "timestamp": "2026-10-24T08:18:19.221Z"
     },
     {
       "capabilityId": "fcc_cap_09_connector_module_loads",
@@ -182,7 +181,7 @@
         "rateCapEnforced": true,
         "auditLogsRecorded": 5
       },
-      "timestamp": "2026-10-17T10:59:15.110Z"
+      "timestamp": "2026-10-24T08:18:19.227Z"
     },
     {
       "capabilityId": "fcc_cap_10_session_bridge_contract",
@@ -190,12 +189,12 @@
       "tier": "Browser Seam",
       "status": "PASS",
       "evidence": {
-        "sessionId": "bridge_coverage_1792234755110",
+        "sessionId": "bridge_coverage_1792829899227",
         "eventsStreamed": 20,
         "contractDocumentBytes": 6919,
         "multiplexingVerified": true
       },
-      "timestamp": "2026-10-17T10:59:15.397Z"
+      "timestamp": "2026-10-24T08:18:19.516Z"
     },
     {
       "capabilityId": "fcc_cap_11_tray_present",
@@ -208,9 +207,9 @@
         "quickChatPresent": true,
         "backgroundTasksPresent": true,
         "runInBackgroundPresent": true,
-        "testTaskId": "bg_task_1792234755397_l595h"
+        "testTaskId": "bg_task_1792829899517_98gq9"
       },
-      "timestamp": "2026-10-17T10:59:15.398Z"
+      "timestamp": "2026-10-24T08:18:19.517Z"
     },
     {
       "capabilityId": "fcc_cap_12_credit_strings_present",
@@ -239,7 +238,7 @@
         ],
         "allSurfacesIntact": true
       },
-      "timestamp": "2026-10-17T10:59:15.406Z"
+      "timestamp": "2026-10-24T08:18:19.523Z"
     }
   ]
 }

@@ -83,7 +83,7 @@ async function runDev() {
     platform: 'node',
     target: 'node20',
     format: 'cjs',
-    external: ['electron', 'node-pty'],
+    external: ['electron', 'node-pty', 'simple-git', 'electron-updater', 'typescript', 'playwright-core'],
     outfile: path.resolve(rootDir, 'dist/main/index.js'),
     sourcemap: true
   });

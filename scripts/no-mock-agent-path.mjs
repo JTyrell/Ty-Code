@@ -91,6 +91,7 @@ function isAllowed(lines, index) {
     blockWindow.includes('syncInterval') ||
     blockWindow.includes('flushTimer') ||
     blockWindow.includes('saveTimer') ||
+    blockWindow.includes('debounceTimer') ||
     blockWindow.includes('bootCleanup') ||
     blockWindow.includes('USER_APPROVAL_TIMEOUT_MS')
   ) {

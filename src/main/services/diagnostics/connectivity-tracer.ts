@@ -69,6 +69,11 @@ function resolveProbeModel(providerId: string): string {
 }
 
 export const HOP_DEFINITIONS: Record<HopId, { title: string; layer: string; description: string }> = {
+  H0: {
+    title: 'Prompt Assembly',
+    layer: 'Agent Orchestration',
+    description: 'Dynamic system prompt assembled from profile, mode, and roles'
+  },
   H1: {
     title: 'Renderer Chat Handler',
     layer: 'Renderer UI',
@@ -156,6 +161,7 @@ export class ConnectivityTracer extends EventEmitter {
     const now = Date.now();
 
     const hops: Record<HopId, HopTraceRecord> = {
+      H0: { hop: 'H0', name: HOP_DEFINITIONS.H0.title, status: 'PENDING', timestamp: now },
       H1: { hop: 'H1', name: HOP_DEFINITIONS.H1.title, status: 'PENDING', timestamp: now },
       H2: { hop: 'H2', name: HOP_DEFINITIONS.H2.title, status: 'PENDING', timestamp: now },
       H3: { hop: 'H3', name: HOP_DEFINITIONS.H3.title, status: 'PENDING', timestamp: now },

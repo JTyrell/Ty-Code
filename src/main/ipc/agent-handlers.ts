@@ -5,6 +5,7 @@ import type { AgentApprovalDecision, AgentMode, AgentSessionSummary, AgentStream
 import { getProviderSettings } from './settings-handlers';
 import { seedActiveConfig } from '../agent/agent-config';
 import { AgentEngine } from '../agent/agent-engine';
+import { type ModeId } from '../agent/prompt-assembler';
 import { sessionStore } from '../agent/session-store';
 import { OpenCodeAgentManager } from '../services/orchestration/agent-manager';
 import { classifyDiagnosticError } from '../services/diagnostics/error-taxonomy';
@@ -97,6 +98,7 @@ export async function startAgentTask(
     workspacePath: string;
     history: ChatMessage[];
     agentMode?: AgentMode;
+    mode?: ModeId;
     sessionId?: string;
     activeFilePath?: string;
     activeFileContent?: string;
@@ -302,6 +304,12 @@ export async function startAgentTask(
           resumeSessionId: params.resumeSessionId,
           abortSignal: abortController.signal,
           requestApproval: async (approval) => requestTaskApproval(taskId, approval, abortController.signal),
+          onRequestWorkspaceOpen: () => {
+            if (!mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
+              mainWindow.webContents.send('workspace:request-open-dialog');
+            }
+          },
+          mode: params.mode ?? 'BUILD',
           onChunk: emit,
           onProviderHandoff: (info) => {
             if (mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) return;

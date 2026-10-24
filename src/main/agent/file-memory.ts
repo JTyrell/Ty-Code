@@ -203,3 +203,4 @@ export class FileMemoryManager {
 }
 
 export const fileMemoryManager = new FileMemoryManager();
+export const isFileMemoryEnabled = true;

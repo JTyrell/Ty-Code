@@ -25,6 +25,7 @@ interface WorkspaceState {
   activeTabPath: string | null;
   diffReview: DiffReviewState | null;
   isWorkspaceReady: boolean;
+  hasWorkspace: boolean;
 
   // Actions
   setIsWorkspaceReady: (ready: boolean) => void;
@@ -176,9 +177,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   activeTabPath: initialPersisted.activeTabPath,
   diffReview: null,
   isWorkspaceReady: false,
+  hasWorkspace: false,
 
   setIsWorkspaceReady: (ready: boolean) => set({ isWorkspaceReady: ready }),
-  setWorkspacePath: (path: string) => set({ workspacePath: path, workspaceRoot: path, isWorkspaceReady: false }),
+  setWorkspacePath: (path: string) => set({ workspacePath: path, workspaceRoot: path, isWorkspaceReady: false, hasWorkspace: !!path }),
   setFileTree: (tree) => set({ fileTree: tree }),
   setFlatTree: (flat) => set({ flatTree: flat }),
   appendTreeChunk: (chunk) => set((state) => ({ flatTree: [...(state.flatTree || []), ...chunk] })),
@@ -352,7 +354,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   refreshFileTree: async () => {
     const { workspacePath } = get();
     if (!workspacePath) {
-      set({ isWorkspaceReady: false });
+      set({ isWorkspaceReady: false, hasWorkspace: false });
       return;
     }
     set({ isWorkspaceReady: false });
@@ -362,14 +364,14 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         if (chunkRes.success && chunkRes.data?.flatTree) {
           set({ flatTree: chunkRes.data.flatTree });
           const nested = buildNestedTreeFromFlat(chunkRes.data.flatTree);
-          set({ fileTree: nested, isWorkspaceReady: true });
+          set({ fileTree: nested, isWorkspaceReady: true, hasWorkspace: true });
           return;
         }
       }
 
       const res = await window.electronAPI?.getWorkspaceTree(workspacePath);
       if (res?.success && res.data) {
-        set({ fileTree: res.data, isWorkspaceReady: true });
+        set({ fileTree: res.data, isWorkspaceReady: true, hasWorkspace: true });
       }
     } catch (err) {
       console.error('Failed to refresh tree:', err);
@@ -382,7 +384,7 @@ if (typeof window !== 'undefined' && window.electronAPI) {
   window.electronAPI.onWorkspaceReady?.((data) => {
     useWorkspaceStore.getState().setIsWorkspaceReady(true);
     if (data?.path && useWorkspaceStore.getState().workspacePath !== data.path) {
-      useWorkspaceStore.setState({ workspacePath: data.path, workspaceRoot: data.path });
+      useWorkspaceStore.setState({ workspacePath: data.path, workspaceRoot: data.path, hasWorkspace: true });
     }
   });
 

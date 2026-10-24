@@ -8,6 +8,7 @@ export const AgentStartTaskPayloadSchema = z.object({
   workspacePath: z.string().optional(),
   history: z.unknown().optional(),
   agentMode: z.string().optional(),
+  mode: z.enum(['BUILD', 'REVIEW', 'EXPLAIN', 'DESIGN', 'SHIP']).optional(),
   sessionId: z.string().optional(),
   activeFilePath: z.string().optional(),
   activeFileContent: z.string().optional(),

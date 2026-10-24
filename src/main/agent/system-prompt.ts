@@ -1,3 +1,9 @@
+export interface EnvironmentContext {
+  hasWorkspace: boolean;
+  workspaceRoot: string | null;
+  activeFiles: string[];
+}
+
 export interface SystemPromptOptions {
   isEccEnabled?: boolean;
   isSeoEnabled?: boolean;
@@ -5,6 +11,8 @@ export interface SystemPromptOptions {
   activeProvider?: string;
   activeModel?: string;
   settings?: any;
+  envContext?: EnvironmentContext;
+  isSimpleQuery?: boolean;
 }
 
 export function isLocalModel(provider?: string, model?: string): boolean {
@@ -157,12 +165,19 @@ export function buildSystemPrompt(
     ? `\nActive file content (current editor buffer, truncated to 8,000 characters):\n${activeFileContent.slice(0, 8_000)}`
     : '';
 
+  const envContext = options?.envContext;
+  const isSimpleQuery = Boolean(options?.isSimpleQuery);
+
   let prompt = `You are Ty-Code, an autonomous AI coding assistant and pair programmer built into a desktop IDE. Work directly within the user's workspace using the available coding tools.
 
 WORKSPACE ENVIRONMENT:
 - Root Workspace Directory: "${workspacePath}"
+- Workspace Loaded: ${envContext?.hasWorkspace ? 'yes' : 'no'}
+- Workspace Root: ${envContext?.workspaceRoot ?? 'None'}
 - Active Open File: ${activeFilePath ? `"${activeFilePath}"` : 'None currently open'}${activeFileContext}
+- Active Files: ${envContext?.activeFiles.length ? envContext.activeFiles.join(', ') : 'None'}
 - Operating System: ${process.platform}
+- Tool Availability: ${envContext?.hasWorkspace ? 'Full tool suite available.' : 'LIMITED: workspace-dependent tools (read_file, write_file, list_dir, run_command, git_status, etc.) are disabled until a workspace is opened. Use request_workspace_open to launch the Open Folder dialog.'}
 
 CAPABILITIES & TOOLS:
 You have direct access to tools that interact with the user's project:
@@ -205,7 +220,11 @@ CRITICAL INSTRUCTIONS & PRINCIPLES:
     prompt += `\n\n${getSeoPromptGuidance(isLocal)}`;
   }
 
-  prompt += `\n\n## TASK SCOPING PROTOCOL (MANDATORY)\n\n${TASK_SCOPING_PROTOCOL}`;
+  if (!isSimpleQuery) {
+    prompt += `\n\n## TASK SCOPING PROTOCOL (MANDATORY)\n\n${TASK_SCOPING_PROTOCOL}`;
+  } else {
+    prompt += `\n\nThis is a simple question. Answer it directly and concisely \u2014 no tool calls, no scoping report, and no action plan are needed. Just reply to the user.\n\n`;
+  }
 
   return prompt;
 }

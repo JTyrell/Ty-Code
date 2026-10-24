@@ -897,6 +897,7 @@ export interface ElectronAPI {
   openFolderInExplorer: (folderPath: string) => Promise<IpcResponse<void>>;
   onWorkspaceReady?: (callback: (data: { path: string }) => void) => () => void;
   onOpenFolder?: (callback: (data: { folderPath: string }) => void) => () => void;
+  onWorkspaceRequestOpen?: (callback: (data: unknown) => void) => () => void;
   getFilePathForDroppedFile: (file: File) => string;
   getWorkspaceTree: (rootPath: string) => Promise<IpcResponse<FileNode>>;
   getWorkspaceTreeChunked?: (rootPath: string) => Promise<IpcResponse<{ flatTree: FlatFileNodeEntry[]; fromCache: boolean; cacheKey?: string }>>;
@@ -924,6 +925,14 @@ export interface ElectronAPI {
   getSecurityPolicy: () => Promise<IpcResponse<SecurityPolicySettings>>;
   saveSecurityPolicy: (policy: Partial<SecurityPolicySettings>) => Promise<IpcResponse<void>>;
   onSettingsChanged: (callback: () => void) => () => void;
+  // Prompt Assembler & Role Preferences (Deliverable 1 & 2)
+  getAssemblyHistory?: () => Promise<IpcResponse<AssemblyResult[]>>;
+  getAssemblyInfo?: (taskId: string) => Promise<IpcResponse<AssemblyResult | null>>;
+  onAssemblyUpdate?: (callback: (assembly: AssemblyResult) => void) => () => void;
+  getRolePreferences?: (customRoot?: string) => Promise<IpcResponse<RolePreferences>>;
+  setRolePreferences?: (prefs: RolePreferences, customRoot?: string) => Promise<IpcResponse<RolePreferences>>;
+  resetRolePreferences?: (customRoot?: string) => Promise<IpcResponse<RolePreferences>>;
+  onPreferencesChanged?: (callback: (prefs: RolePreferences) => void) => () => void;
   startAgentTask: (params: {
     taskId?: string;
     traceId?: string;
@@ -2039,6 +2048,61 @@ export interface FccQuotaMetersSummary {
     modelId: string;
     reason: string;
   };
+}
+
+export interface AssemblyLayer {
+  id: string;
+  kind: 'core' | 'profile' | 'mode' | 'role' | 'quest' | 'env';
+  label: string;
+  tokens: number;
+  pinned: boolean;
+  tier?: 'FULL' | 'COMPACT' | 'MICRO';
+  scope?: 'all' | 'read-only' | 'docs-only';
+  dropped: boolean;
+  reason?: string;
+  text?: string;
+}
+
+export interface AssemblyResult {
+  taskId: string;
+  timestamp?: number;
+  systemPrompt: string;
+  pinnedSections: string[];
+  roles: string[];
+  mode: string;
+  taskClass: string;
+  scope?: 'all' | 'read-only' | 'docs-only';
+  tokenEstimate: number;
+  budget: number;
+  degraded: boolean;
+  assemblyMs: number;
+  cache: 'hit' | 'miss';
+  layers: AssemblyLayer[];
+}
+
+export interface RolePreferences {
+  version: 1;
+  updatedAt?: string;
+  defaultMode: 'BUILD' | 'REVIEW' | 'EXPLAIN' | 'DESIGN' | 'SHIP';
+  roleOverrides?: {
+    pin: string[];
+    ban: string[];
+    prefer?: Record<string, number>;
+  };
+  scopeOverrides?: Record<string, 'all' | 'read-only' | 'docs-only'>;
+  questGate?: {
+    autoApproveMedium: boolean;
+    requireApprovalFrom: 'Trivial' | 'Small' | 'Medium' | 'Large' | 'Epic';
+  };
+  tokenBudget?: {
+    systemPromptFraction: number;
+    maxRoles: number;
+  };
+  conventions?: {
+    autoExtract: boolean;
+    refreshOnHeadChange: boolean;
+  };
+  modeBySignal?: Record<string, string>;
 }
 
 export interface EditorConfigSnippet {

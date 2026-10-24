@@ -1108,7 +1108,7 @@ export const ChatSidecar: React.FC = () => {
   const { isPairActive, suggestions, togglePairMode, dismissSuggestion, clearSuggestions } = usePairProgrammingStore();
   const communityKeyStatus = useSettingsStore((s) => s.communityKeyStatus);
   const [approvalSending, setApprovalSending] = useState(false);
-  const { workspacePath, activeTabPath, openTabs, openDiffReview, applyDiff } = useWorkspaceStore();
+  const { workspacePath, activeTabPath, openTabs, openDiffReview, applyDiff, hasWorkspace } = useWorkspaceStore();
   const activeTab = openTabs.find((tab) => tab.path === activeTabPath);
   const groupedMessages = useMemo(() => groupMessagesByTask(messages), [messages]);
 
@@ -1189,9 +1189,14 @@ export const ChatSidecar: React.FC = () => {
       }
     });
 
+    const unsubWorkspaceRequest = window.electronAPI.onWorkspaceRequestOpen?.(() => {
+      void window.electronAPI.openFolderDialog?.();
+    });
+
     return () => {
       unsubBatch?.();
       unsubToken?.();
+      unsubWorkspaceRequest?.();
       if (commitTimerRef.current) {
         clearTimeout(commitTimerRef.current);
         commitTimerRef.current = null;
@@ -1512,6 +1517,13 @@ export const ChatSidecar: React.FC = () => {
       >
         <Compass size={13} style={{ flexShrink: 0 }} />
         <span><strong>Plan Agent Active (Read-Only):</strong> File edits are refused; bash commands require permission. Switch to Build mode to apply changes.</span>
+      </div>
+    )}
+
+    {!hasWorkspace && (
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', background: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)', borderRadius: 6, fontSize: 11, color: 'var(--text-secondary)', marginBottom: 8 }}>
+        <Lightbulb size={12} />
+        <span>💡 Tip: Open a workspace (Ctrl+O) to unlock full AI file editing and terminal capabilities.</span>
       </div>
     )}
 
