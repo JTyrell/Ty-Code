@@ -923,6 +923,7 @@ const LibraryPanel: React.FC<{ onAdd: (type: string) => void }> = ({ onAdd }) =>
 
 export const M3ECanvas: React.FC = () => {
   const isWorkspaceReady = useWorkspaceStore((state) => state.isWorkspaceReady);
+  const workspaceRoot = useWorkspaceStore((state) => state.workspaceRoot || state.workspacePath);
   const nodes = useCanvasStore((state) => state.nodes);
   const activePlatform = useCanvasStore((state) => state.activePlatform);
   const selectedNodeId = useCanvasStore((state) => state.selectedNodeId);
@@ -949,14 +950,14 @@ export const M3ECanvas: React.FC = () => {
 
   // Wire the store into the main-process CanvasSyncManager, only when workspace is ready.
   useEffect(() => {
-    if (!isWorkspaceReady) return;
+    if (!isWorkspaceReady || !workspaceRoot) return;
     const stopPush = initCanvasStoreSync();
     const stopRemote = initCanvasRemoteSync();
     return () => {
       stopPush();
       stopRemote();
     };
-  }, [isWorkspaceReady]);
+  }, [isWorkspaceReady, workspaceRoot]);
 
   // Scale-to-fit the device frame inside the center panel.
   useEffect(() => {
@@ -1110,7 +1111,7 @@ export const M3ECanvas: React.FC = () => {
   const deviceHeight = frameIsFill ? (centerRef.current?.clientHeight ?? 600) - 40 : frame.height as number;
 
   return (
-    <WorkspaceGate message="Indexing Workspace for Canvas...">
+    <WorkspaceGate featureName="M3E Canvas" message="Indexing Workspace for Canvas...">
       <div
         style={{
         flex: 1,

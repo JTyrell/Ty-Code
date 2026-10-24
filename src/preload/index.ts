@@ -14,6 +14,7 @@ const api: ElectronAPI = {
     return () => ipcRenderer.removeListener('window:maximize-change', handler);
   },
   selectWorkspaceFolder: () => ipcRenderer.invoke('fs:select-workspace'),
+  openFolderDialog: () => ipcRenderer.invoke('workspace:open-folder-dialog'),
   openFolderInExplorer: (folderPath: string) => ipcRenderer.invoke('workspace:open-folder', folderPath),
   onWorkspaceReady: (callback: (data: { path: string }) => void) => {
     const handler = (_: IpcRendererEvent, data: { path: string }) => callback(data);
@@ -75,7 +76,7 @@ const api: ElectronAPI = {
         traceId: params.traceId,
         hop: 'H2',
         status: 'PASS',
-        payloadSize: JSON.stringify(params).length,
+        payloadSize: (params.prompt?.length || 0) + (Array.isArray(params.history) ? params.history.length * 150 : 0),
         metadata: {
           taskId: params.taskId,
           promptSize: params.prompt?.length || 0,

@@ -224,7 +224,16 @@ export async function mergeStoredApiKeys(
 }
 
 async function readEffectiveSettings(): Promise<ProviderSettings> {
-  const { parsed, keys } = await readStoredCredentials();
+  let parsed: Record<string, unknown> = {};
+  let keys: Record<string, string> = {};
+  try {
+    const creds = await readStoredCredentials();
+    parsed = creds.parsed;
+    keys = creds.keys;
+  } catch (err) {
+    console.warn('[settings-handlers] Failed to read stored credentials:', err);
+  }
+
   // Union the hardware-backed credential store into the effective key map so
   // main-internal consumers (agent gateway requests) resolve keys saved by ANY
   // writer, even if the vault file never received that provider id.
@@ -263,9 +272,19 @@ async function readEffectiveSettings(): Promise<ProviderSettings> {
     mergedApiKeys['groq'] = mergedApiKeys['groq-free'];
   }
 
-  const legacySettings = migrateProviderSettings({ ...parsed, apiKeys: mergedApiKeys });
-  await settingsManager.initializeFromLegacySettings(legacySettings);
-  const effective: SettingsData = await settingsManager.getEffectiveSettings();
+  let effective: SettingsData;
+  try {
+    const legacySettings = migrateProviderSettings({ ...parsed, apiKeys: mergedApiKeys });
+    await settingsManager.initializeFromLegacySettings(legacySettings);
+    effective = await settingsManager.getEffectiveSettings();
+  } catch (err) {
+    console.warn('[settings-handlers] Error during settings hydration:', err);
+    try {
+      effective = await settingsManager.getEffectiveSettings();
+    } catch {
+      effective = DEFAULT_SETTINGS;
+    }
+  }
   return { ...effective, apiKeys: mergedApiKeys, apiKeysConfigured: undefined };
 }
 
@@ -309,8 +328,17 @@ export async function getSettings(): Promise<IpcResponse<ProviderSettings>> {
 
 /** Main-process-only provider settings, including decrypted credentials. */
 export async function getProviderSettings(): Promise<IpcResponse<ProviderSettings>> {
-  try { return { success: true, data: await readEffectiveSettings() }; }
-  catch (error: unknown) { return { success: false, error: error instanceof Error ? error.message : String(error) }; }
+  try {
+    return { success: true, data: await readEffectiveSettings() };
+  } catch (error: unknown) {
+    console.error('[settings-handlers] getProviderSettings error:', error);
+    try {
+      const fallback = await settingsManager.getEffectiveSettings();
+      return { success: true, data: { ...fallback, apiKeys: {} } };
+    } catch {
+      return { success: true, data: { ...DEFAULT_SETTINGS, apiKeys: {} } as any };
+    }
+  }
 }
 
 export async function getSettingsLayer(scope: SettingsScope): Promise<IpcResponse<SettingsData | WorkspaceSettingsPatch>> {

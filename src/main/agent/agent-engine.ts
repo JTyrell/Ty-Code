@@ -265,7 +265,7 @@ export class AgentEngine {
       settings?.integrations?.['ecc-rules'] ?? moduleRegistry.getModule('ecc-rules')?.isEnabled
     );
     const isSeoEnabled = Boolean(
-      settings?.integrations?.['seo-analytics-mcp'] ?? await mcpManager.isSeoServerEnabled(workspacePath)
+      settings?.integrations?.['seo-analytics-mcp'] ?? false
     );
     const isLocal = isLocalModel(settings?.activeProvider, settings?.activeModel);
 
@@ -289,13 +289,14 @@ export class AgentEngine {
       systemPrompt += `\n\n## TASK SCOPING PROTOCOL (MANDATORY)\n\n${TASK_SCOPING_PROTOCOL}`;
     }
 
-    await skillRegistry.ensureSkillsLoaded(workspacePath);
+    // Non-blocking skill check: detect builtin skills immediately; sync custom skills in background
+    void skillRegistry.ensureSkillsLoaded(workspacePath).catch(() => undefined);
     const activeSkill = skillRegistry.detectSkill(prompt);
     if (activeSkill) {
       systemPrompt += skillRegistry.activateSkill(activeSkill);
     }
 
-    // Build initial messages
+    // Build initial messages immediately with lightweight system prompt
     let messages: ChatCompletionMessage[] = [{ role: 'system', content: systemPrompt }];
     for (const message of history.slice(-10)) {
       if (message.role === 'user' || message.role === 'assistant') {
@@ -332,32 +333,54 @@ export class AgentEngine {
       parameters: t.function.parameters
     }));
 
-    // Workspace ground-truth (asynchronous, non-blocking)
-    const workspaceSummary = await getWorkspaceSummary(workspacePath);
+    // Step 1: LAZY CONTEXT INJECTION (Asynchronous & Non-blocking)
+    // Run the heavy workspace scan, file reading, and memory loading in the background.
+    // The initial LLM request fires IMMEDIATELY without waiting for disk I/O.
     const openFilePaths = params.openFilePaths?.length ? params.openFilePaths : activeFilePath ? [activeFilePath] : [];
-    const openFiles = await getOpenFilesContent(workspacePath, openFilePaths, activeFilePath);
-    const workspaceContextBlock = buildWorkspaceContextBlock({
-      rootPath: workspacePath,
-      workspaceSummary,
-      openFiles,
-      activeFilePath,
-      activeFileContent
-    });
-    if (!systemPrompt.includes('WORKSPACE GROUND TRUTH')) {
-      systemPrompt = `${systemPrompt}\n\n=== WORKSPACE GROUND TRUTH (live context) ===\n${workspaceContextBlock}\n=== END WORKSPACE GROUND TRUTH ===`;
-    }
-
-    const isFileMemoryEnabled = settings?.integrations?.['file-memory'] === true;
-    if (isFileMemoryEnabled) {
-      await fileMemoryManager.ensureLoaded();
-      const relevantMemories = fileMemoryManager.getRelevantFiles(prompt, 6);
-      if (relevantMemories.length > 0) {
-        const memoryLines = relevantMemories.map((memory) =>
-          `- ${memory.path}${memory.summary ? `: ${memory.summary}` : ''}${memory.keySymbols.length ? ` [${memory.keySymbols.slice(0, 6).join(', ')}]` : ''}`
-        );
-        systemPrompt += `\n\n=== FILE MEMORY (recently traversed files) ===\n${memoryLines.join('\n')}\n=== END FILE MEMORY ===`;
+    let lazyContextInjected = false;
+    const lazyScanPromise = (async () => {
+      try {
+        const [workspaceSummary, openFiles] = await Promise.all([
+          getWorkspaceSummary(workspacePath),
+          getOpenFilesContent(workspacePath, openFilePaths, activeFilePath)
+        ]);
+        const workspaceContextBlock = buildWorkspaceContextBlock({
+          rootPath: workspacePath,
+          workspaceSummary,
+          openFiles,
+          activeFilePath,
+          activeFileContent
+        });
+        let memoryBlock = '';
+        const isFileMemoryEnabled = settings?.integrations?.['file-memory'] === true;
+        if (isFileMemoryEnabled) {
+          await fileMemoryManager.ensureLoaded();
+          const relevantMemories = fileMemoryManager.getRelevantFiles(prompt, 6);
+          if (relevantMemories.length > 0) {
+            const memoryLines = relevantMemories.map((memory) =>
+              `- ${memory.path}${memory.summary ? `: ${memory.summary}` : ''}${memory.keySymbols.length ? ` [${memory.keySymbols.slice(0, 6).join(', ')}]` : ''}`
+            );
+            memoryBlock = `\n\n=== FILE MEMORY (recently traversed files) ===\n${memoryLines.join('\n')}\n=== END FILE MEMORY ===`;
+          }
+        }
+        return `=== WORKSPACE GROUND TRUTH (live context) ===\n${workspaceContextBlock}\n=== END WORKSPACE GROUND TRUTH ===${memoryBlock}`;
+      } catch (err) {
+        console.warn('[AGENT] Lazy workspace scan error:', err);
+        return null;
       }
-    }
+    })();
+
+    const injectLazyContextIfNeeded = async () => {
+      if (lazyContextInjected) return;
+      lazyContextInjected = true;
+      const contextContent = await lazyScanPromise;
+      if (contextContent) {
+        messages.push({
+          role: 'system',
+          content: `[Lazy Context Injection]\n${contextContent}`
+        });
+      }
+    };
 
     let currentSettings = { ...settings };
     const failedProviders = new Set<string>();
@@ -461,6 +484,9 @@ export class AgentEngine {
       // Yield to the Node.js event loop between ReAct iterations to keep IPC and UI non-blocking
       await new Promise<void>((resolve) => setImmediate(resolve));
       try {
+        if (stateManager.iterationCount > 0) {
+          await injectLazyContextIfNeeded();
+        }
         console.log(`[AGENT] Iteration ${stateManager.iterationCount + 1}/${stateManager.maxIterations} — mode: ${stateManager.currentMode}`);
 
         // Select provider/model. Once a mid-turn failover has pinned a new
@@ -716,7 +742,10 @@ export class AgentEngine {
           }))
         });
 
-        // Execute tool calls
+        // Execute tool calls (ensure lazy workspace context is injected before running tools)
+        if (toolCallsToExecute.length > 0) {
+          await injectLazyContextIfNeeded();
+        }
         for (const toolCall of toolCallsToExecute) {
           // Yield to the event loop between tool executions to prevent event loop starvation
           await new Promise<void>((resolve) => setImmediate(resolve));

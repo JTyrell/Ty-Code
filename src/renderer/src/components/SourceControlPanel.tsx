@@ -241,7 +241,7 @@ export const SourceControlPanel: React.FC = () => {
   const isNestedWorkspace = Boolean(status?.repositoryRoot && workspacePath && normalizePath(status.repositoryRoot) !== normalizePath(workspacePath));
 
   return (
-    <WorkspaceGate message="Indexing Workspace for Git...">
+    <WorkspaceGate featureName="Git" message="Indexing Workspace for Git...">
       <div className="source-control-panel">
     <header className="source-control-header">
       <span>Source Control</span>

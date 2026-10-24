@@ -1,11 +1,15 @@
-import { BrowserWindow } from 'electron';
+import { app, BrowserWindow } from 'electron';
 import fs from 'fs/promises';
-import fsSync from 'fs';
 import path from 'path';
+import os from 'os';
 import { getWorkspaceTreeChunked, setupWorkspaceWatcher } from '../ipc/fs-handlers';
 import { settingsManager } from './settings-manager';
 import { getRecentWorkspacesManager } from './recent-workspaces';
 import { updateAiServicesWorkspace } from '../ipc/ai-features-handlers';
+import type { IpcResponse } from '../../preload/types';
+
+import { isAppOrSystemDir } from './workspace-security';
+export { isAppOrSystemDir };
 
 /**
  * WorkspaceManager: Explorer-First Workspace Gatekeeper
@@ -36,6 +40,14 @@ export class WorkspaceManager {
   }
 
   public setCurrentPath(newPath: string): void {
+    this.currentPath = newPath;
+  }
+
+  public get workspaceRoot(): string {
+    return this.currentPath;
+  }
+
+  public set workspaceRoot(newPath: string) {
     this.currentPath = newPath;
   }
 
@@ -79,6 +91,37 @@ export class WorkspaceManager {
   }
 
   /**
+   * Opens the native OS directory selection dialog and loads the workspace into Explorer.
+   * Resolves the selected path, updates workspaceRoot, and emits workspace:ready asynchronously.
+   * Completely non-blocking on the Main Event loop.
+   */
+  public async openFolderDialog(customWindow?: BrowserWindow | null): Promise<IpcResponse<string>> {
+    try {
+      const win = customWindow || this.mainWindow;
+      const { dialog } = await import('electron');
+      const result = await dialog.showOpenDialog(win!, {
+        properties: ['openDirectory', 'createDirectory'],
+        title: 'Select Project Directory'
+      });
+
+      if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
+        return { success: false, error: 'User canceled directory selection' };
+      }
+
+      const selectedPath = path.resolve(result.filePaths[0]);
+      const openResult = await this.openWorkspace(selectedPath);
+      if (!openResult.success) {
+        return { success: false, error: openResult.error };
+      }
+
+      return { success: true, data: selectedPath };
+    } catch (err: unknown) {
+      console.error('[WORKSPACE-MANAGER] openFolderDialog error:', err);
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  /**
    * Handles opening a workspace folder: updates state, resets promise,
    * configures watcher, runs indexer, and resolves ready state.
    */
@@ -89,10 +132,17 @@ export class WorkspaceManager {
 
     try {
       const resolved = path.resolve(folderPath);
-      if (!fsSync.existsSync(resolved)) {
+      if (isAppOrSystemDir(resolved)) {
+        return { success: false, error: 'Cannot open application or system directory as a workspace.' };
+      }
+
+      let stat;
+      try {
+        stat = await fs.stat(resolved);
+      } catch {
         return { success: false, error: `Directory does not exist: ${resolved}` };
       }
-      const stat = await fs.stat(resolved);
+
       if (!stat.isDirectory()) {
         return { success: false, error: `Path is not a directory: ${resolved}` };
       }
@@ -122,7 +172,7 @@ export class WorkspaceManager {
         this.mainWindow.webContents.send('window:open-folder', { folderPath: resolved });
       }
 
-      // Index the workspace via chunked scanner
+      // Index the workspace via chunked scanner (non-blocking)
       await getWorkspaceTreeChunked(resolved, (chunk, isComplete, totalSoFar) => {
         if (scanId !== this.activeScanId) return; // Stale scan superseded by a new one
         if (this.mainWindow && !this.mainWindow.isDestroyed()) {

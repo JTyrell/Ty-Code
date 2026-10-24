@@ -1074,3 +1074,81 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent-primary);
   border-width: 0;
 }
 
+/* ==========================================================================
+   Typography, Lists, Code, and KaTeX Math Polish (Prompt 3)
+   ========================================================================== */
+
+.prose,
+.chat-message-markdown-html {
+  font-size: 12.5px;
+  line-height: 1.65;
+  color: var(--text-primary);
+}
+
+.chat-message-markdown-html ul {
+  list-style-type: disc !important;
+  margin: 8px 0 10px 0 !important;
+  padding-left: 24px !important;
+}
+
+.chat-message-markdown-html ol {
+  list-style-type: decimal !important;
+  margin: 8px 0 10px 0 !important;
+  padding-left: 24px !important;
+}
+
+.chat-message-markdown-html li {
+  margin: 4px 0 !important;
+  line-height: 1.6 !important;
+  padding-left: 2px !important;
+}
+
+.chat-message-markdown-html ul ul,
+.chat-message-markdown-html ol ul {
+  list-style-type: circle !important;
+  margin: 4px 0 !important;
+}
+
+.chat-message-markdown-html ul ol,
+.chat-message-markdown-html ol ol {
+  list-style-type: lower-alpha !important;
+  margin: 4px 0 !important;
+}
+
+/* Inline code with subtle background, border, and monospace styling */
+.chat-message-markdown-html code:not(pre code) {
+  padding: 2px 6px !important;
+  margin: 0 2px !important;
+  border-radius: 4px !important;
+  font-family: var(--font-mono, monospace) !important;
+  font-size: 11px !important;
+  color: var(--accent-cyan, #38bdf8) !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.1)) !important;
+}
+
+body.theme-light .chat-message-markdown-html code:not(pre code) {
+  color: #0284c7 !important;
+  background: rgba(0, 0, 0, 0.05) !important;
+  border: 1px solid rgba(0, 0, 0, 0.1) !important;
+}
+
+/* KaTeX Math Polish */
+.katex-display {
+  display: block !important;
+  margin: 12px 0 !important;
+  padding: 8px 12px !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  text-align: center !important;
+  background: var(--surface-2, rgba(255, 255, 255, 0.03)) !important;
+  border-radius: 8px !important;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.06)) !important;
+}
+
+.katex {
+  font-size: 1.05em !important;
+  text-rendering: auto !important;
+}
+
+

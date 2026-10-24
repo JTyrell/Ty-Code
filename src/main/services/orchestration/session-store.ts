@@ -18,24 +18,7 @@ function getUserDataPath(): string {
     : path.join(process.env.HOME || os.homedir(), '.ty-code');
 }
 
-function isAppOrSystemDir(dirPath: string): boolean {
-  if (!dirPath || typeof dirPath !== 'string') return true;
-  const normalized = path.resolve(dirPath).toLowerCase();
-  const programFiles = (process.env.ProgramFiles || 'C:\\Program Files').toLowerCase();
-  const programFilesX86 = (process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)').toLowerCase();
-  if (normalized.startsWith(programFiles) || normalized.startsWith(programFilesX86)) {
-    return true;
-  }
-  try {
-    if (app && typeof app.getAppPath === 'function') {
-      const appPath = path.resolve(app.getAppPath()).toLowerCase();
-      if (normalized === appPath || normalized.startsWith(appPath)) return true;
-    }
-  } catch {
-    // ignore
-  }
-  return false;
-}
+import { isAppOrSystemDir } from '../workspace-security';
 
 function resolveSafeSessionsDir(workspaceRoot: string): string {
   if (!workspaceRoot || isAppOrSystemDir(workspaceRoot)) {

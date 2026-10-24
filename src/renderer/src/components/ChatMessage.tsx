@@ -496,23 +496,21 @@ export const ChatMessageItem: React.FC<ChatMessageProps> = ({
     return list;
   }, [message]);
 
+  const hasTextContent = Boolean(message.content && message.content.length > 0);
+
   const isThinking =
     isAssistant &&
     isLastAssistant &&
     isRunning &&
-    (Boolean(currentStatus) ||
-      Boolean(message.statusText) ||
-      !message.content ||
-      toolList.some((t) => t.status === 'running'));
+    !hasTextContent;
 
   const thinkingLabel = useMemo(() => {
     if (message.statusText) return message.statusText;
     if (currentStatus) return currentStatus;
     const runningTool = toolList.find((t) => t.status === 'running');
     if (runningTool) return `Running ${runningTool.name}…`;
-    if (!message.content) return 'Analyzing workspace…';
     return 'Thinking…';
-  }, [message.statusText, currentStatus, toolList, message.content]);
+  }, [message.statusText, currentStatus, toolList]);
 
   // Agent activity separation: everything the harness does (reasoning tool
   // calls and notices) renders inside one collapsible panel. While the task

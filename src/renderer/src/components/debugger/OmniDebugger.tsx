@@ -77,6 +77,7 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
     clearResults
   } = useDebuggerStore();
   const isWorkspaceReady = useWorkspaceStore((s) => s.isWorkspaceReady);
+  const workspaceRoot = useWorkspaceStore((s) => s.workspaceRoot || s.workspacePath);
 
   const [activeTab, setActiveTab] = useState<ViewTab>('findings');
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -94,7 +95,7 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
 
   // Hook up live AI stream listener if available
   useEffect(() => {
-    if (!isWorkspaceReady) return;
+    if (!isWorkspaceReady || !workspaceRoot) return;
     if (!window.electronAPI?.onDebuggerAiStream) return;
     const unsubscribe = window.electronAPI.onDebuggerAiStream((frame: any) => {
       if (frame?.token) {
@@ -106,12 +107,12 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
     return () => {
       unsubscribe?.();
     };
-  }, [isWorkspaceReady]);
+  }, [isWorkspaceReady, workspaceRoot]);
 
   // Requirement: If isPopOutMode is true and rendered inside the sidebar, show docked placeholder
   if (isPopOutMode && !isStandalone) {
     return (
-      <WorkspaceGate message="Indexing Workspace for Omni-Debugger...">
+      <WorkspaceGate featureName="Omni-Debugger" message="Indexing Workspace for Omni-Debugger...">
         <div className="omni-docked-placeholder select-none">
         <div className="omni-docked-icon-wrap">
           <Bug size={30} className="text-indigo-400" />
@@ -295,7 +296,7 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
   };
 
   return (
-    <WorkspaceGate message="Indexing Workspace for Omni-Debugger...">
+    <WorkspaceGate featureName="Omni-Debugger" message="Indexing Workspace for Omni-Debugger...">
       <div className="omni-debugger-root">
       {/* ===================================================================== */}
       {/* 1. TOP COMMAND BAR */}

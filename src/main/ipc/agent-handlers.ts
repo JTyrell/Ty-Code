@@ -168,8 +168,8 @@ export async function startAgentTask(
     const chunkWithTask: AgentStreamChunk = { ...chunk, taskId };
 
     if (chunk.type === 'token') {
+      tokenCount++;
       if (params.traceId) {
-        tokenCount++;
         connectivityTracer.recordHop(params.traceId, 'H8', {
           status: 'PASS',
           payloadSize: chunk.content?.length || 0,
@@ -180,7 +180,11 @@ export async function startAgentTask(
         });
       }
       batchBuffer.push(chunkWithTask);
-      scheduleFlush();
+      if (tokenCount <= 1) {
+        flushBatch();
+      } else {
+        scheduleFlush();
+      }
     } else if (chunk.type === 'thought') {
       batchBuffer.push(chunkWithTask);
       scheduleFlush();

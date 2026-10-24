@@ -197,7 +197,7 @@ import { diagnosticsHealthMonitor } from './services/diagnostics/health-monitor'
 import { connectivityTracer } from './services/diagnostics/connectivity-tracer';
 import { providerOAuth } from './services/auth/provider-oauth';
 import { usageLedger } from './services/usage/ledger';
-import { saveKey, getKey, testKey, warmUpCommunityKey, revalidateCommunityKey, getCommunityKeyCached, hasCommunityKey, getCommunityKeyStatus } from './services/credential-vault';
+import { saveKey, getKey, testKey, warmUpCommunityKey, revalidateCommunityKey, getCommunityKeyCached, hasCommunityKey, getCommunityKeyStatus, clearKeyCache } from './services/credential-vault';
 import { initiateCopilotDeviceFlow, pollCopilotToken } from './services/auth/subscription-auth';
 import { canvasSyncManager } from './services/canvas-sync-manager';
 import { canvasAgentEngine, type CanvasAgentGenerationResult } from './agent/canvas-agent-engine';
@@ -205,7 +205,7 @@ import { getCanvasWindow } from './windows/canvas-window';
 import { openCanvasWindow } from './windows/canvas-window';
 import { debuggerSyncManager, openDebuggerWindow, closeDebuggerWindow } from './windows/debugger-window';
 import { opencodeServiceManager } from './opencode-integration';
-import { workspaceManager } from './services/workspace-manager';
+import { workspaceManager, isAppOrSystemDir } from './services/workspace-manager';
 
 /**
  * Single instance lock: Ensure only one Ty-Code process runs at a time.
@@ -216,19 +216,6 @@ import { workspaceManager } from './services/workspace-manager';
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
   app.quit();
-}
-
-function isAppOrSystemDir(dirPath: string): boolean {
-  if (!dirPath) return true;
-  const lower = dirPath.toLowerCase().replace(/\\/g, '/');
-  return (
-    lower.includes('/program files') ||
-    lower.includes('/windows') ||
-    lower.includes('/system32') ||
-    lower.endsWith('/ty-code') ||
-    lower.endsWith('/resources') ||
-    lower.endsWith('/resources/app')
-  );
 }
 
 /**
@@ -277,15 +264,22 @@ app.on('open-file', (event, filePath) => {
 
 function getInitialWorkspacePath(): string {
   const argFolder = extractFolderFromArgs(process.argv);
-  if (argFolder) return argFolder;
-  const cwd = process.cwd();
-  if (isAppOrSystemDir(cwd)) {
-    // No folder is auto-selected. The user must explicitly choose a folder
-    // (Explorer empty state, TitleBar, or Welcome page). Privacy: never
-    // silently open the Documents or home directory tree.
+  if (argFolder && !isAppOrSystemDir(argFolder)) return argFolder;
+
+  // Never default to process.cwd() when running as a packaged app!
+  // In packaged apps (Windows installer, desktop shortcut, Start Menu),
+  // process.cwd() is the installation / executable directory or system root.
+  // The app should open cleanly to the Welcome / No Project state.
+  if (app.isPackaged) {
     return '';
   }
-  return cwd;
+
+  // In development mode, check if cwd is an app or system directory
+  const cwd = process.cwd();
+  if (isAppOrSystemDir(cwd)) {
+    return '';
+  }
+  return '';
 }
 
 let mainWindow: BrowserWindow | null = null;
@@ -600,10 +594,16 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle('fs:select-workspace', async () => {
     if (!mainWindow) return { success: false, error: 'No main window' };
-    const response = await selectWorkspaceFolder(mainWindow);
+    const response = await workspaceManager.openFolderDialog(mainWindow);
     if (response.success && response.data) {
       currentWorkspacePath = response.data;
-      await workspaceManager.openWorkspace(response.data);
+    }
+    return response;
+  });
+  ipcMain.handle('workspace:open-folder-dialog', async () => {
+    const response = await workspaceManager.openFolderDialog(mainWindow);
+    if (response.success && response.data) {
+      currentWorkspacePath = response.data;
     }
     return response;
   });
@@ -849,6 +849,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle('credentials:delete', async (event, providerId: string) => {
     if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
     try {
+      clearKeyCache(providerId);
       await credentialStore.revokeCredential(providerId);
       try {
         await mergeStoredApiKeys({}, [providerId, providerId.replace(/-free$/, '')]);
@@ -1046,7 +1047,7 @@ function registerIpcHandlers(): void {
     if (params?.traceId) {
       connectivityTracer.recordHop(params.traceId, 'H3', {
         status: 'PASS',
-        payloadSize: JSON.stringify(params).length,
+        payloadSize: (params.prompt?.length || 0) + (Array.isArray(params.history) ? params.history.length * 150 : 0),
         metadata: {
           taskId: params.taskId,
           workspacePath: currentWorkspacePath,

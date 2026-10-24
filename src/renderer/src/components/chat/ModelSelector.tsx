@@ -212,7 +212,8 @@ interface DropdownPosition {
 }
 
 export const ModelSelector: React.FC = () => {
-  const { settings, saveSettings } = useChatStore();
+  const settings = useChatStore((s) => s.settings);
+  const saveSettings = useChatStore((s) => s.saveSettings);
   const communityKeyStatus = useSettingsStore((s) => s.communityKeyStatus);
   const [isOpen, setIsOpen] = useState(false);
   const [routingMode, setRoutingMode] = useState<RoutingPreferenceMode>('auto');
@@ -283,11 +284,22 @@ export const ModelSelector: React.FC = () => {
     ? 'Auto'
     : matchedCandidate?.modelName || (currentActiveModelId.split('/').pop()?.replace(':free', '') || currentActiveModelId || 'Auto');
 
+  const lastLoadedProviderRef = useRef<string | undefined>(undefined);
+
   // Load preferences and available models from main process on mount
   useEffect(() => {
     void loadPreferences();
     void loadAvailableCatalog();
+    lastLoadedProviderRef.current = settings?.activeProvider;
   }, []);
+
+  // Guard: only reload catalog if activeProvider actually changes (not on re-renders or token updates)
+  useEffect(() => {
+    if (settings?.activeProvider && settings.activeProvider !== lastLoadedProviderRef.current) {
+      lastLoadedProviderRef.current = settings.activeProvider;
+      void loadAvailableCatalog();
+    }
+  }, [settings?.activeProvider]);
 
   // Live progress for OpenCode CLI auto-installer
   useEffect(() => {

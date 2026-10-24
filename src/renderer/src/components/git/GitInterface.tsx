@@ -8,7 +8,7 @@ import { WorkspaceGate } from '../common/WorkspaceGate';
  */
 export const GitInterface: React.FC = () => {
   return (
-    <WorkspaceGate message="Indexing Workspace for Git...">
+    <WorkspaceGate featureName="Git" message="Indexing Workspace for Git...">
       <SourceControlPanel />
     </WorkspaceGate>
   );

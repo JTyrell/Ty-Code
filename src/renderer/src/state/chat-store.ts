@@ -609,7 +609,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       content: '',
       toolExecutions: [],
       proposedDiffs: [],
-      statusText: 'Analyzing workspace…',
+      statusText: 'Thinking…',
       isStreaming: true,
       metadata: {
         source: 'provider-stream',
@@ -629,7 +629,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       currentTaskId: taskId,
       activeAssistantMessageId: assistantId,
       pendingApproval: null,
-      currentStatus: 'Analyzing workspace…',
+      currentStatus: 'Thinking…',
       currentThought: '',
       streamingText: '',
       activeErrorCard: null
@@ -856,7 +856,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
 
         if (hasNewTokens) {
-          scheduleTokenFlush();
+          if (currentTaskStreamEvents <= 2) {
+            flushTokenBuffer();
+          } else {
+            scheduleTokenFlush();
+          }
         }
         if (hasNewReasoning) {
           scheduleReasoningFlush();
@@ -881,7 +885,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
           });
         }
         tokenBuffer += data.token;
-        scheduleTokenFlush();
+        if (currentTaskStreamEvents <= 2) {
+          flushTokenBuffer();
+        } else {
+          scheduleTokenFlush();
+        }
       }));
     }
 

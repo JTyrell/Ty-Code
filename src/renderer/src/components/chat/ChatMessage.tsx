@@ -151,13 +151,23 @@ export const WorkerMessageRenderer: React.FC<{ content: string; isStreaming?: bo
         return blockId;
       });
 
+      const DOMPURIFY_CONFIG = {
+        USE_PROFILES: { html: true, mathMl: true, svg: true },
+        ADD_TAGS: [
+          'button', 'svg', 'path', 'line', 'rect', 'circle',
+          'math', 'semantics', 'mrow', 'msup', 'msub', 'msubsup',
+          'mi', 'mn', 'mo', 'annotation', 'span', 'div'
+        ],
+        ADD_ATTR: [
+          'target', 'rel', 'data-code', 'type', 'aria-hidden',
+          'style', 'class', 'xmlns', 'encoding', 'viewBox', 'd',
+          'height', 'width', 'fill', 'stroke', 'preserveAspectRatio'
+        ]
+      };
+
       // If no code blocks, sanitize and commit immediately
       if (blocksMap.size === 0) {
-        const sanitized = DOMPurify.sanitize(rawHtml, {
-          ADD_TAGS: ['button', 'svg', 'path'],
-          ADD_ATTR: ['target', 'rel', 'data-code', 'type'],
-          USE_PROFILES: { html: true }
-        });
+        const sanitized = DOMPurify.sanitize(rawHtml, DOMPURIFY_CONFIG);
         setRenderedHtml(sanitized);
         return;
       }
@@ -188,12 +198,8 @@ export const WorkerMessageRenderer: React.FC<{ content: string; isStreaming?: bo
           assembledHtml = assembledHtml.split(blockId).join(shelfHtml);
         }
 
-        // 5. Render final HTML using dangerouslySetInnerHTML (DOMPurify prevents XSS)
-        const sanitized = DOMPurify.sanitize(assembledHtml, {
-          ADD_TAGS: ['button', 'svg', 'path'],
-          ADD_ATTR: ['target', 'rel', 'data-code', 'type'],
-          USE_PROFILES: { html: true }
-        });
+        // 5. Render final HTML using dangerouslySetInnerHTML (DOMPurify prevents XSS, allows KaTeX)
+        const sanitized = DOMPurify.sanitize(assembledHtml, DOMPURIFY_CONFIG);
 
         setRenderedHtml(sanitized);
         highlightWorker.removeEventListener('message', onHighlightMessage);
@@ -249,7 +255,7 @@ export const WorkerMessageRenderer: React.FC<{ content: string; isStreaming?: bo
   // ON STREAM COMPLETE: Render worker-parsed, highlighted, and DOMPurify-sanitized HTML
   return (
     <div
-      className="markdown-content chat-message-markdown-html contain-content"
+      className="markdown-content chat-message-markdown-html prose prose-invert prose-sm max-w-none contain-content"
       style={{
         fontSize: '12px',
         lineHeight: 1.7,

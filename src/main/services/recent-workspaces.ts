@@ -3,6 +3,8 @@ import fs from 'node:fs/promises';
 import fsSync from 'node:fs';
 import path from 'node:path';
 
+import { isAppOrSystemDir } from './workspace-security';
+
 export interface RecentWorkspace {
   path: string;
   name: string;
@@ -52,7 +54,7 @@ export class RecentWorkspacesManager {
         const raw = await fs.readFile(this.filePath, 'utf-8');
         const list = JSON.parse(raw);
         if (Array.isArray(list)) {
-          this.memoryCache = list.filter((item) => item && typeof item.path === 'string');
+          this.memoryCache = list.filter((item) => item && typeof item.path === 'string' && !isAppOrSystemDir(item.path));
           this.isLoaded = true;
           return;
         }
@@ -65,12 +67,12 @@ export class RecentWorkspacesManager {
   }
 
   public addRecent(folderPath: string): RecentWorkspace[] {
-    if (!folderPath) return this.getRecent();
+    if (!folderPath || isAppOrSystemDir(folderPath)) return this.getRecent();
     const current = this.memoryCache !== null ? this.memoryCache : this.getRecent();
     const normalized = path.normalize(folderPath);
     const name = path.basename(normalized) || normalized;
 
-    const filtered = current.filter((item) => path.normalize(item.path) !== normalized);
+    const filtered = current.filter((item) => path.normalize(item.path) !== normalized && !isAppOrSystemDir(item.path));
     const updated: RecentWorkspace[] = [
       { path: normalized, name, lastOpened: Date.now() },
       ...filtered

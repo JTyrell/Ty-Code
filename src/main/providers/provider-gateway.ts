@@ -347,9 +347,19 @@ const PREMIUM_MODEL_OPENROUTER_MAP: Record<string, { model: string; name: string
  */
 async function resolveOpenRouterKey(): Promise<string | undefined> {
   for (const candidate of ['openrouter', 'openrouter-free']) {
+    const vaultKey = await getKey(candidate).catch(() => undefined);
+    if (vaultKey && vaultKey.trim()) {
+      console.log('[GATEWAY] Using in-memory cached key for openrouter');
+      return vaultKey.trim();
+    }
+  }
+  for (const candidate of ['openrouter', 'openrouter-free']) {
     try {
       const stored = credentialStore.getDecryptedKey(candidate);
-      if (stored && stored.trim()) return stored.trim();
+      if (stored && stored.trim()) {
+        console.log('[GATEWAY] Using in-memory cached key for openrouter');
+        return stored.trim();
+      }
     } catch {
       // Vault read failure - continue to next layer
     }
@@ -359,14 +369,13 @@ async function resolveOpenRouterKey(): Promise<string | undefined> {
     const { keys } = await readStoredCredentials();
     for (const candidate of ['openrouter', 'openrouter-free']) {
       const value = keys[candidate];
-      if (value && value.trim()) return value.trim();
+      if (value && value.trim()) {
+        console.log('[GATEWAY] Using in-memory cached key for openrouter');
+        return value.trim();
+      }
     }
   } catch {
     // Non-blocking: fall through to legacy vault
-  }
-  for (const candidate of ['openrouter', 'openrouter-free']) {
-    const vaultKey = await getKey(candidate).catch(() => undefined);
-    if (vaultKey && vaultKey.trim()) return vaultKey.trim();
   }
   const envValue = process.env.OPENROUTER_API_KEY;
   if (envValue && envValue.trim().length > 4) return envValue.trim();
@@ -650,11 +659,24 @@ export async function sendChatRequest(
       ...(isCopilot ? ['copilot', 'github-copilot', 'copilot-subscription'] : [])
     ]));
 
+    // 1. In-memory decryption cache via getKey (0ms latency, zero event loop blocking)
     for (const candidate of keyCandidates) {
-      const stored = credentialStore.getDecryptedKey(candidate);
-      if (stored && stored.trim()) {
-        key = stored.trim();
+      const vaultKey = await getKey(candidate).catch(() => undefined);
+      if (vaultKey && vaultKey.trim()) {
+        key = vaultKey.trim();
+        console.log(`[GATEWAY] Using in-memory cached key for ${providerId || candidate}`);
         break;
+      }
+    }
+
+    if (!key) {
+      for (const candidate of keyCandidates) {
+        const stored = credentialStore.getDecryptedKey(candidate);
+        if (stored && stored.trim()) {
+          key = stored.trim();
+          console.log(`[GATEWAY] Using in-memory cached key for ${providerId || candidate}`);
+          break;
+        }
       }
     }
 
@@ -663,20 +685,14 @@ export async function sendChatRequest(
         const { keys } = await readStoredCredentials();
         for (const candidate of keyCandidates) {
           const value = keys[candidate];
-          if (value && value.trim()) { key = value.trim(); break; }
+          if (value && value.trim()) {
+            key = value.trim();
+            console.log(`[GATEWAY] Using in-memory cached key for ${providerId || candidate}`);
+            break;
+          }
         }
       } catch {
-        // Non-blocking: fall through to legacy vault
-      }
-    }
-
-    if (!key) {
-      for (const candidate of keyCandidates) {
-        const vaultKey = await getKey(candidate).catch(() => undefined);
-        if (vaultKey && vaultKey.trim()) {
-          key = vaultKey.trim();
-          break;
-        }
+        // Non-blocking: fall through to legacy vault / env
       }
     }
 
@@ -2129,36 +2145,39 @@ export class ProviderGateway {
         apiKey = candidate.apiKey.trim();
       } else {
         const aliases = getProviderAliases(providerId);
-        // 1. Try secure credentialStore (RealConnect 2 Electron safeStorage)
+        // 1. In-memory decryption cache via getKey (0ms latency)
         for (const alias of aliases) {
-          const storedKey = credentialStore.getDecryptedKey(alias);
-          if (storedKey && storedKey.trim()) {
-            apiKey = storedKey.trim();
+          const vaultKey = await getKey(alias).catch(() => undefined);
+          if (vaultKey && vaultKey.trim()) {
+            apiKey = vaultKey.trim();
+            console.log(`[GATEWAY] Using in-memory cached key for ${providerId || alias}`);
             break;
           }
         }
-        // 2. Try settings-handlers or settings.apiKeys
+        // 2. Try secure credentialStore (RealConnect 2 Electron safeStorage)
+        if (!apiKey) {
+          for (const alias of aliases) {
+            const storedKey = credentialStore.getDecryptedKey(alias);
+            if (storedKey && storedKey.trim()) {
+              apiKey = storedKey.trim();
+              console.log(`[GATEWAY] Using in-memory cached key for ${providerId || alias}`);
+              break;
+            }
+          }
+        }
+        // 3. Try settings-handlers or settings.apiKeys
         if (!apiKey) {
           try {
             const { keys } = await readStoredCredentials();
             for (const alias of aliases) {
               if (keys[alias] && keys[alias].trim()) {
                 apiKey = keys[alias].trim();
+                console.log(`[GATEWAY] Using in-memory cached key for ${providerId || alias}`);
                 break;
               }
             }
           } catch {
             // Non-blocking
-          }
-        }
-        // 3. Try legacy vault (credentials.enc)
-        if (!apiKey) {
-          for (const alias of aliases) {
-            const vaultKey = await getKey(alias).catch(() => undefined);
-            if (vaultKey && vaultKey.trim()) {
-              apiKey = vaultKey.trim();
-              break;
-            }
           }
         }
         // 4. Try settings.apiKeys

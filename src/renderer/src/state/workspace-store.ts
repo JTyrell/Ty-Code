@@ -18,6 +18,7 @@ export interface DiffReviewState {
 
 interface WorkspaceState {
   workspacePath: string;
+  workspaceRoot: string;
   fileTree: FileNode | null;
   flatTree: FlatFileNodeEntry[] | null;
   openTabs: EditorTab[];
@@ -168,6 +169,7 @@ function buildNestedTreeFromFlat(flat: FlatFileNodeEntry[]): FileNode {
 
 export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   workspacePath: '',
+  workspaceRoot: '',
   fileTree: null,
   flatTree: null,
   openTabs: initialPersisted.openTabs,
@@ -176,7 +178,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   isWorkspaceReady: false,
 
   setIsWorkspaceReady: (ready: boolean) => set({ isWorkspaceReady: ready }),
-  setWorkspacePath: (path: string) => set({ workspacePath: path, isWorkspaceReady: false }),
+  setWorkspacePath: (path: string) => set({ workspacePath: path, workspaceRoot: path, isWorkspaceReady: false }),
   setFileTree: (tree) => set({ fileTree: tree }),
   setFlatTree: (flat) => set({ flatTree: flat }),
   appendTreeChunk: (chunk) => set((state) => ({ flatTree: [...(state.flatTree || []), ...chunk] })),
@@ -380,7 +382,7 @@ if (typeof window !== 'undefined' && window.electronAPI) {
   window.electronAPI.onWorkspaceReady?.((data) => {
     useWorkspaceStore.getState().setIsWorkspaceReady(true);
     if (data?.path && useWorkspaceStore.getState().workspacePath !== data.path) {
-      useWorkspaceStore.setState({ workspacePath: data.path });
+      useWorkspaceStore.setState({ workspacePath: data.path, workspaceRoot: data.path });
     }
   });
 

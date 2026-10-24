@@ -23,6 +23,7 @@ import { app, safeStorage } from 'electron';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import os from 'node:os';
 
 export interface StoredCredentialRecord {
   providerId: string;
@@ -182,16 +183,48 @@ export class CredentialStore {
       if (encryptedValue.startsWith('safe_storage_v1:')) {
         if (!this.isEncryptionAvailable()) return '';
         const b64 = encryptedValue.slice('safe_storage_v1:'.length);
-        return safeStorage.decryptString(Buffer.from(b64, 'base64'));
+        try {
+          return safeStorage.decryptString(Buffer.from(b64, 'base64'));
+        } catch {
+          return '';
+        }
       }
       if (encryptedValue.startsWith('fallback_aes_v1:')) {
         const raw = Buffer.from(encryptedValue.slice('fallback_aes_v1:'.length), 'base64');
+        if (raw.length < 17) return '';
         const tag = raw.slice(0, 16);
         const data = raw.slice(16);
-        const hmac = crypto.createHash('sha256').update(getUserDataPath()).digest('hex').slice(0, 32);
-        const decipher = crypto.createDecipheriv('aes-256-gcm', Buffer.from(hmac, 'utf8'), Buffer.alloc(12, 0));
-        decipher.setAuthTag(tag);
-        return Buffer.concat([decipher.update(data), decipher.final()]).toString('utf8');
+
+        const currentPath = getUserDataPath();
+        const candidatePaths = new Set<string>([
+          currentPath,
+          currentPath.toLowerCase(),
+          path.normalize(currentPath),
+          currentPath.replace(/\//g, '\\'),
+          currentPath.replace(/\\/g, '/'),
+          process.env.APPDATA ? path.join(process.env.APPDATA, 'Ty-Code') : '',
+          process.env.APPDATA ? path.join(process.env.APPDATA, 'ty-code') : '',
+          process.env.APPDATA ? path.join(process.env.APPDATA, 'Ty-Claude') : '',
+          process.env.APPDATA ? path.join(process.env.APPDATA, 'ty-claude') : '',
+          path.join(os.homedir(), '.ty-code'),
+          path.join(os.homedir(), '.ty-claude'),
+          'ty-code-default-seed-v1',
+          'ty-claude-default-seed-v1'
+        ]);
+
+        for (const candidate of candidatePaths) {
+          if (!candidate) continue;
+          try {
+            const hmac = crypto.createHash('sha256').update(candidate).digest('hex').slice(0, 32);
+            const decipher = crypto.createDecipheriv('aes-256-gcm', Buffer.from(hmac, 'utf8'), Buffer.alloc(12, 0));
+            decipher.setAuthTag(tag);
+            const decrypted = Buffer.concat([decipher.update(data), decipher.final()]).toString('utf8');
+            if (decrypted) return decrypted;
+          } catch {
+            // continue testing candidates
+          }
+        }
+        return '';
       }
       // Backward compatibility for legacy base64 buffers
       if (this.isEncryptionAvailable()) {

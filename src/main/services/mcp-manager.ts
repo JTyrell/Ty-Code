@@ -158,7 +158,12 @@ export class McpManager {
 
   public decryptSecret(encrypted: string): string {
     if (!encrypted || !this.isSecureStorageAvailable() || !encrypted.startsWith('safe_storage_v1:')) return '';
-    return this.storage.decryptString(Buffer.from(encrypted.slice('safe_storage_v1:'.length), 'base64'));
+    try {
+      return this.storage.decryptString(Buffer.from(encrypted.slice('safe_storage_v1:'.length), 'base64'));
+    } catch (err) {
+      console.warn('[mcp-manager] Failed to decrypt MCP secret:', err);
+      return '';
+    }
   }
 
   private normalizeStoredApiKeys(config: McpConfigFile): boolean {

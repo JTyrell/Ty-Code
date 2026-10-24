@@ -893,6 +893,7 @@ export interface ElectronAPI {
   isWindowMaximized?: () => Promise<boolean>;
   onWindowMaximizeChange?: (callback: (isMaximized: boolean) => void) => () => void;
   selectWorkspaceFolder: () => Promise<IpcResponse<string>>;
+  openFolderDialog: () => Promise<IpcResponse<string>>;
   openFolderInExplorer: (folderPath: string) => Promise<IpcResponse<void>>;
   onWorkspaceReady?: (callback: (data: { path: string }) => void) => () => void;
   onOpenFolder?: (callback: (data: { folderPath: string }) => void) => () => void;

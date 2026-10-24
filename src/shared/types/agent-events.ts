@@ -6,7 +6,7 @@ export const AgentStartTaskPayloadSchema = z.object({
   prompt: z.string(),
   images: z.array(z.string()).optional(),
   workspacePath: z.string().optional(),
-  history: z.array(z.any()).optional(),
+  history: z.unknown().optional(),
   agentMode: z.string().optional(),
   sessionId: z.string().optional(),
   activeFilePath: z.string().optional(),

@@ -6,6 +6,20 @@ function getCredentialsFilePath(): string {
   return path.join(app.getPath('userData'), 'credentials.enc');
 }
 
+/**
+ * In-memory decryption cache to ensure safeStorage.decryptString is only called ONCE
+ * per app session per key, serving subsequent requests with 0ms latency from RAM.
+ */
+const decryptedKeyCache = new Map<string, string>();
+
+export function clearKeyCache(providerId?: string): void {
+  if (providerId) {
+    decryptedKeyCache.delete(providerId.toLowerCase().trim());
+  } else {
+    decryptedKeyCache.clear();
+  }
+}
+
 function loadAllKeys(): Record<string, string> {
   const filePath = getCredentialsFilePath();
   if (!fs.existsSync(filePath)) {
@@ -16,7 +30,15 @@ function loadAllKeys(): Record<string, string> {
     if (safeStorage.isEncryptionAvailable()) {
       try {
         const decryptedStr = safeStorage.decryptString(fileBuffer);
-        return JSON.parse(decryptedStr);
+        const parsed = JSON.parse(decryptedStr) as Record<string, string>;
+        if (parsed && typeof parsed === 'object') {
+          for (const [k, v] of Object.entries(parsed)) {
+            if (typeof v === 'string') {
+              decryptedKeyCache.set(k.toLowerCase().trim(), v);
+            }
+          }
+        }
+        return parsed || {};
       } catch (err) {
         // ZeroFriction diagnosis (Prompt 2): surface safeStorage decrypt failures
         console.warn(`[VAULT] safeStorage decryption FAILED: ${err instanceof Error ? err.message : String(err)}`);
@@ -47,6 +69,9 @@ export async function saveKey(providerId: string, key: string): Promise<void> {
   const keys = loadAllKeys();
   keys[normProvider] = key.trim();
 
+  // In-Memory Key Cache update: keep RAM in sync with written key
+  decryptedKeyCache.set(normProvider, key.trim());
+
   const filePath = getCredentialsFilePath();
   const dir = path.dirname(filePath);
   if (!fs.existsSync(dir)) {
@@ -73,14 +98,11 @@ export async function saveKey(providerId: string, key: string): Promise<void> {
 }
 
 export async function getKey(providerId: string): Promise<string | null> {
-  // ZeroFriction diagnosis (Prompt 2): every decrypt step is logged. Keys are
-  // never printed - only hit/miss outcomes.
-  console.log('[VAULT] Decrypting key from safeStorage...');
   const normProvider = providerId.toLowerCase().trim();
-  const keys = loadAllKeys();
-  if (keys[normProvider]) {
-    console.log('[VAULT] Key decrypted successfully');
-    return keys[normProvider];
+
+  // 1. In-memory decryption cache check (0ms latency)
+  if (decryptedKeyCache.has(normProvider)) {
+    return decryptedKeyCache.get(normProvider)!;
   }
 
   const aliases = [
@@ -106,10 +128,32 @@ export async function getKey(providerId: string): Promise<string | null> {
   if (normProvider === 'ty-code-free' || normProvider === 'tycode-free') {
     aliases.push('ty-code-free', 'openrouter', 'openrouter-free');
   }
+
+  for (const alias of aliases) {
+    if (decryptedKeyCache.has(alias)) {
+      const cached = decryptedKeyCache.get(alias)!;
+      decryptedKeyCache.set(normProvider, cached);
+      return cached;
+    }
+  }
+
+  // 2. Not in cache: call safeStorage.decryptString(encryptedBuffer)
+  console.log('[VAULT] Decrypting key from safeStorage...');
+  const keys = loadAllKeys();
+  if (keys[normProvider]) {
+    const keyVal = keys[normProvider];
+    decryptedKeyCache.set(normProvider, keyVal);
+    console.log(`[VAULT] Key decrypted and cached in memory for ${normProvider}`);
+    return keyVal;
+  }
+
   for (const alias of aliases) {
     if (keys[alias]) {
-      console.log('[VAULT] Key decrypted successfully');
-      return keys[alias];
+      const keyVal = keys[alias];
+      decryptedKeyCache.set(normProvider, keyVal);
+      decryptedKeyCache.set(alias, keyVal);
+      console.log(`[VAULT] Key decrypted and cached in memory for ${normProvider}`);
+      return keyVal;
     }
   }
 
@@ -118,7 +162,9 @@ export async function getKey(providerId: string): Promise<string | null> {
     for (const alias of aliases) {
       const fromStore = credentialStore.getDecryptedKey(alias);
       if (fromStore) {
-        console.log('[VAULT] Key decrypted successfully');
+        decryptedKeyCache.set(normProvider, fromStore);
+        decryptedKeyCache.set(alias, fromStore);
+        console.log(`[VAULT] Key decrypted and cached in memory for ${normProvider}`);
         return fromStore;
       }
     }
@@ -129,7 +175,9 @@ export async function getKey(providerId: string): Promise<string | null> {
     const { keys: stored } = await readStoredCredentials();
     for (const alias of aliases) {
       if (stored[alias]) {
-        console.log('[VAULT] Key decrypted successfully');
+        decryptedKeyCache.set(normProvider, stored[alias]);
+        decryptedKeyCache.set(alias, stored[alias]);
+        console.log(`[VAULT] Key decrypted and cached in memory for ${normProvider}`);
         return stored[alias];
       }
     }
@@ -137,12 +185,15 @@ export async function getKey(providerId: string): Promise<string | null> {
 
   // Zero-Friction Community Key: the 'ty-code-free' virtual provider never
   // requires user input. The rotating Community Key is bootstrapped once from
-  // the Ty-Code backend, then cached encrypted at rest via safeStorage
-  // (plaintext lives only in memory). Overriding with the user's own
-  // OpenRouter key happens through the alias checks above, never here.
+  // the Ty-Code backend, then cached encrypted at rest via safeStorage.
   if (normProvider === 'ty-code-free' || normProvider === 'tycode-free') {
     const community = await getCommunityKey();
-    if (community && community.trim()) return community.trim();
+    if (community && community.trim()) {
+      const clean = community.trim();
+      decryptedKeyCache.set(normProvider, clean);
+      console.log(`[VAULT] Key decrypted and cached in memory for ${normProvider}`);
+      return clean;
+    }
   }
 
   return null;
@@ -286,6 +337,18 @@ async function fetchCommunityKeyRemote(): Promise<string | null> {
  *      null - never throws, the app calls never crash on this path.
  */
 export async function getCommunityKey(): Promise<string | null> {
+  // 1. In-memory cache check (0ms latency, zero decryption, zero network)
+  if (communityKeyCache && communityKeyCache.trim()) {
+    return communityKeyCache.trim();
+  }
+  if (decryptedKeyCache.has(COMMUNITY_KEY_LABEL)) {
+    const val = decryptedKeyCache.get(COMMUNITY_KEY_LABEL)!.trim();
+    if (val) {
+      communityKeyCache = val;
+      return val;
+    }
+  }
+
   // Cooldown guard: prevent unnecessary network calls while Cloudflare rate limit is active
   if (Date.now() < communityKeyRetryNotBefore) {
     emitCommunityKeyStatus('degraded');
@@ -299,6 +362,7 @@ export async function getCommunityKey(): Promise<string | null> {
       const value = cached.trim();
       if (communityKeyCache !== value) communityKeyCachedAt = Date.now();
       communityKeyCache = value;
+      decryptedKeyCache.set(COMMUNITY_KEY_LABEL, value);
       // Expired-at is module memory only (never persisted, so it cannot leak
       // into any settings or credential UI). Across app restarts a restored
       // cache gets a conservative 24h horizon: at worst one revalidation per
@@ -338,11 +402,19 @@ export async function getCommunityKey(): Promise<string | null> {
  */
 export function getCommunityKeyCached(): string | undefined {
   if (communityKeyCache && communityKeyCache.trim()) return communityKeyCache;
+  if (decryptedKeyCache.has(COMMUNITY_KEY_LABEL)) {
+    const val = decryptedKeyCache.get(COMMUNITY_KEY_LABEL)?.trim();
+    if (val) {
+      communityKeyCache = val;
+      return val;
+    }
+  }
   const keys = loadAllKeys();
   const stored = keys[COMMUNITY_KEY_LABEL];
   if (stored && stored.trim()) {
     communityKeyCache = stored.trim();
     communityKeyCachedAt = Date.now();
+    decryptedKeyCache.set(COMMUNITY_KEY_LABEL, communityKeyCache);
     return communityKeyCache;
   }
   return undefined;
@@ -406,6 +478,7 @@ export async function revalidateCommunityKey(maxAgeMs: number): Promise<void> {
 export async function fetchCommunityKey(force = false): Promise<string | undefined> {
   if (force) {
     communityKeyCache = undefined;
+    decryptedKeyCache.delete(COMMUNITY_KEY_LABEL);
     return (await fetchCommunityKeyRemote()) || undefined;
   }
   return (await getCommunityKey()) || undefined;
@@ -417,9 +490,9 @@ export async function fetchCommunityKey(force = false): Promise<string | undefin
  */
 export function invalidateCommunityKey(): void {
   communityKeyCache = undefined;
+  decryptedKeyCache.delete(COMMUNITY_KEY_LABEL);
   communityKeyCachedAt = 0;
   communityKeyExpiresAt = 0;
-  communityKeyCachedAt = 0;
   try {
     const keys = loadAllKeys();
     if (keys[COMMUNITY_KEY_LABEL]) {
