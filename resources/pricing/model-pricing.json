@@ -1,0 +1,30 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "version": 1,
+  "updatedAt": "2026-10-24T00:00:00Z",
+  "currency": "USD",
+  "rates": {
+    "claude-3-5-sonnet": { "inputPer1M": 3.0, "outputPer1M": 15.0, "cacheReadPer1M": 0.3, "cacheWritePer1M": 3.75 },
+    "claude-3-opus": { "inputPer1M": 15.0, "outputPer1M": 75.0, "cacheReadPer1M": 1.5, "cacheWritePer1M": 18.75 },
+    "claude-3-5-haiku": { "inputPer1M": 0.8, "outputPer1M": 4.0, "cacheReadPer1M": 0.08, "cacheWritePer1M": 1.0 },
+    "claude-3-sonnet": { "inputPer1M": 3.0, "outputPer1M": 15.0, "cacheReadPer1M": 0.3, "cacheWritePer1M": 3.75 },
+    "gpt-4o": { "inputPer1M": 2.5, "outputPer1M": 10.0, "cacheReadPer1M": 1.25, "cacheWritePer1M": 2.5 },
+    "gpt-4o-mini": { "inputPer1M": 0.15, "outputPer1M": 0.6, "cacheReadPer1M": 0.075, "cacheWritePer1M": 0.15 },
+    "o1": { "inputPer1M": 15.0, "outputPer1M": 60.0, "cacheReadPer1M": 7.5, "cacheWritePer1M": 15.0 },
+    "o1-mini": { "inputPer1M": 3.0, "outputPer1M": 12.0, "cacheReadPer1M": 1.5, "cacheWritePer1M": 3.0 },
+    "gemini-1.5-pro": { "inputPer1M": 1.25, "outputPer1M": 5.0, "cacheReadPer1M": 0.31, "cacheWritePer1M": 1.25 },
+    "gemini-1.5-flash": { "inputPer1M": 0.075, "outputPer1M": 0.3, "cacheReadPer1M": 0.018, "cacheWritePer1M": 0.075 },
+    "gemini-2.0-flash": { "inputPer1M": 0.1, "outputPer1M": 0.4, "cacheReadPer1M": 0.025, "cacheWritePer1M": 0.1 },
+    "deepseek-chat": { "inputPer1M": 0.14, "outputPer1M": 0.28, "cacheReadPer1M": 0.014, "cacheWritePer1M": 0.14 },
+    "deepseek-coder": { "inputPer1M": 0.14, "outputPer1M": 0.28, "cacheReadPer1M": 0.014, "cacheWritePer1M": 0.14 },
+    "deepseek-reasoner": { "inputPer1M": 0.55, "outputPer1M": 2.19, "cacheReadPer1M": 0.14, "cacheWritePer1M": 0.55 },
+    "qwen/qwen-2.5-coder-32b-instruct": { "inputPer1M": 0.2, "outputPer1M": 0.2, "cacheReadPer1M": 0.0, "cacheWritePer1M": 0.0 },
+    "meta-llama/llama-3.3-70b-instruct": { "inputPer1M": 0.59, "outputPer1M": 0.79, "cacheReadPer1M": 0.0, "cacheWritePer1M": 0.0 }
+  },
+  "default": {
+    "inputPer1M": 1.0,
+    "outputPer1M": 3.0,
+    "cacheReadPer1M": 0.25,
+    "cacheWritePer1M": 1.0
+  }
+}

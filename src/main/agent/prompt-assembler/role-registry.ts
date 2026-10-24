@@ -12,6 +12,7 @@
  */
 
 import type { RoleId, ToolScope } from './schemas';
+import { policyEngine } from '../../services/policy/policy-engine';
 
 export interface RoleModule {
   id: RoleId;
@@ -366,12 +367,17 @@ export function classifyRoles(userPrompt: string, activeFiles: string[] = [], pr
   const hits: RoleId[] = [];
 
   // Overrides first: security & debug prepend when triggered (they dominate mid-task).
-  if (ROLE_REGISTRY.security.signals.test(haystack) && !prefs.ban?.includes('security')) hits.push('security');
-  if (ROLE_REGISTRY.debug.signals.test(haystack) && !prefs.ban?.includes('debug')) hits.push('debug');
+  if (ROLE_REGISTRY.security.signals.test(haystack) && !prefs.ban?.includes('security') && policyEngine.isRoleAllowed('security')) {
+    hits.push('security');
+  }
+  if (ROLE_REGISTRY.debug.signals.test(haystack) && !prefs.ban?.includes('debug') && policyEngine.isRoleAllowed('debug')) {
+    hits.push('debug');
+  }
 
   for (const id of ROLE_IDS) {
     if (id === 'security' || id === 'debug') continue;
     if (prefs.ban?.includes(id)) continue;
+    if (!policyEngine.isRoleAllowed(id)) continue;
     if (ROLE_REGISTRY[id].signals.test(haystack)) hits.push(id as RoleId);
   }
 

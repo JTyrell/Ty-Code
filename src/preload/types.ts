@@ -492,6 +492,8 @@ export interface ChatMessage {
   failoverNotice?: string;
   isStreaming?: boolean;
   timestamp: number;
+  actions?: string[];
+  truncated?: boolean;
 }
 
 export interface ProposedDiff {
@@ -636,6 +638,8 @@ export interface AgentStreamChunk {
   approvalRequest?: AgentToolApproval;
   error?: string;
   state?: AgentLoopState;
+  actions?: string[];
+  truncated?: boolean;
 }
 
 export interface CommandExecutionOptions {
@@ -933,6 +937,10 @@ export interface ElectronAPI {
   setRolePreferences?: (prefs: RolePreferences, customRoot?: string) => Promise<IpcResponse<RolePreferences>>;
   resetRolePreferences?: (customRoot?: string) => Promise<IpcResponse<RolePreferences>>;
   onPreferencesChanged?: (callback: (prefs: RolePreferences) => void) => () => void;
+  // Feature 1 & 2: Token Accounting Ledger & Enterprise Policy
+  getEffectivePolicy?: () => Promise<IpcResponse<any>>;
+  queryLedger?: (filter?: any) => Promise<IpcResponse<{ records: any[]; summary: any }>>;
+  getLedgerInsights?: (filter?: any) => Promise<IpcResponse<any[]>>;
   startAgentTask: (params: {
     taskId?: string;
     traceId?: string;
@@ -1413,6 +1421,12 @@ export interface ElectronAPI {
   usageExportLedger?: (format?: 'json' | 'csv') => Promise<IpcResponse<string>>;
   usageExport?: (format?: 'json' | 'csv') => Promise<IpcResponse<string>>;
   usageClearLedger?: () => Promise<IpcResponse<void>>;
+  ledgerQuery?: (filter?: any) => Promise<IpcResponse<any>>;
+  ledgerGetInsights?: (options?: any) => Promise<IpcResponse<any>>;
+  ledgerFlush?: () => Promise<IpcResponse<void>>;
+  policyGetEffective?: () => Promise<IpcResponse<any>>;
+  policyAssertAllowed?: (action: any) => Promise<IpcResponse<void>>;
+  policyReload?: (workspacePath?: string) => Promise<IpcResponse<any>>;
 
   // RealConnect 2: Per-User Credential Storage
   credentialsSave?: (providerId: string, apiKey: string, label?: string) => Promise<IpcResponse<void>>;

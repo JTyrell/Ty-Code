@@ -18,6 +18,7 @@ import type { RoleId, ModeId, TaskClass } from './schemas';
 import { ROLE_REGISTRY, ROLE_IDS, classifyRoles as baseClassifyRoles, mostRestrictiveScope, getRoleScope } from './role-registry';
 import { classifyMode, modeScope } from './mode-contracts';
 import type { RolePreferences } from './schemas';
+import { policyEngine } from '../../services/policy/policy-engine';
 import * as path from 'path';
 
 const FILE_EXTENSION_ROLE_MAP: Record<string, RoleId> = {
@@ -153,6 +154,11 @@ export function classify(
     mode = classifyMode(userPrompt);
   }
   if (explicitMode) mode = explicitMode;
+
+  // Enterprise policy enforcement: ensure mode is allowed, else fallback to policy default
+  if (!policyEngine.isModeAllowed(mode)) {
+    mode = policyEngine.getDefaultMode();
+  }
 
   const scope = mostRestrictiveScope(roles);
   const taskClass = inferTaskClass(userPrompt, roles);

@@ -28,6 +28,8 @@ import { skillRegistry } from './agent-skills';
 
 import { connectivityTracer } from '../services/diagnostics/connectivity-tracer';
 import { getWorkspaceSummary, getOpenFilesContent, buildWorkspaceContextBlock } from '../services/workspace-context-manager';
+import { usageLedger } from '../services/usage/usage-ledger';
+import { countTokens } from '../services/usage/token-accounting';
 
 export interface RunAgentParams {
   prompt: string;
@@ -1182,6 +1184,31 @@ export class AgentEngine {
           if (result.proposedDiff) onChunk({ type: 'diff', diff: result.proposedDiff });
           const compressedResult = optimizationPipeline.compressToolOutput(result.output);
           messages.push({ role: 'tool', name: toolCall.name, tool_call_id: toolCall.id, content: compressedResult.compressed });
+
+          // Hook 3: Per-Layer Token Accounting for tool_result
+          const toolTokens = countTokens(compressedResult.compressed, 'json');
+          usageLedger.record({
+            sessionId: params.taskId || 'default-session',
+            taskId: params.taskId || 'default-session',
+            provider: activeProvider,
+            model: activeModel,
+            billing: 'metered',
+            phase: 'tool',
+            layers: [
+              {
+                name: `tool_result:${toolCall.name}`,
+                kind: 'tool',
+                tokens: toolTokens.tokens,
+                method: toolTokens.method,
+                cached: false
+              }
+            ],
+            totals: {
+              input: toolTokens.tokens,
+              output: 0,
+              cachedInput: 0
+            }
+          });
         }
 
         // Iteration complete

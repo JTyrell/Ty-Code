@@ -193,6 +193,10 @@ export class ConnectivityTracer extends EventEmitter {
     return trace;
   }
 
+  public getTrace(traceId: string): ProviderConnectivityTrace | undefined {
+    return this.activeTraces.get(traceId) || this.completedTraces.get(traceId);
+  }
+
   /**
    * Records progress or completion for a specific hop.
    */
@@ -312,10 +316,6 @@ export class ConnectivityTracer extends EventEmitter {
     this.completedTraces.set(traceId, trace);
     this.broadcastTraceUpdate(traceId, trace);
     return trace;
-  }
-
-  public getTrace(traceId: string): ProviderConnectivityTrace | undefined {
-    return this.activeTraces.get(traceId) || this.completedTraces.get(traceId);
   }
 
   private broadcastTraceUpdate(traceId: string, trace: ProviderConnectivityTrace): void {
@@ -870,3 +870,22 @@ export class ConnectivityTracer extends EventEmitter {
 }
 
 export const connectivityTracer = ConnectivityTracer.getInstance();
+
+try {
+  const { usageLedger } = require('../usage/usage-ledger');
+  usageLedger.registerHopProvider((taskId: string) => {
+    const trace = connectivityTracer.getTrace(taskId);
+    if (!trace) return [];
+    const validHops: Array<'H1' | 'H2' | 'H3' | 'H4' | 'H5'> = ['H1', 'H2', 'H3', 'H4', 'H5'];
+    const res: Array<{ hop: 'H1' | 'H2' | 'H3' | 'H4' | 'H5'; latencyMs: number }> = [];
+    for (const h of validHops) {
+      const hopRecord = trace.hops[h];
+      if (hopRecord && typeof hopRecord.durationMs === 'number') {
+        res.push({ hop: h, latencyMs: hopRecord.durationMs });
+      }
+    }
+    return res;
+  });
+} catch {
+  // Ignore in environments where usageLedger is not available
+}

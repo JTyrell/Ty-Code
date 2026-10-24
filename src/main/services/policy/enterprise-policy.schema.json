@@ -1,0 +1,94 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Ty-Code Enterprise Policy Specification",
+  "type": "object",
+  "required": ["version", "org", "locked"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "version": { "type": "integer", "enum": [1] },
+    "org": { "type": "string", "minLength": 1 },
+    "locked": {
+      "type": "object",
+      "required": ["terminalPolicy", "modes", "roles", "providers", "routing", "security", "features", "ledger"],
+      "properties": {
+        "terminalPolicy": {
+          "type": "string",
+          "enum": ["always-ask", "safe-auto", "disabled"]
+        },
+        "modes": {
+          "type": "object",
+          "required": ["allowed", "default", "locked"],
+          "properties": {
+            "allowed": {
+              "type": "array",
+              "items": { "type": "string", "enum": ["BUILD", "REVIEW", "EXPLAIN", "DESIGN", "SHIP"] }
+            },
+            "default": { "type": "string", "enum": ["BUILD", "REVIEW", "EXPLAIN", "DESIGN", "SHIP"] },
+            "locked": { "type": "boolean" }
+          }
+        },
+        "roles": {
+          "type": "object",
+          "required": ["allowed", "denied", "locked"],
+          "properties": {
+            "allowed": { "type": "array", "items": { "type": "string" } },
+            "denied": { "type": "array", "items": { "type": "string" } },
+            "locked": { "type": "boolean" }
+          }
+        },
+        "providers": {
+          "type": "object",
+          "required": ["allowlist", "denylist", "requireLocalOnly"],
+          "properties": {
+            "allowlist": { "type": "array", "items": { "type": "string" } },
+            "denylist": { "type": "array", "items": { "type": "string" } },
+            "requireLocalOnly": { "type": "boolean" }
+          }
+        },
+        "routing": {
+          "type": "object",
+          "required": ["freeModeEnabled", "fallbackEnabled", "requireEncryptionInTransit"],
+          "properties": {
+            "freeModeEnabled": { "type": "boolean" },
+            "fallbackEnabled": { "type": "boolean" },
+            "requireEncryptionInTransit": { "type": "boolean" }
+          }
+        },
+        "security": {
+          "type": "object",
+          "required": ["workspaceContainment", "safeEditReviewGate", "systemAccess"],
+          "properties": {
+            "workspaceContainment": { "type": "string", "enum": ["strict", "standard", "relaxed"] },
+            "safeEditReviewGate": { "type": "boolean" },
+            "systemAccess": { "type": "boolean" }
+          }
+        },
+        "features": {
+          "type": "object",
+          "required": ["m3eCanvas", "ledgerExport"],
+          "properties": {
+            "m3eCanvas": { "type": "boolean" },
+            "ledgerExport": { "type": "boolean" }
+          }
+        },
+        "ledger": {
+          "type": "object",
+          "required": ["retentionDays", "hashChainRequired"],
+          "properties": {
+            "retentionDays": { "type": "integer", "minimum": 1 },
+            "hashChainRequired": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    "attestation": {
+      "type": "object",
+      "required": ["alg", "signedBy", "signature"],
+      "properties": {
+        "alg": { "type": "string", "enum": ["ed25519", "rsa-sha256"] },
+        "signedBy": { "type": "string" },
+        "signature": { "type": "string" }
+      }
+    }
+  }
+}

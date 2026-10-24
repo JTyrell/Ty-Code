@@ -1,13 +1,13 @@
 {
-  "timestamp": "2026-10-24T04:15:03.000Z",
-  "gitCommit": "821d1dff2a89cd50bee20898ebde1c42b30cbf90",
+  "timestamp": "2026-10-24T08:25:00.000Z",
+  "gitCommit": "5817d68c87392ffa7142afc6e798a6c36da06dd2",
   "command": "npm run test:extensions",
   "durationMs": 12331,
   "environment": {
     "node": "v24.13.1",
     "platform": "win32",
     "arch": "x64",
-    "gitCommit": "bb0d31db5e37962045ecce162798077b40167a4c",
+    "gitCommit": "5817d68c87392ffa7142afc6e798a6c36da06dd2",
     "registryUrl": "https://open-vsx.org"
   },
   "summary": {

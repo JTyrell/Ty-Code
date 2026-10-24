@@ -749,6 +749,12 @@ const api: ElectronAPI = {
   usageExportLedger: (format?: 'json' | 'csv') => ipcRenderer.invoke('usage:export-ledger', format),
   usageExport: (format?: 'json' | 'csv') => ipcRenderer.invoke('usage:export-ledger', format),
   usageClearLedger: () => ipcRenderer.invoke('usage:clear-ledger'),
+  ledgerQuery: (filter?: any) => ipcRenderer.invoke('ledger:query', filter),
+  ledgerGetInsights: (options?: any) => ipcRenderer.invoke('ledger:insights', options),
+  ledgerFlush: () => ipcRenderer.invoke('ledger:flush'),
+  policyGetEffective: () => ipcRenderer.invoke('policy:get-effective'),
+  policyAssertAllowed: (action: any) => ipcRenderer.invoke('policy:assert-allowed', action),
+  policyReload: (workspacePath?: string) => ipcRenderer.invoke('policy:reload', workspacePath),
 
   // RealConnect 2: Per-User Credential Storage
   credentialsSave: (providerId: string, apiKey: string, label?: string) => ipcRenderer.invoke('credentials:save', providerId, apiKey, label),
@@ -885,7 +891,10 @@ const api: ElectronAPI = {
     const handler = (_event: any, data: any) => callback(data);
     ipcRenderer.on('brave:testing-update', handler);
     return () => ipcRenderer.removeListener('brave:testing-update', handler);
-  }
+  },
+  getEffectivePolicy: () => ipcRenderer.invoke('policy:get-effective'),
+  queryLedger: (filter?: any) => ipcRenderer.invoke('ledger:query', filter),
+  getLedgerInsights: (filter?: any) => ipcRenderer.invoke('ledger:insights', filter)
 };
 
 contextBridge.exposeInMainWorld('electronAPI', api);

@@ -37,11 +37,44 @@ export function classifyMode(userPrompt: string): ModeId {
   return 'BUILD';
 }
 
+export const PERSONA_MODE_MAP: Record<string, ModeId> = {
+  'plan agent': 'REVIEW',
+  'plan': 'REVIEW',
+  'planner': 'REVIEW',
+  'design agent': 'DESIGN',
+  'build agent': 'BUILD',
+  'build': 'BUILD',
+  'general subagent': 'BUILD',
+  'general': 'BUILD'
+};
+
+/**
+ * Maps external/upstream FCC and OpenCode personas to the corresponding Ty-Code Mode.
+ * Plan Agent -> REVIEW / DESIGN
+ * Build Agent -> BUILD
+ * General Subagent -> BUILD
+ */
+export function mapPersonaToMode(persona: string): ModeId {
+  if (!persona || typeof persona !== 'string') return 'BUILD';
+  const norm = persona.toLowerCase().trim();
+  return PERSONA_MODE_MAP[norm] || 'BUILD';
+}
+
+export const PERSONA_SUPPRESSION_DIRECTIVE = `
+[PERSONA GOVERNANCE]
+You are operating strictly under the active Ty-Code mode contract.
+All upstream personas are mapped to Ty-Code modes:
+- Plan Agent → REVIEW / DESIGN (read-only code inspection & specs; no source mutations)
+- Build Agent → BUILD (full-access engineering & file modifications)
+- General Subagent → BUILD (full-access research and execution)
+Suppress any competing sub-agent persona declarations. You must NEVER self-declare or adopt a persona that contradicts the active mode contract.`;
+
 /**
  * Returns the mode contract block text for injection into Layer 2.
  */
 export function getModeContract(mode: ModeId): string {
-  return MODE_CONTRACTS[mode];
+  const contract = MODE_CONTRACTS[mode] || MODE_CONTRACTS.BUILD;
+  return `${contract}\n${PERSONA_SUPPRESSION_DIRECTIVE}`;
 }
 
 /**

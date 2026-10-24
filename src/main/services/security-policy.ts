@@ -4,6 +4,7 @@ import path from 'node:path';
 import type { ProposedDiff, ToolCall } from '../../preload/types';
 import type { SecurityPolicySettings } from '../../shared/types/settings';
 import type { SettingsManager } from './settings-manager';
+import { policyEngine } from './policy/policy-engine';
 
 export type PolicyDecision = 'allow' | 'ask' | 'block';
 
@@ -136,8 +137,18 @@ export class SecurityPolicyEngine {
   }
 
   public async evaluateTerminalCommand(command: string): Promise<{ decision: PolicyDecision; reason: string }> {
-    const policy = await this.getPolicy();
     const trimmed = (command || '').trim();
+
+    // Enterprise Policy override (highest precedence in Three-Tier Sandbox)
+    const enterpriseTerminalPolicy = policyEngine.getTerminalPolicy();
+    if (enterpriseTerminalPolicy === 'disabled') {
+      return { decision: 'block', reason: 'Terminal execution is disabled by enterprise policy.' };
+    }
+    if (enterpriseTerminalPolicy === 'always-ask') {
+      return { decision: 'ask', reason: 'Enterprise policy requires user confirmation for all terminal commands.' };
+    }
+
+    const policy = await this.getPolicy();
 
     const enforceWorkspaceOnly = policy.fileAccessPolicy !== 'system-access' || !policy.systemAccessConfirmed;
     if (enforceWorkspaceOnly && this.referencesOutsideWorkspace(trimmed)) {

@@ -27,6 +27,10 @@ import { getVerifiedModels, type VerifiedModelConfig } from '../services/verifie
 import { fetchFCCCatalog, canFccServeCompletions } from '../services/fcc-catalog-sync';
 import { opencodeBridge, buildBridgePromptFromMessages } from '../services/opencode-bridge';
 
+import { policyEngine } from '../services/policy/policy-engine';
+import { usageLedger as tokenAccountingLedger } from '../services/usage/usage-ledger';
+import { countTokens, type LayerToken } from '../services/usage/token-accounting';
+
 const OPENCODE_FREE_PROTOCOL = 'opencode-cli://';
 
 import { BrowserWindow } from 'electron';
@@ -165,9 +169,23 @@ export class ChatLatencyTracker {
 
     console.log(`[PERF] Task ${taskId}: TTFT=${ttft}ms | IPC=${ipc}ms | UI_Lag=${uiLag}ms | Total_Tokens=${count} | Tokens_Per_Sec=${tps}`);
   }
+
+  public getHops(taskId: string): Array<{ hop: 'H1' | 'H2' | 'H3' | 'H4' | 'H5'; latencyMs: number }> {
+    const entry = this.tasks.get(taskId);
+    if (!entry) return [];
+    const hops: Array<{ hop: 'H1' | 'H2' | 'H3' | 'H4' | 'H5'; latencyMs: number }> = [];
+    const base = entry.h1 ?? entry.h2 ?? 0;
+    if (entry.h1 !== undefined) hops.push({ hop: 'H1', latencyMs: 0 });
+    if (entry.h2 !== undefined) hops.push({ hop: 'H2', latencyMs: Math.max(0, Math.round((entry.h2 - base) * 10) / 10) });
+    if (entry.h3 !== undefined) hops.push({ hop: 'H3', latencyMs: Math.max(0, Math.round((entry.h3 - (entry.h2 ?? base)) * 10) / 10) });
+    if (entry.h4 !== undefined) hops.push({ hop: 'H4', latencyMs: Math.max(0, Math.round((entry.h4 - (entry.h3 ?? entry.h2 ?? base)) * 10) / 10) });
+    if (entry.h5 !== undefined) hops.push({ hop: 'H5', latencyMs: Math.max(0, Math.round((entry.h5 - (entry.h4 ?? entry.h3 ?? entry.h2 ?? base)) * 10) / 10) });
+    return hops;
+  }
 }
 
 export const chatLatencyTracker = new ChatLatencyTracker();
+tokenAccountingLedger.registerHopProvider(chatLatencyTracker.getHops.bind(chatLatencyTracker));
 
 /**
  * StreamChunkBatcher: Main Process High-Frequency Stream Batcher (Phase 3: 32ms cadence)
@@ -430,6 +448,47 @@ async function runOpenCodeBridge(
   return bridgeParts.join('');
 }
 
+export type NormalizedFinishReason = 'length' | 'stop' | 'tool_calls' | 'content_filter';
+
+/**
+ * Extracts and normalizes stream termination / finish_reason across providers
+ * (OpenAI, Anthropic, Gemini, Groq, Ollama, etc.)
+ */
+export function parseFinishReason(raw: unknown): NormalizedFinishReason | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const obj = raw as any;
+
+  // OpenAI / OpenRouter / Groq / DeepSeek / Ollama style
+  const choiceFinish = obj.choices?.[0]?.finish_reason ?? obj.finish_reason;
+  if (choiceFinish) {
+    const cf = String(choiceFinish).toLowerCase().trim();
+    if (cf === 'length' || cf === 'max_tokens') return 'length';
+    if (cf === 'stop' || cf === 'end_turn') return 'stop';
+    if (cf === 'tool_calls' || cf === 'function_call') return 'tool_calls';
+    if (cf === 'content_filter' || cf === 'safety') return 'content_filter';
+  }
+
+  // Anthropic style
+  const anthropicStop = obj.delta?.stop_reason || obj.message?.stop_reason || obj.stop_reason;
+  if (anthropicStop) {
+    const as = String(anthropicStop).toLowerCase().trim();
+    if (as === 'max_tokens' || as === 'length') return 'length';
+    if (as === 'end_turn' || as === 'stop_sequence') return 'stop';
+    if (as === 'tool_use' || as === 'tool_calls') return 'tool_calls';
+  }
+
+  // Gemini style
+  const geminiFinish = obj.candidates?.[0]?.finishReason;
+  if (geminiFinish) {
+    const gf = String(geminiFinish).toUpperCase().trim();
+    if (gf === 'MAX_TOKENS' || gf === 'LENGTH') return 'length';
+    if (gf === 'STOP') return 'stop';
+    if (gf === 'SAFETY' || gf === 'RECITATION') return 'content_filter';
+  }
+
+  return null;
+}
+
 export async function sendChatRequest(
   providerId: string,
   modelId: string,
@@ -444,7 +503,9 @@ export async function sendChatRequest(
   tools?: GatewayToolSchema[],
   onToolCalls?: (calls: GatewayToolCall[]) => void,
   taskId?: string,
-  context?: 'chat' | 'debugger' | 'canvas' | string
+  context?: 'chat' | 'debugger' | 'canvas' | string,
+  continuationCount: number = 0,
+  onStatus?: (status: { type: string; content?: string; truncated?: boolean; actions?: string[] }) => void
 ): Promise<string> {
   const currentTaskId = taskId || chatLatencyTracker.getActiveTaskId() || `task_${Date.now()}`;
   chatLatencyTracker.setActiveTaskId(currentTaskId);
@@ -535,6 +596,26 @@ export async function sendChatRequest(
     norm === 'fcc-proxy' ||
     norm === 'fccproxy' ||
     providerId === 'fcc-proxy';
+
+  // Enterprise Policy Pre-Dispatch Enforcement
+  const providerPolicyCheck = policyEngine.assertAllowed({
+    type: 'provider_dispatch',
+    target: providerId
+  });
+  if (!providerPolicyCheck.allowed) {
+    throw new Error(`[POLICY BLOCKED] ${providerPolicyCheck.reason || 'Provider dispatch denied by enterprise policy'}`);
+  }
+
+  const isFreeTierRequest = isTyCodeFree || isFcc || isFccProxy || norm === 'openkilo' || norm === 'kilo' || (providerId || '').toLowerCase().includes('free');
+  if (isFreeTierRequest) {
+    const freeRoutingCheck = policyEngine.assertAllowed({
+      type: 'free_routing',
+      target: providerId
+    });
+    if (!freeRoutingCheck.allowed) {
+      throw new Error(`[POLICY BLOCKED] ${freeRoutingCheck.reason || 'Free-tier routing denied by enterprise policy'}`);
+    }
+  }
 
   // One-Key Premium (ZeroFriction-2): when a premium direct request is bridged
   // to OpenRouter, the wire payload must use OpenRouter's namespaced model id
@@ -643,6 +724,17 @@ export async function sendChatRequest(
     console.log(`[FCC][HYBRID] FCC route unavailable for "${modelId}"; applying FCC auto-tier fallback`);
     const nativeFallback = pickHandoffCandidate(allModels, 'fcc-proxy', modelId);
     config = nativeFallback || { modelId, name: modelId, url: KILO_URL, requiresKey: false, providerId: 'openkilo' };
+  }
+
+  // Enterprise policy check on resolved config provider
+  if (config && config.providerId && config.providerId.toLowerCase() !== (providerId || '').toLowerCase()) {
+    const resolvedCheck = policyEngine.assertAllowed({
+      type: 'provider_dispatch',
+      target: config.providerId
+    });
+    if (!resolvedCheck.allowed) {
+      throw new Error(`[POLICY BLOCKED] ${resolvedCheck.reason || 'Resolved provider denied by enterprise policy'}`);
+    }
   }
 
   // 2. Read key from secure vault at request time
@@ -851,6 +943,137 @@ export async function sendChatRequest(
   console.log(`[GATEWAY] Request URL: ${config.url}`);
   console.log(`[GATEWAY] Provider: ${providerId}, Model: ${modelId}`);
 
+  // Per-Layer Token Accounting: Phase 'request' (Hook 2)
+  const requestLayers: LayerToken[] = [];
+  let totalInputTokens = 0;
+  for (let i = 0; i < messages.length; i++) {
+    const m = messages[i];
+    const contentStr = typeof m === 'string' ? m : (typeof m?.content === 'string' ? m.content : JSON.stringify(m?.content ?? ''));
+    const role = (typeof m === 'string' ? 'user' : m?.role) || 'user';
+    const isLast = i === messages.length - 1;
+    if (role === 'system') {
+      const counted = countTokens(contentStr, 'markdown');
+      requestLayers.push({
+        name: 'system',
+        kind: 'system',
+        tokens: counted.tokens,
+        method: counted.method,
+        cached: true
+      });
+      totalInputTokens += counted.tokens;
+    } else if (isLast && role === 'user') {
+      const counted = countTokens(contentStr, 'prose');
+      requestLayers.push({
+        name: 'user',
+        kind: 'user',
+        tokens: counted.tokens,
+        method: counted.method,
+        cached: false
+      });
+      totalInputTokens += counted.tokens;
+    } else if (role === 'tool') {
+      const counted = countTokens(contentStr, 'json');
+      requestLayers.push({
+        name: `tool_result:${m.name || 'tool'}`,
+        kind: 'tool',
+        tokens: counted.tokens,
+        method: counted.method,
+        cached: false
+      });
+      totalInputTokens += counted.tokens;
+    } else {
+      const counted = countTokens(contentStr, 'prose');
+      requestLayers.push({
+        name: `history:${role}`,
+        kind: 'history',
+        tokens: counted.tokens,
+        method: counted.method,
+        cached: false
+      });
+      totalInputTokens += counted.tokens;
+    }
+  }
+
+  const billingType: 'free-tier' | 'local' | 'metered' = isFreeTierRequest
+    ? 'free-tier'
+    : (norm === 'local' || norm === 'ollama' || norm === 'vllm')
+    ? 'local'
+    : 'metered';
+
+  tokenAccountingLedger.record({
+    sessionId: currentTaskId,
+    taskId: currentTaskId,
+    provider: config?.providerId || providerId,
+    model: config?.modelId || modelId,
+    billing: billingType,
+    phase: 'request',
+    layers: requestLayers,
+    totals: {
+      input: totalInputTokens,
+      output: 0,
+      cachedInput: 0
+    },
+    hops: chatLatencyTracker.getHops(currentTaskId)
+  });
+
+  let usageInputTokens: number | undefined;
+  let usageOutputTokens: number | undefined;
+  let usageCachedTokens: number | undefined;
+
+  const extractProviderUsage = (json: any) => {
+    if (!json || typeof json !== 'object') return;
+    if (json.usage) {
+      if (typeof json.usage.prompt_tokens === 'number') usageInputTokens = json.usage.prompt_tokens;
+      if (typeof json.usage.completion_tokens === 'number') usageOutputTokens = json.usage.completion_tokens;
+      if (typeof json.usage.output_tokens === 'number') usageOutputTokens = json.usage.output_tokens;
+      if (typeof json.usage.input_tokens === 'number') usageInputTokens = json.usage.input_tokens;
+      if (typeof json.usage.prompt_tokens_details?.cached_tokens === 'number') {
+        usageCachedTokens = json.usage.prompt_tokens_details.cached_tokens;
+      }
+      if (typeof json.usage.cache_read_input_tokens === 'number') {
+        usageCachedTokens = json.usage.cache_read_input_tokens;
+      }
+    }
+    if (json.message?.usage) {
+      if (typeof json.message.usage.input_tokens === 'number') usageInputTokens = json.message.usage.input_tokens;
+      if (typeof json.message.usage.output_tokens === 'number') usageOutputTokens = json.message.usage.output_tokens;
+      if (typeof json.message.usage.cache_read_input_tokens === 'number') {
+        usageCachedTokens = json.message.usage.cache_read_input_tokens;
+      }
+    }
+  };
+
+  const recordResponseUsage = (responseText: string) => {
+    const finalOutput = usageOutputTokens !== undefined ? usageOutputTokens : countTokens(responseText, 'prose').tokens;
+    const finalInput = usageInputTokens !== undefined ? usageInputTokens : totalInputTokens;
+    const finalCached = usageCachedTokens ?? 0;
+
+    tokenAccountingLedger.record({
+      sessionId: currentTaskId,
+      taskId: currentTaskId,
+      provider: config?.providerId || providerId,
+      model: config?.modelId || modelId,
+      billing: billingType,
+      phase: 'response',
+      layers: [
+        {
+          name: 'response',
+          kind: 'response',
+          tokens: finalOutput,
+          method: usageOutputTokens !== undefined ? 'tiktoken' : 'calibrated',
+          cached: false,
+          cacheHit: finalCached > 0
+        }
+      ],
+      totals: {
+        input: finalInput,
+        output: finalOutput,
+        cachedInput: finalCached
+      },
+      hops: chatLatencyTracker.getHops(currentTaskId)
+    });
+  };
+
   // Construct payload
   // Vision support: user messages carrying pasted images (data URLs) are sent
   // as OpenAI-style multimodal content parts; Anthropic payloads get their own
@@ -1052,7 +1275,10 @@ export async function sendChatRequest(
             onReasoning,
             tools,
             onToolCalls,
-            currentTaskId
+            currentTaskId,
+            context,
+            continuationCount,
+            onStatus
           );
         } else {
           throw new Error(`[GATEWAY] All providers failed. Maximum handoffs reached.`);
@@ -1085,7 +1311,7 @@ export async function sendChatRequest(
           return m;
         });
         console.log('[GATEWAY] Reasoning content required: sanitizing history and retrying once.');
-        return await sendChatRequest(providerId, modelId, sanitized, stream, apiKey, onToken, handoffCount, abortSignal, onHandoff, onReasoning, tools, onToolCalls, currentTaskId);
+        return await sendChatRequest(providerId, modelId, sanitized, stream, apiKey, onToken, handoffCount, abortSignal, onHandoff, onReasoning, tools, onToolCalls, currentTaskId, context, continuationCount, onStatus);
       }
       throw new Error(`[GATEWAY] ${providerDisplay} API error (${response.status}): ${parsedMsg}`);
     }
@@ -1132,8 +1358,54 @@ export async function sendChatRequest(
     if (onToken) onToken(text);
     chatLatencyTracker.recordToken(currentTaskId, text);
     providerHealthMonitor.recordRequestOutcome(config.providerId || providerId, true, Math.max(1, Date.now() - requestStartMs));
+    extractProviderUsage(data);
+    const finish = parseFinishReason(data);
     flushToolCalls();
     chatLatencyTracker.recordStreamEnd(currentTaskId);
+    recordResponseUsage(text);
+
+    if (finish === 'length') {
+      if (continuationCount < 2) {
+        console.log(`[GATEWAY] Non-streaming response truncated by provider (finish_reason='length'). Auto-continuing (${continuationCount + 1}/2)...`);
+        onStatus?.({ type: 'status', content: 'Response hit token limit — continuing…' });
+        const continuationMessages = [
+          ...messages,
+          { role: 'assistant', content: text },
+          { role: 'user', content: 'Continue exactly where you stopped.' }
+        ];
+        try {
+          const continuationText = await sendChatRequest(
+            providerId,
+            modelId,
+            continuationMessages,
+            stream,
+            apiKey,
+            onToken,
+            handoffCount,
+            abortSignal,
+            onHandoff,
+            onReasoning,
+            tools,
+            onToolCalls,
+            currentTaskId,
+            context,
+            continuationCount + 1,
+            onStatus
+          );
+          return text + continuationText;
+        } catch (contErr) {
+          console.warn('[GATEWAY] Non-streaming auto-continuation failed:', contErr);
+        }
+      } else {
+        console.warn('[GATEWAY] Auto-continuations exhausted (2/2). Marking as truncated.');
+        onStatus?.({
+          type: 'done',
+          truncated: true,
+          actions: ['Continue']
+        });
+      }
+    }
+
     return text;
   }
 
@@ -1148,6 +1420,7 @@ export async function sendChatRequest(
     const decoder = new TextDecoder('utf-8');
     let buffer = '';
     let isFirstChunk = true;
+    let lastFinishReason: NormalizedFinishReason | null = null;
 
     try {
       while (true) {
@@ -1174,6 +1447,9 @@ export async function sendChatRequest(
 
             try {
               const json = JSON.parse(dataStr);
+              extractProviderUsage(json);
+              const finish = parseFinishReason(json);
+              if (finish) lastFinishReason = finish;
               // Reasoning models stream their chain-of-thought in a dedicated
               // delta field. Capture it for the reasoning_content echo but never
               // mix it into the assistant content stream.
@@ -1238,6 +1514,9 @@ export async function sendChatRequest(
           if (dataStr !== '[DONE]') {
             try {
               const json = JSON.parse(dataStr);
+              extractProviderUsage(json);
+              const finish = parseFinishReason(json);
+              if (finish) lastFinishReason = finish;
               const trailingReasoning = json.choices?.[0]?.delta?.reasoning_content ?? json.choices?.[0]?.delta?.reasoning;
               if (typeof trailingReasoning === 'string' && trailingReasoning) {
                 fullThought += trailingReasoning;
@@ -1274,6 +1553,8 @@ export async function sendChatRequest(
         let structured = false;
         try {
           const blob = JSON.parse(blobText) as any;
+          const finish = parseFinishReason(blob);
+          if (finish) lastFinishReason = finish;
           const candidate = blob?.choices?.[0]?.message?.content ?? blob?.choices?.[0]?.delta?.content ?? blob?.content?.[0]?.text;
           if (typeof candidate === 'string') {
             salvagedContent = candidate;
@@ -1323,6 +1604,50 @@ export async function sendChatRequest(
     providerHealthMonitor.recordRequestOutcome(config.providerId || providerId, true, Math.max(1, Date.now() - requestStartMs));
     flushToolCalls();
     chatLatencyTracker.recordStreamEnd(currentTaskId);
+    recordResponseUsage(fullText);
+
+    if (lastFinishReason === 'length') {
+      if (continuationCount < 2) {
+        console.log(`[GATEWAY] Streaming response truncated by provider (finish_reason='length'). Auto-continuing (${continuationCount + 1}/2)...`);
+        onStatus?.({ type: 'status', content: 'Response hit token limit — continuing…' });
+        const continuationMessages = [
+          ...messages,
+          { role: 'assistant', content: fullText },
+          { role: 'user', content: 'Continue exactly where you stopped.' }
+        ];
+        try {
+          const continuationText = await sendChatRequest(
+            providerId,
+            modelId,
+            continuationMessages,
+            stream,
+            apiKey,
+            onToken,
+            handoffCount,
+            abortSignal,
+            onHandoff,
+            onReasoning,
+            tools,
+            onToolCalls,
+            currentTaskId,
+            context,
+            continuationCount + 1,
+            onStatus
+          );
+          fullText += continuationText;
+        } catch (contErr) {
+          console.warn('[GATEWAY] Streaming auto-continuation failed:', contErr);
+        }
+      } else {
+        console.warn('[GATEWAY] Auto-continuations exhausted (2/2). Marking stream as truncated.');
+        onStatus?.({
+          type: 'done',
+          truncated: true,
+          actions: ['Continue']
+        });
+      }
+    }
+
     return fullText;
   } catch (err: any) {
     console.error('[GATEWAY] Exact Node.js fetch error:', err);
@@ -1370,7 +1695,10 @@ export async function sendChatRequest(
           onReasoning,
           tools,
           onToolCalls,
-          currentTaskId
+          currentTaskId,
+          context,
+          continuationCount,
+          onStatus
         );
       } else {
         chatLatencyTracker.recordStreamEnd(currentTaskId);

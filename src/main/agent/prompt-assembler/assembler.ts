@@ -24,13 +24,14 @@
 
 import crypto from 'crypto';
 import * as path from 'path';
-import type { RoleId, ModeId, TaskClass, ProjectProfile, ToolScope, AssemblyLayer, AssemblyResult, RolePreferences } from './schemas';
-import { AssemblyResultSchema } from './schemas';
+import { AssemblyResultSchema, type RoleId, type ModeId, type TaskClass, type ProjectProfile, type ToolScope, type AssemblyLayer, type AssemblyResult, type RolePreferences } from './schemas';
 import { ROLE_REGISTRY, mostRestrictiveScope } from './role-registry';
-import { MODE_CONTRACTS, modeScope } from './mode-contracts';
+import { MODE_CONTRACTS, getModeContract, modeScope } from './mode-contracts';
 import { classify, type ClassifyPrefs } from './intent-classifier';
 import { getRolePromptTier, tierTokens } from './compact-variants';
 import { recordAssembly } from './telemetry-ring';
+import { usageLedger } from '../../services/usage/usage-ledger';
+import type { LayerToken } from '../../services/usage/token-accounting';
 
 /* ---------------------------------------------------------------- Layer 0: Core (Pinned) */
 
@@ -199,6 +200,31 @@ export function assembleSystemPrompt(opts: AssembleOptions): AssembleOutput {
       assemblyMs: Date.now() - start
     };
     recordAssembly(hitResult);
+    try {
+      const layerTokens: LayerToken[] = hitResult.layers.map((l) => ({
+        name: l.label,
+        kind: 'system' as const,
+        tokens: l.tokens,
+        method: 'calibrated' as const,
+        cached: Boolean(l.pinned)
+      }));
+      usageLedger.record({
+        sessionId: taskId,
+        taskId,
+        provider: 'system',
+        model: 'prompt-assembler',
+        billing: 'local',
+        phase: 'assembly',
+        layers: layerTokens,
+        totals: {
+          input: hitResult.tokenEstimate,
+          output: 0,
+          cachedInput: hitResult.tokenEstimate
+        }
+      });
+    } catch {
+      // accounting must never block
+    }
     return {
       ...hitResult,
       scope
@@ -211,7 +237,7 @@ export function assembleSystemPrompt(opts: AssembleOptions): AssembleOutput {
   // Build raw blocks
   const coreBlock = LAYER0_ORIGINAL;
   const profileBlock = buildProfileBlock(profile, workspaceRoot);
-  const modeBlock = MODE_CONTRACTS[mode] || '';
+  const modeBlock = getModeContract(mode);
   const isQuestEligible = taskClass === 'Medium' || taskClass === 'Large' || taskClass === 'Epic';
   const questBlock = isQuestEligible ? QUEST_BLOCK : '';
   const envBlock = buildEnvBlock(envContext);
@@ -402,6 +428,37 @@ export function assembleSystemPrompt(opts: AssembleOptions): AssembleOutput {
   AssemblyResultSchema.parse(result);
   assemblyCache.set(cacheKey, { result, key: cacheKey });
   recordAssembly(result);
+
+  // Hook 1: Token Accounting (phase: 'assembly')
+  try {
+    const layerTokens: LayerToken[] = layers.map((l) => ({
+      name: l.label,
+      kind: 'system' as const,
+      tokens: l.tokens,
+      method: 'calibrated' as const,
+      cached: Boolean(l.pinned)
+    }));
+    const cachedTokens = layers
+      .filter((l) => l.pinned && !l.dropped)
+      .reduce((sum, l) => sum + l.tokens, 0);
+
+    usageLedger.record({
+      sessionId: taskId,
+      taskId,
+      provider: 'system',
+      model: 'prompt-assembler',
+      billing: 'local',
+      phase: 'assembly',
+      layers: layerTokens,
+      totals: {
+        input: totalTokens,
+        output: 0,
+        cachedInput: cachedTokens
+      }
+    });
+  } catch {
+    // accounting must never block assembly
+  }
 
   return {
     ...result,

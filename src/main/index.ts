@@ -134,6 +134,9 @@ import type { RouterUserPreferences } from '../shared/types/model-router';
 import { usageAnalytics } from './services/orchestration/usage-analytics';
 import { TelemetryManager } from './services/telemetry-manager';
 import type { TelemetryFeature } from '../preload/types';
+import { policyEngine } from './services/policy/policy-engine';
+import { usageLedger as tokenAccountingLedger } from './services/usage/usage-ledger';
+import { ledgerQueryService } from './services/usage/ledger-query';
 import { z } from 'zod';
 import { AgentStartTaskPayloadSchema } from '../shared/types/agent-events';
 
@@ -1366,6 +1369,69 @@ function registerIpcHandlers(): void {
     }
   });
 
+  // Enterprise Policy & Usage Ledger Handlers
+  ipcMain.handle('policy:get-effective', async () => {
+    try {
+      return { success: true, data: policyEngine.getEffectivePolicy() };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('policy:assert-allowed', async (_event, action: any) => {
+    try {
+      policyEngine.assertAllowed(action);
+      return { success: true };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('policy:reload', async (_event, workspacePath?: string) => {
+    try {
+      await policyEngine.reload(workspacePath);
+      return { success: true, data: policyEngine.getEffectivePolicy() };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('ledger:query', async (_event, filter?: any) => {
+    try {
+      const res = await ledgerQueryService.queryLedger(filter);
+      return { success: true, data: res };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('ledger:insights', async (_event, options?: any) => {
+    try {
+      const res = await ledgerQueryService.getInsights(options);
+      return { success: true, data: res };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('ledger:record', async (_event, record: any) => {
+    try {
+      tokenAccountingLedger.record(record);
+      return { success: true };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('ledger:flush', async () => {
+    try {
+      await tokenAccountingLedger.flush();
+      return { success: true };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
   // Phase 5.5: Smart Orchestration & Quota Management (Layer 6)
   ipcMain.handle('orchestration:get-quota-stats', async () => {
     try {
@@ -2479,6 +2545,34 @@ function registerIpcHandlers(): void {
     }
   });
 
+  // Enterprise Policy & Usage Ledger IPC Handlers
+  ipcMain.handle('policy:get-effective', async () => {
+    try {
+      const policy = policyEngine.getEffectivePolicy();
+      return { success: true, data: policy };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('ledger:query', async (_event, filter) => {
+    try {
+      const records = await ledgerQueryService.getRecords(filter);
+      const agg = await ledgerQueryService.aggregate(filter);
+      return { success: true, data: { records, summary: agg } };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('ledger:insights', async (_event, filter) => {
+    try {
+      const insights = await ledgerQueryService.getInsights(filter);
+      return { success: true, data: insights };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
 
   ipcMain.handle('pty:run-command', (_event, options: CommandExecutionOptions) => runCommand({
     ...options,
