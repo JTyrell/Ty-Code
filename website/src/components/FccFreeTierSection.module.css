@@ -1,0 +1,166 @@
+.section {
+  margin-top: clamp(48px, 6vw, 80px);
+  padding-top: clamp(32px, 4vw, 48px);
+  border-top: 1px solid var(--color-border);
+}
+
+.container {
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+.badgeRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.1);
+  padding: 4px 12px;
+  border-radius: 9999px;
+  border: 1px solid rgba(16, 185, 129, 0.25);
+}
+
+.tokenPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.1);
+  padding: 4px 12px;
+  border-radius: 9999px;
+  border: 1px solid rgba(56, 189, 248, 0.25);
+}
+
+.title {
+  font-size: clamp(28px, 3.4vw, 42px);
+  font-weight: 800;
+  line-height: 1.15;
+  color: var(--color-text-primary);
+  margin: 0 0 16px;
+  letter-spacing: -0.03em;
+}
+
+.introCopy {
+  font-size: clamp(15px, 1.4vw, 17px);
+  line-height: 1.7;
+  color: var(--color-text-secondary);
+  margin: 0 0 28px;
+}
+
+.diagramBox {
+  background: #0d1117;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-medium);
+  overflow: hidden;
+  margin-bottom: 32px;
+}
+
+.diagramHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: var(--color-surface-raised);
+  border-bottom: 1px solid var(--color-border);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.diagramPre {
+  margin: 0;
+  padding: 16px 20px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.4;
+  color: #a5f3fc;
+  overflow-x: auto;
+}
+
+.creditCard {
+  background: var(--color-surface);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: var(--radius-medium);
+  padding: clamp(20px, 3vw, 28px);
+  box-shadow: 0 8px 32px rgba(16, 185, 129, 0.05);
+}
+
+.creditHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.creditHeader h3 {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.forkIcon {
+  color: #10b981;
+}
+
+.creditBody {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+  margin: 0 0 14px;
+}
+
+.repoLinkRow {
+  margin-bottom: 14px;
+}
+
+.repoLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.08);
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  word-break: break-all;
+}
+
+.attributionQuote {
+  margin: 0 0 14px;
+  padding: 10px 16px;
+  border-left: 3px solid #10b981;
+  background: rgba(16, 185, 129, 0.08);
+  color: #86efac;
+  font-size: 12px;
+  font-family: var(--font-mono);
+  border-radius: 0 6px 6px 0;
+}
+
+.attributionQuote a {
+  color: #38bdf8;
+  text-decoration: underline;
+}
+
+.creditSummary {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--color-text-muted);
+  margin: 0;
+}

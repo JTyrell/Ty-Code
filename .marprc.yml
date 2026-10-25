@@ -1,0 +1,4 @@
+themeSet:
+  - docs/tycode.css
+options:
+  allowLocalFiles: true

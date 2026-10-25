@@ -9,9 +9,11 @@ export default function SiteHeader() {
         <span>Ty-Code</span>
       </a>
       <nav className={styles.nav} aria-label="Main navigation">
+        <a href="#features">Features</a>
+        <a href="#fcc-free-tier">1.3B+ Free Tier</a>
+        <a href="#compliance">Enterprise</a>
         <a href="#downloads"><ArrowDown aria-hidden="true" size={15} /> Downloads</a>
         <a href="#verify"><ShieldCheck aria-hidden="true" size={15} /> Verify</a>
-        <a href="#privacy">Privacy</a>
       </nav>
     </header>
   );

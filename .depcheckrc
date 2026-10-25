@@ -1,7 +1,9 @@
 {
   "ignores": [
+    "@marp-team/marp-cli",
     "@types/jsdom",
     "axe-core",
+    "html-to-docx",
     "jsdom"
   ]
 }
