@@ -82,12 +82,12 @@ export default function EnterpriseCompliance() {
           </div>
         </div>
         <a
-          href="https://github.com/JTyrell/Ty-Code/blob/main/docs/ENTERPRISE-WHITEPAPER.md"
+          href="/campaign/ENTERPRISE-WHITEPAPER.pdf"
           target="_blank"
           rel="noopener noreferrer"
           className={styles.whitepaperBtn}
         >
-          View Enterprise Architecture →
+          Download Whitepaper (PDF) →
         </a>
       </div>
     </section>

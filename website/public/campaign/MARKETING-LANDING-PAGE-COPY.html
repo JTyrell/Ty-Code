@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ty-Code: Marketing Landing Page Copy & Wireframe Guide</title>
+  <style>
+
+    :root {
+      --bg-dark: #0b0d10;
+      --surface-dark: #111827;
+      --surface-border: #1f2937;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --emerald: #10b981;
+      --emerald-glow: rgba(16, 185, 129, 0.15);
+      --cyan: #06b6d4;
+      --code-bg: #0d1117;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Inter, Arial, sans-serif;
+      font-size: 15px;
+      line-height: 1.65;
+      background-color: var(--bg-dark);
+      color: #e2e8f0;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .campaign-wrapper {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 48px 32px;
+    }
+
+    /* Typography Scale */
+    h1, h2, h3, h4, h5, h6 {
+      color: var(--text-main);
+      font-weight: 700;
+      line-height: 1.3;
+      margin-top: 1.8em;
+      margin-bottom: 0.6em;
+      break-after: avoid;
+      page-break-after: avoid;
+    }
+
+    h1 {
+      font-size: 2.2rem;
+      border-bottom: 1px solid var(--surface-border);
+      padding-bottom: 0.3em;
+    }
+
+    h2 {
+      font-size: 1.6rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      padding-bottom: 0.25em;
+    }
+
+    h3 { font-size: 1.25rem; }
+    h4 { font-size: 1.1rem; }
+
+    p, li {
+      color: #cbd5e1;
+      margin-bottom: 1em;
+    }
+
+    a {
+      color: #38bdf8;
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    strong {
+      color: #ffffff;
+      font-weight: 600;
+    }
+
+    hr {
+      border: 0;
+      height: 1px;
+      background: var(--surface-border);
+      margin: 2.5em 0;
+    }
+
+    /* Styled Tables */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 2em 0;
+      background: var(--surface-dark);
+      border: 1px solid var(--surface-border);
+      border-radius: 8px;
+      overflow: hidden;
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+
+    th, td {
+      padding: 12px 16px;
+      border: 1px solid var(--surface-border);
+      text-align: left;
+      font-size: 0.95rem;
+    }
+
+    th {
+      background-color: #1e293b;
+      color: #f8fafc;
+      font-weight: 600;
+    }
+
+    tr:nth-child(even) {
+      background-color: #0f172a;
+    }
+
+    /* Code Blocks and Monospace */
+    pre {
+      background-color: var(--code-bg);
+      border: 1px solid var(--surface-border);
+      border-radius: 8px;
+      padding: 16px 20px;
+      overflow-x: auto;
+      font-family: "JetBrains Mono", Consolas, "Courier New", monospace;
+      font-size: 0.9rem;
+      line-height: 1.5;
+      color: #e2e8f0;
+      margin: 1.8em 0;
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+
+    code {
+      font-family: "JetBrains Mono", Consolas, "Courier New", monospace;
+      font-size: 0.9em;
+      background-color: rgba(255, 255, 255, 0.08);
+      color: #38bdf8;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
+    pre code {
+      background: none;
+      color: inherit;
+      padding: 0;
+      border-radius: 0;
+    }
+
+    /* Blockquotes */
+    blockquote {
+      border-left: 4px solid var(--emerald);
+      background: var(--emerald-glow);
+      margin: 1.8em 0;
+      padding: 14px 22px;
+      border-radius: 0 8px 8px 0;
+      color: #94a3b8;
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+
+    blockquote p:last-child {
+      margin-bottom: 0;
+    }
+
+    /* Whitepaper Cover Page */
+    .page-cover {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+      min-height: 82vh;
+      border-bottom: 2px solid var(--emerald);
+      margin-bottom: 48px;
+      padding: 60px 20px;
+      break-after: page;
+      page-break-after: always;
+    }
+
+    .cover-shield-icon {
+      margin-bottom: 24px;
+    }
+
+    .cover-badge {
+      background: var(--emerald-glow);
+      color: var(--emerald);
+      padding: 6px 18px;
+      border-radius: 9999px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      border: 1px solid rgba(16, 185, 129, 0.35);
+      margin-bottom: 24px;
+    }
+
+    .cover-title {
+      font-size: 2.8rem;
+      font-weight: 800;
+      color: #ffffff;
+      line-height: 1.2;
+      margin: 0 0 16px 0;
+      border: none;
+      padding: 0;
+    }
+
+    .cover-subtitle {
+      font-size: 1.25rem;
+      color: var(--text-muted);
+      max-width: 720px;
+      margin: 0 0 36px 0;
+      line-height: 1.5;
+    }
+
+    .cover-divider {
+      width: 80px;
+      height: 3px;
+      background: var(--emerald);
+      margin-bottom: 36px;
+      border-radius: 2px;
+    }
+
+    .cover-meta-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 16px 36px;
+      background: var(--surface-dark);
+      border: 1px solid var(--surface-border);
+      padding: 20px 32px;
+      border-radius: 8px;
+      margin-bottom: 40px;
+      max-width: 580px;
+      width: 100%;
+      text-align: left;
+    }
+
+    .cover-meta-item {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .meta-label {
+      font-size: 0.72rem;
+      color: var(--text-dim);
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    .meta-value {
+      font-size: 0.95rem;
+      color: #f1f5f9;
+      font-weight: 600;
+      margin-top: 2px;
+    }
+
+    .cover-footer-note {
+      font-size: 0.85rem;
+      color: var(--emerald);
+      font-weight: 600;
+      letter-spacing: 0.04em;
+    }
+
+    /* Table of Contents */
+    .toc-container {
+      background: var(--surface-dark);
+      border: 1px solid var(--surface-border);
+      border-radius: 8px;
+      padding: 28px 36px;
+      margin: 36px 0 48px 0;
+      break-after: page;
+      page-break-after: always;
+    }
+
+    .toc-title {
+      font-size: 1.3rem;
+      font-weight: 700;
+      color: #ffffff;
+      margin-bottom: 18px;
+      border-bottom: 1px solid var(--surface-border);
+      padding-bottom: 10px;
+    }
+
+    .toc-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+
+    .toc-item-1 {
+      font-weight: 600;
+      margin-top: 12px;
+    }
+
+    .toc-item-1 a {
+      color: #f1f5f9;
+    }
+
+    .toc-item-2 {
+      font-weight: 400;
+      margin-left: 24px;
+      margin-top: 6px;
+    }
+
+    .toc-item-2 a {
+      color: #94a3b8;
+    }
+
+    /* Print-Specific Formatting */
+    @media print {
+      body {
+        background-color: #ffffff !important;
+        color: #111827 !important;
+        font-size: 10.5pt !important;
+        line-height: 1.55 !important;
+      }
+
+      .campaign-wrapper {
+        max-width: 100% !important;
+        padding: 0 !important;
+        margin: 0 !important;
+      }
+
+      h1, h2, h3, h4, h5, h6 {
+        color: #0f172a !important;
+        border-color: #e2e8f0 !important;
+        break-after: avoid !important;
+        page-break-after: avoid !important;
+      }
+
+      p, li {
+        color: #1f2937 !important;
+      }
+
+      a {
+        color: #0284c7 !important;
+        text-decoration: underline !important;
+      }
+
+      table {
+        background: #ffffff !important;
+        border: 1px solid #cbd5e1 !important;
+        break-inside: avoid !important;
+        page-break-inside: avoid !important;
+      }
+
+      th, td {
+        border: 1px solid #cbd5e1 !important;
+        color: #1f2937 !important;
+        padding: 8px 12px !important;
+      }
+
+      th {
+        background-color: #f1f5f9 !important;
+        color: #0f172a !important;
+      }
+
+      tr:nth-child(even) {
+        background-color: #f8fafc !important;
+      }
+
+      pre {
+        background-color: #f8fafc !important;
+        color: #0f172a !important;
+        border: 1px solid #cbd5e1 !important;
+        break-inside: avoid !important;
+        page-break-inside: avoid !important;
+      }
+
+      code {
+        background-color: #f1f5f9 !important;
+        color: #0369a1 !important;
+        border: 1px solid #e2e8f0 !important;
+      }
+
+      pre code {
+        border: none !important;
+        background: none !important;
+        color: inherit !important;
+      }
+
+      blockquote {
+        background-color: #f0fdf4 !important;
+        border-left: 4px solid #10b981 !important;
+        color: #166534 !important;
+        break-inside: avoid !important;
+        page-break-inside: avoid !important;
+      }
+
+      .page-cover {
+        min-height: 90vh !important;
+        border-bottom: none !important;
+        break-after: page !important;
+        page-break-after: always !important;
+      }
+
+      .cover-badge {
+        background: #ecfdf5 !important;
+        color: #059669 !important;
+        border-color: #6ee7b7 !important;
+      }
+
+      .cover-title {
+        color: #0f172a !important;
+      }
+
+      .cover-subtitle {
+        color: #475569 !important;
+      }
+
+      .cover-meta-grid {
+        background: #f8fafc !important;
+        border: 1px solid #cbd5e1 !important;
+      }
+
+      .meta-value {
+        color: #0f172a !important;
+      }
+
+      .toc-container {
+        background: #f8fafc !important;
+        border: 1px solid #cbd5e1 !important;
+        break-after: page !important;
+        page-break-after: always !important;
+      }
+
+      .toc-title {
+        color: #0f172a !important;
+        border-color: #cbd5e1 !important;
+      }
+
+      .toc-item-1 a {
+        color: #0f172a !important;
+      }
+
+      .toc-item-2 a {
+        color: #475569 !important;
+      }
+    }
+  
+  </style>
+</head>
+<body>
+  <div class="campaign-wrapper">
+
+
+    <main class="markdown-body">
+<h1 id="ty-code-marketing-website-complete-landing-page-copy-wireframe-guide">Ty-Code Marketing Website: Complete Landing Page Copy & Wireframe Guide</h1>
+<p><strong>Document:</strong> MKT-LANDING-2026-V1<br><strong>Target Audience:</strong> Individual Developers, Technical Founders, and Engineering Leads<br><strong>Tone:</strong> Punchy, high-conversion, modern B2B/developer SaaS, uncompromisingly privacy-centric<br><strong>Design Reference:</strong> Obsidian Cyber Dark Mode, glassmorphism card surfaces, emerald-green decode frontiers, and responsive interactive grids.</p>
+<hr>
+<h2 id="1-hero-section">1. Hero Section</h2>
+<blockquote>
+<p><strong>[UI / Visual Concept]</strong><br>Split-screen hero layout. Left: High-impact typography with glowing emerald badge pill and dual CTA buttons. Right: High-fidelity interactive desktop mockup showing the Monaco editor split with the M3E Canvas and Chat Sidecar, displaying real-time green Decode-Frontier streaming at 140 chars/sec into an Obsidian dark theme.</p>
+</blockquote>
+<h3 id="badge-pill">Badge Pill</h3>
+<p><code>⚡ v1.0.0 Stable Release • Zero-Telemetry Certified • 100% Local-First</code></p>
+<h3 id="h1-headline">H1 Headline</h3>
+<h1 id="local-first-ai-coding">Local-First AI Coding.</h1>
+<h1 id="zero-cloud-exfiltration">Zero Cloud Exfiltration.</h1>
+<h3 id="subheadline">Subheadline</h3>
+<p>Build at terminal velocity with an autonomous AI IDE that never phones home with your proprietary source code.<br>Powered by our intelligent <strong>Omni-Orchestrator</strong> and a unified <strong>ProviderGateway</strong> unlocking <strong>1.3B+ free tokens</strong> across 11 multi-harness runtimes.</p>
+<h3 id="primary-ctas">Primary CTAs</h3>
+<ul>
+<li><strong>[Button: Primary Emerald Glow]</strong> <code>Download for Free (v1.0.0)</code><br><em>Sub-label: Windows • macOS • Linux • No credit card required</em></li>
+<li><strong>[Button: Secondary Glass Border]</strong> <code>View Enterprise Architecture →</code><br><em>Direct link to technical whitepaper and audit traces</em></li>
+</ul>
+<h3 id="micro-social-proof-bar">Micro-Social Proof Bar</h3>
+<blockquote>
+<p><strong>[UI / Visual Concept]</strong><br>Monochrome SVG partner/ecosystem icons scrolling on infinite marquee: <code>Monaco Editor</code> • <code>Electron 30</code> • <code>TypeScript</code> • <code>OpenRouter</code> • <code>Ollama</code> • <code>Groq</code> • <code>Anthropic</code> • <code>free-claude-code</code>.<br><em>Trusted by security-conscious developers, fintech teams, and healthcare engineers worldwide.</em></p>
+</blockquote>
+<hr>
+<h2 id="2-the-problem-vs-the-ty-code-solution">2. The Problem vs. The Ty-Code Solution</h2>
+<blockquote>
+<p><strong>[UI / Visual Concept]</strong><br>High-contrast side-by-side comparison matrix. The left column uses muted crimson styling with warning icons representing legacy cloud-locked IDEs. The right column uses vibrant cyan/emerald accents and checkmarks highlighting Ty-Code&#39;s local-first architecture.</p>
+</blockquote>
+<h3 id="section-eyebrow">Section Eyebrow</h3>
+<p><code>THE STATE OF AI IDES</code></p>
+<h3 id="section-headline">Section Headline</h3>
+<h3 id="stop-renting-your-intelligence-own-your-development-stack">Stop Renting Your Intelligence. Own Your Development Stack.</h3>
+<table>
+<thead>
+<tr>
+<th align="left">Dimension</th>
+<th align="left">Legacy Cloud-Locked IDEs (Cursor, Copilot, Windsurf)</th>
+<th align="left">The Ty-Code Local-First Architecture</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left"><strong>Data Privacy &amp; Exfiltration</strong></td>
+<td align="left">Streams your proprietary code, ASTs, and file trees to multitenant SaaS servers.</td>
+<td align="left"><strong>Zero-Telemetry</strong>. All AST parsing, repo indexing, and terminal execution stay on your local hardware.</td>
+</tr>
+<tr>
+<td align="left"><strong>Pricing &amp; Cost Scaling</strong></td>
+<td align="left">$20/month subscription markups with artificial rate limits and surprise credit expirations.</td>
+<td align="left"><strong>Bring-Your-Own-Key (BYOK)</strong>. Pay wholesale model rates directly to providers, or run 100% free with local LLMs.</td>
+</tr>
+<tr>
+<td align="left"><strong>Credential Security</strong></td>
+<td align="left">Plaintext config files and browser cookies vulnerable to credential harvesters.</td>
+<td align="left"><strong>safeStorage Hardware Vault</strong>. Keys are cryptographically sealed by Windows DPAPI, macOS Keychain, and Linux Secret Service.</td>
+</tr>
+<tr>
+<td align="left"><strong>Model Availability</strong></td>
+<td align="left">Hard vendor lock-in; unannounced model downgrades and pipeline-breaking cloud outages.</td>
+<td align="left"><strong>Omni-Orchestrator</strong>. Health-aware dynamic failover automatically pivots across 100+ models without dropping context.</td>
+</tr>
+<tr>
+<td align="left"><strong>Network Autonomy</strong></td>
+<td align="left">Ceases functioning the moment internet connectivity drops or cloud APIs hit throttling.</td>
+<td align="left"><strong>Air-Gapped Capable</strong>. Runs completely offline with local Ollama, vLLM, or private VPC gateway endpoints.</td>
+</tr>
+</tbody></table>
+<hr>
+<h2 id="3-feature-showcase-the-why-ty-code-grid">3. Feature Showcase: The "Why Ty-Code" Grid</h2>
+<blockquote>
+<p><strong>[UI / Visual Concept]</strong><br>2x2 Bento-box layout. Each card features subtle backdrop blur (<code>backdrop-filter: blur(12px)</code>), interactive hover glow, an animated SVG micro-diagram, and a live code/UI snippet preview.</p>
+</blockquote>
+<h3 id="card-1-the-omni-orchestrator">Card 1: The Omni-Orchestrator</h3>
+<blockquote>
+<p><strong>[Icon: Interconnected Adaptive Circuit Nodes / 🌐]</strong><br><strong>[Visual: Animated routing diagram demonstrating dynamic failover from an overloaded provider to Groq in 48ms without conversation reset.]</strong></p>
+</blockquote>
+<h4 id="headline-intelligent-routing-that-never-drops-context">Headline: Intelligent Routing That Never Drops Context.</h4>
+<p>Tired of hit-the-wall HTTP 429 rate limits and random upstream provider outages mid-refactor?<br>Our <strong>Omni-Orchestrator</strong> dynamically monitors model health, token quotas, and latency across OpenRouter, Groq, Anthropic, and local Ollama.<br>If a provider hiccups, Ty-Code seamlessly resumes your turn on an alternate model with zero context loss.</p>
+<hr>
+<h3 id="card-2-the-context-engine-correction-memory">Card 2: The Context Engine & Correction Memory</h3>
+<blockquote>
+<p><strong>[Icon: Synaptic Memory Network / 🧠]</strong><br><strong>[Visual: A live notification toast: &quot;🧠 Rule learned: &#39;Never use var, use const&#39;. Applied across Chat, Debugger, and Canvas.&quot;]</strong></p>
+</blockquote>
+<h4 id="headline-the-ai-that-learns-your-stack-and-remembers-your-rules">Headline: The AI That Learns Your Stack and Remembers Your Rules.</h4>
+<p>Generic AI assistants forget your architectural preferences the moment you clear your chat history.<br>Ty-Code&#39;s <strong>Universal Correction Memory</strong> codifies every developer correction into a local Write-Ahead-Logged SQLite database.<br>Rules taught in the Chat Sidecar are instantly enforced by the architectural debugger and visual canvas in real time.</p>
+<hr>
+<h3 id="card-3-the-omni-debugger">Card 3: The Omni-Debugger</h3>
+<blockquote>
+<p><strong>[Icon: Diagnostic Shield with Layered Radar / 🔍]</strong><br><strong>[Visual: Split-panel showing real-time drift detection flagging a SQL injection risk and outdated pattern alongside an instant one-click patch preview.]</strong></p>
+</blockquote>
+<h4 id="headline-stack-aware-architectural-drift-detection">Headline: Stack-Aware Architectural Drift Detection.</h4>
+<p>Catch hidden bugs, schema mismatches, and compliance violations before your code ever hits pull request review.<br>The <strong>Omni-Debugger</strong> runs multi-threaded static workers to inspect file mutations against your workspace&#39;s actual architecture.<br>It identifies drift, isolates failing unit tests, and proposes atomic unified diffs you can verify with a single keystroke.</p>
+<hr>
+<h3 id="card-4-the-m3e-ui-canvas">Card 4: The M3E UI Canvas</h3>
+<blockquote>
+<p><strong>[Icon: Interactive Vector Artboard &amp; Pen Tool / 🎨]</strong><br><strong>[Visual: Live interactive split showing a React component visually manipulated on the canvas while clean Tailwind code updates synchronously in Monaco.]</strong></p>
+</blockquote>
+<h4 id="headline-project-native-visual-ui-generation">Headline: Project-Native Visual UI Generation.</h4>
+<p>Bridge the gap between frontend design and production code without leaving your IDE.<br>The <strong>M3E Canvas</strong> extracts your project&#39;s active design system tokens, Tailwind palettes, and CSS variables directly from source.<br>Design components visually on an interactive canvas and watch bidirectional code synchronize instantly with Monaco.</p>
+<hr>
+<h2 id="4-the-free-tier-open-source-foundation">4. The Free Tier & Open-Source Foundation</h2>
+<blockquote>
+<p><strong>[UI / Visual Concept]</strong><br>Full-width illuminated spotlight section. Rich gradient border (<code>from-indigo-500 via-purple-500 to-emerald-500</code>) framing a large badge and interactive token counter celebrating community-driven model supply.</p>
+</blockquote>
+<h3 id="section-eyebrow">Section Eyebrow</h3>
+<p><code>COMMUNITY POWERED • ZERO COST</code></p>
+<h3 id="section-headline">Section Headline</h3>
+<h3 id="powered-by-open-source-the-13b-token-free-tier">Powered by Open Source: The 1.3B+ Token Free Tier.</h3>
+<p>Great software should be accessible to every engineer on earth, not hidden behind an upfront paywall.<br>Ty-Code integrates multi-harness routing across 11 distinct development runtimes—including <strong>Claude Code, Codex, VS Code Extension APIs, Pi, OpenCode, Cline, and Aider</strong>.<br>This unlocks direct, zero-friction access to over <strong>1.3 billion combined monthly tokens</strong> across high-throughput open-weights supply pools.</p>
+<pre><code>+-----------------------------------------------------------------------------------------+
+|                                TY-CODE MULTI-HARNESS ROUTER                             |
+|  [Claude Code] [OpenCode] [Codex] [Pi] [VS Code] [Cline] [Aider] [Hermes] [DeepSeek]... |
++-----------------------------------------------------------------------------------------+
+                                             |
+                         Local Loopback Supply Adapter (Port 8765)
+                                             v
++-----------------------------------------------------------------------------------------+
+|                     FREE-CLAUDE-CODE (FCC) REVERSE PROXY SUPPLY LAYER                   |
+|  • Zero Canned Mock Replies           • Strict ToS-Safe Filter (Risky Web Stubs Blocked)|
+|  • High-Throughput Free Token Pool    • Automated Model Rotation &amp; Failover             |
++-----------------------------------------------------------------------------------------+
+</code></pre>
+<h3 id="open-source-credit-acknowledgement">🌟 Open-Source Credit & Acknowledgement</h3>
+<p>Ty-Code&#39;s multi-harness routing capability was deeply inspired by and architected upon the pioneering methodologies established by the <strong>free-claude-code (FCC)</strong> project:</p>
+<blockquote>
+<p><strong>Repository:</strong> <a href="https://github.com/Alishahryar1/free-claude-code.git">https://github.com/Alishahryar1/free-claude-code.git</a><br><strong>Permanent Licensing Attribution:</strong> <em>Free-model supply layer powered by free-claude-code (FCC) — AGPL-3.0 / MIT — <a href="https://github.com/Alishahryar1/free-claude-code">https://github.com/Alishahryar1/free-claude-code</a></em></p>
+</blockquote>
+<p>By adapting FCC&#39;s mock-free binary loopback architecture into Ty-Code’s hardened enterprise sandbox, we engineered a 100% Terms-of-Service-compliant, voice-supported, and session-aware supply layer.<br>This open-source breakthrough allows developers to build, test, and iterate without spending a single dollar on initial token budgets.<br>It stands as definitive proof that community-driven open innovation builds superior, more resilient developer tools than closed corporate gardens.</p>
+<hr>
+<h2 id="5-enterprise-security-compliance">5. Enterprise Security & Compliance</h2>
+<blockquote>
+<p><strong>[UI / Visual Concept]</strong><br>Enterprise security dashboard badge grid. Four cryptographic security shield cards detailing technical protocol compliance, alongside a downloadable link to our audited machine-readable test artifacts.</p>
+</blockquote>
+<h3 id="section-eyebrow">Section Eyebrow</h3>
+<p><code>ENTERPRISE GRADE DATA SOVEREIGNTY</code></p>
+<h3 id="section-headline">Section Headline</h3>
+<h3 id="engineered-for-healthcare-defense-and-regulated-engineering">Engineered for Healthcare, Defense, and Regulated Engineering.</h3>
+<pre><code>+------------------------+  +------------------------+  +------------------------+  +------------------------+
+|    🔒 Zero-Telemetry   |  |   🛡️ 3-Tier Sandbox    |  |     🏥 HIPAA &amp; SOC2    |  |    ✈️ Air-Gap Capable   |
+| No AST or code egress. |  | PTY env scrubbing &amp;    |  | Meets strict non-      |  | Fully offline with     |
+| Pure local indexing.   |  | path containment.      |  | exfiltration criteria. |  | local vLLM / Ollama.   |
++------------------------+  +------------------------+  +------------------------+  +------------------------+
+</code></pre>
+<h4 id="technical-security-pillars">Technical Security Pillars:</h4>
+<ol>
+<li><strong>HIPAA &amp; SOC2 Type II Alignment:</strong> Because Ty-Code never routes repository files to external indexing servers, your compliance perimeter remains strictly confined to your managed hardware.</li>
+<li><strong>Three-Tier Terminal Sandbox:</strong> Automated agent commands run under strict allowlist policies with aggressive PTY environment scrubbing that strips API keys and secrets before execution.</li>
+<li><strong>Hardware Credential Sealing:</strong> All credentials remain locked in operating-system secure storage (<strong>safeStorage</strong>), preventing token theft from compromised local dependencies.</li>
+<li><strong>Centralized MDM Governance:</strong> IT security teams can deploy global policy configurations via Microsoft Intune, Jamf, or GPO to enforce private LLM VPC endpoints across 1,000+ engineers.</li>
+</ol>
+<hr>
+<h2 id="6-call-to-action-ready-to-take-back-control">6. Call To Action: Ready to Take Back Control?</h2>
+<blockquote>
+<p><strong>[UI / Visual Concept]</strong><br>Immersive banner with animated subtle matrix code rain in the deep background. Prominent download buttons with automatic OS detection and copyable terminal quick-start commands.</p>
+</blockquote>
+<h3 id="headline">Headline</h3>
+<h3 id="code-at-full-speed-keep-your-intellectual-property-yours">Code at Full Speed. Keep Your Intellectual Property Yours.</h3>
+<p>Join thousands of senior architects, startup builders, and open-source developers who have switched to local-first AI engineering.<br>Install in seconds. No credit card required.</p>
+<ul>
+<li><strong>[Button: Download for Windows / macOS / Linux]</strong> <code>Get Ty-Code v1.0.0 Now</code></li>
+<li><strong>[Terminal Box: One-Liner Install]</strong><pre><code class="language-bash">git clone https://github.com/JTyrell/Ty-Code.git &amp;&amp; cd Ty-Code &amp;&amp; npm ci &amp;&amp; npm run dev
+</code></pre>
+</li>
+</ul>
+<hr>
+<h2 id="7-website-footer">7. Website Footer</h2>
+<blockquote>
+<p><strong>[UI / Visual Concept]</strong><br>Clean, structured four-column developer footer with copyright, security whitepaper links, GitHub repository stats, and permanent open-source attribution.</p>
+</blockquote>
+<h3 id="column-1-product">Column 1: Product</h3>
+<ul>
+<li><a href="https://github.com/JTyrell/Ty-Code/releases/tag/v1.0.0">Download Binaries</a></li>
+<li><a href="./ENTERPRISE-WHITEPAPER.md">Enterprise Whitepaper</a></li>
+<li><a href="https://github.com/JTyrell/Ty-Code/releases">Release Notes &amp; Roadmap</a></li>
+<li><a href="../README.md">Documentation &amp; Quickstart</a></li>
+</ul>
+<h3 id="column-2-security-architecture">Column 2: Security & Architecture</h3>
+<ul>
+<li><a href="./ENTERPRISE-WHITEPAPER.md#1-threat-model--security-architecture">Zero-Telemetry Model</a></li>
+<li><a href="./EXTENSION-SECURITY-MODEL.md">Terminal Sandbox Policy</a></li>
+<li><a href="./traces/">Verified Audit Traces</a></li>
+<li><a href="../SECURITY.md">Bug Bounty &amp; Vulnerability Disclosure</a></li>
+</ul>
+<h3 id="column-3-open-source-community">Column 3: Open Source & Community</h3>
+<ul>
+<li><a href="https://github.com/JTyrell/Ty-Code">GitHub Repository</a></li>
+<li><a href="https://discord.gg/tycode">Discord Developer Community</a></li>
+<li><a href="../CONTRIBUTING.md">Contributing Guidelines</a></li>
+<li><a href="../LICENSE">MIT License</a></li>
+</ul>
+<h3 id="bottom-bar-standing-attribution">Bottom Bar & Standing Attribution</h3>
+<blockquote>
+<p><strong>Built on the shoulders of giants.</strong><br><em>Free-model supply layer powered by free-claude-code (FCC) — AGPL-3.0 / MIT — <a href="https://github.com/Alishahryar1/free-claude-code">https://github.com/Alishahryar1/free-claude-code</a>.</em><br>© 2026 Ty-Code Project. Distributed under the MIT License. Data sovereignty guaranteed.</p>
+</blockquote>
+
+    </main>
+  </div>
+</body>
+</html>

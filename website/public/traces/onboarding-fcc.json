@@ -1,0 +1,234 @@
+{
+  "schemaVersion": "1.0.0",
+  "phase": "FCC-2",
+  "timestamp": "2026-10-17T04:05:34.171Z",
+  "gitCommit": "bb0d31db5e37962045ecce162798077b40167a4c",
+  "command": "node scripts/verify-onboarding-fcc.mjs",
+  "suite": "FCC-First Onboarding with Subscription + Harness Import",
+  "stats": {
+    "totalChecks": 37,
+    "passedChecks": 37,
+    "failedChecks": 0,
+    "durationMs": 140.023
+  },
+  "flowMetrics": {
+    "totalPathDurationMs": 0.6683000000000163,
+    "thresholdMs": 90000,
+    "zeroKeysPasted": true,
+    "keysPastedCount": 0,
+    "stepsValidated": [
+      "welcome",
+      "auto_setup",
+      "subscriptions",
+      "harness_import",
+      "summary"
+    ]
+  },
+  "harnessImport": {
+    "detectedToolConfigsCount": 4,
+    "supportedHarnessesCount": 11,
+    "plantedClaudeDetected": true,
+    "importedModel": "claude-3-5-sonnet",
+    "importedHarness": "claude-code",
+    "credentialsSealedInSafeStorage": true
+  },
+  "skipPath": {
+    "honestLimitsConfirmed": true,
+    "rateLimitPerHour": 20,
+    "statusBarChipVerified": true,
+    "reRunnableFromSettings": true
+  },
+  "attribution": {
+    "verbatimCreditString": "Free-model supply layer powered by free-claude-code (FCC) — AGPL-3.0 / MIT — https://github.com/Alishahryar1/free-claude-code",
+    "visibleInSplash": true,
+    "visibleInSummary": true,
+    "licenseAttribution": "AGPL-3.0 / MIT"
+  },
+  "checks": [
+    {
+      "test": "HarnessImporter lists all 11 FCC-supported coding agent harnesses",
+      "passed": true,
+      "details": "Found 11 registered harnesses"
+    },
+    {
+      "test": "Supported harness registered: claude-code",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Supported harness registered: codex",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Supported harness registered: opencode",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Supported harness registered: pi",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Supported harness registered: cline",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Supported harness registered: aider",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Supported harness registered: hermes",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Supported harness registered: deepseek",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Supported harness registered: grok-build",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Supported harness registered: muse-code",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Supported harness registered: vscode-chat",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "HarnessImporter detects all 4 planted CLI configs (~/.claude, ~/.codex, ~/.config/opencode, ~/.aider)",
+      "passed": true,
+      "details": "Detected 4 tool configs"
+    },
+    {
+      "test": "Planted ~/.claude config detected successfully",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Planted ~/.claude preferred model extracted: claude-3-5-sonnet",
+      "passed": true,
+      "details": "Extracted model: claude-3-5-sonnet"
+    },
+    {
+      "test": "Planted ~/.claude credentials presence detected without leaking plaintext in summary",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "HarnessImporter imports planted Claude preferences into safeStorage",
+      "passed": true,
+      "details": "Imported harness: claude-code, model: claude-3-5-sonnet"
+    },
+    {
+      "test": "Imported model matches planted preference (claude-3-5-sonnet)",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Imported harness matches claude-code agent type",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Imported credentials saved to operating system safeStorage under anthropic",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Embedded supply catalog verified",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Full onboarding path completes in < 90 seconds",
+      "passed": true,
+      "details": "Elapsed time: 0.67ms (threshold: 90,000ms)"
+    },
+    {
+      "test": "Full path completes with ZERO API keys pasted or typed",
+      "passed": true,
+      "details": "Keys pasted count: 0"
+    },
+    {
+      "test": "Welcome step includes non-trapping action: \"Skip (Anonymous Only)\"",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Skip button triggers skipToAnonymous() immediately",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Anonymous tier enforces and displays honest rate limit (20 req/hour)",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "StatusBar renders \"Enable full free supply\" chip when anonymous tier is active",
+      "passed": true,
+      "details": "Confirmed in StatusBar.tsx"
+    },
+    {
+      "test": "StatusBar chip launches setup wizard on click",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "SettingsModal provides re-run wizard button (#settings-re-run-wizard-btn)",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Welcome step contains exact verbatim content string",
+      "passed": true,
+      "details": "Found 61 providers, 1.3B+ free tokens/month text"
+    },
+    {
+      "test": "Splash screen renders verbatim FCC credit line",
+      "passed": true,
+      "details": "Found credit string with AGPL-3.0 / MIT in splash"
+    },
+    {
+      "test": "Summary step renders verbatim FCC credit line",
+      "passed": true,
+      "details": "Found credit string with AGPL-3.0 / MIT in summary"
+    },
+    {
+      "test": "Summary step renders supply active line with model count, subscriptions, and harnesses",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Welcome step includes \"Set Up Free Supply\" button",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Subscriptions step offers \"GitHub Copilot (free for students/OSS)\"",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Subscriptions step offers \"ChatGPT/OpenAI\"",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Summary step provides \"Start Coding\" completion button",
+      "passed": true,
+      "details": "Verified successfully."
+    }
+  ]
+}

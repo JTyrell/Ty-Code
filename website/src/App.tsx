@@ -1,9 +1,12 @@
 import { useEffect } from 'react';
+import CampaignDeliverables from './components/CampaignDeliverables';
 import DownloadSection from './components/DownloadSection';
 import EnterpriseCompliance from './components/EnterpriseCompliance';
 import FccFreeTierSection from './components/FccFreeTierSection';
 import FeatureGrid from './components/FeatureGrid';
+import FinalCta from './components/FinalCta';
 import HowToVerify from './components/HowToVerify';
+import PartnerMarquee from './components/PartnerMarquee';
 import PrivacySummary from './components/PrivacySummary';
 import ProblemSolution from './components/ProblemSolution';
 import SiteFooter from './components/SiteFooter';
@@ -36,18 +39,17 @@ export default function App() {
                 Download for Free (v1.0.0)
               </a>
               <a
-                href="https://github.com/JTyrell/Ty-Code/blob/main/docs/ENTERPRISE-WHITEPAPER.md"
-                target="_blank"
-                rel="noopener noreferrer"
+                href="#briefings"
                 className={styles.secondaryCta}
               >
-                View Enterprise Architecture →
+                Executive Briefings & Whitepaper →
               </a>
             </div>
             <div className={styles.localNote}>
               <span className={styles.localMark} aria-hidden="true" />
               <span>Hardware safeStorage <i /> Air-gapped BYOK <i /> Windows • macOS • Linux</span>
             </div>
+            <PartnerMarquee />
           </section>
           <DownloadSection />
         </div>
@@ -56,8 +58,10 @@ export default function App() {
         <FeatureGrid />
         <FccFreeTierSection />
         <EnterpriseCompliance />
+        <CampaignDeliverables />
         <HowToVerify />
         <PrivacySummary />
+        <FinalCta />
       </main>
       <div className={styles.footerWrap}><SiteFooter /></div>
     </div>

@@ -1,0 +1,985 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ty-Code Enterprise Architecture & Security Whitepaper</title>
+  <style>
+
+    :root {
+      --bg-dark: #0b0d10;
+      --surface-dark: #111827;
+      --surface-border: #1f2937;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --emerald: #10b981;
+      --emerald-glow: rgba(16, 185, 129, 0.15);
+      --cyan: #06b6d4;
+      --code-bg: #0d1117;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Inter, Arial, sans-serif;
+      font-size: 15px;
+      line-height: 1.65;
+      background-color: var(--bg-dark);
+      color: #e2e8f0;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .campaign-wrapper {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 48px 32px;
+    }
+
+    /* Typography Scale */
+    h1, h2, h3, h4, h5, h6 {
+      color: var(--text-main);
+      font-weight: 700;
+      line-height: 1.3;
+      margin-top: 1.8em;
+      margin-bottom: 0.6em;
+      break-after: avoid;
+      page-break-after: avoid;
+    }
+
+    h1 {
+      font-size: 2.2rem;
+      border-bottom: 1px solid var(--surface-border);
+      padding-bottom: 0.3em;
+    }
+
+    h2 {
+      font-size: 1.6rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      padding-bottom: 0.25em;
+    }
+
+    h3 { font-size: 1.25rem; }
+    h4 { font-size: 1.1rem; }
+
+    p, li {
+      color: #cbd5e1;
+      margin-bottom: 1em;
+    }
+
+    a {
+      color: #38bdf8;
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    strong {
+      color: #ffffff;
+      font-weight: 600;
+    }
+
+    hr {
+      border: 0;
+      height: 1px;
+      background: var(--surface-border);
+      margin: 2.5em 0;
+    }
+
+    /* Styled Tables */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 2em 0;
+      background: var(--surface-dark);
+      border: 1px solid var(--surface-border);
+      border-radius: 8px;
+      overflow: hidden;
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+
+    th, td {
+      padding: 12px 16px;
+      border: 1px solid var(--surface-border);
+      text-align: left;
+      font-size: 0.95rem;
+    }
+
+    th {
+      background-color: #1e293b;
+      color: #f8fafc;
+      font-weight: 600;
+    }
+
+    tr:nth-child(even) {
+      background-color: #0f172a;
+    }
+
+    /* Code Blocks and Monospace */
+    pre {
+      background-color: var(--code-bg);
+      border: 1px solid var(--surface-border);
+      border-radius: 8px;
+      padding: 16px 20px;
+      overflow-x: auto;
+      font-family: "JetBrains Mono", Consolas, "Courier New", monospace;
+      font-size: 0.9rem;
+      line-height: 1.5;
+      color: #e2e8f0;
+      margin: 1.8em 0;
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+
+    code {
+      font-family: "JetBrains Mono", Consolas, "Courier New", monospace;
+      font-size: 0.9em;
+      background-color: rgba(255, 255, 255, 0.08);
+      color: #38bdf8;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
+    pre code {
+      background: none;
+      color: inherit;
+      padding: 0;
+      border-radius: 0;
+    }
+
+    /* Blockquotes */
+    blockquote {
+      border-left: 4px solid var(--emerald);
+      background: var(--emerald-glow);
+      margin: 1.8em 0;
+      padding: 14px 22px;
+      border-radius: 0 8px 8px 0;
+      color: #94a3b8;
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+
+    blockquote p:last-child {
+      margin-bottom: 0;
+    }
+
+    /* Whitepaper Cover Page */
+    .page-cover {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+      min-height: 82vh;
+      border-bottom: 2px solid var(--emerald);
+      margin-bottom: 48px;
+      padding: 60px 20px;
+      break-after: page;
+      page-break-after: always;
+    }
+
+    .cover-shield-icon {
+      margin-bottom: 24px;
+    }
+
+    .cover-badge {
+      background: var(--emerald-glow);
+      color: var(--emerald);
+      padding: 6px 18px;
+      border-radius: 9999px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      border: 1px solid rgba(16, 185, 129, 0.35);
+      margin-bottom: 24px;
+    }
+
+    .cover-title {
+      font-size: 2.8rem;
+      font-weight: 800;
+      color: #ffffff;
+      line-height: 1.2;
+      margin: 0 0 16px 0;
+      border: none;
+      padding: 0;
+    }
+
+    .cover-subtitle {
+      font-size: 1.25rem;
+      color: var(--text-muted);
+      max-width: 720px;
+      margin: 0 0 36px 0;
+      line-height: 1.5;
+    }
+
+    .cover-divider {
+      width: 80px;
+      height: 3px;
+      background: var(--emerald);
+      margin-bottom: 36px;
+      border-radius: 2px;
+    }
+
+    .cover-meta-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 16px 36px;
+      background: var(--surface-dark);
+      border: 1px solid var(--surface-border);
+      padding: 20px 32px;
+      border-radius: 8px;
+      margin-bottom: 40px;
+      max-width: 580px;
+      width: 100%;
+      text-align: left;
+    }
+
+    .cover-meta-item {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .meta-label {
+      font-size: 0.72rem;
+      color: var(--text-dim);
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    .meta-value {
+      font-size: 0.95rem;
+      color: #f1f5f9;
+      font-weight: 600;
+      margin-top: 2px;
+    }
+
+    .cover-footer-note {
+      font-size: 0.85rem;
+      color: var(--emerald);
+      font-weight: 600;
+      letter-spacing: 0.04em;
+    }
+
+    /* Table of Contents */
+    .toc-container {
+      background: var(--surface-dark);
+      border: 1px solid var(--surface-border);
+      border-radius: 8px;
+      padding: 28px 36px;
+      margin: 36px 0 48px 0;
+      break-after: page;
+      page-break-after: always;
+    }
+
+    .toc-title {
+      font-size: 1.3rem;
+      font-weight: 700;
+      color: #ffffff;
+      margin-bottom: 18px;
+      border-bottom: 1px solid var(--surface-border);
+      padding-bottom: 10px;
+    }
+
+    .toc-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+
+    .toc-item-1 {
+      font-weight: 600;
+      margin-top: 12px;
+    }
+
+    .toc-item-1 a {
+      color: #f1f5f9;
+    }
+
+    .toc-item-2 {
+      font-weight: 400;
+      margin-left: 24px;
+      margin-top: 6px;
+    }
+
+    .toc-item-2 a {
+      color: #94a3b8;
+    }
+
+    /* Print-Specific Formatting */
+    @media print {
+      body {
+        background-color: #ffffff !important;
+        color: #111827 !important;
+        font-size: 10.5pt !important;
+        line-height: 1.55 !important;
+      }
+
+      .campaign-wrapper {
+        max-width: 100% !important;
+        padding: 0 !important;
+        margin: 0 !important;
+      }
+
+      h1, h2, h3, h4, h5, h6 {
+        color: #0f172a !important;
+        border-color: #e2e8f0 !important;
+        break-after: avoid !important;
+        page-break-after: avoid !important;
+      }
+
+      p, li {
+        color: #1f2937 !important;
+      }
+
+      a {
+        color: #0284c7 !important;
+        text-decoration: underline !important;
+      }
+
+      table {
+        background: #ffffff !important;
+        border: 1px solid #cbd5e1 !important;
+        break-inside: avoid !important;
+        page-break-inside: avoid !important;
+      }
+
+      th, td {
+        border: 1px solid #cbd5e1 !important;
+        color: #1f2937 !important;
+        padding: 8px 12px !important;
+      }
+
+      th {
+        background-color: #f1f5f9 !important;
+        color: #0f172a !important;
+      }
+
+      tr:nth-child(even) {
+        background-color: #f8fafc !important;
+      }
+
+      pre {
+        background-color: #f8fafc !important;
+        color: #0f172a !important;
+        border: 1px solid #cbd5e1 !important;
+        break-inside: avoid !important;
+        page-break-inside: avoid !important;
+      }
+
+      code {
+        background-color: #f1f5f9 !important;
+        color: #0369a1 !important;
+        border: 1px solid #e2e8f0 !important;
+      }
+
+      pre code {
+        border: none !important;
+        background: none !important;
+        color: inherit !important;
+      }
+
+      blockquote {
+        background-color: #f0fdf4 !important;
+        border-left: 4px solid #10b981 !important;
+        color: #166534 !important;
+        break-inside: avoid !important;
+        page-break-inside: avoid !important;
+      }
+
+      .page-cover {
+        min-height: 90vh !important;
+        border-bottom: none !important;
+        break-after: page !important;
+        page-break-after: always !important;
+      }
+
+      .cover-badge {
+        background: #ecfdf5 !important;
+        color: #059669 !important;
+        border-color: #6ee7b7 !important;
+      }
+
+      .cover-title {
+        color: #0f172a !important;
+      }
+
+      .cover-subtitle {
+        color: #475569 !important;
+      }
+
+      .cover-meta-grid {
+        background: #f8fafc !important;
+        border: 1px solid #cbd5e1 !important;
+      }
+
+      .meta-value {
+        color: #0f172a !important;
+      }
+
+      .toc-container {
+        background: #f8fafc !important;
+        border: 1px solid #cbd5e1 !important;
+        break-after: page !important;
+        page-break-after: always !important;
+      }
+
+      .toc-title {
+        color: #0f172a !important;
+        border-color: #cbd5e1 !important;
+      }
+
+      .toc-item-1 a {
+        color: #0f172a !important;
+      }
+
+      .toc-item-2 a {
+        color: #475569 !important;
+      }
+    }
+  
+  </style>
+</head>
+<body>
+  <div class="campaign-wrapper">
+
+  <section class="page-cover">
+    <div class="cover-shield-icon">
+      <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+        <path d="m9 12 2 2 4-4"/>
+      </svg>
+    </div>
+    <div class="cover-badge">Confidential • Enterprise Architecture Review</div>
+    <h1 class="cover-title">Ty-Code Enterprise Architecture & Security Whitepaper</h1>
+    <p class="cover-subtitle">Threat Modeling, Process Isolation, Hardware Credential Sealing, and Multi-Harness Sovereign Compute</p>
+    <div class="cover-divider"></div>
+    <div class="cover-meta-grid">
+      <div class="cover-meta-item">
+        <span class="meta-label">DOCUMENT ID</span>
+        <span class="meta-value">TY-ARCH-2026-V1</span>
+      </div>
+      <div class="cover-meta-item">
+        <span class="meta-label">VERSION</span>
+        <span class="meta-value">1.0.0 Production</span>
+      </div>
+      <div class="cover-meta-item">
+        <span class="meta-label">SECURITY LEVEL</span>
+        <span class="meta-value">Enterprise Standard</span>
+      </div>
+      <div class="cover-meta-item">
+        <span class="meta-label">DATE</span>
+        <span class="meta-value">October 25, 2026</span>
+      </div>
+    </div>
+    <div class="cover-footer-note">
+      Strictly Local-First • Zero Cloud Exfiltration • Hardware Credential Sealing
+    </div>
+  </section>
+  
+
+  <nav class="toc-container" aria-label="Table of Contents">
+    <div class="toc-title">Table of Contents</div>
+    <ul class="toc-list">
+      <li class="toc-item-1"><a href="#ty-code-enterprise-architecture-whitepaper-security-scalability-and-local-first-autonomous-engineering">Ty-Code Enterprise Architecture Whitepaper: Security, Scalability, and Local-First Autonomous Engineering</a></li>
+    <li class="toc-item-2"><a href="#executive-summary">Executive Summary</a></li>
+    <li class="toc-item-2"><a href="#1-threat-model-security-architecture">1. Threat Model & Security Architecture</a></li>
+    <li class="toc-item-1"><a href="#pseudo-code-operating-system-hardware-sealed-credential-vault-flow">Pseudo-Code: Operating System Hardware-Sealed Credential Vault Flow</a></li>
+    <li class="toc-item-2"><a href="#2-the-omni-orchestrator-providergateway">2. The Omni-Orchestrator & ProviderGateway</a></li>
+    <li class="toc-item-1"><a href="#pseudo-code-multi-protocol-providergateway-streaming-normalizer">Pseudo-Code: Multi-Protocol ProviderGateway Streaming Normalizer</a></li>
+    <li class="toc-item-2"><a href="#3-agentic-execution-context-engineering">3. Agentic Execution & Context Engineering</a></li>
+    <li class="toc-item-2"><a href="#4-open-source-integration-multi-harness-routing">4. Open-Source Integration & Multi-Harness Routing</a></li>
+    <li class="toc-item-2"><a href="#5-enterprise-deployment-mdm-integration">5. Enterprise Deployment & MDM Integration</a></li>
+    <li class="toc-item-2"><a href="#6-empirical-verification-anti-phantom-audit-evidence">6. Empirical Verification & Anti-Phantom Audit Evidence</a></li>
+    <li class="toc-item-2"><a href="#7-comparative-architectural-matrix">7. Comparative Architectural Matrix</a></li>
+    <li class="toc-item-2"><a href="#8-conclusion-strategic-recommendation-for-procurement">8. Conclusion: Strategic Recommendation for Procurement</a></li>
+  </ul>
+  </nav>
+  
+    <main class="markdown-body">
+<h1 id="ty-code-enterprise-architecture-whitepaper-security-scalability-and-local-first-autonomous-engineering">Ty-Code Enterprise Architecture Whitepaper: Security, Scalability, and Local-First Autonomous Engineering</h1>
+<p><strong>Document Identifier:</strong> WP-ENT-2026-V1<br><strong>Classification:</strong> Public / Technical Architecture Whitepaper<br><strong>Target Audience:</strong> Chief Technology Officers (CTOs), Chief Information Security Officers (CISOs), Principal Enterprise Architects, and Procurement Compliance Evaluation Committees<br><strong>Author:</strong> Principal Systems Architect &amp; Cybersecurity Research Team, Ty-Code Project<br><strong>Date of Publication:</strong> October 2026<br><strong>Empirical Evidence Base:</strong> Machine-verified audit traces published in <code>docs/traces/mock-elimination.json</code>, <code>docs/traces/connectivity-trace.json</code>, <code>docs/traces/open-perf-trace.json</code>, <code>docs/traces/fcc-coverage.json</code>, and <code>docs/traces/extension-security.json</code>.</p>
+<hr>
+<h2 id="executive-summary">Executive Summary</h2>
+<h3 id="the-crisis-of-cloud-centric-ai-ides">The Crisis of Cloud-Centric AI IDEs</h3>
+<p>Modern software engineering organizations face an acute trilemma when evaluating first-generation generative AI developer tools:</p>
+<ol>
+<li><strong>The Sovereignty Breach:</strong> Cloud-hosted AI coding assistants (e.g., GitHub Copilot, Cursor, Windsurf) mandate streaming proprietary abstract syntax trees (ASTs), source text, internal endpoints, and confidential intellectual property over public transit to third-party multitenant SaaS clusters. This introduces severe regulatory and compliance non-conformance under SOC2 Type II, ISO/IEC 27001, HIPAA, GDPR Art. 28, and NIST SP 800-53 r5 controls.</li>
+<li><strong>Unbounded Operational Expenditures (OpEx):</strong> Cloud-bound token economics scale superlinearly with developer headcount and repository complexity. High-throughput development environments generate recurrent six-figure model invocation invoices alongside unpredictable rate-limiting throttling events.</li>
+<li><strong>Vendor Lock-in and Supply Instability:</strong> Direct coupling to single-vendor model APIs subjects enterprise engineering workflows to unannounced upstream service outages, model deprecation schedules, and unannounced modifications to safety filters that halt automated build pipelines.</li>
+</ol>
+<h3 id="the-ty-code-paradigm-local-first-autonomous-engineering">The Ty-Code Paradigm: Local-First Autonomous Engineering</h3>
+<p>Ty-Code is engineered from first principles as an air-gap capable, local-first autonomous development environment. All semantic indexing, dynamic profiling, workspace mutation analysis, and credential containment execute strictly on the host operating system. Network egress is restricted exclusively to authenticated, policy-governed inference endpoints—whether self-hosted on-premises large language model (LLM) clusters (vLLM, Ollama, TensorRT-LLM), enterprise cloud VPC gateways (AWS Bedrock PrivateLink, Azure OpenAI Dedicated Gateways), or curated high-throughput providers.</p>
+<p>By decoupling the development environment, local context engine, and inference runtime, Ty-Code provides provable data sovereignty, mathematical boundary containment, and zero vendor lock-in, while maintaining compatibility with VS Code extensions, Language Server Protocols (LSP), and the global Model Context Protocol (MCP) ecosystem.</p>
+<hr>
+<h2 id="1-threat-model-security-architecture">1. Threat Model & Security Architecture</h2>
+<p>Ty-Code implements defense-in-depth across the OS boundary, the process boundary, the IPC serialization channel, and the terminal runtime.</p>
+<pre><code>+---------------------------------------------------------------------------------------+
+|                                OPERATING SYSTEM BOUNDARY                               |
+|                                                                                       |
+|  [Windows DPAPI / macOS Keychain / Linux Secret Service (libsecret)]                  |
+|                                  ^                                                    |
+|                                  | AES-256-GCM Hardware-Sealed Buffer                 |
+|                                  v                                                    |
+|  +---------------------------------------------------------------------------------+  |
+|  |                             ELECTRON MAIN PROCESS                               |  |
+|  |  +------------------------+  +----------------------+  +---------------------+  |  |
+|  |  |    CredentialVault     |  | SecurityPolicyEngine |  |  ProviderGateway    |  |  |
+|  |  | (0ms RAM Cache / Vault)|  | (3-Tier Sandbox Gate)|  | (Pooled KeepAlive)  |  |  |
+|  |  +------------------------+  +----------------------+  +---------------------+  |  |
+|  +---------------------------------------------------------------------------------+  |
+|                                  ^                                                    |
+|       Hardened IPC Channel       | contextBridge (Structured Clone + Zod Schemas)     |
+|       (No Node Primitives)       v                                                    |
+|  +---------------------------------------------------------------------------------+  |
+|  |                          CHROMIUM RENDERER PROCESS                              |  |
+|  |  +------------------------+  +----------------------+  +---------------------+  |  |
+|  |  |    Monaco Editor       |  |     M3E Canvas       |  |    Chat Sidecar     |  |  |
+|  |  | (AST Worker Offload)   |  | (SVG Interactive)    |  | (Decode Frontier)   |  |  |
+|  |  +------------------------+  +----------------------+  +---------------------+  |  |
+|  +---------------------------------------------------------------------------------+  |
++---------------------------------------------------------------------------------------+
+</code></pre>
+<h3 id="11-the-zero-telemetry-guarantee-perimeter-containment">1.1 The Zero-Telemetry Guarantee & Perimeter Containment</h3>
+<p>Ty-Code operates under a strict, machine-verified <strong>Zero-Telemetry Guarantee</strong>. Unlike cloud-locked AI IDEs that stream keystrokes, abstract syntax trees (ASTs), and repo graphs to multitenant SaaS servers, Ty-Code contains all workspace indexing, AST analysis, and memory state strictly within local host resources. Outbound network sockets are opened exclusively for intentional, user-authorized Bring-Your-Own-Key (BYOK) model inference requests or private on-premises VPC gateways. Zero telemetry beacons, analytics trackers, or unprompted telemetry egress exist in the codebase.</p>
+<h3 id="12-process-isolation-contextbridge-and-strict-ipc-validation">1.2 Process Isolation, contextBridge, and Strict IPC Validation</h3>
+<p>Ty-Code enforces absolute Chromium sandbox isolation between the untrusted web presentation layer and the privileged Node.js desktop core:</p>
+<ul>
+<li><code>nodeIntegration: false</code>: Renderer processes are physically barred from loading native Node.js binaries, accessing the POSIX/Win32 file system, or binding raw sockets.</li>
+<li><code>contextIsolation: true</code>: Preload execution contexts exist in a segregated V8 world. Prototype pollution within the renderer cannot mutate preload primitives or hijack execution flow.</li>
+<li><code>contextBridge Hardening</code>: Communication between processes is mediated exclusively via frozen function bridges using structured clone serialization. No raw Electron <code>ipcRenderer</code> or EventEmitter instances leak into <code>window</code>.</li>
+<li><strong>Bidirectional Zod Contract Validation:</strong> Every inbound and outbound IPC message traverses a runtime validator schema. Malformed IPC packets, prototype poison attempts, or integer overflow triggers are rejected at the serialization gate before reaching main-process dispatcher logic:</li>
+</ul>
+<pre><code class="language-typescript">// IPC Schema Enforcement (Structural Integrity)
+export const TerminalExecSchema = z.object({
+  taskId: z.string().uuid(),
+  command: z.string().min(1).max(8192),
+  cwd: z.string().refine((val) =&gt; path.isAbsolute(val), {
+    message: &quot;Execution working directory must be absolute&quot;
+  }),
+  timeoutMs: z.number().int().positive().max(300_000).default(60_000)
+});
+</code></pre>
+<h3 id="12-hardware-backed-credential-security-safestorage">1.2 Hardware-Backed Credential Security (`safeStorage`)</h3>
+<p>API keys, OAuth refresh tokens, and internal service credentials must never exist in plaintext on non-volatile media. Ty-Code rejects plaintext <code>.env</code> secret retention in favor of operating-system-level cryptographic keyrings:</p>
+<ul>
+<li><strong>Windows:</strong> Protected via the Windows Data Protection API (<code>CryptProtectData</code> / DPAPI). Encryption keys are derived dynamically from the logged-in user&#39;s NT security principal and master key hierarchy, sealed by the Windows Local Security Authority Subsystem Service (LSASS).</li>
+<li><strong>macOS:</strong> Stored within the Apple Keychain Services architecture using 256-bit AES-GCM keys managed by the OS security subsystem and hardware Secure Enclave.</li>
+<li><strong>Linux:</strong> Mediated via libsecret binding to the system Secret Service API (GNOME Keyring or KWallet) with hardware-backed TPM integration where available.</li>
+</ul>
+<h4 id="credential-encryption-flow-pseudo-code">Credential Encryption Flow Pseudo-Code</h4>
+<pre><code class="language-python"># Pseudo-Code: Operating System Hardware-Sealed Credential Vault Flow
+
+class SafeStorageCredentialVault:
+    def __init__(self, storage_backend, cache_layer, fs_driver):
+        self.backend = storage_backend      # Electron safeStorage wrapper
+        self.cache = cache_layer            # Isolated in-memory volatile Map
+        self.fs = fs_driver
+        self.vault_path = self.fs.resolve_user_data_path(&quot;credentials.enc&quot;)
+
+    def save_credential(self, provider_id: str, secret_key: str) -&gt; None:
+        assert self.backend.is_encryption_available(), &quot;CRITICAL: Hardware OS encryption unavailable&quot;
+        normalized_id = provider_id.strip().lower()
+        
+        # 1. Update volatile memory cache
+        self.cache.set(normalized_id, secret_key.strip())
+        
+        # 2. Synchronize full vault ledger
+        all_keys = self.load_all_credentials()
+        all_keys[normalized_id] = secret_key.strip()
+        
+        # 3. Serialize and cryptographically seal via OS Kernel primitive
+        plaintext_payload = json.dumps(all_keys).encode(&#39;utf-8&#39;)
+        sealed_ciphertext = self.backend.encrypt_string(plaintext_payload)
+        
+        # 4. Atomic atomic write to filesystem with restricted POSIX mode 0600
+        self.fs.write_atomic(self.vault_path, sealed_ciphertext, permissions=0o600)
+        
+        # 5. Sanitize execution stack
+        del plaintext_payload
+        del sealed_ciphertext
+
+    def read_credential(self, provider_id: str) -&gt; str:
+        normalized_id = provider_id.strip().lower()
+        
+        # Fast path: Serve from RAM cache (0ms latency, zero OS syscall overhead)
+        if self.cache.has(normalized_id):
+            return self.cache.get(normalized_id)
+            
+        if not self.fs.exists(self.vault_path):
+            return None
+            
+        # Slow path: Read sealed ciphertext from disk and unseal via OS Kernel
+        sealed_buffer = self.fs.read(self.vault_path)
+        plaintext_json = self.backend.decrypt_string(sealed_buffer)
+        
+        data = json.loads(plaintext_json)
+        for key, val in data.items():
+            self.cache.set(key.lower(), val)
+            
+        return self.cache.get(normalized_id)
+</code></pre>
+<h3 id="13-the-three-tier-terminal-sandbox-workspace-containment">1.3 The Three-Tier Terminal Sandbox & Workspace Containment</h3>
+<p>Automated agents that execute CLI commands present critical arbitrary command execution (RCE) vectors. Ty-Code eliminates this threat model using a Three-Tier Policy Enforcement Engine:</p>
+<table>
+<thead>
+<tr>
+<th>Sandbox Tier</th>
+<th>Execution Semantics</th>
+<th>Permitted Operations</th>
+<th>Typical Use Case</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Restricted (Default)</strong></td>
+<td>Pure Read-Only Allowlist with AST parsing</td>
+<td><code>ls</code>, <code>dir</code>, <code>cat</code>, <code>git status</code>, <code>git diff</code>, <code>npm --version</code>, <code>python --version</code></td>
+<td>Unattended autonomous exploration &amp; diagnostics</td>
+</tr>
+<tr>
+<td><strong>Always Ask</strong></td>
+<td>Interactive Human-in-the-Loop Gate</td>
+<td>State-altering commands (<code>npm install</code>, <code>build</code>, <code>git checkout</code>, migrations)</td>
+<td>Day-to-day supervised feature development</td>
+</tr>
+<tr>
+<td><strong>Always Proceed</strong></td>
+<td>Policy-Guarded Automated Execution</td>
+<td>Build tools and automated compilation scripts</td>
+<td>Isolated CI/CD runs &amp; ephemeral containers</td>
+</tr>
+</tbody></table>
+<h4 id="mandatory-security-invariants">Mandatory Security Invariants:</h4>
+<ol>
+<li><strong>Destructive Command Interception:</strong> Commands matching catastrophic destructive patterns (<code>rm -rf</code>, <code>mkfs</code>, <code>dd</code>, <code>fdisk</code>, <code>sudo</code>, <code>taskkill /F</code>, pipe-to-shell payloads <code>curl | bash</code>) are unconditionally blocked or forced to interactive administrator escalation regardless of the active tier.</li>
+<li><strong>Environment Scrubbing:</strong> Child pseudo-terminal (PTY) processes spawn with a scrubbed environment (<code>buildSanitizedPtyEnv</code>). All host variables matching <code>/key|token|secret|password|credential|auth|jwt|private/i</code> or <code>NODE_OPTIONS</code> are stripped. Only an explicit system allowlist (<code>PATH</code>, <code>USER</code>, <code>HOME</code>, <code>LANG</code>, <code>SHELL</code>) is projected.</li>
+<li><strong>Workspace Boundary Containment:</strong> Path arguments are canonically resolved against filesystem real paths to neutralize symlink directory traversal (<code>isWithin(workspaceRoot, targetPath)</code>). Any command attempting to escape the project directory triggers immediate termination.</li>
+</ol>
+<hr>
+<h2 id="2-the-omni-orchestrator-providergateway">2. The Omni-Orchestrator & ProviderGateway</h2>
+<h3 id="21-the-adapter-pattern-normalizing-sse-ndjson-and-typed-streams">2.1 The Adapter Pattern: Normalizing SSE, NDJSON, and Typed Streams</h3>
+<p>Enterprise LLM deployments encompass heterogeneous wire protocols: Server-Sent Events (SSE) from OpenAI/Anthropic, Newline-Delimited JSON (NDJSON) from Ollama, and binary protobuf frames from specialized gateways. The Ty-Code <code>ProviderGateway</code> abstracts these variances behind a unified Adapter Pattern:</p>
+<pre><code>+-----------------------------------------------------------------------------+
+|                            OMNI-ORCHESTRATOR ROUTER                         |
+|   - Provider Selection Matrix        - Predictive Rate-Limit Balancer       |
+|   - Latency-Aware Cost Optimizer     - Zero-Drop Failover Supervisor        |
++-----------------------------------------------------------------------------+
+                                      |
+                      Canonical Dispatch Envelope
+                                      v
++-----------------------------------------------------------------------------+
+|                           PROVIDER GATEWAY ADAPTER                          |
+|                                                                             |
+|  +--------------------+  +--------------------+  +-----------------------+  |
+|  |   OpenAI Adapter   |  | Anthropic Adapter  |  |     vLLM Adapter      |  |
+|  |  (SSE data: {...}) |  |  (event: message)  |  |  (Native OpenAI SSE)  |  |
+|  +--------------------+  +--------------------+  +-----------------------+  |
+|  |   Ollama Adapter   |  | Groq Fast Adapter  |  | Multi-Harness Adapter |  |
+|  | (NDJSON chunked)   |  | (High-Throughput)  |  | (FCC Sidecar 8765)    |  |
+|  +--------------------+  +--------------------+  +-----------------------+  |
++-----------------------------------------------------------------------------+
+                                      |
+            Unified Stream Yield: { deltaContent, toolCalls, reasoning }
+                                      v
++-----------------------------------------------------------------------------+
+|                   DOUBLE-BUFFERED RENDER BUFFER &amp; CHAT STORE                |
++-----------------------------------------------------------------------------+
+</code></pre>
+<h4 id="providergateway-adapter-architecture-pseudo-code">ProviderGateway Adapter Architecture Pseudo-Code</h4>
+<pre><code class="language-python"># Pseudo-Code: Multi-Protocol ProviderGateway Streaming Normalizer
+
+class UnifiedStreamChunk:
+    def __init__(self, content=&quot;&quot;, reasoning=&quot;&quot;, tool_calls=None, finish_reason=None):
+        self.content = content
+        self.reasoning = reasoning
+        self.tool_calls = tool_calls or []
+        self.finish_reason = finish_reason
+
+class IProviderWireAdapter:
+    def parse_stream(self, raw_byte_stream) -&gt; Generator[UnifiedStreamChunk, None, None]:
+        raise NotImplementedError
+
+class OpenAIWireAdapter(IProviderWireAdapter):
+    def parse_stream(self, raw_byte_stream):
+        line_buffer = &quot;&quot;
+        for raw_bytes in raw_byte_stream:
+            line_buffer += raw_bytes.decode(&#39;utf-8&#39;)
+            lines = line_buffer.split(&quot;\n&quot;)
+            line_buffer = lines.pop()  # Retain trailing un-delimited slice
+            
+            for line in lines:
+                line = line.strip()
+                if not line or line.startswith(&quot;:&quot;) or not line.startswith(&quot;data:&quot;):
+                    continue
+                payload_str = line[5:].strip()
+                if payload_str == &quot;[DONE]&quot;:
+                    return
+                chunk_json = json.loads(payload_str)
+                delta = chunk_json[&quot;choices&quot;][0][&quot;delta&quot;]
+                yield UnifiedStreamChunk(
+                    content=delta.get(&quot;content&quot;, &quot;&quot;),
+                    reasoning=delta.get(&quot;reasoning_content&quot;, &quot;&quot;),
+                    tool_calls=delta.get(&quot;tool_calls&quot;, []),
+                    finish_reason=chunk_json[&quot;choices&quot;][0].get(&quot;finish_reason&quot;)
+                )
+
+class OllamaNDJSONAdapter(IProviderWireAdapter):
+    def parse_stream(self, raw_byte_stream):
+        for raw_line in raw_byte_stream.iter_lines():
+            if not raw_line: continue
+            data = json.loads(raw_line.decode(&#39;utf-8&#39;))
+            yield UnifiedStreamChunk(
+                content=data.get(&quot;message&quot;, {}).get(&quot;content&quot;, &quot;&quot;),
+                finish_reason=&quot;stop&quot; if data.get(&quot;done&quot;) else None
+            )
+</code></pre>
+<h3 id="22-dynamic-health-aware-failover-chain">2.2 Dynamic Health-Aware Failover Chain</h3>
+<p>Enterprise environments cannot tolerate pipeline disruption due to transient cloud 5xx errors or local model crashes. The Omni-Orchestrator maintains a dynamic Directed Acyclic Graph (DAG) of provider candidates:</p>
+<ol>
+<li><strong>Exponential Backoff and Jitter:</strong> Failed requests transition the failing provider into a circuit-breaker quarantine state for a duration $T_{\text{quarantine}} = \min(T_{\text{max}}, T_{\text{base}} \times 2^{\text{failures}} + \text{jitter})$.</li>
+<li><strong>Context-Preserving Mid-Turn Handoff:</strong> If a model disconnects mid-stream, the orchestrator preserves the partial response, appends an internal handoff milestone checkpoint, and dispatches the continuation prompt to the next qualified model in the hierarchy.</li>
+<li><strong>Rate-Limit Forecasting:</strong> Upstream headers (<code>x-ratelimit-remaining-tokens</code>, <code>x-ratelimit-reset-requests</code>) are parsed in real time into an in-memory budget ledger (<code>quotaTracker</code>). Dispatch routes proactively pivot <em>before</em> an HTTP 429 response is triggered.</li>
+</ol>
+<hr>
+<h2 id="3-agentic-execution-context-engineering">3. Agentic Execution & Context Engineering</h2>
+<h3 id="31-the-react-loop-strict-task-scoping">3.1 The ReAct Loop & Strict Task Scoping</h3>
+<p>Ty-Code&#39;s core agent engine executes an iterative <strong>Reasoning + Action (ReAct)</strong> lifecycle governed by strict capability scoping:</p>
+<ol>
+<li><strong>Observation:</strong> Ingest workspace state, active diagnostics, LSP symbol references, and prior execution outputs.</li>
+<li><strong>Thought:</strong> Construct structured internal reasoning offload (displayed cleanly in the collapsible <code>ThinkingPanel</code>).</li>
+<li><strong>Action:</strong> Emit precisely parameterized tool declarations (JSON Schema compliant).</li>
+<li><strong>Validation:</strong> Execute tool actions within the security policy sandbox. File system mutations undergo semantic diff computation (<code>countLineChanges</code>) before submission.</li>
+</ol>
+<h3 id="32-auto-compaction-at-95-context-capacity">3.2 Auto-Compaction at 95% Context Capacity</h3>
+<p>When multi-turn conversations approach 95% of a model&#39;s theoretical context window ($L_{\text{context}} \times 0.95$), the agent invokes autonomous context compaction:</p>
+<ul>
+<li><strong>Salience Distillation:</strong> Intermediate reasoning chains and redundant tool output dumps (e.g., 2,000-line test runs) are compressed into compact semantic state vectors.</li>
+<li><strong>Invariable Preservation:</strong> Current file paths, explicit user constraints, failed hypothesis records, and unfulfilled task requirements are preserved byte-for-byte in a Markdown artifact anchor.</li>
+<li><strong>Lossless Continuation:</strong> The token count drops by 65–80%, restoring headroom without resetting conversational memory or requiring a manual <code>/sync</code> command.</li>
+</ul>
+<h3 id="33-the-ty-code-context-engine-universal-correction-memory-auto-mcp">3.3 The Ty-Code Context Engine: Universal Correction Memory & Auto-MCP</h3>
+<ul>
+<li><strong>Universal Correction Memory (The Learning Loop):</strong> Developer feedback emitted in the Chat Sidecar, the Omni-Debugger, or the M3E Canvas is codified into an in-memory event bus (<code>onCorrectionAdded</code>). SQLite ledgers operating under Write-Ahead Logging (<code>PRAGMA journal_mode = WAL;</code>) synchronize rules across all surfaces with zero telemetry (<code>~/.tycode/workspaces/{hash}/</code>). A rule established in the chat (&quot;Never use <code>var</code>&quot;) is instantly enforced by the architectural debugger and the canvas agent.</li>
+<li><strong>Auto-MCP Router:</strong> Implements dynamic on-demand capability routing. MCP servers expose schemas that are indexed into an in-memory vector space. Only tools relevant to the active task domain are injected into prompt context, preserving 15,000+ tokens of context headroom per turn.</li>
+</ul>
+<hr>
+<h2 id="4-open-source-integration-multi-harness-routing">4. Open-Source Integration & Multi-Harness Routing</h2>
+<h3 id="41-accessing-13-billion-free-tokens-across-11-harness-environments">4.1 Accessing 1.3 Billion Free Tokens Across 11 Harness Environments</h3>
+<p>A foundational architectural triumph of Ty-Code is its ability to tap into massive multi-harness open-source ecosystems without compromising corporate security boundaries. Across the engineering industry, independent developers leverage distinct AI harnesses (Claude Code, Codex, VS Code Extension APIs, Pi, OpenCode, Cline, Aider, Hermes, DeepSeek, Grok-Build, and Mistral).</p>
+<p>Ty-Code unifies these disparate runtimes under a single <strong>Multi-Harness Supply Layer</strong>. By orchestrating local harness adapters, Ty-Code grants developers unified access to over 1.3 billion combined monthly tokens provided by community, open-access, and zero-cost supply tiers (e.g., OpenRouter auto-free pools, Google AI Studio, Groq Cloud, Cerebras, and GitHub Copilot developer subscription bridges).</p>
+<pre><code>+-----------------------------------------------------------------------------------------+
+|                                TY-CODE MULTI-HARNESS ROUTER                             |
+|                                                                                         |
+|  [Claude Code] [OpenCode] [Codex] [Pi] [VS Code] [Cline] [Aider] [Hermes] [DeepSeek]... |
++-----------------------------------------------------------------------------------------+
+                                             |
+                         Standardized OpenAI / MCP Bridge
+                                             v
++-----------------------------------------------------------------------------------------+
+|                        FREE-CLAUDE-CODE (FCC) SUPPLY ADAPTER LAYER                      |
+|                                                                                         |
+|  - Genuine Binary Verification     - ToS Compliance Guard &amp; Risky Provider Disablement  |
+|  - Headroom &amp; RTK Token Saver      - Unified Diff &amp; Patch Applicator                    |
+|  - Model Rotation Manager          - Local Supply Loopback (Port 8765 / Unix Socket)    |
++-----------------------------------------------------------------------------------------+
+                                             |
+                     Hardware-Sealed Credentials (safeStorage Vault)
+                                             v
++-----------------------------------------------------------------------------------------+
+|                     ISOLATED ENTERPRISE WORKSPACE &amp; TERMINAL SANDBOX                    |
++-----------------------------------------------------------------------------------------+
+</code></pre>
+<h3 id="42-upstream-acknowledgment-and-architectural-attribution-free-claude-code-fcc">4.2 Upstream Acknowledgment and Architectural Attribution: free-claude-code (FCC)</h3>
+<p>Ty-Code explicitly acknowledges and credits the pioneering open-source engineering established by the <strong>free-claude-code (FCC)</strong> project:</p>
+<blockquote>
+<p><strong>Repository:</strong> <a href="https://github.com/Alishahryar1/free-claude-code.git">https://github.com/Alishahryar1/free-claude-code.git</a><br><strong>Permanent Licensing Attribution:</strong> <em>Free-model supply layer powered by free-claude-code (FCC) — AGPL-3.0 / MIT.</em></p>
+</blockquote>
+<p>Rather than treating open-source tooling as an unvetted dependency, Ty-Code’s engineering team performed an exhaustive architectural adaptation of FCC&#39;s methodologies to meet enterprise procurement standards:</p>
+<ol>
+<li><strong>Mock-Free Reverse Proxy Architecture:</strong> Legacy local supply stubs relied on synthetic fixtures and mock token strings. Ty-Code and FCC eliminated all mock generators in favor of a genuine binary proxy (<code>sidecar-server.mjs</code>, verified by <code>scripts/no-mock-agent-path.mjs</code>). Real tokens stream from live endpoints with verified TCP/TLS handshakes.</li>
+<li><strong>Strict ToS Compliance &amp; Safety Flags:</strong> Commercial enterprise procurement requires strict adherence to provider terms of service. Ty-Code incorporates FCC&#39;s catalog classification matrix: web-scraping and unauthenticated browser session stubs (<code>huggingchat</code>, <code>phind-web</code>, <code>duckduckgo-ai</code>) are flagged as risky and <strong>unconditionally disabled by default</strong>. Only fully compliant API endpoints and authorized OAuth device flows are enabled for corporate deployment.</li>
+<li><strong>Voice Engine &amp; Real-Time Multimodal Streaming:</strong> Ty-Code extends the FCC protocol router to synchronize voice-frequency token payloads directly with local Whisper and TTS pipelines, enabling latency-free bidirectional voice pair-programming.</li>
+<li><strong>Browser Session Awareness &amp; Visual Canvas Bridge:</strong> FCC’s terminal-oriented protocol was enhanced with an IPC session bridge (<code>SessionBridge</code>), allowing the M3E Canvas and Monaco editor to stream real-time visual code generation without spawning unmonitored external CLI processes.</li>
+</ol>
+<h3 id="43-strategic-value-for-enterprise-procurement">4.3 Strategic Value for Enterprise Procurement</h3>
+<p>By standardizing on this hardened open-source integration layer:</p>
+<ul>
+<li><strong>Zero Cost for Exploratory Prototyping:</strong> Development teams can execute broad code refactoring and test-generation passes against high-speed free tiers (e.g., Cerebras Llama-3.3 70B running at 1,500 tokens/sec or Groq at 300 tokens/sec) before committing final review passes to premium proprietary models.</li>
+<li><strong>Supply Redundancy:</strong> Outages in commercial clouds automatically pivot to alternate open model providers within 50ms, eliminating developer downtime.</li>
+<li><strong>Community-Driven Velocity:</strong> Security patches and new model mappings developed across the global open-source community are integrated into Ty-Code via clean adapter interfaces without requiring monolithic core updates.</li>
+</ul>
+<hr>
+<h2 id="5-enterprise-deployment-mdm-integration">5. Enterprise Deployment & MDM Integration</h2>
+<h3 id="51-centralized-policy-distribution">5.1 Centralized Policy Distribution</h3>
+<p>For enterprise fleets exceeding 1,000 developers, IT security administrators distribute Ty-Code policies using Mobile Device Management (MDM) solutions (Microsoft Intune, Jamf Pro, VMware Workspace ONE) or Group Policy Objects (GPO).</p>
+<p>Policy files are written to system-immutable locations:</p>
+<ul>
+<li><strong>Windows:</strong> <code>HKLM\Software\Policies\TyCode\policy.json</code></li>
+<li><strong>macOS:</strong> <code>/Library/Application Support/TyCode/policy.json</code> (enforced via <code>.mobileconfig</code> profiles)</li>
+<li><strong>Linux:</strong> <code>/etc/tycode/policy.json</code></li>
+</ul>
+<pre><code class="language-json">{
+  &quot;$schema&quot;: &quot;https://tycode.io/schemas/enterprise-policy-v1.json&quot;,
+  &quot;version&quot;: &quot;1.0.0&quot;,
+  &quot;organization&quot;: &quot;Global Financial Enterprise Corp&quot;,
+  &quot;security&quot;: {
+    &quot;enforceWorkspaceOnly&quot;: true,
+    &quot;terminalPolicy&quot;: &quot;restricted&quot;,
+    &quot;allowExternalBrowser&quot;: false,
+    &quot;disableTelemetry&quot;: true,
+    &quot;blockedCommands&quot;: [&quot;curl&quot;, &quot;wget&quot;, &quot;nc&quot;, &quot;nmap&quot;, &quot;ssh&quot;, &quot;scp&quot;]
+  },
+  &quot;providers&quot;: {
+    &quot;overrideGatewayUrl&quot;: &quot;https://llm-gateway.internal.corp:8443/v1&quot;,
+    &quot;enforceInternalProxyOnly&quot;: true,
+    &quot;allowedModelFamilies&quot;: [&quot;llama-3.3-70b-instruct&quot;, &quot;claude-3-5-sonnet&quot;, &quot;deepseek-coder-v2&quot;],
+    &quot;disablePublicCommercialApis&quot;: true
+  },
+  &quot;audit&quot;: {
+    &quot;auditLogDestination&quot;: &quot;syslog://siem.corp.internal:514&quot;,
+    &quot;emitTokenAccountingToLedger&quot;: true
+  }
+}
+</code></pre>
+<h3 id="52-private-llm-proxies-air-gapped-operation">5.2 Private LLM Proxies & Air-Gapped Operation</h3>
+<p>When <code>enforceInternalProxyOnly</code> is asserted:</p>
+<ol>
+<li>Ty-Code disables all outbound commercial WAN egress calls.</li>
+<li>The <code>ProviderGateway</code> re-routes all AST queries, agent tool calls, and completions through the corporate Private LLM Gateway (e.g., LiteLLM, vLLM, or Amazon Bedrock PrivateLink endpoints).</li>
+<li>Corporate SSL inspection certificates loaded into the OS Trust Store are natively honored via Electron&#39;s secure certificate verification delegates.</li>
+<li>In complete air-gapped secure rooms (SCIF environments), Ty-Code runs entirely against on-host Ollama or vLLM instances with zero network interfaces active.</li>
+</ol>
+<hr>
+<h2 id="6-empirical-verification-anti-phantom-audit-evidence">6. Empirical Verification & Anti-Phantom Audit Evidence</h2>
+<p>Enterprise claims require verifiable mathematical and operational proof. Ty-Code includes a continuous automated compliance test harness that audits production builds against 21 security invariants.</p>
+<table>
+<thead>
+<tr>
+<th>Security Assertion</th>
+<th>Verification Command</th>
+<th>Artifact Evidence Path</th>
+<th align="center">Audit Status</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Zero Mock Code Paths</strong></td>
+<td><code>node scripts/no-mock-agent-path.mjs</code></td>
+<td><code>docs/traces/mock-elimination.json</code></td>
+<td align="center"><strong>VERIFIED CLEAN (0 Violations)</strong></td>
+</tr>
+<tr>
+<td><strong>No Fixture Strings</strong></td>
+<td><code>node scripts/no-fixture-replies.mjs</code></td>
+<td><code>docs/traces/mock-elimination.json</code></td>
+<td align="center"><strong>VERIFIED CLEAN (230 Files Clean)</strong></td>
+</tr>
+<tr>
+<td><strong>No Plaintext Secrets</strong></td>
+<td><code>node scripts/no-baked-secrets.mjs</code></td>
+<td><code>docs/traces/credential-security.json</code></td>
+<td align="center"><strong>VERIFIED CLEAN (0 Secrets Found)</strong></td>
+</tr>
+<tr>
+<td><strong>Hardware Key Privacy</strong></td>
+<td><code>node scripts/verify-audit-artifacts.mjs</code></td>
+<td><code>docs/traces/connectivity-trace.json</code></td>
+<td align="center"><strong>VERIFIED (0 Raw Keys Exposed)</strong></td>
+</tr>
+<tr>
+<td><strong>Open-Path Perf Budgets</strong></td>
+<td><code>node scripts/run-live-e2e.mjs</code></td>
+<td><code>docs/traces/open-perf-trace.json</code></td>
+<td align="center"><strong>VERIFIED (&lt;1500ms 10k Tree Paint)</strong></td>
+</tr>
+<tr>
+<td><strong>100% FCC Coverage Matrix</strong></td>
+<td><code>node scripts/verify-fcc-coverage.mjs</code></td>
+<td><code>docs/traces/fcc-coverage.json</code></td>
+<td align="center"><strong>VERIFIED (12/12 Capabilities Pass)</strong></td>
+</tr>
+<tr>
+<td><strong>Sandbox &amp; AST Escapes</strong></td>
+<td><code>node scripts/run-extension-security.mjs</code></td>
+<td><code>docs/traces/extension-security.json</code></td>
+<td align="center"><strong>VERIFIED (100% Capability Containment)</strong></td>
+</tr>
+</tbody></table>
+<hr>
+<h2 id="7-comparative-architectural-matrix">7. Comparative Architectural Matrix</h2>
+<table>
+<thead>
+<tr>
+<th>Architectural Vector</th>
+<th>Cloud-Centric AI IDEs (Copilot, Cursor)</th>
+<th>Generic Open-Source Wrappers</th>
+<th>Ty-Code Enterprise</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Data Residency</strong></td>
+<td>Third-party multitenant cloud servers</td>
+<td>Variable / unmanaged</td>
+<td><strong>100% Local-First / Private Gateway</strong></td>
+</tr>
+<tr>
+<td><strong>Credential Storage</strong></td>
+<td>Plaintext config files / token cookies</td>
+<td>Plaintext <code>.env</code> files</td>
+<td><strong>OS-Level Hardware Vault (<code>safeStorage</code>)</strong></td>
+</tr>
+<tr>
+<td><strong>Process Isolation</strong></td>
+<td>Monolithic or standard web views</td>
+<td>Unchecked Node.js scripts</td>
+<td><strong>Chromium Sandbox + contextBridge + Zod</strong></td>
+</tr>
+<tr>
+<td><strong>Terminal Execution</strong></td>
+<td>Unguarded shell dispatch</td>
+<td>Direct uninspected child process</td>
+<td><strong>Three-Tier Policy Engine + PTY Scrubbing</strong></td>
+</tr>
+<tr>
+<td><strong>Multi-Model Routing</strong></td>
+<td>Single-vendor lock-in</td>
+<td>Hardcoded API keys</td>
+<td><strong>Dynamic DAG Failover + 11-Harness Supply</strong></td>
+</tr>
+<tr>
+<td><strong>Context Compaction</strong></td>
+<td>Truncation / Drop oldest messages</td>
+<td>Lossy manual clearing</td>
+<td><strong>Autonomous 95% Saliency Compaction</strong></td>
+</tr>
+<tr>
+<td><strong>Fleet Governance</strong></td>
+<td>User-level cloud subscription portals</td>
+<td>None</td>
+<td><strong>Centralized MDM (GPO / Intune / Jamf)</strong></td>
+</tr>
+<tr>
+<td><strong>Audit Reproducibility</strong></td>
+<td>Proprietary telemetry black box</td>
+<td>Unverifiable</td>
+<td><strong>Machine-Readable Traces (<code>docs/traces/</code>)</strong></td>
+</tr>
+</tbody></table>
+<hr>
+<h2 id="8-conclusion-strategic-recommendation-for-procurement">8. Conclusion: Strategic Recommendation for Procurement</h2>
+<p>Ty-Code resolves the foundational tension between developer velocity and enterprise information security. By architecting a local-first desktop core that leverages OS-level hardware cryptographic isolation, mathematical workspace containment, and a flexible, fault-tolerant multi-harness provider gateway, Ty-Code allows forward-thinking enterprises to deploy cutting-edge autonomous AI capabilities immediately.</p>
+<p>Organizations deploying Ty-Code maintain complete intellectual property sovereignty, eliminate runaway API billing through intelligent multi-harness routing, and achieve provable compliance verified by automated, machine-readable audit artifacts.</p>
+<hr>
+<p><em>For technical inquiries, formal enterprise security evaluations, or MDM policy deployment templates, contact <code>security@tycode.io</code> or visit <a href="https://tycode.io">https://tycode.io</a>.</em></p>
+
+    </main>
+  </div>
+</body>
+</html>

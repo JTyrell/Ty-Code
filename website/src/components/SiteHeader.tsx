@@ -12,6 +12,7 @@ export default function SiteHeader() {
         <a href="#features">Features</a>
         <a href="#fcc-free-tier">1.3B+ Free Tier</a>
         <a href="#compliance">Enterprise</a>
+        <a href="#briefings">Campaign Specs</a>
         <a href="#downloads"><ArrowDown aria-hidden="true" size={15} /> Downloads</a>
         <a href="#verify"><ShieldCheck aria-hidden="true" size={15} /> Verify</a>
       </nav>

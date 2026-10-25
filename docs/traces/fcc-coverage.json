@@ -1,8 +1,8 @@
 {
   "phase": "FCC-6",
   "title": "Provable 100% FCC Coverage + Permanent Attribution",
-  "timestamp": "2026-10-25T12:30:10.632Z",
-  "gitCommit": "f2a7e468eedac7bebd9e95230bee42c1a99c3491",
+  "timestamp": "2026-10-25T13:19:18.767Z",
+  "gitCommit": "f9a34017f624c7d4e45727368197cd6cd3e10d19",
   "command": "npm run test:fcc-coverage",
   "summary": {
     "totalCapabilities": 12,
@@ -29,7 +29,7 @@
         ],
         "compliantProviders": 55
       },
-      "timestamp": "2026-10-25T12:30:07.211Z"
+      "timestamp": "2026-10-25T13:19:16.177Z"
     },
     {
       "capabilityId": "fcc_cap_02_tos_flag",
@@ -48,7 +48,7 @@
           "blackbox-web"
         ]
       },
-      "timestamp": "2026-10-25T12:30:07.213Z"
+      "timestamp": "2026-10-25T13:19:16.179Z"
     },
     {
       "capabilityId": "fcc_cap_03_subscription_connect",
@@ -67,7 +67,7 @@
           "copilot/o1-preview"
         ]
       },
-      "timestamp": "2026-10-25T12:30:07.653Z"
+      "timestamp": "2026-10-25T13:19:16.819Z"
     },
     {
       "capabilityId": "fcc_cap_04_harness_spawn",
@@ -101,7 +101,7 @@
           "status": "started"
         }
       },
-      "timestamp": "2026-10-25T12:30:10.158Z"
+      "timestamp": "2026-10-25T13:19:18.419Z"
     },
     {
       "capabilityId": "fcc_cap_05_endpoint_roundtrip",
@@ -109,13 +109,13 @@
       "tier": "External Access",
       "status": "PASS",
       "evidence": {
-        "testPort": 54524,
+        "testPort": 54645,
         "httpStatusCode": 200,
-        "responseId": "chatcmpl-39a87a197eac656b79a34877",
+        "responseId": "chatcmpl-8e17e041ea68ef36f8cdbcb4",
         "modelUsed": "auto-free",
         "hasMessageContent": true
       },
-      "timestamp": "2026-10-25T12:30:10.204Z"
+      "timestamp": "2026-10-25T13:19:18.452Z"
     },
     {
       "capabilityId": "fcc_cap_06_failover_resume",
@@ -129,7 +129,7 @@
         "turnContinuityPreserved": true,
         "finalResponseLength": 117
       },
-      "timestamp": "2026-10-25T12:30:10.204Z"
+      "timestamp": "2026-10-25T13:19:18.452Z"
     },
     {
       "capabilityId": "fcc_cap_07_savings_meter",
@@ -144,7 +144,7 @@
         "headroomTokens": 950,
         "cacheTokens": 2200
       },
-      "timestamp": "2026-10-25T12:30:10.227Z"
+      "timestamp": "2026-10-25T13:19:18.464Z"
     },
     {
       "capabilityId": "fcc_cap_08_dashboard_fields",
@@ -167,7 +167,7 @@
           "isExhausted": false
         }
       },
-      "timestamp": "2026-10-25T12:30:10.228Z"
+      "timestamp": "2026-10-25T13:19:18.465Z"
     },
     {
       "capabilityId": "fcc_cap_09_connector_module_loads",
@@ -181,7 +181,7 @@
         "rateCapEnforced": true,
         "auditLogsRecorded": 5
       },
-      "timestamp": "2026-10-25T12:30:10.238Z"
+      "timestamp": "2026-10-25T13:19:18.471Z"
     },
     {
       "capabilityId": "fcc_cap_10_session_bridge_contract",
@@ -189,12 +189,12 @@
       "tier": "Browser Seam",
       "status": "PASS",
       "evidence": {
-        "sessionId": "bridge_coverage_1792931410238",
+        "sessionId": "bridge_coverage_1792934358471",
         "eventsStreamed": 20,
         "contractDocumentBytes": 6919,
         "multiplexingVerified": true
       },
-      "timestamp": "2026-10-25T12:30:10.623Z"
+      "timestamp": "2026-10-25T13:19:18.758Z"
     },
     {
       "capabilityId": "fcc_cap_11_tray_present",
@@ -207,9 +207,9 @@
         "quickChatPresent": true,
         "backgroundTasksPresent": true,
         "runInBackgroundPresent": true,
-        "testTaskId": "bg_task_1792931410623_ncmug"
+        "testTaskId": "bg_task_1792934358759_uorcm"
       },
-      "timestamp": "2026-10-25T12:30:10.624Z"
+      "timestamp": "2026-10-25T13:19:18.759Z"
     },
     {
       "capabilityId": "fcc_cap_12_credit_strings_present",
@@ -238,11 +238,11 @@
         ],
         "allSurfacesIntact": true
       },
-      "timestamp": "2026-10-25T12:30:10.631Z"
+      "timestamp": "2026-10-25T13:19:18.766Z"
     }
   ],
   "prePublishQaAudit": {
-    "timestamp": "2026-10-25T12:29:54.996Z",
+    "timestamp": "2026-10-25T13:19:07.655Z",
     "totalDeliverables": 5,
     "passedDeliverables": 5,
     "totalChecks": 30,

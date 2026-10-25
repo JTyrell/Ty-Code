@@ -1,0 +1,240 @@
+{
+  "version": 1,
+  "timestamp": "2026-10-16T23:36:21.558Z",
+  "gitCommit": "1cd5158a3e1f6ccf79d3f8d8115ef245f11eef19",
+  "command": "Ty-Code: Trace Extension Install",
+  "targetExtension": "ms-python.python",
+  "registryUrl": "https://open-vsx.org",
+  "hops": [
+    {
+      "hop": "E1",
+      "name": "User clicks 'Install' on extension card",
+      "status": "PASS",
+      "timestamp": "2026-10-16T23:36:09.447Z",
+      "durationMs": 1,
+      "payloadSize": 65,
+      "details": {
+        "action": "INSTALL_REQUEST_INITIATED",
+        "extensionId": "ms-python.python",
+        "trigger": "Command Palette / UI Card"
+      }
+    },
+    {
+      "hop": "E2",
+      "name": "Marketplace service fetches VSIX download URL from registry metadata",
+      "status": "PASS",
+      "timestamp": "2026-10-16T23:36:09.448Z",
+      "durationMs": 817,
+      "payloadSize": 8850,
+      "details": {
+        "registryEndpoint": "https://open-vsx.org/api/ms-python/python",
+        "version": "2026.4.0",
+        "downloadUrl": "https://open-vsx.org/api/ms-python/python/2026.4.0/file/ms-python.python-2026.4.0.vsix",
+        "expectedSha256": "232aeafb01f069824fdd92d3e628c1c442bbcfa1d3cc945ff97076340bb2b4a6"
+      }
+    },
+    {
+      "hop": "E3",
+      "name": "VSIX file downloaded to disk (bytes received, checksum verified)",
+      "status": "PASS",
+      "timestamp": "2026-10-16T23:36:10.265Z",
+      "durationMs": 11131,
+      "payloadSize": 6826731,
+      "details": {
+        "downloadUrl": "https://open-vsx.org/api/ms-python/python/2026.4.0/file/ms-python.python-2026.4.0.vsix",
+        "byteLength": 6826731,
+        "actualSha256": "232aeafb01f069824fdd92d3e628c1c442bbcfa1d3cc945ff97076340bb2b4a6",
+        "expectedSha256": "232aeafb01f069824fdd92d3e628c1c442bbcfa1d3cc945ff97076340bb2b4a6",
+        "checksumVerified": true
+      }
+    },
+    {
+      "hop": "E4",
+      "name": "VSIX extracted to ~/.ty-code/extensions/ms-python.python-2026.4.0/",
+      "status": "PASS",
+      "timestamp": "2026-10-16T23:36:21.396Z",
+      "durationMs": 145,
+      "payloadSize": 24229367,
+      "details": {
+        "targetExtractDir": "C:\\Users\\JT\\.ty-code\\extensions\\ms-python.python-2026.4.0",
+        "fileCount": 2382,
+        "totalExtractedBytes": 24229367,
+        "diskWriteVerified": true
+      }
+    },
+    {
+      "hop": "E5",
+      "name": "manifest.json parsed and validated (id, name, version, main entry point)",
+      "status": "PASS",
+      "timestamp": "2026-10-16T23:36:21.541Z",
+      "durationMs": 9,
+      "payloadSize": 85800,
+      "details": {
+        "id": "ms-python.python",
+        "name": "python",
+        "publisher": "ms-python",
+        "version": "2026.4.0",
+        "mainEntryPoint": "./out/client/extension",
+        "activationEventsCount": 21,
+        "activationEvents": [
+          "onDebugInitialConfigurations",
+          "onLanguage:python",
+          "onDebugResolve:python",
+          "onCommand:python.copilotSetupTests",
+          "workspaceContains:mspythonconfig.json",
+          "workspaceContains:pyproject.toml",
+          "workspaceContains:Pipfile",
+          "workspaceContains:setup.py",
+          "workspaceContains:requirements.txt",
+          "workspaceContains:pylock.toml"
+        ],
+        "contributedCommandsCount": 23
+      }
+    },
+    {
+      "hop": "E6",
+      "name": "Extension registered with extension host (Worker)",
+      "status": "FAIL",
+      "timestamp": "2026-10-16T23:36:21.550Z",
+      "durationMs": 0,
+      "error": "HOST_REGISTRATION_FAILED: Extension host rejects non-built-in extensions. ExtensionWorkerHost.activate() explicitly enforces: \"if (!extension.enabled || !extension.isBuiltIn || extension.executionState !== 'built-in') return;\". Because \"ms-python.python\" has isBuiltIn=false and executionState='installed', it is completely dropped by the host and never registered in a Worker session.",
+      "taxonomy": "HOST_REGISTRATION_FAILED",
+      "details": {
+        "extensionId": "ms-python.python",
+        "isBuiltIn": false,
+        "executionState": "installed",
+        "workerHostFilter": "!extension.isBuiltIn || extension.executionState !== 'built-in'",
+        "workerRegistryCheck": "registry.get(extensionId) throws 'Only statically bundled built-in modules may execute.'"
+      }
+    },
+    {
+      "hop": "E7",
+      "name": "Extension activated (onLanguage/onCommand/onStartup activation events)",
+      "status": "SKIPPED",
+      "timestamp": "2026-10-16T23:36:21.550Z",
+      "durationMs": 0,
+      "error": "ACTIVATION_FAILED: Prerequisite Hop E6 failed. Extension host has no active worker session for this extension.",
+      "taxonomy": "ACTIVATION_FAILED",
+      "details": {
+        "activationEventsSuppressed": [
+          "onDebugInitialConfigurations",
+          "onLanguage:python",
+          "onDebugResolve:python",
+          "onCommand:python.copilotSetupTests",
+          "workspaceContains:mspythonconfig.json",
+          "workspaceContains:pyproject.toml",
+          "workspaceContains:Pipfile",
+          "workspaceContains:setup.py",
+          "workspaceContains:requirements.txt",
+          "workspaceContains:pylock.toml",
+          "workspaceContains:**/pylock.*.toml",
+          "workspaceContains:manage.py",
+          "workspaceContains:app.py",
+          "workspaceContains:.venv",
+          "workspaceContains:.conda",
+          "onLanguageModelTool:get_python_environment_details",
+          "onLanguageModelTool:get_python_executable_details",
+          "onLanguageModelTool:install_python_packages",
+          "onLanguageModelTool:configure_python_environment",
+          "onLanguageModelTool:create_virtual_environment",
+          "onTerminalShellIntegration:python"
+        ]
+      }
+    },
+    {
+      "hop": "E8",
+      "name": "Extension API calls executed (commands, language providers, webviews)",
+      "status": "SKIPPED",
+      "timestamp": "2026-10-16T23:36:21.550Z",
+      "durationMs": 0,
+      "error": "API_CALL_FAILED: Worker capability provider cannot be reached because worker session is unallocated.",
+      "taxonomy": "API_CALL_FAILED"
+    },
+    {
+      "hop": "E9",
+      "name": "Extension UI visible in app (status bar items, commands in palette, webview panels)",
+      "status": "SKIPPED",
+      "timestamp": "2026-10-16T23:36:21.550Z",
+      "durationMs": 0,
+      "error": "UI_NOT_VISIBLE: Extension commands (e.g. Python: Select Interpreter) missing from CommandPalette. No status bar items rendered.",
+      "taxonomy": "UI_NOT_VISIBLE",
+      "details": {
+        "expectedCommandsCount": 23,
+        "actualRegisteredCommandsCount": 0
+      }
+    }
+  ],
+  "firstFailingHop": "E6",
+  "failureClassification": "HOST_REGISTRATION_FAILED",
+  "marketplaceArchitecture": "METADATA_ONLY",
+  "summary": "Live probe against Open VSX registry completed in 12219ms. Hops E1..E5 succeed (VSIX downloaded 6.8MB, unpacked 2382 files, manifest validated). Hop E6 FAILS with HOST_REGISTRATION_FAILED because the extension runtime host strictly rejects non-built-in extensions (!extension.isBuiltIn || executionState !== 'built-in') and worker isolates only execute the 5 hardcoded built-in modules. The marketplace implementation is currently METADATA-ONLY.",
+  "metrics": {
+    "totalDurationMs": 12219,
+    "passedHops": 5,
+    "failedHops": 1,
+    "skippedHops": 3,
+    "downloadSizeBytes": 6826731,
+    "extractedFileCount": 2382
+  },
+  "metadataOnlyScan": {
+    "totalFindings": 7,
+    "findings": [
+      {
+        "file": "src/main/services/extension-manager.ts",
+        "line": 361,
+        "pattern": "executionState:\\s*'metadata-only'",
+        "description": "ExtensionManager sets executionState to 'metadata-only' for marketplace installs, preventing code execution.",
+        "category": "METADATA_ONLY_STATE",
+        "snippet": "executionState: 'metadata-only'"
+      },
+      {
+        "file": "src/main/services/extension-manager.ts",
+        "line": 350,
+        "pattern": "Marketplace records are discovery metadata only; no files or executable package code are installed",
+        "description": "Explicit architectural comment declaring marketplace records as discovery metadata only.",
+        "category": "DISPLAY_ONLY",
+        "snippet": "// Marketplace records are discovery metadata only; no files or executable package code are installed."
+      },
+      {
+        "file": "src/main/services/extension-manager.ts",
+        "line": 393,
+        "pattern": "Community extension execution is disabled until the third-party runtime completes security review",
+        "description": "toggleExtension throws error blocking non-built-in community extension execution.",
+        "category": "EXECUTION_BLOCKED",
+        "snippet": "throw new Error('Community extension execution is disabled until the third-party runtime completes security review.');"
+      },
+      {
+        "file": "src/renderer/src/services/extension-host.ts",
+        "line": 42,
+        "pattern": "if\\s*\\(extension\\.enabled\\s*&&\\s*extension\\.isBuiltIn\\s*&&\\s*extension\\.executionState\\s*===\\s*'built-in'\\)",
+        "description": "ExtensionHost.activateBuiltInExtension strictly requires isBuiltIn=true and executionState='built-in'.",
+        "category": "REGISTRATION_FILTER",
+        "snippet": "if (extension.enabled && extension.isBuiltIn && extension.executionState === 'built-in') {"
+      },
+      {
+        "file": "src/renderer/src/services/extension-worker-host.ts",
+        "line": 59,
+        "pattern": "if\\s*\\(!extension\\.enabled\\s*\\|\\|\\s*!extension\\.isBuiltIn\\s*\\|\\|\\s*extension\\.executionState\\s*!==\\s*'built-in'\\)\\s*return;",
+        "description": "ExtensionWorkerHost.activate silences and rejects any extension without isBuiltIn=true.",
+        "category": "REGISTRATION_FILTER",
+        "snippet": "if (!extension.enabled || !extension.isBuiltIn || extension.executionState !== 'built-in') return;"
+      },
+      {
+        "file": "src/renderer/src/workers/extension-worker.ts",
+        "line": 110,
+        "pattern": "Only statically bundled built-in modules may execute",
+        "description": "Extension Worker runtime strictly enforces that only statically bundled built-in modules may execute.",
+        "category": "EXECUTION_BLOCKED",
+        "snippet": "if (!builtin) throw new Error('Only statically bundled built-in modules may execute.');"
+      },
+      {
+        "file": "src/renderer/src/components/ExtensionsPanel.tsx",
+        "line": 179,
+        "pattern": "VSIX installation is unavailable until package validation is implemented",
+        "description": "ExtensionsPanel disables manual VSIX package installation button.",
+        "category": "DISPLAY_ONLY",
+        "snippet": "title=\"VSIX installation is unavailable until package validation is implemented\""
+      }
+    ]
+  }
+}

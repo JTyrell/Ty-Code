@@ -1,0 +1,86 @@
+{
+  "pipeline": "Ty-Code Local Campaign Build Pipeline",
+  "version": "1.0.0",
+  "generatedAt": "2026-10-25T13:08:45.479Z",
+  "totalArtifacts": 13,
+  "artifacts": [
+    {
+      "file": "README.html",
+      "bytes": 32272,
+      "sha256": "b30e7c7d2bbffcb31fc9ac56d6d2716eb205cc41a3aa7fd1bede9bd8f26cb35b",
+      "generatedAt": "2026-10-25T13:08:45.479Z"
+    },
+    {
+      "file": "README.pdf",
+      "bytes": 950444,
+      "sha256": "56aeda8e7a80e2a90c9f0ff81838b11f91f4d8334d6720ab1b2467423cb2aa14",
+      "generatedAt": "2026-10-25T13:08:45.479Z"
+    },
+    {
+      "file": "README.docx",
+      "bytes": 25390,
+      "sha256": "91c91eef6c24dc1c7fe71c58813f2469d8d34c13899e2bcef73b1e64321b65ef",
+      "generatedAt": "2026-10-25T13:08:45.479Z"
+    },
+    {
+      "file": "ENTERPRISE-WHITEPAPER.html",
+      "bytes": 50631,
+      "sha256": "cf1a9a02401eb3297cbe6cba3126e3bd8aec54addb8f419d1407869568f01a7e",
+      "generatedAt": "2026-10-25T13:08:45.479Z"
+    },
+    {
+      "file": "ENTERPRISE-WHITEPAPER.pdf",
+      "bytes": 249982,
+      "sha256": "c6309b7ec85bc0b078b4af91a98028af2318b8c319f858d697f6b7c84f4190bb",
+      "generatedAt": "2026-10-25T13:08:45.479Z"
+    },
+    {
+      "file": "ENTERPRISE-WHITEPAPER.docx",
+      "bytes": 28522,
+      "sha256": "6cb235c069ae8f3f811b0885fccaef76deb36518535f2068f77ff2d942061e21",
+      "generatedAt": "2026-10-25T13:08:45.479Z"
+    },
+    {
+      "file": "INVESTOR-PITCH-DECK.html",
+      "bytes": 42288,
+      "sha256": "0b9bf53f34bcceaf7008650c18e2d376fb15c8a016393b13c4fa1d531b525704",
+      "generatedAt": "2026-10-25T13:08:45.479Z"
+    },
+    {
+      "file": "INVESTOR-PITCH-DECK.pdf",
+      "bytes": 115221,
+      "sha256": "7656123e33a0a532f98353e39a826bbd18f0f8adff72b794f5af0d8e43c5a264",
+      "generatedAt": "2026-10-25T13:08:45.479Z"
+    },
+    {
+      "file": "INVESTOR-PITCH-DECK.docx",
+      "bytes": 17830,
+      "sha256": "dd4755a66a9a471893e0decfe6b8460feb7fe3df3d31c285dfe5772b83e936e1",
+      "generatedAt": "2026-10-25T13:08:45.479Z"
+    },
+    {
+      "file": "INVESTOR-PITCH-DECK.pptx",
+      "bytes": 3284413,
+      "sha256": "bf18ed50796d6c461368a26e7f9577ce5a0eea5e20c71aaa2bca56b25c8b4811",
+      "generatedAt": "2026-10-25T13:08:45.479Z"
+    },
+    {
+      "file": "MARKETING-LANDING-PAGE-COPY.html",
+      "bytes": 27338,
+      "sha256": "dac47a06bd49f712cebcae5efa113ba89087e6b2f0c2daf5be6581ae5ea4eb05",
+      "generatedAt": "2026-10-25T13:08:45.479Z"
+    },
+    {
+      "file": "MARKETING-LANDING-PAGE-COPY.pdf",
+      "bytes": 668108,
+      "sha256": "dc70c5ba1376afa00824134d95a2022f1848a457bb279bd6cdb3fe338f53f4cb",
+      "generatedAt": "2026-10-25T13:08:45.479Z"
+    },
+    {
+      "file": "MARKETING-LANDING-PAGE-COPY.docx",
+      "bytes": 20135,
+      "sha256": "df377446c70dedcc7451c85779b00013055ccf571916fe68d0fb1185edd698a1",
+      "generatedAt": "2026-10-25T13:08:45.479Z"
+    }
+  ]
+}

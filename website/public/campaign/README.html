@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ty-Code: Sovereign Local-First AI IDE</title>
+  <style>
+
+    :root {
+      --bg-dark: #0b0d10;
+      --surface-dark: #111827;
+      --surface-border: #1f2937;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --emerald: #10b981;
+      --emerald-glow: rgba(16, 185, 129, 0.15);
+      --cyan: #06b6d4;
+      --code-bg: #0d1117;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Inter, Arial, sans-serif;
+      font-size: 15px;
+      line-height: 1.65;
+      background-color: var(--bg-dark);
+      color: #e2e8f0;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .campaign-wrapper {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 48px 32px;
+    }
+
+    /* Typography Scale */
+    h1, h2, h3, h4, h5, h6 {
+      color: var(--text-main);
+      font-weight: 700;
+      line-height: 1.3;
+      margin-top: 1.8em;
+      margin-bottom: 0.6em;
+      break-after: avoid;
+      page-break-after: avoid;
+    }
+
+    h1 {
+      font-size: 2.2rem;
+      border-bottom: 1px solid var(--surface-border);
+      padding-bottom: 0.3em;
+    }
+
+    h2 {
+      font-size: 1.6rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      padding-bottom: 0.25em;
+    }
+
+    h3 { font-size: 1.25rem; }
+    h4 { font-size: 1.1rem; }
+
+    p, li {
+      color: #cbd5e1;
+      margin-bottom: 1em;
+    }
+
+    a {
+      color: #38bdf8;
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    strong {
+      color: #ffffff;
+      font-weight: 600;
+    }
+
+    hr {
+      border: 0;
+      height: 1px;
+      background: var(--surface-border);
+      margin: 2.5em 0;
+    }
+
+    /* Styled Tables */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 2em 0;
+      background: var(--surface-dark);
+      border: 1px solid var(--surface-border);
+      border-radius: 8px;
+      overflow: hidden;
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+
+    th, td {
+      padding: 12px 16px;
+      border: 1px solid var(--surface-border);
+      text-align: left;
+      font-size: 0.95rem;
+    }
+
+    th {
+      background-color: #1e293b;
+      color: #f8fafc;
+      font-weight: 600;
+    }
+
+    tr:nth-child(even) {
+      background-color: #0f172a;
+    }
+
+    /* Code Blocks and Monospace */
+    pre {
+      background-color: var(--code-bg);
+      border: 1px solid var(--surface-border);
+      border-radius: 8px;
+      padding: 16px 20px;
+      overflow-x: auto;
+      font-family: "JetBrains Mono", Consolas, "Courier New", monospace;
+      font-size: 0.9rem;
+      line-height: 1.5;
+      color: #e2e8f0;
+      margin: 1.8em 0;
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+
+    code {
+      font-family: "JetBrains Mono", Consolas, "Courier New", monospace;
+      font-size: 0.9em;
+      background-color: rgba(255, 255, 255, 0.08);
+      color: #38bdf8;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
+    pre code {
+      background: none;
+      color: inherit;
+      padding: 0;
+      border-radius: 0;
+    }
+
+    /* Blockquotes */
+    blockquote {
+      border-left: 4px solid var(--emerald);
+      background: var(--emerald-glow);
+      margin: 1.8em 0;
+      padding: 14px 22px;
+      border-radius: 0 8px 8px 0;
+      color: #94a3b8;
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+
+    blockquote p:last-child {
+      margin-bottom: 0;
+    }
+
+    /* Whitepaper Cover Page */
+    .page-cover {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+      min-height: 82vh;
+      border-bottom: 2px solid var(--emerald);
+      margin-bottom: 48px;
+      padding: 60px 20px;
+      break-after: page;
+      page-break-after: always;
+    }
+
+    .cover-shield-icon {
+      margin-bottom: 24px;
+    }
+
+    .cover-badge {
+      background: var(--emerald-glow);
+      color: var(--emerald);
+      padding: 6px 18px;
+      border-radius: 9999px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      border: 1px solid rgba(16, 185, 129, 0.35);
+      margin-bottom: 24px;
+    }
+
+    .cover-title {
+      font-size: 2.8rem;
+      font-weight: 800;
+      color: #ffffff;
+      line-height: 1.2;
+      margin: 0 0 16px 0;
+      border: none;
+      padding: 0;
+    }
+
+    .cover-subtitle {
+      font-size: 1.25rem;
+      color: var(--text-muted);
+      max-width: 720px;
+      margin: 0 0 36px 0;
+      line-height: 1.5;
+    }
+
+    .cover-divider {
+      width: 80px;
+      height: 3px;
+      background: var(--emerald);
+      margin-bottom: 36px;
+      border-radius: 2px;
+    }
+
+    .cover-meta-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 16px 36px;
+      background: var(--surface-dark);
+      border: 1px solid var(--surface-border);
+      padding: 20px 32px;
+      border-radius: 8px;
+      margin-bottom: 40px;
+      max-width: 580px;
+      width: 100%;
+      text-align: left;
+    }
+
+    .cover-meta-item {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .meta-label {
+      font-size: 0.72rem;
+      color: var(--text-dim);
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    .meta-value {
+      font-size: 0.95rem;
+      color: #f1f5f9;
+      font-weight: 600;
+      margin-top: 2px;
+    }
+
+    .cover-footer-note {
+      font-size: 0.85rem;
+      color: var(--emerald);
+      font-weight: 600;
+      letter-spacing: 0.04em;
+    }
+
+    /* Table of Contents */
+    .toc-container {
+      background: var(--surface-dark);
+      border: 1px solid var(--surface-border);
+      border-radius: 8px;
+      padding: 28px 36px;
+      margin: 36px 0 48px 0;
+      break-after: page;
+      page-break-after: always;
+    }
+
+    .toc-title {
+      font-size: 1.3rem;
+      font-weight: 700;
+      color: #ffffff;
+      margin-bottom: 18px;
+      border-bottom: 1px solid var(--surface-border);
+      padding-bottom: 10px;
+    }
+
+    .toc-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+
+    .toc-item-1 {
+      font-weight: 600;
+      margin-top: 12px;
+    }
+
+    .toc-item-1 a {
+      color: #f1f5f9;
+    }
+
+    .toc-item-2 {
+      font-weight: 400;
+      margin-left: 24px;
+      margin-top: 6px;
+    }
+
+    .toc-item-2 a {
+      color: #94a3b8;
+    }
+
+    /* Print-Specific Formatting */
+    @media print {
+      body {
+        background-color: #ffffff !important;
+        color: #111827 !important;
+        font-size: 10.5pt !important;
+        line-height: 1.55 !important;
+      }
+
+      .campaign-wrapper {
+        max-width: 100% !important;
+        padding: 0 !important;
+        margin: 0 !important;
+      }
+
+      h1, h2, h3, h4, h5, h6 {
+        color: #0f172a !important;
+        border-color: #e2e8f0 !important;
+        break-after: avoid !important;
+        page-break-after: avoid !important;
+      }
+
+      p, li {
+        color: #1f2937 !important;
+      }
+
+      a {
+        color: #0284c7 !important;
+        text-decoration: underline !important;
+      }
+
+      table {
+        background: #ffffff !important;
+        border: 1px solid #cbd5e1 !important;
+        break-inside: avoid !important;
+        page-break-inside: avoid !important;
+      }
+
+      th, td {
+        border: 1px solid #cbd5e1 !important;
+        color: #1f2937 !important;
+        padding: 8px 12px !important;
+      }
+
+      th {
+        background-color: #f1f5f9 !important;
+        color: #0f172a !important;
+      }
+
+      tr:nth-child(even) {
+        background-color: #f8fafc !important;
+      }
+
+      pre {
+        background-color: #f8fafc !important;
+        color: #0f172a !important;
+        border: 1px solid #cbd5e1 !important;
+        break-inside: avoid !important;
+        page-break-inside: avoid !important;
+      }
+
+      code {
+        background-color: #f1f5f9 !important;
+        color: #0369a1 !important;
+        border: 1px solid #e2e8f0 !important;
+      }
+
+      pre code {
+        border: none !important;
+        background: none !important;
+        color: inherit !important;
+      }
+
+      blockquote {
+        background-color: #f0fdf4 !important;
+        border-left: 4px solid #10b981 !important;
+        color: #166534 !important;
+        break-inside: avoid !important;
+        page-break-inside: avoid !important;
+      }
+
+      .page-cover {
+        min-height: 90vh !important;
+        border-bottom: none !important;
+        break-after: page !important;
+        page-break-after: always !important;
+      }
+
+      .cover-badge {
+        background: #ecfdf5 !important;
+        color: #059669 !important;
+        border-color: #6ee7b7 !important;
+      }
+
+      .cover-title {
+        color: #0f172a !important;
+      }
+
+      .cover-subtitle {
+        color: #475569 !important;
+      }
+
+      .cover-meta-grid {
+        background: #f8fafc !important;
+        border: 1px solid #cbd5e1 !important;
+      }
+
+      .meta-value {
+        color: #0f172a !important;
+      }
+
+      .toc-container {
+        background: #f8fafc !important;
+        border: 1px solid #cbd5e1 !important;
+        break-after: page !important;
+        page-break-after: always !important;
+      }
+
+      .toc-title {
+        color: #0f172a !important;
+        border-color: #cbd5e1 !important;
+      }
+
+      .toc-item-1 a {
+        color: #0f172a !important;
+      }
+
+      .toc-item-2 a {
+        color: #475569 !important;
+      }
+    }
+  
+  </style>
+</head>
+<body>
+  <div class="campaign-wrapper">
+
+
+    <main class="markdown-body">
+<h1 id="ty-code">Ty-Code ⚡</h1>
+<blockquote>
+<p><strong>The Autonomous, Local-First AI Coding Desktop IDE.</strong><br>Built for senior software engineers, architects, and security-conscious teams who demand Cursor-level agentic velocity without cloud surveillance, vendor lock-in, or runaway token invoices.</p>
+</blockquote>
+<p><a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>
+<a href="#core-philosophy"><img src="https://img.shields.io/badge/Telemetry-Zero%20Exfiltration-success.svg" alt="Zero-Telemetry"></a>
+<a href="https://github.com/Alishahryar1/free-claude-code"><img src="https://img.shields.io/badge/Model%20Supply-free--claude--code-indigo.svg" alt="Powered by FCC"></a>
+<a href="#architecture-overview"><img src="https://img.shields.io/badge/Desktop-Electron%2030%20%7C%20Node%2020-00d8ff.svg" alt="Desktop Engine"></a>
+<a href="#architecture-overview"><img src="https://img.shields.io/badge/Frontend-React%2018%20%7C%20Zustand-61dafb.svg" alt="Frontend UI"></a>
+<a href="#architecture-overview"><img src="https://img.shields.io/badge/Editor-Monaco%20Engine-brightgreen.svg" alt="Editor"></a></p>
+<hr>
+<h2 id="overview">Overview</h2>
+<p><strong>Ty-Code</strong> is an open-source, air-gap-capable desktop AI integrated development environment built on the <strong>Monaco Editor</strong> (the core engine behind VS Code), <strong>React 18</strong>, <strong>Electron</strong>, and <strong>Zustand</strong>. </p>
+<p>Traditional cloud-centric AI coding tools (e.g., GitHub Copilot, Cursor, Windsurf) force engineering organizations into an untenable compromise: streaming proprietary codebases, internal API endpoints, and sensitive credentials over public networks to third-party multitenant cloud servers.</p>
+<p>Ty-Code fundamentally eliminates this compromise. By orchestrating a <strong>Local-First Agentic Harness</strong>, an intelligent <strong>Omni-Orchestrator &amp; ProviderGateway</strong>, and operating-system-level hardware credential encryption, Ty-Code runs entirely under your control. It ships with a built-in zero-configuration free tier, connects directly to over 100+ commercial frontier models via Bring-Your-Own-Key (BYOK), and integrates with local open-weights engines (Ollama, vLLM) with mathematical workspace containment.</p>
+<hr>
+<h2 id="core-philosophy">Core Philosophy</h2>
+<h3 id="1-true-local-first-sovereignty-zero-telemetry">1. 🛡️ True Local-First Sovereignty (Zero-Telemetry)</h3>
+<p>Your code belongs to you. Ty-Code performs repository scanning, abstract syntax tree (AST) indexing, semantic drift detection, workspace diffing, and correction rule learning <strong>strictly on your host machine</strong>. </p>
+<ul>
+<li>No background analytics or event logging.</li>
+<li>No remote code snippet indexing.</li>
+<li>Direct outbound egress connects exclusively to your explicitly configured model endpoints.</li>
+</ul>
+<h3 id="2-bring-your-own-key-byok-freedom">2. 🔑 Bring-Your-Own-Key (BYOK) Freedom</h3>
+<p>Never pay a $20/month subscription markup for rate-limited API access. Provide your own direct API keys for OpenRouter, Anthropic, OpenAI, Groq, Cerebras, or Google AI Studio. Pay raw wholesale token rates directly to the model providers, or point Ty-Code at your on-premises vLLM / Ollama cluster for 100% air-gapped, zero-cost execution.</p>
+<h3 id="3-hardware-backed-os-credential-encryption-safestorage">3. 🔒 Hardware-Backed OS Credential Encryption (`safeStorage`)</h3>
+<p>Plaintext <code>.env</code> secret storage is an enterprise vulnerability. Ty-Code seals all API tokens, session cookies, and OAuth refresh tokens using operating system cryptographic primitives:</p>
+<ul>
+<li><strong>Windows:</strong> Hardware-sealed via Windows Data Protection API (DPAPI).</li>
+<li><strong>macOS:</strong> Stored within the Apple Keychain Services architecture via 256-bit AES-GCM managed by the Secure Enclave.</li>
+<li><strong>Linux:</strong> Mediated via <code>libsecret</code> binding to the system Secret Service (GNOME Keyring / KWallet).</li>
+<li><strong>Zero-Latency In-Memory Cache:</strong> Credentials decrypt once per app boot into volatile memory, serving model dispatch requests with 0ms disk overhead.</li>
+</ul>
+<hr>
+<h2 id="key-features-grid">Key Features Grid</h2>
+<pre><code>+---------------------------------------------------------------------------------------------------+
+|                                   TY-CODE CORE SYSTEM CAPABILITIES                                 |
++-----------------------------------+-----------------------------------+---------------------------+
+| 🌐 Omni-Orchestrator Routing      | 🧠 Ty-Code Context Engine         | 🔍 Omni-Debugger          |
+| • Auto-failover across providers  | • Universal Correction Memory     | • AST architectural drift |
+| • Rate-limit predictive backoff   | • Dynamic Auto-MCP tool routing   | • Target file style check |
+| • Connection pool (keepAlive)     | • Progressive 10k file scanner    | • SQLite / DB profiling   |
++-----------------------------------+-----------------------------------+---------------------------+
+| 🎨 M3E Visual UI Canvas           | 🤖 Enterprise Agentic Harness     | 🚀 Matrix Decode Engine   |
+| • Project-native design extractor | • ReAct loop with Task Scoping    | • Decode-Frontier engine  |
+| • Bidirectional Monaco sync       | • Auto-Compaction at 95% context  | • 140 char/sec stream     |
+| • Component isolation sandbox     | • 3-Tier Terminal Sandbox Gate    | • Gated Markdown swap     |
++-----------------------------------+-----------------------------------+---------------------------+
+</code></pre>
+<h3 id="feature-deep-dive">Feature Deep-Dive</h3>
+<table>
+<thead>
+<tr>
+<th align="left">Subsystem</th>
+<th align="left">Architecture &amp; Enterprise Impact</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left"><strong>Omni-Orchestrator &amp; Adaptive Routing</strong></td>
+<td align="left">Dynamic Directed Acyclic Graph (DAG) routing engine. Automatically detects 429 rate limits and 5xx upstream outages, seamlessly pivoting mid-turn across OpenRouter, Groq, Anthropic, and local Ollama without dropping context. Employs TCP/TLS keepAlive connection pooling to shave 180ms off first-byte latency.</td>
+</tr>
+<tr>
+<td align="left"><strong>Ty-Code Context Engine</strong></td>
+<td align="left">Features <strong>Universal Correction Memory (The Learning Loop)</strong>: when you correct the AI in Chat, the Omni-Debugger, or the M3E Canvas, the rule is saved to a local Write-Ahead-Logged SQLite database and dispatched live across all three surfaces. Features <strong>Auto-MCP</strong>: dynamically maps tool schemas on-demand without context window exhaustion.</td>
+</tr>
+<tr>
+<td align="left"><strong>Omni-Debugger</strong></td>
+<td align="left">Specialized multi-threaded static analysis worker pool (<code>arch-worker.ts</code>). Continuously checks code mutations for architectural drifts, forbidden patterns (e.g., legacy <code>var</code> usage, unescaped raw SQL, missing repository layers), and runtime exceptions.</td>
+</tr>
+<tr>
+<td align="left"><strong>M3E UI Canvas</strong></td>
+<td align="left">An interactive design-to-code canvas built right into your IDE. Automatically extracts your project&#39;s active design system (Tailwind tokens, CSS variables, typography), letting you visually manipulate UI layouts with instant, bidirectional Monaco editor code synchronization.</td>
+</tr>
+<tr>
+<td align="left"><strong>Enterprise Agentic Loop</strong></td>
+<td align="left">Autonomous ReAct execution engine with structured Task Scoping, Todo checklist tracking, and autonomous compaction when context capacity hits 95%. Safeguarded by a <strong>Three-Tier Terminal Sandbox</strong> (<code>Restricted</code>, <code>Always Ask</code>, <code>Always Proceed</code>) with rigorous PTY environment scrubbing.</td>
+</tr>
+</tbody></table>
+<hr>
+<h2 id="the-zero-friction-free-tier-one-key-premium">The Zero-Friction Free Tier & One-Key Premium</h2>
+<p>Ty-Code provides the smoothest onboarding experience in the developer tools industry:</p>
+<h3 id="1-zero-friction-community-free-tier-out-of-the-box">1. Zero-Friction Community Free Tier (Out of the Box)</h3>
+<p>Launch Ty-Code and start coding immediately. Out of the box, Ty-Code connects to our distributed Cloudflare Worker edge gateway (<code>api.ty-code.com</code>), providing instant access to fast, capable open-weights models (such as Llama 3.3 70B and Qwen 2.5 Coder):</p>
+<ul>
+<li>❌ No account registration required.</li>
+<li>❌ No credit card required.</li>
+<li>❌ Zero environment configuration.</li>
+<li>✅ Instant code generation, debugging, and chat.</li>
+</ul>
+<h3 id="2-one-key-premium-upgrade">2. "One-Key Premium" Upgrade</h3>
+<p>When your engineering tasks require frontier commercial intelligence (Claude 3.5 Sonnet, GPT-4o, Gemini 1.5 Pro, DeepSeek V3):</p>
+<ol>
+<li>Open Settings (<code>Ctrl+,</code> or <code>Cmd+,</code>) $\rightarrow$ <strong>Models &amp; Providers</strong>.</li>
+<li>Paste a single <a href="https://openrouter.ai">OpenRouter</a> API key.</li>
+<li>Instantly unlock 100+ state-of-the-art models with native budget caps, token telemetry, and automatic model rotation.</li>
+</ol>
+<hr>
+<h2 id="architecture-overview">Architecture Overview</h2>
+<p>Ty-Code maintains strict architectural isolation between presentation, native operating system resources, and external model dispatch:</p>
+<pre><code>+-------------------------------------------------------------------------------------------------+
+|                                    CHROMIUM RENDERER PROCESS                                    |
+|                                                                                                 |
+|   +-----------------------+   +------------------------+   +---------------------------------+  |
+|   |     Monaco Editor     |   |       M3E Canvas       |   |       Chat Sidecar Assistant    |  |
+|   |  - Diff Editor Split  |   |  - Design System AST   |   |  - Decode-Frontier Engine       |  |
+|   |  - Language Workers   |   |  - Interactive SVG UI  |   |  - Markdown Parser Worker       |  |
+|   +-----------------------+   +------------------------+   +---------------------------------+  |
+|                                            |                                                    |
+|                      Double-Buffered Render Buffer (24ms RAF Tick)                              |
++-------------------------------------------------------------------------------------------------+
+                                             |
+                  Hardened Preload Bridge (contextBridge.exposeInMainWorld)
+                       Bidirectional Zod Contract Validation Schema
+                                             v
++-------------------------------------------------------------------------------------------------+
+|                                    ELECTRON MAIN PROCESS (Node.js)                              |
+|                                                                                                 |
+|   +-----------------------+   +------------------------+   +---------------------------------+  |
+|   |   Credential Vault    |   |  SecurityPolicyEngine  |   |        Context Engine           |  |
+|   |   - safeStorage OS    |   |  - 3-Tier Sandbox Gate |   |  - Universal Correction Memory  |  |
+|   |   - 0ms RAM Key Cache |   |  - PTY Env Sanitizer   |   |  - Auto-MCP Dynamic Router      |  |
+|   +-----------------------+   +------------------------+   +---------------------------------+  |
+|                                            |                                                    |
+|                                ProviderGateway &amp; Router                                         |
+|             (HTTP/HTTPS KeepAlive Socket Pooling • Circuit Breaker Failover DAG)                |
++-------------------------------------------------------------------------------------------------+
+         |                                   |                                   |
+         v                                   v                                   v
++------------------+                +------------------+                +------------------+
+| Commercial APIs  |                | Local LLM Daemon |                | Multi-Harness    |
+| • OpenRouter     |                | • Ollama         |                |   Supply Proxy   |
+| • Anthropic / OA |                | • vLLM Endpoint  |                | (FCC Port 8765)  |
++------------------+                +------------------+                +------------------+
+</code></pre>
+<h3 id="the-24ms-double-buffered-token-stream-decode-frontier-engine">The 24ms Double-Buffered Token Stream & Decode-Frontier Engine</h3>
+<p>High-velocity models (like Groq or Cerebras) stream tokens at 300–1,500 tokens/sec. Naive React rendering locks the main thread and causes severe layout thrashing. Ty-Code solves this with a <strong>Double-Buffered Render Loop</strong>:</p>
+<ul>
+<li>Raw SSE chunks collect in an off-screen string accumulator.</li>
+<li>The render buffer flushes to React state exactly once every 24ms.</li>
+<li><strong>ScrambleText Decode-Frontier Engine:</strong> Renders an animated glyph-scramble band that sweeps forward at 140 chars/sec during streaming and 600 chars/sec on completion. Markdown AST parsing and code syntax highlighting are offloaded to dedicated Web Workers in the background, cleanly swapping in once the decode sweep settles with <strong>zero visual flash</strong>.</li>
+</ul>
+<hr>
+<h2 id="directory-layout">Directory Layout</h2>
+<pre><code>ty-code/
+├── docs/                           # Technical architecture, security models &amp; whitepapers
+│   ├── ENTERPRISE-WHITEPAPER.md    # 10-page CISO/CTO Enterprise Architecture whitepaper
+│   ├── EXTENSION-SECURITY-MODEL.md # VS Code extension capabilities &amp; containment model
+│   ├── FCC-INTEGRATION-ARCHITECTURE.md # Multi-harness supply architecture specifications
+│   └── traces/                     # Continuous automated compliance &amp; security traces
+├── src/
+│   ├── main/                       # Electron Main Process (Node.js LTS)
+│   │   ├── agent/                  # ReAct agent loop, task scoping &amp; tool executors
+│   │   ├── providers/              # Multi-protocol ProviderGateway (SSE, NDJSON, KeepAlive)
+│   │   ├── services/               # Credential vault, context engine, debugger orchestrator
+│   │   └── ipc/                    # Zod-validated IPC channel registry
+│   ├── preload/                    # Secure Preload Execution Context
+│   │   ├── index.ts                # contextBridge method exposure
+│   │   └── types.ts                # Shared IPC TypeScript contracts
+│   └── renderer/                   # Chromium UI Layer (React 18 + Zustand + Monaco)
+│       └── src/
+│           ├── components/         # Monaco editor, M3E Canvas, Chat Sidecar, Terminal
+│           ├── state/              # Zustand state stores (workspace, chat, audit)
+│           └── workers/            # Web Workers for background Markdown &amp; Syntax Highlighting
+├── website/                        # Cloudflare Pages release portal &amp; static docs
+├── package.json
+└── tsconfig.json
+</code></pre>
+<hr>
+<h2 id="downloads-binary-releases">📥 Downloads & Binary Releases</h2>
+<p>Download verified, pre-built production binaries for your operating system:</p>
+<table>
+<thead>
+<tr>
+<th align="left">Platform</th>
+<th align="left">Architecture</th>
+<th align="left">Package Format</th>
+<th align="left">Direct Download</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left"><strong>Windows</strong></td>
+<td align="left">x64</td>
+<td align="left">NSIS Installer</td>
+<td align="left"><a href="https://github.com/JTyrell/Ty-Code/releases/download/v1.0.0/Ty-Code-Setup-1.0.0.exe"><code>Ty-Code-Setup-1.0.0.exe</code></a></td>
+</tr>
+<tr>
+<td align="left"><strong>Windows</strong></td>
+<td align="left">x64</td>
+<td align="left">Portable Archive</td>
+<td align="left"><a href="https://github.com/JTyrell/Ty-Code/releases/download/v1.0.0/Ty-Code-1.0.0-win.zip"><code>Ty-Code-1.0.0-win.zip</code></a></td>
+</tr>
+<tr>
+<td align="left"><strong>macOS</strong></td>
+<td align="left">Universal</td>
+<td align="left">Disk Image (.dmg)</td>
+<td align="left"><a href="https://github.com/JTyrell/Ty-Code/releases/download/v1.0.0/Ty-Code-1.0.0.dmg"><code>Ty-Code-1.0.0.dmg</code></a></td>
+</tr>
+<tr>
+<td align="left"><strong>Linux</strong></td>
+<td align="left">x64</td>
+<td align="left">Universal AppImage</td>
+<td align="left"><a href="https://github.com/JTyrell/Ty-Code/releases/download/v1.0.0/Ty-Code-1.0.0.AppImage"><code>Ty-Code-1.0.0.AppImage</code></a></td>
+</tr>
+<tr>
+<td align="left"><strong>Linux</strong></td>
+<td align="left">x64</td>
+<td align="left">Debian / Ubuntu (.deb)</td>
+<td align="left"><a href="https://github.com/JTyrell/Ty-Code/releases/download/v1.0.0/ty-code_1.0.0_amd64.deb"><code>ty-code_1.0.0_amd64.deb</code></a></td>
+</tr>
+<tr>
+<td align="left"><strong>Linux</strong></td>
+<td align="left">x64</td>
+<td align="left">RedHat / Fedora (.rpm)</td>
+<td align="left"><a href="https://github.com/JTyrell/Ty-Code/releases/download/v1.0.0/ty-code-1.0.0.x86_64.rpm"><code>ty-code-1.0.0.x86_64.rpm</code></a></td>
+</tr>
+<tr>
+<td align="left"><strong>Checksums</strong></td>
+<td align="left">All</td>
+<td align="left">SHA-256 Signatures</td>
+<td align="left"><a href="https://github.com/JTyrell/Ty-Code/releases/download/v1.0.0/SHA256SUMS.txt"><code>SHA256SUMS.txt</code></a></td>
+</tr>
+</tbody></table>
+<p>Verify release binary integrity:</p>
+<pre><code class="language-bash">sha256sum -c SHA256SUMS.txt --ignore-missing
+</code></pre>
+<hr>
+<h2 id="getting-started-local-development">Getting Started (Local Development)</h2>
+<h3 id="prerequisites">Prerequisites</h3>
+<ul>
+<li><strong>Node.js:</strong> <code>v20.0.0</code> or higher (tested on Node.js v24 LTS)</li>
+<li><strong>npm:</strong> <code>v10.0.0</code> or higher</li>
+<li><strong>Git</strong></li>
+</ul>
+<h3 id="1-clone-install-dependencies">1. Clone & Install Dependencies</h3>
+<pre><code class="language-bash">git clone https://github.com/JTyrell/Ty-Code.git
+cd Ty-Code
+npm ci
+</code></pre>
+<h3 id="2-run-in-development-mode">2. Run in Development Mode</h3>
+<p>Starts the Vite renderer server and esbuild main/preload watch compiler concurrently:</p>
+<pre><code class="language-bash">npm run dev
+</code></pre>
+<h3 id="3-verify-system-invariants-anti-phantom-guards">3. Verify System Invariants & Anti-Phantom Guards</h3>
+<p>Ty-Code includes an automated suite of enterprise security guards that audit the codebase against mock elimination, secret privacy, and attribution:</p>
+<pre><code class="language-bash">npm run guards
+</code></pre>
+<h3 id="4-build-production-binaries">4. Build Production Binaries</h3>
+<p>Compile the main bundle, preload script, and optimized production renderer:</p>
+<pre><code class="language-bash">npm run build
+</code></pre>
+<p>To package native desktop installers for your current operating system:</p>
+<pre><code class="language-bash">npm run package:win   # Windows NSIS Installer &amp; Portable ZIP
+npm run package:mac   # macOS Universal DMG
+npm run package:linux # Linux AppImage, DEB, and RPM
+</code></pre>
+<hr>
+<h2 id="acknowledgments-open-source-credits">Acknowledgments & Open Source Credits</h2>
+<p>Ty-Code stands on the shoulders of the global open-source community. We express our profound gratitude to the maintainers and contributors of Monaco Editor, Electron, React, Zustand, Vite, and esbuild.</p>
+<h3 id="special-attribution-free-claude-code-fcc">🌟 Special Attribution: free-claude-code (FCC)</h3>
+<p>We formally acknowledge and credit the groundbreaking engineering established by the <strong>free-claude-code (FCC)</strong> project:</p>
+<blockquote>
+<p><strong>Repository:</strong> <a href="https://github.com/Alishahryar1/free-claude-code">https://github.com/Alishahryar1/free-claude-code</a><br><strong>Upstream Attribution String:</strong> <em>Free-model supply layer powered by free-claude-code (FCC) — AGPL-3.0 / MIT — <a href="https://github.com/Alishahryar1/free-claude-code">https://github.com/Alishahryar1/free-claude-code</a></em></p>
+</blockquote>
+<p>Ty-Code&#39;s <strong>Multi-Harness Routing Architecture</strong>—which unlocks access to over <strong>1.3 billion monthly free tokens</strong> across 11 distinct development environments (including Claude Code, Codex, VS Code Extension APIs, Pi, OpenCode, Cline, Aider, Hermes, DeepSeek, Grok-Build, and Mistral)—was deeply inspired by and architected upon the methodologies pioneered by the FCC repository.</p>
+<p>By adapting FCC&#39;s mock-free binary loopback patterns, ToS safety compliance categorizations, and subscription OAuth device flows into Ty-Code&#39;s hardened desktop sandbox, we have bridged community-driven open-source innovation with enterprise-grade security. This integration stands as a shining testament to how collaborative open-source engineering drives modern developer tools forward.</p>
+<hr>
+<h2 id="enterprise-whitepaper-formal-specifications">Enterprise Whitepaper & Formal Specifications</h2>
+<p>For enterprise procurement committees, CISOs, and enterprise architects evaluating Ty-Code for corporate-wide deployment:</p>
+<ul>
+<li>📄 <strong>Enterprise Architecture Whitepaper:</strong> <a href="docs/ENTERPRISE-WHITEPAPER.md">docs/ENTERPRISE-WHITEPAPER.md</a></li>
+<li>🔒 <strong>Extension Sandbox Security Model:</strong> <a href="docs/EXTENSION-SECURITY-MODEL.md">docs/EXTENSION-SECURITY-MODEL.md</a></li>
+<li>🌐 <strong>Multi-Harness Supply Architecture:</strong> <a href="docs/FCC-INTEGRATION-ARCHITECTURE.md">docs/FCC-INTEGRATION-ARCHITECTURE.md</a></li>
+<li>📊 <strong>Audited Performance Benchmarks:</strong> <a href="docs/traces/open-perf-trace.json">docs/traces/open-perf-trace.json</a></li>
+</ul>
+<hr>
+<h2 id="license">License</h2>
+<p>© 2026 Ty-Code Project • Version 1.0.0 Stable Release.<br>Licensed under the <a href="LICENSE">MIT License</a>.<br>The integrated multi-harness free supply adapter layer interfaces with upstream tooling under AGPL-3.0 / MIT.</p>
+
+    </main>
+  </div>
+</body>
+</html>

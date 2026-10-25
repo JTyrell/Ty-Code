@@ -1,0 +1,485 @@
+{
+  "phase": "FCC-4",
+  "title": "Mid-Turn Failover + RTK/Headroom Optimization + Free-Quota Meters",
+  "timestamp": "2026-10-17T06:00:14.365Z",
+  "gitCommit": "bb0d31db5e37962045ecce162798077b40167a4c",
+  "verificationSummary": {
+    "totalChecks": 87,
+    "passedChecks": 87,
+    "failedChecks": 0,
+    "status": "PASSED"
+  },
+  "metrics": {
+    "midTurnFailover": {
+      "maxHandoffsPerTurn": 2,
+      "enforceTaxonomyError": true,
+      "testedHandoffChain": [
+        "openrouter",
+        "google-ai-studio",
+        "groq"
+      ],
+      "exhaustedErrorCode": "[FAILOVER_EXHAUSTED]",
+      "verbatimNoticePattern": "provider throttled — continued with <model>"
+    },
+    "tokenOptimizationBenchmark": {
+      "totalRequestsTested": 20,
+      "rawTokens": 5860,
+      "optimizedTokensSent": 2115,
+      "savedTokens": 3745,
+      "reductionPercentage": 64,
+      "meetsTargetPercent": true,
+      "rtkSavedTokens": 1520,
+      "headroomSavedTokens": 1625,
+      "cacheSavedTokens": 600,
+      "verbatimMeterLabel": "Optimization saved 3,745 tokens (64%) this session"
+    },
+    "quotaMeters": {
+      "aggregateDailyBudget": 9150000,
+      "aggregateRemainingToday": 9150000,
+      "trackedProvidersCount": 7,
+      "exhaustionDetectionTested": true,
+      "recommendedAlternative": {
+        "providerId": "ollama",
+        "modelId": "llama3:latest",
+        "reason": "Ollama Local (Unlimited) has 5,000,000 free tokens available."
+      }
+    }
+  },
+  "testResults": [
+    {
+      "test": "Turn snapshot created with correct turnId",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Initial handoffCount is 0",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Maximum handoffs strictly configured to 2",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "canHandoff is true before any failover",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Streaming tokens recorded into snapshot without loss",
+      "passed": true,
+      "details": "141 chars"
+    },
+    {
+      "test": "Segment 1 recorded with failed provider openrouter",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Segment 1 captured rate limit error",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Segment 1 attributed tokens streamed before kill",
+      "passed": true,
+      "details": "37 tokens"
+    },
+    {
+      "test": "Handoff count incremented to 1 after first failover",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Active provider switched to google-ai-studio",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Active model switched to gemini-2.5-flash",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Visible notice matches verbatim requirement",
+      "passed": true,
+      "details": "\"provider throttled — continued with gemini-2.5-flash\""
+    },
+    {
+      "test": "formatFailoverNotice strips path and formats verbatim notice",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Continuation messages contain partial text + system prompt",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Partial text preserved in assistant message",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "System continuation prompt appended",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Tail context snippet included for seamless resumption",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "canHandoff is true for 2nd failover (1/2 handoffs used)",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Segment 2 recorded with google-ai-studio",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Handoff count reached max limit of 2",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Second notice matches verbatim format",
+      "passed": true,
+      "details": "\"provider throttled — continued with llama-3.3-70b-versatile\""
+    },
+    {
+      "test": "canHandoff is false after 2 handoffs",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Throws structured [FAILOVER_EXHAUSTED] error code",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Error message specifies 2/2 handoff limit reached",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Error taxonomy classified as RATE_LIMITED",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Handoff chain preserved on exhausted error object",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Max 2 handoffs strictly enforced without silent looping",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Snapshot recorded complete 2-hop handoff chain",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Chain Hop 1 correctly attributed",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Chain Hop 2 correctly attributed",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Short tool outputs (<25 lines) are not compressed",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Short tool output preserved verbatim",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Large terminal dump (>25 lines) successfully compressed",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "RTK compression yielded significant token savings",
+      "passed": true,
+      "details": "1462 tokens"
+    },
+    {
+      "test": "Top 10 lines preserved in compressed output",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Bottom 10 lines preserved in compressed output",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Omitted middle lines summarized with count",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Headroom pruned stale historical tool outputs beyond 3 turns",
+      "passed": true,
+      "details": "1 tool results pruned"
+    },
+    {
+      "test": "Headroom context pruning yielded token savings",
+      "passed": true,
+      "details": "244 tokens"
+    },
+    {
+      "test": "Stale tool outputs replaced with Headroom summary tag",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Recent tool output within relevance window retained",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "computeCacheKey produces deterministic SHA-256 hash",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Semantic cache returns hit for identical request",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Cached fullText retrieved correctly",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Session cache opt-out registered",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Cached response bypassed when session opts out",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "20-request benchmark achieves >=20% token reduction (actual: 64%)",
+      "passed": true,
+      "details": "Saved 3745 / 5860 tokens"
+    },
+    {
+      "test": "Savings meter matches verbatim pattern: 'Optimization saved X tokens (Y%) this session'",
+      "passed": true,
+      "details": "\"Optimization saved 3,745 tokens (64%) this session\""
+    },
+    {
+      "test": "Savings meter arithmetic perfectly matches category sums",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "getQuotaMetersSummary returns providers list",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Includes major free providers (OpenRouter, Google, Groq, HuggingChat, Copilot, Ollama)",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Aggregate free daily budget calculated",
+      "passed": true,
+      "details": "9,150,000 tokens/day"
+    },
+    {
+      "test": "Aggregate free tokens remaining today calculated",
+      "passed": true,
+      "details": "9,150,000 tokens"
+    },
+    {
+      "test": "Provider bar has valid id (openrouter)",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Provider openrouter percentUsed in [0, 100] (0%)",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Provider openrouter has reset human string (\"active\")",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Provider bar has valid id (google-ai-studio)",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Provider google-ai-studio percentUsed in [0, 100] (0%)",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Provider google-ai-studio has reset human string (\"resets in 4h 0m\")",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Provider bar has valid id (groq)",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Provider groq percentUsed in [0, 100] (0%)",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Provider groq has reset human string (\"resets in 4h 0m\")",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Provider bar has valid id (huggingchat)",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Provider huggingchat percentUsed in [0, 100] (0%)",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Provider huggingchat has reset human string (\"resets in 4h 0m\")",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Provider bar has valid id (openkilo)",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Provider openkilo percentUsed in [0, 100] (0%)",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Provider openkilo has reset human string (\"active\")",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Provider bar has valid id (copilot)",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Provider copilot percentUsed in [0, 100] (0%)",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Provider copilot has reset human string (\"resets in 4h 0m\")",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Provider bar has valid id (ollama)",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Provider ollama percentUsed in [0, 100] (0%)",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Provider ollama has reset human string (\"resets in 4h 0m\")",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "OpenRouter quota bar marked as exhausted when remaining is 0",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "activeProviderExhausted flag set to true",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "hasAnyExhausted flag set to true",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "recommendedAlternative provided when provider is exhausted",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Recommended alternative points to a healthy non-exhausted provider",
+      "passed": true,
+      "details": "Recommended: ollama (llama3:latest)"
+    },
+    {
+      "test": "StatusBar TelemetryBadge includes Optimization saved meter in tooltip",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "UsageDashboard contains fcc-optimization-savings-meter banner",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "UsageDashboard contains aggregate daily meters banner",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "UsageDashboard renders per-provider quota bars",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "UsageDashboard renders subscription upsell button on exhaustion",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "ChatSidecar renders chat-cached-badge for cached responses",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "ChatSidecar renders visible failover notice",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "ChatSidecar renders interactive subscription upsell card on quota exhaustion (never silence/hanging spinner)",
+      "passed": true,
+      "details": "Verified successfully."
+    }
+  ]
+}

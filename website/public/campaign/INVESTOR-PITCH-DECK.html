@@ -1,0 +1,833 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ty-Code: Investor & Stakeholder Pitch Deck</title>
+  <style>
+
+    :root {
+      --bg-dark: #0b0d10;
+      --surface-dark: #111827;
+      --surface-border: #1f2937;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --emerald: #10b981;
+      --emerald-glow: rgba(16, 185, 129, 0.15);
+      --cyan: #06b6d4;
+      --code-bg: #0d1117;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Inter, Arial, sans-serif;
+      font-size: 15px;
+      line-height: 1.65;
+      background-color: var(--bg-dark);
+      color: #e2e8f0;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .campaign-wrapper {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 48px 32px;
+    }
+
+    /* Typography Scale */
+    h1, h2, h3, h4, h5, h6 {
+      color: var(--text-main);
+      font-weight: 700;
+      line-height: 1.3;
+      margin-top: 1.8em;
+      margin-bottom: 0.6em;
+      break-after: avoid;
+      page-break-after: avoid;
+    }
+
+    h1 {
+      font-size: 2.2rem;
+      border-bottom: 1px solid var(--surface-border);
+      padding-bottom: 0.3em;
+    }
+
+    h2 {
+      font-size: 1.6rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      padding-bottom: 0.25em;
+    }
+
+    h3 { font-size: 1.25rem; }
+    h4 { font-size: 1.1rem; }
+
+    p, li {
+      color: #cbd5e1;
+      margin-bottom: 1em;
+    }
+
+    a {
+      color: #38bdf8;
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    strong {
+      color: #ffffff;
+      font-weight: 600;
+    }
+
+    hr {
+      border: 0;
+      height: 1px;
+      background: var(--surface-border);
+      margin: 2.5em 0;
+    }
+
+    /* Styled Tables */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 2em 0;
+      background: var(--surface-dark);
+      border: 1px solid var(--surface-border);
+      border-radius: 8px;
+      overflow: hidden;
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+
+    th, td {
+      padding: 12px 16px;
+      border: 1px solid var(--surface-border);
+      text-align: left;
+      font-size: 0.95rem;
+    }
+
+    th {
+      background-color: #1e293b;
+      color: #f8fafc;
+      font-weight: 600;
+    }
+
+    tr:nth-child(even) {
+      background-color: #0f172a;
+    }
+
+    /* Code Blocks and Monospace */
+    pre {
+      background-color: var(--code-bg);
+      border: 1px solid var(--surface-border);
+      border-radius: 8px;
+      padding: 16px 20px;
+      overflow-x: auto;
+      font-family: "JetBrains Mono", Consolas, "Courier New", monospace;
+      font-size: 0.9rem;
+      line-height: 1.5;
+      color: #e2e8f0;
+      margin: 1.8em 0;
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+
+    code {
+      font-family: "JetBrains Mono", Consolas, "Courier New", monospace;
+      font-size: 0.9em;
+      background-color: rgba(255, 255, 255, 0.08);
+      color: #38bdf8;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
+    pre code {
+      background: none;
+      color: inherit;
+      padding: 0;
+      border-radius: 0;
+    }
+
+    /* Blockquotes */
+    blockquote {
+      border-left: 4px solid var(--emerald);
+      background: var(--emerald-glow);
+      margin: 1.8em 0;
+      padding: 14px 22px;
+      border-radius: 0 8px 8px 0;
+      color: #94a3b8;
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+
+    blockquote p:last-child {
+      margin-bottom: 0;
+    }
+
+    /* Whitepaper Cover Page */
+    .page-cover {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+      min-height: 82vh;
+      border-bottom: 2px solid var(--emerald);
+      margin-bottom: 48px;
+      padding: 60px 20px;
+      break-after: page;
+      page-break-after: always;
+    }
+
+    .cover-shield-icon {
+      margin-bottom: 24px;
+    }
+
+    .cover-badge {
+      background: var(--emerald-glow);
+      color: var(--emerald);
+      padding: 6px 18px;
+      border-radius: 9999px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      border: 1px solid rgba(16, 185, 129, 0.35);
+      margin-bottom: 24px;
+    }
+
+    .cover-title {
+      font-size: 2.8rem;
+      font-weight: 800;
+      color: #ffffff;
+      line-height: 1.2;
+      margin: 0 0 16px 0;
+      border: none;
+      padding: 0;
+    }
+
+    .cover-subtitle {
+      font-size: 1.25rem;
+      color: var(--text-muted);
+      max-width: 720px;
+      margin: 0 0 36px 0;
+      line-height: 1.5;
+    }
+
+    .cover-divider {
+      width: 80px;
+      height: 3px;
+      background: var(--emerald);
+      margin-bottom: 36px;
+      border-radius: 2px;
+    }
+
+    .cover-meta-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 16px 36px;
+      background: var(--surface-dark);
+      border: 1px solid var(--surface-border);
+      padding: 20px 32px;
+      border-radius: 8px;
+      margin-bottom: 40px;
+      max-width: 580px;
+      width: 100%;
+      text-align: left;
+    }
+
+    .cover-meta-item {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .meta-label {
+      font-size: 0.72rem;
+      color: var(--text-dim);
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    .meta-value {
+      font-size: 0.95rem;
+      color: #f1f5f9;
+      font-weight: 600;
+      margin-top: 2px;
+    }
+
+    .cover-footer-note {
+      font-size: 0.85rem;
+      color: var(--emerald);
+      font-weight: 600;
+      letter-spacing: 0.04em;
+    }
+
+    /* Table of Contents */
+    .toc-container {
+      background: var(--surface-dark);
+      border: 1px solid var(--surface-border);
+      border-radius: 8px;
+      padding: 28px 36px;
+      margin: 36px 0 48px 0;
+      break-after: page;
+      page-break-after: always;
+    }
+
+    .toc-title {
+      font-size: 1.3rem;
+      font-weight: 700;
+      color: #ffffff;
+      margin-bottom: 18px;
+      border-bottom: 1px solid var(--surface-border);
+      padding-bottom: 10px;
+    }
+
+    .toc-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+
+    .toc-item-1 {
+      font-weight: 600;
+      margin-top: 12px;
+    }
+
+    .toc-item-1 a {
+      color: #f1f5f9;
+    }
+
+    .toc-item-2 {
+      font-weight: 400;
+      margin-left: 24px;
+      margin-top: 6px;
+    }
+
+    .toc-item-2 a {
+      color: #94a3b8;
+    }
+
+    /* Print-Specific Formatting */
+    @media print {
+      body {
+        background-color: #ffffff !important;
+        color: #111827 !important;
+        font-size: 10.5pt !important;
+        line-height: 1.55 !important;
+      }
+
+      .campaign-wrapper {
+        max-width: 100% !important;
+        padding: 0 !important;
+        margin: 0 !important;
+      }
+
+      h1, h2, h3, h4, h5, h6 {
+        color: #0f172a !important;
+        border-color: #e2e8f0 !important;
+        break-after: avoid !important;
+        page-break-after: avoid !important;
+      }
+
+      p, li {
+        color: #1f2937 !important;
+      }
+
+      a {
+        color: #0284c7 !important;
+        text-decoration: underline !important;
+      }
+
+      table {
+        background: #ffffff !important;
+        border: 1px solid #cbd5e1 !important;
+        break-inside: avoid !important;
+        page-break-inside: avoid !important;
+      }
+
+      th, td {
+        border: 1px solid #cbd5e1 !important;
+        color: #1f2937 !important;
+        padding: 8px 12px !important;
+      }
+
+      th {
+        background-color: #f1f5f9 !important;
+        color: #0f172a !important;
+      }
+
+      tr:nth-child(even) {
+        background-color: #f8fafc !important;
+      }
+
+      pre {
+        background-color: #f8fafc !important;
+        color: #0f172a !important;
+        border: 1px solid #cbd5e1 !important;
+        break-inside: avoid !important;
+        page-break-inside: avoid !important;
+      }
+
+      code {
+        background-color: #f1f5f9 !important;
+        color: #0369a1 !important;
+        border: 1px solid #e2e8f0 !important;
+      }
+
+      pre code {
+        border: none !important;
+        background: none !important;
+        color: inherit !important;
+      }
+
+      blockquote {
+        background-color: #f0fdf4 !important;
+        border-left: 4px solid #10b981 !important;
+        color: #166534 !important;
+        break-inside: avoid !important;
+        page-break-inside: avoid !important;
+      }
+
+      .page-cover {
+        min-height: 90vh !important;
+        border-bottom: none !important;
+        break-after: page !important;
+        page-break-after: always !important;
+      }
+
+      .cover-badge {
+        background: #ecfdf5 !important;
+        color: #059669 !important;
+        border-color: #6ee7b7 !important;
+      }
+
+      .cover-title {
+        color: #0f172a !important;
+      }
+
+      .cover-subtitle {
+        color: #475569 !important;
+      }
+
+      .cover-meta-grid {
+        background: #f8fafc !important;
+        border: 1px solid #cbd5e1 !important;
+      }
+
+      .meta-value {
+        color: #0f172a !important;
+      }
+
+      .toc-container {
+        background: #f8fafc !important;
+        border: 1px solid #cbd5e1 !important;
+        break-after: page !important;
+        page-break-after: always !important;
+      }
+
+      .toc-title {
+        color: #0f172a !important;
+        border-color: #cbd5e1 !important;
+      }
+
+      .toc-item-1 a {
+        color: #0f172a !important;
+      }
+
+      .toc-item-2 a {
+        color: #475569 !important;
+      }
+    }
+  
+  </style>
+</head>
+<body>
+  <div class="campaign-wrapper">
+
+
+    <main class="markdown-body">
+<hr>
+<h2 id="marp-true-theme-tycode-paginate-true-size-169-footer-ty-code-the-sovereign-ai-ide-httpsgithubcomjtyrellty-code">marp: true
+theme: tycode
+paginate: true
+size: 16:9
+footer: 'Ty-Code: The Sovereign AI IDE • https://github.com/JTyrell/Ty-Code'</h2>
+<!-- _class: lead -->
+<div class="badge">Seed Financing Round — Q4 2026</div><h1 id="ty-code-the-sovereign-ai-coding-environment">Ty-Code: The Sovereign AI Coding Environment</h1>
+<h3 id="local-first-zero-telemetry-unbounded-intelligence">Local-First. Zero-Telemetry. Unbounded Intelligence.</h3>
+<ul>
+<li>The first truly local-first, zero-telemetry agentic AI desktop IDE.</li>
+<li>Eliminating $20/month seat taxes, cloud lock-in, and IP exfiltration.</li>
+<li>Empowering 30M+ developers worldwide with sovereign compute.</li>
+<li>Unlocking 1.3B+ free monthly tokens across 11 autonomous runtime harnesses.</li>
+</ul>
+<!--
+[Document Metadata]
+Document ID: PITCH-DECK-SEED-2026-V1
+Target Audience: Venture Capitalists, Angel Investors, and Enterprise Strategic Partners
+Tone: Visionary, market-aware, confident, and relentlessly focused on the technical moat
+Core Thesis: AI coding is experiencing a massive architectural paradigm shift from centralized, cloud-locked, rate-limited SaaS tools to sovereign, local-first, multi-harness autonomous IDEs. Ty-Code owns this transition.
+
+[Visual Description]
+Deep Obsidian Cyber canvas (#0b0d10) illuminated by a pulsating emerald-green Decode-Frontier horizon line. Crisp, modern typography centered on screen with the Ty-Code cryptographic shield icon and glowing status indicator. Sub-text in high-contrast cyan: "Seed Financing Round — Q4 2026".
+
+[Speaker Notes (Verbatim Script)]
+"Good morning, everyone. Over the last two years, we've watched generative AI fundamentally transform how software gets written. But the first generation of AI coding tools—tools like Cursor, GitHub Copilot, and Windsurf—were built on an architectural premise that is already breaking down.
+
+That premise was simple: send all the developer's source code, ASTs, and terminal sessions up to a centralized cloud, run inference behind a walled garden, and charge a $20-a-month seat tax.
+
+Today, we're introducing Ty-Code. Ty-Code is the world's first true local-first, zero-telemetry agentic AI desktop IDE. We didn't build another thin API wrapper. We re-architected the entire development environment from the metal up so that your code, your context, and your credentials never leave your machine—while unlocking over 1.3 billion free monthly tokens across 11 autonomous runtime harnesses.
+
+We're here today to show you how Ty-Code is transforming AI coding from an expensive security liability into an enterprise-grade sovereign superpower."
+--><hr>
+<h1 id="the-fatal-flaws-of-cloud-ai-ides">The Fatal Flaws of Cloud AI IDEs</h1>
+<h3 id="three-critical-vulnerabilities-in-first-generation-tools">Three Critical Vulnerabilities in First-Generation Tools</h3>
+<ul>
+<li><strong>Cloud Exfiltration Risk:</strong> Proprietary codebases and credentials uploaded to external multi-tenant cloud servers.</li>
+<li><strong>The $20/Mo Seat-Tax Trap:</strong> High recurring subscription markups, artificial rate limits, and zero compute sovereignty.</li>
+<li><strong>Vendor Lock-In &amp; Downtime:</strong> Unannounced model deprecations and third-party cloud outages that completely freeze engineering pipelines.</li>
+<li><strong>The Enterprise Ban:</strong> 82% of regulated enterprises in healthcare, defense, and finance strictly prohibit cloud-connected AI coding tools.</li>
+</ul>
+<!--
+[Visual Description]
+A 3-column split comparison diagram highlighting the acute pain points of status-quo cloud AI IDEs:
+1. The Privacy Breach: File trees and sensitive environment variables streaming over public HTTPS to multi-tenant servers (tagged: "Exfiltration").
+2. The Seat-Tax Trap: An escalating billing invoice showing $20/user/mo plus $0.06/request credit markups and surprise rate limits (tagged: "300% Markup").
+3. The Outage Wall: An editor locked in an HTTP 429 error dialog during an upstream cloud outage (tagged: "Vendor Lock-in").
+
+[Speaker Notes (Verbatim Script)]
+"Let's be direct about the problem with today's market leaders. Every time a developer presses Tab in Cursor or Copilot, their proprietary IP is packaged into an AST payload and transmitted across the open web to a third-party server.
+
+For solo hobbyists building toy apps, that might feel acceptable. But for the Fortune 500—for banks, hospitals, defense contractors, and security-conscious tech startups—that is an absolute non-starter. CISOs across the globe are issuing outright bans on cloud AI IDEs because they cannot risk HIPAA violations, SOC2 breaches, or source code leaks.
+
+On top of the security nightmare, developers are getting squeezed by what we call the '$20-a-month seat tax.' Users are paying monthly subscriptions for tools that artificially throttle them the minute they hit a complex refactor, while marking up underlying API costs by 300%.
+
+And when the provider's centralized servers go down, development at the entire company stops dead. The industry is begging for compute sovereignty."
+--><hr>
+<h1 id="the-solution-sovereign-agentic-development">The Solution: Sovereign Agentic Development</h1>
+<h3 id="complete-architectural-inversion-code-never-leaves-local-ram">Complete Architectural Inversion: Code Never Leaves Local RAM</h3>
+<ul>
+<li><strong>Local-First Architecture:</strong> Repo indexing, AST parsing, and terminal execution run 100% on local hardware.</li>
+<li><strong>Zero-Telemetry Guarantee:</strong> No source code, prompt content, or telemetry ever leaves the machine.</li>
+<li><strong>Hardware-Sealed Credentials:</strong> API keys encrypted using OS-level <strong>safeStorage</strong> (Windows DPAPI, macOS Keychain, Linux Secret Service).</li>
+<li><strong>True BYOK &amp; Air-Gap Freedom:</strong> Direct wholesale model routing, or 100% offline execution with local Ollama and private VPCs.</li>
+</ul>
+<!--
+[Visual Description]
+A sleek architectural contrast graphic. On the left: a crossed-out cloud icon with red outbound exfiltration arrows. On the right: Ty-Code running inside a secure, hardware-encrypted sandbox on the developer's laptop. Monaco editor connected directly to local SQLite memory, an air-gapped terminal sandbox, and user-controlled model gateways.
+
+[Speaker Notes (Verbatim Script)]
+"Ty-Code completely inverts this paradigm. We believe that your intellectual property belongs exclusively to you.
+
+In Ty-Code, all indexing, file tree parsing, and agentic workflows happen entirely within the local process space. We don't have telemetry servers. We don't store your prompts. In fact, Ty-Code is architecturally incapable of exfiltrating your code.
+
+When an engineer enters their API keys, those keys aren't saved in plaintext or dumped into browser cookies. They are cryptographically sealed inside the operating system's native hardware vault using safeStorage—DPAPI on Windows, Keychain on Mac, Secret Service on Linux.
+
+Developers can bring their own keys at wholesale provider rates, connect private VPC gateways, or unplug their internet connection entirely and run state-of-the-art models like DeepSeek and Llama 3 locally via Ollama.
+
+It is uncompromising security paired with unrestricted developer freedom."
+--><hr>
+<h1 id="market-opportunity-the-30b-sovereign-shift">Market Opportunity: The $30B Sovereign Shift</h1>
+<h3 id="rapid-developer-adoption-meets-the-enterprise-compliance-wall">Rapid Developer Adoption Meets the Enterprise Compliance Wall</h3>
+<ul>
+<li><strong>30M+ Professional Developers</strong> adopting autonomous AI coding workflows in 2026.</li>
+<li><strong>$28.5B Market Opportunity</strong> driven by the transition from passive autocomplete to multi-file agentic swarms.</li>
+<li><strong>$9.2B Regulated Enterprise SAM:</strong> Healthcare, finance, and defense demand verifiable local compliance.</li>
+<li><strong>The Massive Enterprise Wall:</strong> The fastest-growing budgets in AI tooling are enterprise teams currently blocked by cloud compliance risks.</li>
+<li><strong>The Shift to Wholesale BYOK:</strong> Developers demand transparent, usage-based compute over rigid, markup-heavy SaaS seats.</li>
+</ul>
+<!--
+[Visual Description]
+A dual-circle TAM/SAM/SOM market expansion graph with accelerating growth vectors:
+- TAM: $28.5B Global Developer Tools & AI Assistance Market by 2028 (CAGR 31.4%).
+- SAM: $9.2B Regulated Enterprise Segment (Fintech, Health, Defense, Government).
+- SOM: $1.1B Initial Target: 3.5M security-focused developers, startups, and regulated engineering teams.
+
+[Speaker Notes (Verbatim Script)]
+"The market tailwinds behind this shift are staggering. Over 30 million software engineers are actively integrating AI into their daily workflows, driving the developer tooling market toward $28.5 billion over the next three years.
+
+But here is the critical market insight that our competitors are missing: the highest-value segment of this market—the enterprise tier with the largest budgets—is currently locked out.
+
+When a hospital network with 2,000 engineers wants to give their developers AI coding tools, they can't sign an enterprise Cursor contract without violating HIPAA. When a defense contractor wants autonomous agentic refactoring, they can't upload classified avionics code to a multitenant cloud.
+
+By solving data sovereignty and compliance at the architectural root, Ty-Code doesn't just compete for individual devs on Twitter—we unlock the massive, unserved enterprise market that has been forced to sit on the sidelines."
+--><hr>
+<h1 id="the-product-built-for-terminal-velocity">The Product: Built for Terminal Velocity</h1>
+<h3 id="modern-engineering-velocity-with-zero-cognitive-overhead">Modern Engineering Velocity with Zero Cognitive Overhead</h3>
+<ul>
+<li><strong>Zero Cognitive Overhead:</strong> Built on Monaco Editor with native VS Code keybindings, LSP, and extensions.</li>
+<li><strong>Decode-Frontier Streaming:</strong> Matrix decode animation running at 140 chars/sec with zero UI jitter or layout shifts.</li>
+<li><strong>M3E Visual Canvas:</strong> Bidirectional visual UI canvas syncing directly with production React &amp; Tailwind code.</li>
+<li><strong>Three-Tier Terminal Sandbox:</strong> Autonomous agent execution with real-time environment scrubbing and command allowlisting.</li>
+</ul>
+<!--
+[Visual Description]
+An annotated, high-definition UI screenshot of Ty-Code in action:
+- Left Panel: Project workspace and file tree with instant local indexing tags.
+- Center Canvas: Monaco Editor with syntax-highlighted TypeScript, displaying real-time Decode-Frontier matrix streaming at 140 chars/sec into an Obsidian theme.
+- Right Panel: M3E Visual UI Canvas synchronized bidirectionally with React code.
+- Bottom Panel: Sandboxed terminal executing verified PTY commands with active secret scrubbing.
+
+[Speaker Notes (Verbatim Script)]
+"When developers open Ty-Code, there is zero friction and zero cognitive overhead. It's built on Monaco—the exact same editor core powering VS Code—so every keybinding, theme, language server, and extension works intuitively on Day 1.
+
+Notice what's happening on screen right now. We engineered a proprietary Decode-Frontier engine for LLM streaming. Instead of sluggish UI layout re-renders or choppy markdown jumps, code arrives via a deterministic 140-character-per-second decode sweep that keeps the UI silky smooth at 60 frames per second.
+
+To the right, you see our M3E Canvas. Developers can visually tweak components, inspect design tokens, and watch production-ready Tailwind and React code update live in the editor.
+
+And when the AI executes terminal commands—running tests, building bundles, installing dependencies—it does so inside our isolated three-tier PTY sandbox that scrubs environment variables and blocks dangerous commands before they ever execute."
+--><hr>
+<h1 id="tech-moat-1-omni-orchestrator-unified-gateway">Tech Moat #1: Omni-Orchestrator & Unified Gateway</h1>
+<h3 id="dynamic-health-probes-rate-forecasting-and-resilient-routing">Dynamic Health Probes, Rate Forecasting, and Resilient Routing</h3>
+<ul>
+<li><strong>Unified ProviderGateway:</strong> Normalizes 60+ AI providers into a single, standardized, reactive Server-Sent Events stream.</li>
+<li><strong>Health &amp; Latency Routing:</strong> Real-time ping probes, quota forecasting, and automated jitter-backoff algorithms.</li>
+<li><strong>Zero-Drop Mid-Turn Failover:</strong> Automatically migrates across models mid-generation without losing conversational context.</li>
+<li><strong>Token Cost Optimizer:</strong> Automatically selects the fastest and most cost-effective compliant model for each specific subtask.</li>
+</ul>
+<!--
+[Visual Description]
+An architectural schematic illustrating the Unified ProviderGateway:
+Incoming user prompts flow into an intelligent routing bus that multiplexes across 60+ upstream providers (OpenRouter, Groq, Cerebras, Anthropic, Ollama). A visual dynamic failover timeline highlights an automated 48ms failover from an overloaded provider to Groq without dropping conversational turns.
+
+[Speaker Notes (Verbatim Script)]
+"Now let's talk about our technical moat, because this is where Ty-Code leaves traditional wrappers in the dust.
+
+If you've used standard AI tools, you know the frustration of having your agent crash halfway through a complex refactor because Anthropic hit an HTTP 429 rate limit or an API had a temporary hiccup.
+
+We solved this with our Omni-Orchestrator and Unified ProviderGateway. We normalized over 60 different AI providers into one unified, ultra-low-latency reactive stream.
+
+Our orchestrator continuously pings providers, tracks latency, and forecasts token burn rates. If an upstream model experiences packet loss or throttling, Ty-Code automatically fails over to an equivalent high-speed provider—like Groq or OpenRouter—in under 50 milliseconds, preserving the entire conversational state and agentic tool-call history.
+
+The developer never sees a crash. They just see blistering-fast, uninterrupted code generation."
+--><hr>
+<h1 id="dedicated-architecture-failover-chain">Dedicated Architecture: Failover Chain</h1>
+<pre><code class="language-mermaid">graph TD
+    A[User Prompt / Agent Turn] --&gt; B[Unified ProviderGateway]
+    B --&gt; C{Health &amp; Quota Monitor}
+    C --&gt;|Healthy| D[Primary Provider: Anthropic / OpenAI]
+    C --&gt;|HTTP 429 / Throttled| E[48ms Zero-Drop Failover Bus]
+    E --&gt; F[Fallback Provider: Groq / OpenRouter / Ollama]
+    D --&gt; G[Preserved Context Stream -&gt; Monaco Editor]
+    F --&gt; G
+</code></pre>
+<ul>
+<li><strong>Automated Provider Rotation:</strong> Sub-50ms failover without resetting agent state.</li>
+<li><strong>Continuous Quota Tracking:</strong> Proactive rate limit avoidance before HTTP errors occur.</li>
+</ul>
+<!--
+[Speaker Notes]
+"This diagram illustrates our proprietary failover chain in action. When a query is initiated, the Unified ProviderGateway evaluates active latency and quota telemetry across all available endpoints.
+
+If a primary endpoint reports elevated latency or begins throwing HTTP 429 warnings, the 48ms Zero-Drop Failover Bus instantly migrates the streaming turn to an available secondary provider—such as Groq or local Ollama—without losing conversational turn tokens, tool invocation payloads, or editor focus."
+--><hr>
+<h1 id="tech-moat-2-context-engine-correction-memory">Tech Moat #2: Context Engine & Correction Memory</h1>
+<h3 id="local-compounding-intelligence-that-remembers-your-stack">Local Compounding Intelligence That Remembers Your Stack</h3>
+<ul>
+<li><strong>Universal Correction Memory:</strong> Local SQLite WAL engine that persistently codifies developer instructions and rules.</li>
+<li><strong>Cross-Subsystem Propagation:</strong> Rules learned in conversational chat are automatically enforced across Debugger and Canvas.</li>
+<li><strong>Stack-Aware Omni-Debugger:</strong> Multi-threaded static analysis workers detect architectural drift, security risks, and regressions before PRs.</li>
+<li><strong>Compounding Retention:</strong> The IDE becomes exponentially smarter and more attuned to the user&#39;s specific codebase over time.</li>
+</ul>
+<!--
+[Visual Description]
+A synaptic memory graph visual. A central local SQLite Write-Ahead-Logged database connecting four functional nodes:
+1. Chat Sidecar ("Learned Rule")
+2. Omni-Debugger ("Enforced Pattern")
+3. M3E Canvas ("Design Token Alignment")
+4. Codebase Scanner ("Structural AST Index")
+
+[Speaker Notes (Verbatim Script)]
+"Here is our second major moat: memory and context.
+
+Every developer has had the experience of correcting an AI model—telling it, 'Don't use var, use const,' or 'Always use our internal Result monad for error handling'—only for the model to make the exact same mistake ten minutes later in a new chat.
+
+Ty-Code features a persistent Universal Correction Memory powered by a zero-overhead local SQLite database with write-ahead logging.
+
+The moment you correct Ty-Code in the chat, that rule is codified and indexed across your entire workspace. The next time you open the Omni-Debugger, it automatically flags code violating that rule. When the AI generates UI on the M3E Canvas, it automatically enforces your learned design tokens.
+
+This creates a compounding data flywheel on the user's local machine. The longer you use Ty-Code, the more tailored it becomes to your architecture. Switching away from Ty-Code means downgrading to an AI that doesn't know how your team builds software."
+--><hr>
+<h1 id="the-secret-weapon-13b-free-tokens">The Secret Weapon: 1.3B+ Free Tokens</h1>
+<h3 id="zero-friction-multi-harness-onboarding-with-no-credit-card">Zero-Friction Multi-Harness Onboarding with No Credit Card</h3>
+<ul>
+<li><strong>Zero-Friction Free Tier:</strong> Over 1.3 billion free monthly tokens available immediately upon install with no API keys or credit cards required.</li>
+<li><strong>Multi-Harness Interoperability:</strong> Native routing across 11 developer runtimes including Claude Code, Codex, VS Code, and Cline.</li>
+<li><strong>Eliminating Top-of-Funnel Dropoff:</strong> Developers start coding immediately without configuring cloud billing or payment methods.</li>
+<li><strong>ToS-Compliant &amp; Mock-Free:</strong> Hardened binary loopback architecture with automated filtering of high-risk scraping endpoints.</li>
+</ul>
+<!--
+[Visual Description]
+A centerpiece architecture diagram showcasing Ty-Code's multi-harness loopback engine:
+A central dispatch router connects to 11 distinct runtime harnesses (Claude Code, Codex, VS Code Extension APIs, Pi, OpenCode, Cline, Aider, Hermes, DeepSeek, Grok, Mistral). A local loopback supply adapter connects into the free-claude-code (FCC) reverse proxy layer, unlocking a visible badge: "1.3B+ Free Tokens / Month".
+
+[Speaker Notes (Verbatim Script)]
+"This brings us to our secret weapon—our growth engine that makes Ty-Code virtually impossible for competitors to displace.
+
+One of the hardest hurdles in developer tooling is the onboarding friction of API keys and credit cards. If a developer has to pull out their corporate credit card or configure billing just to test your IDE, you lose 80% of your funnel.
+
+We completely eliminated that friction by building an open-source multi-harness router that unlocks over 1.3 billion free monthly tokens across 11 different runtime harnesses, including Claude Code, Codex, VS Code APIs, and Cline.
+
+A developer can download Ty-Code right now and immediately begin generating code with world-class models without paying a dime or entering a single credential. That gives us an unbeatable wedge against paid competitors charging $20 a month."
+--><hr>
+<h1 id="dedicated-architecture-11-harness-fcc-routing-map">Dedicated Architecture: 11-Harness FCC Routing Map</h1>
+<pre><code class="language-mermaid">graph TD
+    subgraph Client [Ty-Code Desktop Client]
+        IDE[Monaco Editor &amp; Sidecar]
+        ROUTER[Multi-Harness Router]
+    end
+    subgraph Runtimes [11 Supported Runtime Harnesses]
+        H1[Claude Code]
+        H2[Codex]
+        H3[VS Code API]
+        H4[Pi &amp; OpenCode]
+        H5[Cline &amp; Aider]
+        H6[Hermes, DeepSeek, Grok, Mistral]
+    end
+    subgraph Supply [FCC Reverse Proxy Layer - Port 8765]
+        PROXY[Local Loopback Supply Adapter]
+        POOL[1.3B+ High-Throughput Free Token Pool]
+    end
+    IDE --&gt; ROUTER
+    ROUTER --&gt; H1 &amp; H2 &amp; H3 &amp; H4 &amp; H5 &amp; H6
+    H1 &amp; H2 &amp; H3 &amp; H4 &amp; H5 &amp; H6 --&gt; PROXY
+    PROXY --&gt; POOL
+</code></pre>
+<ul>
+<li><strong>Unified Loopback Engine:</strong> 11 harnesses multiplexed over a secure local port.</li>
+<li><strong>High-Throughput Pool:</strong> Zero-friction compute without multitenant SaaS lock-in.</li>
+</ul>
+<!--
+[Speaker Notes]
+"This architectural map details how Ty-Code orchestrates 11 distinct runtime harnesses through our local loopback supply adapter. Rather than forcing developers into a single proprietary CLI or cloud API format, Ty-Code exposes unified compatibility with Claude Code, Codex, VS Code Extension APIs, Pi, OpenCode, Cline, Aider, and local model harnesses.
+
+All traffic is channeled locally into our reverse proxy layer running on port 8765, unlocking 1.3B+ monthly tokens while guaranteeing complete process isolation."
+--><hr>
+<h1 id="strategic-open-source-foundation-fcc-credit">Strategic Open-Source Foundation: FCC Credit</h1>
+<h3 id="built-on-open-innovation-not-corporate-walled-gardens">Built on Open Innovation, Not Corporate Walled Gardens</h3>
+<ul>
+<li><strong>Pioneering Supply Methodology:</strong> Architected upon the reverse-proxy foundations established by <strong>free-claude-code (FCC)</strong>.</li>
+<li><strong>Upstream Project Repository:</strong> <a href="https://github.com/Alishahryar1/free-claude-code.git">https://github.com/Alishahryar1/free-claude-code.git</a></li>
+<li><strong>Strategic Integration Advantage:</strong> We didn&#39;t build a wrapper; we integrated the best open-source routing available.</li>
+<li><strong>Permanent Licensing Attribution:</strong> <em>Free-model supply layer powered by free-claude-code (FCC) — AGPL-3.0 / MIT</em>.</li>
+<li><strong>Enterprise Hardening:</strong> Adapted FCC&#39;s mock-free binary loopback into a sandboxed, ToS-compliant desktop supply engine.</li>
+</ul>
+<!--
+[Speaker Notes (Verbatim Script - Strategic Advantage Framing)]
+"We didn't just build a wrapper; we integrated the best open-source routing methodologies available to give our users an unfair advantage.
+
+We explicitly credit the free-claude-code (FCC) open-source project created by Ali Shahryar at https://github.com/Alishahryar1/free-claude-code.git as the foundational inspiration and methodology provider that made this zero-friction, ToS-friendly multi-harness routing a reality.
+
+By studying and adapting the methodologies from the FCC repository, we built a 100% Terms-of-Service-compliant, voice-supported, and session-aware supply layer. While legacy SaaS tools attempt to build proprietary walled gardens that trap developer code, Ty-Code leverages community-driven open innovation to deliver enterprise-grade performance at zero marginal token cost.
+
+This gives our users an unbeatable wedge against paid competitors charging $20 a month."
+--><hr>
+<h1 id="business-model-superior-unit-economics">Business Model & Superior Unit Economics</h1>
+<h3 id="zero-token-cogs-subsidy-yields-90-software-gross-margins">Zero Token COGS Subsidy Yields 90%+ Software Gross Margins</h3>
+<ul>
+<li><strong>Community Tier ($0):</strong> Free multi-harness compute + unlimited local Ollama. Zero user acquisition cost.</li>
+<li><strong>Developer Pro (BYOK):</strong> Power-user orchestration, multi-agent swarms, encrypted cross-device workspace sync.</li>
+<li><strong>Enterprise Sovereign ($45/seat/month):</strong> Centralized MDM governance, VPC gateway enforcement, HIPAA/SOC2 audit packages, priority SLA.</li>
+<li><strong>Superior Unit Economics:</strong> 0% token COGS subsidy—users bring their own keys or leverage open-source free pools, yielding 90%+ SaaS gross margins.</li>
+</ul>
+<!--
+[Visual Description]
+A 3-tier monetization funnel with customer profile cards, pricing metrics, and a comparison bar chart illustrating Ty-Code's 90%+ gross margin advantage versus traditional AI wrappers.
+
+[Speaker Notes (Verbatim Script)]
+"Let's examine how this translates into exceptional business fundamentals.
+
+Most AI software startups have broken unit economics. They charge $20 a month, but heavy users burn through $50 a month in underlying OpenAI or Anthropic API tokens. Their gross margins are upside down.
+
+Ty-Code has zero token COGS. In our free tier, compute is supplied via our open-source multi-harness pools or the user's local hardware. In our Pro tier, users bring their own API keys and pay wholesale rates directly to the providers.
+
+Our revenue engine is the Enterprise Sovereign Tier at $45 per seat per month. Enterprise customers pay us for centralized IT management: deploying group policies via Microsoft Intune or Jamf, locking developers into private enterprise VPC endpoints, and generating cryptographically verified HIPAA and SOC2 compliance audit trails.
+
+Because we aren't subsidizing LLM compute, our revenue drops straight to the bottom line at pure software gross margins exceeding 90%."
+--><hr>
+<h1 id="go-to-market-strategy-the-sovereign-flywheel">Go-To-Market Strategy: The Sovereign Flywheel</h1>
+<h3 id="product-led-growth-transitioning-into-high-acv-enterprise-land-and-expand">Product-Led Growth Transitioning into High-ACV Enterprise Land-and-Expand</h3>
+<ul>
+<li><strong>Bottom-Up Product-Led Growth (PLG):</strong> Instant zero-setup onboarding drives viral adoption across developer communities.</li>
+<li><strong>The &#39;Only Approved AI&#39; Wedge:</strong> Individual engineers in banking, health, and defense introduce Ty-Code as the only tool permitted by corporate security.</li>
+<li><strong>Open-Source Trust &amp; Community:</strong> Transparent security architecture and FCC open-source integration build deep developer advocacy.</li>
+<li><strong>Enterprise Land-and-Expand:</strong> Convert internal organic developer teams into multi-thousand seat enterprise contracts.</li>
+</ul>
+<!--
+[Visual Description]
+A circular flywheel diagram showing three interlocking growth stages:
+1. Open-Source Product-Led Growth: Free 1.3B+ token tier drives viral developer downloads and GitHub community traction.
+2. The Enterprise Trojan Horse: Individual developers bring Ty-Code into regulated corporate networks because it passes security review.
+3. Top-Down Enterprise Expansion: Security and IT procurement discover widespread internal adoption and convert to enterprise MDM licenses.
+
+[Speaker Notes (Verbatim Script)]
+"Our go-to-market strategy leverages a classic bottom-up developer flywheel that naturally transitions into high-ACV enterprise contracts.
+
+Step one is pure Product-Led Growth. Because developers can install Ty-Code and immediately code with 1.3 billion free tokens, our organic top-of-funnel velocity is massive. Developers share it on Reddit, GitHub, and Discord because it actually works out of the box.
+
+Step two is our 'Trojan Horse' in regulated industries. An engineer at Pfizer or JPMorgan who is frustrated by company bans on Cursor downloads Ty-Code because it's local-first and zero-telemetry. It easily passes initial infosec scrutiny because it doesn't exfiltrate source code.
+
+Step three is enterprise procurement. When IT sees that 200 developers across their engineering org are using Ty-Code, we engage leadership with our Enterprise MDM package, enabling them to enforce corporate security policies across the entire company.
+
+We don't need an army of outbound cold-callers. The developers sell the product for us."
+--><hr>
+<h1 id="the-team-systems-architects-security-engineers">The Team: Systems Architects & Security Engineers</h1>
+<h3 id="deep-systems-pedigree-in-electron-isolation-and-compilers">Deep Systems Pedigree in Electron Isolation and Compilers</h3>
+<ul>
+<li><strong>World-Class Technical Leadership:</strong> Built by experienced systems architects with deep backgrounds in Electron sandboxing, compilers, and LLM orchestration.</li>
+<li><strong>Core Systems Pedigree:</strong> Proven track record in high-throughput network streaming, C++ native bindings, and cryptographic hardware integration.</li>
+<li><strong>Strategic Advisory Board:</strong> Backed by leading figures in enterprise cybersecurity, open-source governance, and developer tooling.</li>
+<li><strong>Execution Velocity:</strong> Delivered production-ready v1.0.0 desktop release, M3E Canvas, and 11-harness routing in record time.</li>
+</ul>
+<!--
+[Visual Description]
+Founder and leadership profile cards detailing deep technical pedigree in low-level systems programming, Electron architecture, compiler toolchains, and enterprise security.
+
+[Speaker Notes (Verbatim Script)]
+"Building an enterprise-grade desktop IDE is not something a typical web development team can pull off. It requires deep, specialized systems engineering.
+
+Our team brings together veteran architects who have spent years working on Electron process isolation, native OS security primitives, compiler toolchains, and high-performance streaming architectures.
+
+We know how to prevent memory leaks in Monaco. We know how to scrub environment variables in low-level PTY terminals. We know how to build cryptographic IPC bridges that satisfy the most paranoid enterprise penetration testers.
+
+We've already demonstrated unmatched execution velocity by shipping our v1.0.0 production desktop client, our M3E bidirectional visual canvas, and our complete multi-harness routing engine. We have the technical chops to win this category."
+--><hr>
+<h1 id="the-ask-35m-seed-round">The Ask: $3.5M Seed Round</h1>
+<h3 id="scaling-enterprise-engagements-and-accelerating-sovereign-rd">Scaling Enterprise Engagements and Accelerating Sovereign R&D</h3>
+<ul>
+<li><strong>The Ask:</strong> Raising <strong>$3,500,000 Seed Financing</strong> to scale enterprise sales and accelerate sovereign agentic R&amp;D.</li>
+<li><strong>50% Core Systems Engineering:</strong> Multi-agent swarms, local model compilation, and low-latency IPC optimizations.</li>
+<li><strong>30% Enterprise Sales &amp; MDM:</strong> SOC2 Type II, HIPAA compliance packages, and Microsoft Intune/Jamf integrations.</li>
+<li><strong>20% Security &amp; Community:</strong> Independent penetration tests, bug bounty programs, and open-source hackathons.</li>
+<li><strong>18-Month Target Milestones:</strong> 250,000+ active developers, $4.2M ARR, and 50+ regulated enterprise deployments.</li>
+</ul>
+<!--
+[Visual Description]
+A forward-looking milestone roadmap spanning the next 18 months alongside a clear Use of Funds breakdown:
+- 50% Core Engineering & Multi-Harness R&D (Expanded agent swarms, sub-agent compiler tools)
+- 30% Enterprise Sales & MDM Integrations (SOC2 Type II, HIPAA certification, Intune/Jamf connectors)
+- 20% Security Audits & Community Growth (Third-party penetration testing, open-source hackathons)
+
+[Speaker Notes (Verbatim Script)]
+"To accelerate our growth and capitalize on this massive market window, we are raising a $3.5 million Seed round.
+
+We will deploy 50% of this capital directly into our core systems engineering team—expanding our multi-agent orchestration capabilities and deepening our local model optimizations. 30% will fund enterprise sales and compliance certifications, including SOC2 Type II audits and automated MDM connectors. The remaining 20% will support third-party security audits and global developer community initiatives.
+
+Over the next 18 months, this capital will take us to 250,000 active developers, over 50 regulated enterprise deployments, and $4.2 million in high-margin Annual Recurring Revenue.
+
+The future of artificial intelligence in software engineering cannot belong to closed, cloud-locked monopolies that treat your source code as their training data. The future is local, private, resilient, and sovereign.
+
+We're building that future today with Ty-Code, and we invite you to join us. Thank you, and I look forward to your questions."
+-->
+
+    </main>
+  </div>
+</body>
+</html>

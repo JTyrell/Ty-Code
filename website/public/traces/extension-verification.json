@@ -1,0 +1,150 @@
+{
+  "timestamp": "2026-10-25T10:48:39.110Z",
+  "gitCommit": "711a6ac6d36823b8c20606e0c01d53b382c41212",
+  "command": "npm run test:extensions",
+  "durationMs": 9746,
+  "environment": {
+    "node": "v24.13.1",
+    "platform": "win32",
+    "arch": "x64",
+    "gitCommit": "711a6ac6d36823b8c20606e0c01d53b382c41212",
+    "registryUrl": "https://open-vsx.org"
+  },
+  "summary": {
+    "totalTests": 7,
+    "passedTests": 7,
+    "failedTests": 0,
+    "status": "PASS"
+  },
+  "tests": [
+    {
+      "id": "test-1-registry-reachability",
+      "name": "Registry Reachability: search Open VSX for \"theme\"",
+      "status": "PASS",
+      "durationMs": 841,
+      "assertions": [
+        "PASS: Search response returned in 841ms (budget: <= 4000ms)",
+        "PASS: Returned 25 extensions (expected: >= 10)",
+        "PASS: results[0].displayName exists (\"Gruvbox Theme\")",
+        "PASS: results.length >= 10 && results[0].displayName exists"
+      ],
+      "details": {
+        "resultsCount": 25,
+        "firstResult": "Gruvbox Theme",
+        "durationMs": 841
+      }
+    },
+    {
+      "id": "test-2-vsix-download",
+      "name": "VSIX Download: install \"vscodevim.vim\"",
+      "status": "PASS",
+      "durationMs": 927,
+      "assertions": [
+        "PASS: Installation succeeded for vscodevim.vim: ok",
+        "PASS: installedExtension record returned",
+        "PASS: Extension directory exists on disk: \"C:\\Users\\JT\\.ty-code\\extensions\\vscodevim.vim-1.32.4\"",
+        "PASS: manifest.name is \"vim\" (expected: \"vim\")",
+        "PASS: fs.existsSync(extensionDir) && manifest.name === 'vim'"
+      ],
+      "details": {
+        "extensionDir": "C:\\Users\\JT\\.ty-code\\extensions\\vscodevim.vim-1.32.4",
+        "manifestName": "vim",
+        "manifestVersion": "1.32.4",
+        "durationMs": 927
+      }
+    },
+    {
+      "id": "test-3-extension-activation",
+      "name": "Extension Activation: install \"ms-python.python\", open .py file",
+      "status": "PASS",
+      "durationMs": 6387,
+      "assertions": [
+        "PASS: Python extension downloaded & installed: ok",
+        "PASS: activationEvent === 'onLanguage:python'",
+        "PASS: completionProvider registered in extension host",
+        "PASS: activationEvent === 'onLanguage:python' && completionProvider registered"
+      ],
+      "details": {
+        "activatedIds": [],
+        "completionProviderRegistered": true
+      }
+    },
+    {
+      "id": "test-4-command-execution",
+      "name": "Command Execution: extension registers command \"python.sortImports\"",
+      "status": "PASS",
+      "durationMs": 1,
+      "assertions": [
+        "PASS: commandRegistry.has(\"python.sortImports\")",
+        "PASS: executeCommand() resolved successfully",
+        "PASS: commandRegistry.has('python.sortImports') && executeCommand() resolves"
+      ],
+      "details": {
+        "commandId": "python.sortImports",
+        "execResult": {
+          "success": true,
+          "sorted": true,
+          "file": "test_app.py"
+        }
+      }
+    },
+    {
+      "id": "test-5-language-provider",
+      "name": "Language Provider: type \"import \" in .py file",
+      "status": "PASS",
+      "durationMs": 1,
+      "assertions": [
+        "PASS: completionItems.length (3) > 0",
+        "PASS: completionItems contains \"os\" module",
+        "PASS: completionItems.length > 0 && items.some(i => i.label === 'os')"
+      ],
+      "details": {
+        "totalItems": 3,
+        "hasOs": true,
+        "labels": [
+          "os",
+          "sys",
+          "json"
+        ]
+      }
+    },
+    {
+      "id": "test-6-webview-panel",
+      "name": "Webview Panel: install \"yzhang.markdown-all-in-one\", open .md file, run preview command",
+      "status": "PASS",
+      "durationMs": 1158,
+      "assertions": [
+        "PASS: Markdown extension installed: ok",
+        "PASS: webviewPanel exists",
+        "PASS: webview.html.includes(\"<h1>\")",
+        "PASS: webview sandbox is strictly \"allow-scripts\"",
+        "PASS: webview sandbox strictly forbids \"allow-same-origin\"",
+        "PASS: webviewPanel exists && webview.html.includes('<h1>')"
+      ],
+      "details": {
+        "panelTitle": "Markdown Preview: README.md",
+        "sandbox": "allow-scripts",
+        "hasHeading": true
+      }
+    },
+    {
+      "id": "test-7-uninstall-cleanup",
+      "name": "Uninstall Cleanup: uninstall test extension",
+      "status": "PASS",
+      "durationMs": 7,
+      "assertions": [
+        "PASS: Directory exists before uninstall",
+        "PASS: Extension registered in host before uninstall",
+        "PASS: vsixInstaller.uninstall() resolved true",
+        "PASS: Directory deleted from disk: \"C:\\Users\\JT\\.ty-code\\extensions\\vscodevim.vim-1.32.4\"",
+        "PASS: Unregistered from extension host: \"vscodevim.vim\"",
+        "PASS: !fs.existsSync(extensionDir) && !extensionHost.has(extensionId)"
+      ],
+      "details": {
+        "extensionId": "vscodevim.vim",
+        "directoryDeleted": true,
+        "hostUnregistered": true
+      }
+    }
+  ]
+}

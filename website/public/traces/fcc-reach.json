@@ -1,0 +1,513 @@
+{
+  "phase": "FCC-5",
+  "title": "FCC-Style Reach — External Clients, Browser Seam, Tray Presence",
+  "timestamp": "2026-10-17T06:34:50.254Z",
+  "gitCommit": "bb0d31db5e37962045ecce162798077b40167a4c",
+  "command": "node scripts/verify-fcc-reach.mjs",
+  "verificationSummary": {
+    "totalChecks": 92,
+    "passedChecks": 92,
+    "failedChecks": 0,
+    "status": "PASSED"
+  },
+  "metrics": {
+    "editorClients": {
+      "testedEndpointPort": 54399,
+      "supportedEditors": [
+        "vscode",
+        "jetbrains",
+        "neovim"
+      ],
+      "liveCompletionVerified": true,
+      "documentationPages": [
+        "docs/editors/vscode.md",
+        "docs/editors/jetbrains.md",
+        "docs/editors/neovim.md"
+      ]
+    },
+    "messagingConnectors": {
+      "telegramVerified": true,
+      "discordVerified": true,
+      "allowlistEnforced": true,
+      "rateCapsEnforced": true,
+      "auditLogEntriesRecorded": 7
+    },
+    "browserSessionSeam": {
+      "interfaceImplemented": "SessionBridge",
+      "localImplementation": "LocalSessionBridge",
+      "testedSessionId": "bridge_sess_1792218889782",
+      "contractDocument": "docs/contracts/web-session-bridge-contract.md",
+      "multiplexingVerified": true,
+      "pauseResumeVerified": true
+    },
+    "trayAndBackground": {
+      "runInBackgroundSettingActive": true,
+      "windowCloseInterceptionVerified": true,
+      "taskSurvivesWindowClose": true,
+      "notificationsEmittedCount": 5,
+      "trayMenuItemsVerified": 10
+    }
+  },
+  "testResults": [
+    {
+      "test": "Local supply endpoint started on test port",
+      "passed": true,
+      "details": "port: 54399"
+    },
+    {
+      "test": "Supply endpoint status reports running",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Supply endpoint bound to port 54399",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Auth token uses secure tycode_sk_ prefix",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "VS Code Continue config generated",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "VS Code Continue filename is config.json",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "VS Code config contains endpoint baseUrl",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "VS Code config contains Bearer authToken",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "VS Code Continue config specifies model list",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Primary model apiBase matches Ty-Code baseUrl",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "VS Code config connects and completes request with HTTP 200",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Endpoint returns choices array",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Endpoint returns valid assistant response text",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "JetBrains config generated",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "JetBrains config contains endpoint baseUrl",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Neovim avante.nvim config generated",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Neovim avante is Lua fileType",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Neovim avante Lua contains endpoint baseUrl",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Neovim avante Lua contains authToken",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Neovim codecompanion.nvim config generated",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Neovim codecompanion Lua contains port",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Documentation exists: docs/editors/vscode.md",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "VS Code guide is comprehensive (>500 chars)",
+      "passed": true,
+      "details": "3582 chars"
+    },
+    {
+      "test": "Documentation exists: docs/editors/jetbrains.md",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "JetBrains guide is comprehensive (>500 chars)",
+      "passed": true,
+      "details": "2577 chars"
+    },
+    {
+      "test": "Documentation exists: docs/editors/neovim.md",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Neovim guide is comprehensive (>500 chars)",
+      "passed": true,
+      "details": "2805 chars"
+    },
+    {
+      "test": "Telegram connector defaults to OFF",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Discord connector defaults to OFF",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Incoming query rejected when connector is OFF",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Rejection categorized as CONNECTOR_DISABLED",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Telegram connector enabled after config",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Allowlist recognizes ID user_456",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Allowlist recognizes username alice",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Allowlist blocks unknown user",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Unauthorized user is denied access",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Action categorized as DENY_ALLOWLIST",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "User receives explicit access denied message",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Audit log recorded unauthorized attempt",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Audit record matches DENY_ALLOWLIST",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Audit record attributed to sender user_999",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Authorized user query completes successfully",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Action categorized as ALLOW",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Response contains text content",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Response calculates tokens used",
+      "passed": true,
+      "details": "29 tokens"
+    },
+    {
+      "test": "Audit record logs successful ALLOW interaction",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Audit record attributed to user_456",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Request exceeding rate cap is denied",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Action categorized as DENY_RATE_LIMIT",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Response informs user of rate limit",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Audit record logs DENY_RATE_LIMIT",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Discord connector enforces strict allowlist",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Discord connector allows authorized owner",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "SessionBridge starts session with correct ID",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "SessionBridge records clientType web-browser",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Session starts in idle status",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "attach() returns cleanup unsubscribe function",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "subscriberCount updated to 1",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "stream() yields sequence of chunks",
+      "passed": true,
+      "details": "19 chunks"
+    },
+    {
+      "test": "First chunk is notice type",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Final chunk is done type",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Attached subscriber received all multiplexed chunks",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Stream chunks possess strictly increasing monotonic chunkIndex",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "pause() returns true for active session",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Session status transitions to paused",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "resume() returns true for paused session",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "dispose() cleans up session",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Disposed session removed from active map",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Contract document exists: docs/contracts/web-session-bridge-contract.md",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Contract doc is comprehensive (>1000 chars)",
+      "passed": true,
+      "details": "6919 chars"
+    },
+    {
+      "test": "Contract doc specifies Cloudflare Durable Object architecture",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Contract doc specifies reconnection & state hydration contract",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "runInBackground defaults to false",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "setRunInBackground(true) updates setting",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "startTask returns valid task ID",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Task registered in active tasks list",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Window close is intercepted when runInBackground is true",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Close attempt correctly detects running tasks",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Background task completed execution after window close attempt",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Background task returned correct payload",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Notifications emitted (background persistence notice + completion notice)",
+      "passed": true,
+      "details": "2 notifications"
+    },
+    {
+      "test": "Native task completion notification was dispatched",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Native attention-needed notification was dispatched",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "pauseTask() returns true for running task",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Task status is paused",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "resumeTask() returns true for paused task",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Paused task resumed execution and finished successfully",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Tray manager builds context menu template",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Tray menu displays Fleet Health status",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Tray menu includes Open Quick Chat shortcut",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Tray menu includes Background Tasks submenu",
+      "passed": true,
+      "details": "Verified successfully."
+    },
+    {
+      "test": "Tray menu includes Run in Background checkbox item",
+      "passed": true,
+      "details": "Verified successfully."
+    }
+  ]
+}

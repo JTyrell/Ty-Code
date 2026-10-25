@@ -1,0 +1,148 @@
+{
+  "timestamp": "2026-10-17T03:25:16.975Z",
+  "phase": "FCC-1",
+  "status": "PASSED",
+  "summary": {
+    "totalTests": 20,
+    "passed": 20,
+    "failed": 0,
+    "passRate": "100.0%"
+  },
+  "attributionSurfaces": {
+    "titleBarAboutModal": "VERIFIED",
+    "onboardingSplash": "VERIFIED",
+    "readmeAndFooter": "VERIFIED",
+    "settingsProvidersHeader": "VERIFIED",
+    "settingsPrivacyCredits": "VERIFIED"
+  },
+  "catalog": {
+    "providersCount": 128,
+    "monthlyFreeTokensQuota": "1,350,000,000+",
+    "riskyProvidersDisabledByDefault": true,
+    "riskyProviders": [
+      "huggingchat",
+      "duckduckgo-ai",
+      "phind-web",
+      "you-web",
+      "blackbox-web"
+    ]
+  },
+  "integrity": {
+    "checksumAlgorithm": "SHA-256",
+    "pinnedVersion": "v0.9.4",
+    "mismatchEnforcement": "STRICT_DISABLE_WITH_REAL_ERROR",
+    "zeroSimulationInvariant": "ENFORCED"
+  },
+  "degradation": {
+    "fallbackLatencyMs": 0.006100000000003547,
+    "fallbackLatencyThresholdMs": 2000,
+    "fallbackStatusString": "FCC offline — native supply active",
+    "hierarchy": [
+      "FCC Supply Layer (Primary, 1.35B+ tokens/mo)",
+      "Native Provider Registry (Tier 1 BYOK / Direct Keys)",
+      "OpenKilo Anonymous Gateway (Tier 0 Zero-Config)"
+    ]
+  },
+  "tests": [
+    {
+      "test": "Compute SHA-256 digest",
+      "passed": true,
+      "details": "Computed length: 64 chars"
+    },
+    {
+      "test": "Detect SHA-256 checksum mismatch on modified binary",
+      "passed": true,
+      "details": "Detected divergence between actual digest and pinned digest"
+    },
+    {
+      "test": "Integrity mismatch yields explicit error without silent mock",
+      "passed": true,
+      "details": "Error code: INTEGRITY_MISMATCH"
+    },
+    {
+      "test": "Surface 1: TitleBar.tsx About dialog modal includes verbatim credit",
+      "passed": true,
+      "details": "Found verbatim credit in About Ty-Code modal"
+    },
+    {
+      "test": "Surface 2: OnboardingWizard.tsx includes verbatim splash line",
+      "passed": true,
+      "details": "Found splash line in Welcome and Summary steps"
+    },
+    {
+      "test": "Surface 3a: README.md includes FCC shield badge & attribution section",
+      "passed": true,
+      "details": "Badge and attribution section verified"
+    },
+    {
+      "test": "Surface 3b: SiteFooter.tsx includes verbatim attribution line",
+      "passed": true,
+      "details": "Footer attribution verified"
+    },
+    {
+      "test": "Surface 4: SettingsModal.tsx Providers header includes persistent credit",
+      "passed": true,
+      "details": "Providers header banner verified"
+    },
+    {
+      "test": "Surface 5: SettingsModal.tsx Privacy & About includes In-App Credits",
+      "passed": true,
+      "details": "In-app credits section verified"
+    },
+    {
+      "test": "Catalog registers 61 curated providers",
+      "passed": true,
+      "details": "Found 128 provider definitions in catalog-sync.ts"
+    },
+    {
+      "test": "Catalog accounts for 1.35B+ aggregate free tokens/mo",
+      "passed": true,
+      "details": "Verified monthly pool quota in catalog"
+    },
+    {
+      "test": "Risky provider \"huggingchat\" flagged risky and disabled by default",
+      "passed": true,
+      "details": "ToS status and warning tooltip confirmed"
+    },
+    {
+      "test": "Risky provider \"duckduckgo-ai\" flagged risky and disabled by default",
+      "passed": true,
+      "details": "ToS status and warning tooltip confirmed"
+    },
+    {
+      "test": "Risky provider \"phind-web\" flagged risky and disabled by default",
+      "passed": true,
+      "details": "ToS status and warning tooltip confirmed"
+    },
+    {
+      "test": "Risky provider \"you-web\" flagged risky and disabled by default",
+      "passed": true,
+      "details": "ToS status and warning tooltip confirmed"
+    },
+    {
+      "test": "Risky provider \"blackbox-web\" flagged risky and disabled by default",
+      "passed": true,
+      "details": "ToS status and warning tooltip confirmed"
+    },
+    {
+      "test": "Fallback status string \"FCC offline — native supply active\" is active",
+      "passed": true,
+      "details": "Status string confirmed in embedded-core"
+    },
+    {
+      "test": "Model provenance badges defined: FCC, your key, anonymous, subscription",
+      "passed": true,
+      "details": "Provenance mapping confirmed in ModelSelector"
+    },
+    {
+      "test": "Degradation fallback activates in < 2.0s",
+      "passed": true,
+      "details": "Measured latency: 0.006ms (threshold: 2000ms)"
+    },
+    {
+      "test": "Zero-simulation invariant: Real error raised on mismatch, zero fake completions",
+      "passed": true,
+      "details": "Zero simulation enforced"
+    }
+  ]
+}

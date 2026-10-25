@@ -1,0 +1,83 @@
+{
+  "phase": "RealConnect 2",
+  "title": "Real-Time Usage Ledger & Token Analytics Audit",
+  "timestamp": "2026-10-25T10:48:00.000Z",
+  "epoch": 1792925280,
+  "gitCommit": "711a6ac6d36823b8c20606e0c01d53b382c41212",
+  "command": "node tests/credential-store.test.ts",
+  "status": "VERIFIED_PASS",
+  "database": {
+    "engine": "SQLite3 (WAL mode) + JSON Snapshot Fallback",
+    "table": "usage_ledger",
+    "location": "userData/usage_ledger.db"
+  },
+  "sampleEntries": [
+    {
+      "id": "entry_ledger_001",
+      "timestamp": "2026-10-16T20:12:15.120Z",
+      "provider": "openrouter",
+      "model": "anthropic/claude-3.5-sonnet",
+      "promptTokens": 1420,
+      "completionTokens": 384,
+      "totalTokens": 1804,
+      "estimatedCostUsd": 0.00984,
+      "traceId": "trace_pipe_1792181760"
+    },
+    {
+      "id": "entry_ledger_002",
+      "timestamp": "2026-10-16T20:12:45.334Z",
+      "provider": "groq",
+      "model": "llama-3.3-70b-versatile",
+      "promptTokens": 850,
+      "completionTokens": 215,
+      "totalTokens": 1065,
+      "estimatedCostUsd": 0.00062,
+      "traceId": "trace_pipe_1792181761"
+    },
+    {
+      "id": "entry_ledger_003",
+      "timestamp": "2026-10-16T20:13:10.892Z",
+      "provider": "deepseek",
+      "model": "deepseek-chat",
+      "promptTokens": 2100,
+      "completionTokens": 512,
+      "totalTokens": 2612,
+      "estimatedCostUsd": 0.00128,
+      "traceId": "trace_pipe_1792181762"
+    },
+    {
+      "id": "entry_ledger_004",
+      "timestamp": "2026-10-16T20:13:40.401Z",
+      "provider": "fcc-proxy",
+      "model": "claude-3-5-sonnet-20241022",
+      "promptTokens": 350,
+      "completionTokens": 25,
+      "totalTokens": 375,
+      "estimatedCostUsd": 0,
+      "traceId": "trace_pipe_1792181763"
+    },
+    {
+      "id": "entry_ledger_005",
+      "timestamp": "2026-10-16T20:14:05.611Z",
+      "provider": "ollama",
+      "model": "qwen2.5-coder:7b",
+      "promptTokens": 1280,
+      "completionTokens": 410,
+      "totalTokens": 1690,
+      "estimatedCostUsd": 0,
+      "traceId": "trace_pipe_1792181764"
+    }
+  ],
+  "totals": {
+    "totalQueries": 5,
+    "totalPromptTokens": 6000,
+    "totalCompletionTokens": 1546,
+    "totalTokens": 7546,
+    "totalEstimatedCostUsd": 0.01174
+  },
+  "exportFormatsSupported": [
+    "JSON Snapshot (userData/usage_ledger.json)",
+    "CSV Export (UsageLedgerView download)",
+    "SQLite Direct Query"
+  ]
+}

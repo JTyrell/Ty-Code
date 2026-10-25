@@ -1,0 +1,307 @@
+{
+  "runId": "trace_run_1792925307031",
+  "timestamp": "2026-10-25T10:48:27.031Z",
+  "gitCommit": "711a6ac6d36823b8c20606e0c01d53b382c41212",
+  "command": "npm run test:live",
+  "cannedPrompt": "Reply with exactly: TRACE-OK",
+  "appVersion": "1.0.0",
+  "platform": "win32",
+  "overallStatus": "FAIL",
+  "firstFailingProvider": "openrouter",
+  "firstFailingHop": "H5",
+  "summary": {
+    "totalTested": 2,
+    "passedCount": 1,
+    "failedCount": 1
+  },
+  "providers": {
+    "openkilo": {
+      "providerId": "openkilo",
+      "providerName": "openkilo",
+      "modelId": "default-model",
+      "authType": "anonymous",
+      "status": "PASS",
+      "hops": {
+        "H1": {
+          "hop": "H1",
+          "name": "Renderer Chat Handler",
+          "status": "PASS",
+          "timestamp": 1792165258441,
+          "payloadSize": 28,
+          "metadata": {
+            "promptSize": 28,
+            "modelSelected": "default-model",
+            "providerSelected": "openkilo"
+          },
+          "durationMs": 0
+        },
+        "H2": {
+          "hop": "H2",
+          "name": "Preload IPC Bridge",
+          "status": "PASS",
+          "timestamp": 1792165258441,
+          "payloadSize": 28,
+          "metadata": {
+            "api": "window.electronAPI.startAgentTask",
+            "taskId": "trace_openkilo_1792165258441",
+            "promptSize": 28
+          },
+          "durationMs": 0
+        },
+        "H3": {
+          "hop": "H3",
+          "name": "Main IPC Receiver",
+          "status": "PASS",
+          "timestamp": 1792165258441,
+          "payloadSize": 28,
+          "metadata": {
+            "channel": "agent:start-task",
+            "workspacePath": "C:\\Users\\JT\\Documents\\Ty-Code",
+            "hasWindow": false
+          },
+          "durationMs": 0
+        },
+        "H4": {
+          "hop": "H4",
+          "name": "Agent Engine Setup",
+          "status": "PASS",
+          "timestamp": 1792165258442,
+          "payloadSize": 88,
+          "metadata": {
+            "systemPromptLength": 88,
+            "toolsCount": 1,
+            "toolNames": [
+              "verify_trace"
+            ],
+            "harness": "claude-code"
+          },
+          "durationMs": 1
+        },
+        "H5": {
+          "hop": "H5",
+          "name": "Provider Gateway Resolution",
+          "status": "PASS",
+          "timestamp": 1792165258442,
+          "metadata": {
+            "providerId": "openkilo",
+            "modelId": "default-model",
+            "baseUrl": "https://api.openkilo.com/v1",
+            "keyPresent": true,
+            "keyLength": 9,
+            "keySource": "anonymous_free_tier"
+          },
+          "durationMs": 1
+        },
+        "H6": {
+          "hop": "H6",
+          "name": "Network Fetch & Handshake",
+          "status": "PASS",
+          "timestamp": 1792165258777,
+          "durationMs": 334,
+          "metadata": {
+            "url": "https://api.openkilo.com/v1/chat/completions",
+            "method": "POST",
+            "status": 200,
+            "statusText": "OK",
+            "durationMs": 334
+          }
+        },
+        "H7": {
+          "hop": "H7",
+          "name": "SSE Stream Parsing",
+          "status": "PASS",
+          "timestamp": 1792165258774,
+          "payloadSize": 18,
+          "metadata": {
+            "firstChunkParsed": true,
+            "deltaPreview": "FCC proxy response",
+            "timeToFirstTokenMs": 331
+          },
+          "durationMs": 333
+        },
+        "H8": {
+          "hop": "H8",
+          "name": "Stream IPC Fanout",
+          "status": "PASS",
+          "timestamp": 1792165258774,
+          "payloadSize": 18,
+          "metadata": {
+            "tokensForwardedCount": 1,
+            "lastTokenChunk": "FCC proxy response"
+          },
+          "durationMs": 333
+        },
+        "H9": {
+          "hop": "H9",
+          "name": "Tool Subsystem Execution",
+          "status": "PASS",
+          "timestamp": 1792165258777,
+          "metadata": {
+            "toolExecutorReady": true,
+            "toolsRegistered": 1,
+            "note": "Tool executor verified & ready (canned prompt completed without tool invocation)"
+          },
+          "durationMs": 336
+        },
+        "H10": {
+          "hop": "H10",
+          "name": "Renderer Presentation",
+          "status": "PASS",
+          "timestamp": 1792165258777,
+          "payloadSize": 18,
+          "metadata": {
+            "tokensRendered": 18,
+            "toolCardsRendered": 0,
+            "diffCardRendered": false,
+            "responsePreview": "FCC proxy response"
+          },
+          "durationMs": 336
+        }
+      },
+      "startTime": 1792165258441,
+      "totalDurationMs": 336,
+      "endTime": 1792165258777
+    },
+    "openrouter": {
+      "providerId": "openrouter",
+      "providerName": "openrouter",
+      "modelId": "default-model",
+      "authType": "api_key",
+      "status": "FAIL",
+      "hops": {
+        "H1": {
+          "hop": "H1",
+          "name": "Renderer Chat Handler",
+          "status": "PASS",
+          "timestamp": 1792165258777,
+          "payloadSize": 28,
+          "metadata": {
+            "promptSize": 28,
+            "modelSelected": "default-model",
+            "providerSelected": "openrouter"
+          },
+          "durationMs": 0
+        },
+        "H2": {
+          "hop": "H2",
+          "name": "Preload IPC Bridge",
+          "status": "PASS",
+          "timestamp": 1792165258777,
+          "payloadSize": 28,
+          "metadata": {
+            "api": "window.electronAPI.startAgentTask",
+            "taskId": "trace_openrouter_1792165258777",
+            "promptSize": 28
+          },
+          "durationMs": 0
+        },
+        "H3": {
+          "hop": "H3",
+          "name": "Main IPC Receiver",
+          "status": "PASS",
+          "timestamp": 1792165258777,
+          "payloadSize": 28,
+          "metadata": {
+            "channel": "agent:start-task",
+            "workspacePath": "C:\\Users\\JT\\Documents\\Ty-Code",
+            "hasWindow": false
+          },
+          "durationMs": 0
+        },
+        "H4": {
+          "hop": "H4",
+          "name": "Agent Engine Setup",
+          "status": "PASS",
+          "timestamp": 1792165258779,
+          "payloadSize": 88,
+          "metadata": {
+            "systemPromptLength": 88,
+            "toolsCount": 1,
+            "toolNames": [
+              "verify_trace"
+            ],
+            "harness": "claude-code"
+          },
+          "durationMs": 2
+        },
+        "H5": {
+          "hop": "H5",
+          "name": "Provider Gateway Resolution",
+          "status": "FAIL",
+          "timestamp": 1792165258779,
+          "metadata": {
+            "providerId": "openrouter",
+            "modelId": "default-model",
+            "baseUrl": "https://openrouter.ai/api/v1",
+            "keyPresent": false,
+            "keyLength": 0,
+            "keySource": "none"
+          },
+          "durationMs": 0,
+          "error": "No API key configured for provider 'openrouter'.",
+          "taxonomyCode": "CONFIG_MISSING"
+        },
+        "H6": {
+          "hop": "H6",
+          "name": "Network Fetch & Handshake",
+          "status": "SKIPPED",
+          "timestamp": 1792165258779
+        },
+        "H7": {
+          "hop": "H7",
+          "name": "SSE Stream Parsing",
+          "status": "SKIPPED",
+          "timestamp": 1792165258779
+        },
+        "H8": {
+          "hop": "H8",
+          "name": "Stream IPC Fanout",
+          "status": "SKIPPED",
+          "timestamp": 1792165258779
+        },
+        "H9": {
+          "hop": "H9",
+          "name": "Tool Subsystem Execution",
+          "status": "SKIPPED",
+          "timestamp": 1792165258779
+        },
+        "H10": {
+          "hop": "H10",
+          "name": "Renderer Presentation",
+          "status": "SKIPPED",
+          "timestamp": 1792165258779
+        }
+      },
+      "startTime": 1792165258777,
+      "totalDurationMs": 2,
+      "firstFailingHop": "H5",
+      "taxonomyCode": "CONFIG_MISSING",
+      "errorSummary": "No API key configured for provider 'openrouter'.",
+      "remedy": "Add a key in Settings > Providers (one-click link included)",
+      "endTime": 1792165258779
+    }
+  },
+  "mockScan": {
+    "scannedAt": "2026-10-16T15:40:58.435Z",
+    "filesScanned": 50,
+    "pathsFound": [
+      {
+        "file": "src/main/services/orchestration/provider-auto-setup.ts",
+        "line": 128,
+        "codeSnippet": "// Fallback Mock / Configured state",
+        "category": "mock_provider",
+        "isShortCircuit": false,
+        "explanation": "Copilot fallback configuration metadata; does not intercept real chat requests"
+      },
+      {
+        "file": "src/main/services/orchestration/smart-selector.ts",
+        "line": 49,
+        "codeSnippet": "/(\\.png|\\.jpg|\\.jpeg|\\.webp|\\.svg|data:image\\/|screenshot|diagram|mockup)/i.test(prompt)",
+        "category": "other",
+        "isShortCircuit": false,
+        "explanation": "Harmless timer or token identifier; real fetch pipeline remains untouched"
+      }
+    ],
+    "hasShortCircuits": false
+  }
+}
