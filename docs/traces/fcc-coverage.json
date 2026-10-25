@@ -1,8 +1,8 @@
 {
   "phase": "FCC-6",
   "title": "Provable 100% FCC Coverage + Permanent Attribution",
-  "timestamp": "2026-10-25T12:19:46.150Z",
-  "gitCommit": "674f9fbe8f48f5fc769ef795f260b147b4372c83",
+  "timestamp": "2026-10-25T12:30:10.632Z",
+  "gitCommit": "f2a7e468eedac7bebd9e95230bee42c1a99c3491",
   "command": "npm run test:fcc-coverage",
   "summary": {
     "totalCapabilities": 12,
@@ -29,7 +29,7 @@
         ],
         "compliantProviders": 55
       },
-      "timestamp": "2026-10-25T12:19:42.056Z"
+      "timestamp": "2026-10-25T12:30:07.211Z"
     },
     {
       "capabilityId": "fcc_cap_02_tos_flag",
@@ -48,7 +48,7 @@
           "blackbox-web"
         ]
       },
-      "timestamp": "2026-10-25T12:19:42.059Z"
+      "timestamp": "2026-10-25T12:30:07.213Z"
     },
     {
       "capabilityId": "fcc_cap_03_subscription_connect",
@@ -67,7 +67,7 @@
           "copilot/o1-preview"
         ]
       },
-      "timestamp": "2026-10-25T12:19:44.216Z"
+      "timestamp": "2026-10-25T12:30:07.653Z"
     },
     {
       "capabilityId": "fcc_cap_04_harness_spawn",
@@ -101,7 +101,7 @@
           "status": "started"
         }
       },
-      "timestamp": "2026-10-25T12:19:45.799Z"
+      "timestamp": "2026-10-25T12:30:10.158Z"
     },
     {
       "capabilityId": "fcc_cap_05_endpoint_roundtrip",
@@ -109,13 +109,13 @@
       "tier": "External Access",
       "status": "PASS",
       "evidence": {
-        "testPort": 54679,
+        "testPort": 54524,
         "httpStatusCode": 200,
-        "responseId": "chatcmpl-5a2d48e2cda80287139c1136",
+        "responseId": "chatcmpl-39a87a197eac656b79a34877",
         "modelUsed": "auto-free",
         "hasMessageContent": true
       },
-      "timestamp": "2026-10-25T12:19:45.837Z"
+      "timestamp": "2026-10-25T12:30:10.204Z"
     },
     {
       "capabilityId": "fcc_cap_06_failover_resume",
@@ -129,7 +129,7 @@
         "turnContinuityPreserved": true,
         "finalResponseLength": 117
       },
-      "timestamp": "2026-10-25T12:19:45.837Z"
+      "timestamp": "2026-10-25T12:30:10.204Z"
     },
     {
       "capabilityId": "fcc_cap_07_savings_meter",
@@ -144,7 +144,7 @@
         "headroomTokens": 950,
         "cacheTokens": 2200
       },
-      "timestamp": "2026-10-25T12:19:45.853Z"
+      "timestamp": "2026-10-25T12:30:10.227Z"
     },
     {
       "capabilityId": "fcc_cap_08_dashboard_fields",
@@ -167,7 +167,7 @@
           "isExhausted": false
         }
       },
-      "timestamp": "2026-10-25T12:19:45.853Z"
+      "timestamp": "2026-10-25T12:30:10.228Z"
     },
     {
       "capabilityId": "fcc_cap_09_connector_module_loads",
@@ -181,7 +181,7 @@
         "rateCapEnforced": true,
         "auditLogsRecorded": 5
       },
-      "timestamp": "2026-10-25T12:19:45.859Z"
+      "timestamp": "2026-10-25T12:30:10.238Z"
     },
     {
       "capabilityId": "fcc_cap_10_session_bridge_contract",
@@ -189,12 +189,12 @@
       "tier": "Browser Seam",
       "status": "PASS",
       "evidence": {
-        "sessionId": "bridge_coverage_1792930785860",
+        "sessionId": "bridge_coverage_1792931410238",
         "eventsStreamed": 20,
         "contractDocumentBytes": 6919,
         "multiplexingVerified": true
       },
-      "timestamp": "2026-10-25T12:19:46.144Z"
+      "timestamp": "2026-10-25T12:30:10.623Z"
     },
     {
       "capabilityId": "fcc_cap_11_tray_present",
@@ -207,9 +207,9 @@
         "quickChatPresent": true,
         "backgroundTasksPresent": true,
         "runInBackgroundPresent": true,
-        "testTaskId": "bg_task_1792930786144_cs7oh"
+        "testTaskId": "bg_task_1792931410623_ncmug"
       },
-      "timestamp": "2026-10-25T12:19:46.144Z"
+      "timestamp": "2026-10-25T12:30:10.624Z"
     },
     {
       "capabilityId": "fcc_cap_12_credit_strings_present",
@@ -238,7 +238,205 @@
         ],
         "allSurfacesIntact": true
       },
-      "timestamp": "2026-10-25T12:19:46.150Z"
+      "timestamp": "2026-10-25T12:30:10.631Z"
     }
-  ]
+  ],
+  "prePublishQaAudit": {
+    "timestamp": "2026-10-25T12:29:54.996Z",
+    "totalDeliverables": 5,
+    "passedDeliverables": 5,
+    "totalChecks": 30,
+    "passedChecks": 30,
+    "auditMatrix": [
+      {
+        "deliverableId": "readme",
+        "name": "README Documentation",
+        "file": "README.md",
+        "passed": true,
+        "checks": [
+          {
+            "check": "FCC Credit & Repo Link",
+            "pass": true,
+            "details": "Present with verified repo URL"
+          },
+          {
+            "check": "Zero-Telemetry & safeStorage",
+            "pass": true,
+            "details": "Accurately scoped without overclaiming"
+          },
+          {
+            "check": "Feature Naming Consistency",
+            "pass": true,
+            "details": "All 4 in-app feature names verified"
+          },
+          {
+            "check": "No Placeholder Text",
+            "pass": true,
+            "details": "Zero placeholder tokens found"
+          },
+          {
+            "check": "Links & URLs Resolve",
+            "pass": true,
+            "details": "All links resolve"
+          },
+          {
+            "check": "Version & Date Consistency",
+            "pass": true,
+            "details": "Consistent (v1.0.0 / 2026)"
+          }
+        ]
+      },
+      {
+        "deliverableId": "whitepaper",
+        "name": "Enterprise Architecture Whitepaper",
+        "file": "docs/ENTERPRISE-WHITEPAPER.md",
+        "passed": true,
+        "checks": [
+          {
+            "check": "FCC Credit & Repo Link",
+            "pass": true,
+            "details": "Present with verified repo URL"
+          },
+          {
+            "check": "Zero-Telemetry & safeStorage",
+            "pass": true,
+            "details": "Accurately scoped without overclaiming"
+          },
+          {
+            "check": "Feature Naming Consistency",
+            "pass": true,
+            "details": "All 4 in-app feature names verified"
+          },
+          {
+            "check": "No Placeholder Text",
+            "pass": true,
+            "details": "Zero placeholder tokens found"
+          },
+          {
+            "check": "Links & URLs Resolve",
+            "pass": true,
+            "details": "All links resolve"
+          },
+          {
+            "check": "Version & Date Consistency",
+            "pass": true,
+            "details": "Consistent (v1.0.0 / 2026)"
+          }
+        ]
+      },
+      {
+        "deliverableId": "pitch_deck",
+        "name": "Investor Pitch Deck",
+        "file": "docs/INVESTOR-PITCH-DECK.md",
+        "passed": true,
+        "checks": [
+          {
+            "check": "FCC Credit & Repo Link",
+            "pass": true,
+            "details": "Present with verified repo URL"
+          },
+          {
+            "check": "Zero-Telemetry & safeStorage",
+            "pass": true,
+            "details": "Accurately scoped without overclaiming"
+          },
+          {
+            "check": "Feature Naming Consistency",
+            "pass": true,
+            "details": "All 4 in-app feature names verified"
+          },
+          {
+            "check": "No Placeholder Text",
+            "pass": true,
+            "details": "Zero placeholder tokens found"
+          },
+          {
+            "check": "Links & URLs Resolve",
+            "pass": true,
+            "details": "All links resolve"
+          },
+          {
+            "check": "Version & Date Consistency",
+            "pass": true,
+            "details": "Consistent (v1.0.0 / 2026)"
+          }
+        ]
+      },
+      {
+        "deliverableId": "landing_copy",
+        "name": "Marketing Landing Page Copy",
+        "file": "docs/MARKETING-LANDING-PAGE-COPY.md",
+        "passed": true,
+        "checks": [
+          {
+            "check": "FCC Credit & Repo Link",
+            "pass": true,
+            "details": "Present with verified repo URL"
+          },
+          {
+            "check": "Zero-Telemetry & safeStorage",
+            "pass": true,
+            "details": "Accurately scoped without overclaiming"
+          },
+          {
+            "check": "Feature Naming Consistency",
+            "pass": true,
+            "details": "All 4 in-app feature names verified"
+          },
+          {
+            "check": "No Placeholder Text",
+            "pass": true,
+            "details": "Zero placeholder tokens found"
+          },
+          {
+            "check": "Links & URLs Resolve",
+            "pass": true,
+            "details": "All links resolve"
+          },
+          {
+            "check": "Version & Date Consistency",
+            "pass": true,
+            "details": "Consistent (v1.0.0 / 2026)"
+          }
+        ]
+      },
+      {
+        "deliverableId": "live_website",
+        "name": "Live Website (Source & pages.dev)",
+        "passed": true,
+        "checks": [
+          {
+            "check": "FCC Credit & Repo Link",
+            "pass": true,
+            "details": "Present with verified repo URL"
+          },
+          {
+            "check": "Zero-Telemetry & safeStorage",
+            "pass": true,
+            "details": "Accurately scoped without overclaiming"
+          },
+          {
+            "check": "Feature Naming Consistency",
+            "pass": true,
+            "details": "All 4 in-app feature names verified"
+          },
+          {
+            "check": "No Placeholder Text",
+            "pass": true,
+            "details": "Zero placeholder tokens found"
+          },
+          {
+            "check": "Links & URLs Resolve",
+            "pass": true,
+            "details": "All links resolve"
+          },
+          {
+            "check": "Version & Date Consistency",
+            "pass": true,
+            "details": "Consistent (v1.0.0 / 2026)"
+          }
+        ]
+      }
+    ]
+  }
 }

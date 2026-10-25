@@ -261,5 +261,6 @@ For enterprise procurement committees, CISOs, and enterprise architects evaluati
 
 ## License
 
-Ty-Code is licensed under the [MIT License](LICENSE).  
+© 2026 Ty-Code Project • Version 1.0.0 Stable Release.  
+Licensed under the [MIT License](LICENSE).  
 The integrated multi-harness free supply adapter layer interfaces with upstream tooling under AGPL-3.0 / MIT.

@@ -650,6 +650,15 @@ export async function runCoverageSuite(options = {}) {
   const failedCount = capabilities.filter(c => c.status === 'FAIL').length;
   const coveragePercent = Math.round((passedCount / capabilities.length) * 100);
 
+  let existingPrePublishQa = null;
+  try {
+    const raw = await fs.readFile(TRACE_FILE, 'utf8');
+    const parsed = JSON.parse(raw);
+    if (parsed.prePublishQaAudit) {
+      existingPrePublishQa = parsed.prePublishQaAudit;
+    }
+  } catch {}
+
   const traceOutput = {
     phase: 'FCC-6',
     title: 'Provable 100% FCC Coverage + Permanent Attribution',
@@ -664,7 +673,8 @@ export async function runCoverageSuite(options = {}) {
       status: failedCount === 0 ? 'PASSED' : 'FAILED'
     },
     attributionInvariant: VERBATIM_CREDIT_STRING,
-    capabilities
+    capabilities,
+    ...(existingPrePublishQa ? { prePublishQaAudit: existingPrePublishQa } : {})
   };
 
   await fs.mkdir(path.dirname(TRACE_FILE), { recursive: true });

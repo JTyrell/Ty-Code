@@ -200,21 +200,21 @@ Install in seconds. No credit card required.
 
 ### Column 1: Product
 - [Download Binaries](https://github.com/JTyrell/Ty-Code/releases/tag/v1.0.0)
-- [Enterprise Whitepaper](docs/ENTERPRISE-WHITEPAPER.md)
+- [Enterprise Whitepaper](./ENTERPRISE-WHITEPAPER.md)
 - [Release Notes & Roadmap](https://github.com/JTyrell/Ty-Code/releases)
-- [Documentation & Quickstart](README.md)
+- [Documentation & Quickstart](../README.md)
 
 ### Column 2: Security & Architecture
-- [Zero-Telemetry Model](docs/ENTERPRISE-WHITEPAPER.md#1-threat-model--security-architecture)
-- [Terminal Sandbox Policy](docs/EXTENSION-SECURITY-MODEL.md)
-- [Verified Audit Traces](docs/traces/)
-- [Bug Bounty & Vulnerability Disclosure](SECURITY.md)
+- [Zero-Telemetry Model](./ENTERPRISE-WHITEPAPER.md#1-threat-model--security-architecture)
+- [Terminal Sandbox Policy](./EXTENSION-SECURITY-MODEL.md)
+- [Verified Audit Traces](./traces/)
+- [Bug Bounty & Vulnerability Disclosure](../SECURITY.md)
 
 ### Column 3: Open Source & Community
 - [GitHub Repository](https://github.com/JTyrell/Ty-Code)
 - [Discord Developer Community](https://discord.gg/tycode)
-- [Contributing Guidelines](CONTRIBUTING.md)
-- [MIT License](LICENSE)
+- [Contributing Guidelines](../CONTRIBUTING.md)
+- [MIT License](../LICENSE)
 
 ### Bottom Bar & Standing Attribution
 > **Built on the shoulders of giants.**  

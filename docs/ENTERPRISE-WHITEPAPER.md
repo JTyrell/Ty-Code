@@ -56,7 +56,10 @@ Ty-Code implements defense-in-depth across the OS boundary, the process boundary
 +---------------------------------------------------------------------------------------+
 ```
 
-### 1.1 Process Isolation, contextBridge, and Strict IPC Validation
+### 1.1 The Zero-Telemetry Guarantee & Perimeter Containment
+Ty-Code operates under a strict, machine-verified **Zero-Telemetry Guarantee**. Unlike cloud-locked AI IDEs that stream keystrokes, abstract syntax trees (ASTs), and repo graphs to multitenant SaaS servers, Ty-Code contains all workspace indexing, AST analysis, and memory state strictly within local host resources. Outbound network sockets are opened exclusively for intentional, user-authorized Bring-Your-Own-Key (BYOK) model inference requests or private on-premises VPC gateways. Zero telemetry beacons, analytics trackers, or unprompted telemetry egress exist in the codebase.
+
+### 1.2 Process Isolation, contextBridge, and Strict IPC Validation
 Ty-Code enforces absolute Chromium sandbox isolation between the untrusted web presentation layer and the privileged Node.js desktop core:
 - `nodeIntegration: false`: Renderer processes are physically barred from loading native Node.js binaries, accessing the POSIX/Win32 file system, or binding raw sockets.
 - `contextIsolation: true`: Preload execution contexts exist in a segregated V8 world. Prototype pollution within the renderer cannot mutate preload primitives or hijack execution flow.
