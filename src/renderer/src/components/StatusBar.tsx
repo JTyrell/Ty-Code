@@ -26,6 +26,7 @@ import { FleetHealthIndicator } from './FleetHealthIndicator';
 import { WarmUpIndicator } from './WarmUpIndicator';
 import { TelemetryBadge } from './status/TelemetryBadge';
 import { OverflowMenu } from './status/OverflowMenu';
+import { ContextBadge } from './status-bar/ContextBadge';
 import { useAvailableWidth } from '../hooks/useAvailableWidth';
 import styles from './StatusBar.module.css';
 
@@ -161,6 +162,8 @@ export const StatusBar: React.FC = () => {
           )}
           {isSyncing && <RefreshCw size={10} className={styles.spin} />}
         </button>
+
+        <ContextBadge />
       </div>
 
       {/* 1px divider between left and center */}

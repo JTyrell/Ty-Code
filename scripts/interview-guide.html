@@ -374,6 +374,59 @@ export type AgentStreamChunk =
   </div>
 
   <div class="qa-card">
+    <div class="qa-question">Q: How do you minimize Time-to-First-Token (TTFT) and optimize end-to-end streaming latency?</div>
+    <div class="qa-badge">Latency Optimization & Network Architecture</div>
+    <div class="qa-answer">
+      <p>To deliver instantaneous visual feedback without compromising throughput, Ty-Code optimizes latency across three critical tiers:</p>
+      <p><strong>1. Main Process Outbound Coalescing with Immediate Chunk #1 Flush:</strong> Tokens stream from AI providers through the Main process. Instead of blasting IPC messages per token, tokens coalesce into 16–24ms batches. Crucially, Chunk #1 bypasses batching and flushes synchronously across IPC in 0ms. This ensures Time-to-First-Token (TTFT) is minimal while eliminating IPC serialization overhead during sustained 300+ token/s bursts.</p>
+      <p><strong>2. Per-Host HTTPS Connection Pooling (<code>keepAlive: true</code>):</strong> <code>ProviderGateway</code> maintains persistent HTTPS agents and Undici dispatchers per provider host with <code>keepAlive: true</code>, 15-second keepalive timeouts, and socket reuse. Sequential prompts reuse active TLS sessions and TCP connections, saving 80 to 250ms of handshake latency per request.</p>
+      <p><strong>3. CSS Layout Containment & Virtualization:</strong> Message rows are virtualized via <code>@tanstack/react-virtual</code> and isolated with <code>React.memo</code>. Each message container applies <code>content-visibility: auto</code> and <code>contain-intrinsic-size: auto 130px</code>. Off-screen conversation turns completely bypass layout and paint calculations until scrolled into view.</p>
+      <p><strong>4. Deferred AST Syntax Highlighting:</strong> During live streaming, messages render raw text through <code>ScrambleText</code>. Heavy markdown AST construction and <code>highlight.js</code> tokenization run only once upon receiving the <code>[DONE]</code> stream termination token.</p>
+    </div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-question">Q: Explain the Smart Sticky-Scroll Auto-Follow algorithm and how you prevented layout jumps and per-pixel re-renders.</div>
+    <div class="qa-badge">UI Engineering & DOM Synchronization</div>
+    <div class="qa-answer">
+      <p>Implementing auto-scrolling during high-speed AI streaming is fraught with edge cases: programmatic smooth scrolling queues animations, deferred markdown highlighting shifts container heights, and reading scroll position in React state causes catastrophic per-pixel re-renders.</p>
+      <p>We designed a multi-layer Smart Sticky-Scroll architecture in <code>ChatMessageList</code>:</p>
+      <p><strong>1. Ref-Based Pin Detection (Zero Re-render Cost):</strong> We track pinned state using <code>const pinnedToBottom = useRef(true)</code>. A <code>{ passive: true }</code> scroll listener throttled by <code>requestAnimationFrame</code> computes <code>distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight</code>. The user is considered pinned when <code>distanceFromBottom &lt; 64px</code>. A single piece of React state (<code>detachedFromBottom</code>) flips ONLY when the boolean changes value, guaranteeing zero React re-renders while scrolling.</p>
+      <p><strong>2. Auto-Follow on Buffer Flush (Behavior: 'auto'):</strong> After each 24ms double-buffered flush commits text to the DOM, if <code>pinnedToBottom.current</code> is true, <code>el.scrollTop = el.scrollHeight</code> executes using behavior <code>'auto'</code>. Programmatic smooth scrolling is strictly prohibited during streaming because queued browser animations cause visual jitter and artificial lag.</p>
+      <p><strong>3. ResizeObserver Height Protection:</strong> A <code>ResizeObserver</code> monitors the inner virtual container. When post-stream events (syntax highlighting on <code>[DONE]</code>, code block expansion, image loading) increase document height while pinned, the observer re-pins <code>scrollTop</code> immediately. If the user is detached (reading previous messages), the observer exits immediately, preventing jarring layout jumps.</p>
+      <p><strong>4. Floating 'Jump to latest' Pill & Re-Pin Events:</strong> When <code>detachedFromBottom</code> is true, a floating pill with an <code>ArrowDown</code> icon and backdrop blur appears bottom-center. Clicking the pill or submitting a new message forces <code>pinnedToBottom.current = true</code> and triggers a smooth scroll to the bottom. Scrolling manually back within 64px automatically hides the pill.</p>
+    </div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-question">Q: How does the Matrix Decode glyph-scramble animation work, and how did you guarantee zero latency?</div>
+    <div class="qa-badge">Animation Performance & Accessibility</div>
+    <div class="qa-answer">
+      <p>To provide a tactile visual aesthetic during token streaming, we built a 'Matrix Decode' glyph-scramble animation (<code>ScrambleText</code>).</p>
+      <p><strong>1. Provably Zero Latency:</strong> The animation never gates, buffers, delays, or re-requests tokens. It is strictly a decoupled presentation transform operating on text already committed to the render buffer. Tokens are painted into memory immediately.</p>
+      <p><strong>2. Per-Character Dynamic Lock Formula:</strong> When character index <code>i</code> first appears in the text buffer, it is assigned a lock timestamp: <code>lockAt = now + 90ms + (i % 5) * 12ms</code>. On each animation frame, characters where <code>lockAt &lt;= now</code> render as their real glyph. Unlocked characters render a pseudo-random glyph from a Katakana and hex charset (<code>"アイウエオカキクケコサシスセソ0123456789ABCDEF#$%&amp;"</code>). Whitespace and newlines are never scrambled to prevent word-wrap shifts.</p>
+      <p><strong>3. Bounded O(1) Trailing Window:</strong> To prevent CPU degradation on long responses, scrambling is strictly bounded to the trailing 200 characters (<code>SCRAMBLE_WINDOW = 200</code>). All older characters render permanently locked with zero per-frame CPU computation.</p>
+      <p><strong>4. Lifecycle & Accessibility Guards:</strong></p>
+      <p>• <em>Single Self-Cancelling rAF Loop:</em> Starts only when unlocked characters exist and auto-terminates when all characters lock or upon unmount.</p>
+      <p>• <em>Tab Visibility Guard:</em> Automatically pauses the rAF loop when <code>document.hidden</code> is true.</p>
+      <p>• <em>Reduced Motion:</em> Respects <code>prefers-reduced-motion: reduce</code> by immediately rendering locked text.</p>
+      <p>• <em>Accessibility:</em> Uses <code>aria-label={text}</code> and <code>aria-live="off"</code> so screen readers receive clean canonical prose without scrambled characters.</p>
+    </div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-question">Q: How does Ty-Code enforce enterprise typography and code-safe UK English punctuation?</div>
+    <div class="qa-badge">Typography & Natural Language Normalization</div>
+    <div class="qa-answer">
+      <p>Enterprise communication demands consistent typography, rich markdown presentations, and professional punctuation style without corrupting source code.</p>
+      <p><strong>1. Zustand Typography System (<code>useTypographyStore</code>):</strong> Exposes persistent settings for <code>chatFontFamily</code> ('sans', 'serif', 'mono', 'plex'), <code>chatFontSize</code> (12–18px, default 14), <code>matrixDecodeEnabled</code>, and <code>ukPunctuationEnabled</code>. Subscribed via atomic selectors to eliminate unnecessary component re-renders.</p>
+      <p><strong>2. Rich Markdown Enhancements:</strong> Rendered with custom components for alternating zebra-striped tables with sticky headers, task lists with styled interactive checkboxes, KaTeX mathematical expressions, and Mermaid architectural diagrams.</p>
+      <p><strong>3. System Prompt UK English Rules:</strong> Injected across all provider prompts: standard UK spellings (colour, organise, analyse, favour), eliminating em dashes in prose, and favoring short, direct clauses with commas, semicolons, or colons.</p>
+      <p><strong>4. Code-Safe Punctuation Normaliser (<code>normalisePunctuation</code>):</strong> Post-processing AI output requires extreme caution so that source code is never mutated. The normaliser parses markdown into fenced code blocks (<code>```...```</code>), inline code spans (<code>`...`</code>), HTML tags, and prose segments. Em dashes (—) and spaced en dashes ( – ) are replaced with commas or hyphens strictly in prose segments. Fenced code, CLI flags (<code>--option</code>), language constructs (<code>x--</code>), and numeric ranges (1999–2005) remain 100% immutable.</p>
+    </div>
+  </div>
+
+  <div class="qa-card">
     <div class="qa-question">Q: Explain Ty-Code's local-first security sandbox and permission architecture.</div>
     <div class="qa-badge">Application Security & Sandbox Engineering</div>
     <div class="qa-answer">
@@ -517,6 +570,16 @@ export type AgentStreamChunk =
     </div>
   </div>
 
+  <div class="qa-card accent-amber">
+    <div class="qa-question">Q: Why is programmatic smooth scrolling dangerous during high-speed AI streaming?</div>
+    <div class="qa-badge">DOM Animation Queueing & Compositor Performance</div>
+    <div class="qa-answer">
+      <p>"A critical engineering gotcha we resolved was smooth scrolling animation queueing.</p>
+      <p>When an AI model streams at 150 to 300+ tokens per second, token buffer commits occur every 20 to 24ms. If the scroll container uses CSS <code>scroll-behavior: smooth</code> or if code calls <code>el.scrollTo({ behavior: 'smooth' })</code>, the browser's layout engine attempts to interpolate between dozens of rapid height updates. These smooth scroll animations queue up in the compositor, creating severe frame drops, visual rubber-banding, and detached scroll states where the viewport lags far behind the live token stream.</p>
+      <p>We solved this by strictly enforcing <code>behavior: 'auto'</code> (instantaneous assignment) during all streaming flushes, setting <code>.chat-feed { scroll-behavior: auto; }</code>, and reserving smooth scrolling solely for discrete, user-initiated actions (such as clicking the 'Jump to latest' pill or submitting a new message)."</p>
+    </div>
+  </div>
+
   <!-- SECTION 7 -->
   <h2 class="section-title"><span class="num">7</span> Interview Quick-Reference Cheat Sheet</h2>
 
@@ -527,21 +590,29 @@ export type AgentStreamChunk =
     </div>
     <div class="cheat-item">
       <strong>Design Patterns Used</strong>
-      <span>Adapter Pattern (ProviderGateway), ReAct Loop (Agent Engine), Observer/Disposable Pattern (IPC Streaming), Selector Subscriptions (Zustand).</span>
+      <span>Adapter Pattern (ProviderGateway), ReAct Loop (Agent Engine), Observer/Disposable Pattern (IPC Streaming), Atomic Selector Subscriptions (Zustand), Self-Cancelling Animation Loop (ScrambleText).</span>
     </div>
     <div class="cheat-item">
       <strong>Key Protocols</strong>
-      <span>Server-Sent Events (SSE), JSON-RPC 2.0 (Language Server Protocol), ANSI escape sequences (XTerm.js / node-pty), Electron IPC.</span>
+      <span>Server-Sent Events (SSE), JSON-RPC 2.0 (Language Server Protocol), ANSI escape sequences (XTerm.js / node-pty), Electron IPC, HTTPS keepAlive connection pooling.</span>
     </div>
     <div class="cheat-item">
       <strong>Security Standards</strong>
       <span>OS safeStorage (DPAPI, Keychain, libsecret), Three-Tier Terminal Sandbox (Always Ask, Restricted, Always Proceed), Workspace Path Traversal Containment.</span>
     </div>
+    <div class="cheat-item">
+      <strong>Performance Optimizations</strong>
+      <span>Main Process token coalescing (16–24ms) with immediate Chunk #1 flush (0ms TTFT); Double-buffered 24ms rAF renderer flush; Smart sticky-scroll auto-follow with &lt;64px pin detection and zero-per-pixel re-renders; ResizeObserver height-jump isolation; Bounded 200-char Matrix Decode glyph scramble; CSS content-visibility: auto layout virtualization; Per-host HTTPS keepAlive socket reuse; Token auto-compaction at 95% threshold; Monaco Diff review gating.</span>
+    </div>
+    <div class="cheat-item">
+      <strong>Typography & Text Processing</strong>
+      <span>Modular Zustand typography system (System Sans, Georgia Serif, JetBrains Mono, IBM Plex Mono); Code-safe UK English punctuation AST normaliser protecting fenced code blocks, inline spans, and CLI syntax.</span>
+    </div>
   </div>
 
   <div class="footer">
     <span>Ty-Code Architecture & Technical Interview Master Guide</span>
-    <span>Candidate Confidential — Page 1 of 1</span>
+    <span>Candidate Confidential</span>
   </div>
 
 </body>

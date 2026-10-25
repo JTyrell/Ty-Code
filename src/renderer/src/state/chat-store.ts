@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { AgentMode, AgentSessionSummary, AgentStreamChunk, AgentToolApproval, ChatMessage, ProviderSettings, ProviderType, ToolExecutionRecord, ToolExecutionStatus } from '../../../preload/types';
+import type { AgentMode, AgentSessionSummary, AgentStreamChunk, AgentToolApproval, ChatMessage, ProviderSettings, ProviderType, StructuredSettingsError, ToolExecutionRecord, ToolExecutionStatus } from '../../../preload/types';
 import {
   AgentStreamTokenPayloadSchema,
   AgentReasoningTokenPayloadSchema,
@@ -22,6 +22,7 @@ interface ChatState {
   pendingApproval: AgentToolApproval | null;
   currentStatus: string;
   currentThought: string;
+  currentThoughts: string[];
   streamingText: string;
   activeErrorCard: ChatErrorCard | null;
   dismissErrorCard: () => void;
@@ -41,7 +42,9 @@ interface ChatState {
   setAgentMode: (mode: AgentMode) => void;
   setContextTokens: (tokens: number) => void;
   initSettings: () => Promise<void>;
-  saveSettings: (updates: Partial<ProviderSettings>) => Promise<boolean>;
+  lastSaveError: StructuredSettingsError | null;
+  clearLastSaveError: () => void;
+  saveSettings: (updates: Record<string, unknown> | Partial<ProviderSettings>) => Promise<boolean>;
   sendMessage: (
     prompt: string,
     workspacePath: string,
@@ -72,6 +75,56 @@ let settingsChangedUnsubscribe: (() => void) | null = null;
 let sketcherPromptUnsubscribe: (() => void) | null = null;
 let canvasSyncUnsubscribe: (() => void) | null = null;
 let canvasUpdateUnsubscribe: (() => void) | null = null;
+/**
+ * Step 1: Thoughts as a Structured Array (Store)
+ * 1. Change message thoughts from a concatenated string to thoughts: string[].
+ * 2. On each thought chunk:
+ *    - If the array is empty, push the chunk as the first element.
+ *    - Else inspect the last element: if it ends with sentence-terminal punctuation (. ! ?)
+ *      OR the incoming chunk begins with a newline, push the chunk as a NEW element.
+ *    - Otherwise append the chunk to the last element, guaranteeing exactly one space at the
+ *      join point (trim both sides, join with a single space; never zero spaces, never double).
+ * 3. Normalize every element: collapse internal runs of spaces to one; trim ends.
+ */
+export function appendThoughtChunk(currentThoughts: string[], rawChunk: string): string[] {
+  if (!rawChunk) return currentThoughts;
+
+  const startsWithNewline = /^[\r\n]/.test(rawChunk);
+  const rawLines = rawChunk.split(/\r?\n/);
+  const thoughts = [...currentThoughts];
+
+  let isFirstNonEmpty = true;
+
+  for (const rawLine of rawLines) {
+    const cleanChunk = rawLine
+      .replace(/[^\S\r\n]+/g, ' ')
+      .trim();
+
+    if (!cleanChunk) continue;
+
+    const lineBeginsWithNewline = isFirstNonEmpty ? startsWithNewline : true;
+    isFirstNonEmpty = false;
+
+    if (thoughts.length === 0) {
+      thoughts.push(cleanChunk);
+      continue;
+    }
+
+    const lastIdx = thoughts.length - 1;
+    const lastThought = thoughts[lastIdx].replace(/[^\S\r\n]+/g, ' ').trim();
+    const endsWithTerminal = /[.!?]['"]?\s*$/.test(lastThought);
+
+    if (endsWithTerminal || lineBeginsWithNewline) {
+      thoughts.push(cleanChunk);
+    } else {
+      const joined = `${lastThought} ${cleanChunk}`.replace(/[^\S\r\n]+/g, ' ').trim();
+      thoughts[lastIdx] = joined;
+    }
+  }
+
+  return thoughts;
+}
+
 function createId(prefix: string): string { return `${prefix}_${globalThis.crypto.randomUUID()}`; }
 
 // M3E Canvas overhaul: mirror main-window chat messages into the shared
@@ -210,6 +263,10 @@ function finalizePartialMessage(messages: ChatMessage[], text: string, reasoning
     id: createId('assistant'),
     role: 'assistant',
     content: text,
+    streaming: false,
+    isStreaming: false,
+    renderMode: 'markdown',
+    thoughts: reasoning ? reasoning.split('\n').filter(Boolean) : [],
     reasoning: reasoning || undefined,
     metadata: {
       source: 'provider-stream',
@@ -443,7 +500,7 @@ export function savePersistedChat(messages: ChatMessage[]): void {
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
-  messages: loadPersistedChat(), isRunning: false, isStreaming: false, currentTaskId: null, activeAssistantMessageId: null, pendingApproval: null, currentStatus: '', currentThought: '', streamingText: '',
+  messages: loadPersistedChat(), isRunning: false, isStreaming: false, currentTaskId: null, activeAssistantMessageId: null, pendingApproval: null, currentStatus: '', currentThought: '', currentThoughts: [], streamingText: '',
   activeErrorCard: null,
   dismissErrorCard: () => set({ activeErrorCard: null }),
   setActiveErrorCard: (card: ChatErrorCard | null) => set({ activeErrorCard: card }),
@@ -454,7 +511,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       )
     }));
   },
-  settings: null, agentMode: 'build', contextTokens: 1200, contextLimit: 128_000, isSettingsOpen: false, isTerminalOpen: false,
+  settings: null, lastSaveError: null, clearLastSaveError: () => set({ lastSaveError: null }), agentMode: 'build', contextTokens: 1200, contextLimit: 128_000, isSettingsOpen: false, isTerminalOpen: false,
   draftPrompt: '',
   setDraftPrompt: (prompt: string) => set({ draftPrompt: prompt }),
   queuedMessages: [],
@@ -551,17 +608,28 @@ export const useChatStore = create<ChatState>((set, get) => ({
     await refreshSettings();
   },
 
-  saveSettings: async (updates: Partial<ProviderSettings>) => {
+  saveSettings: async (updates: Record<string, unknown> | Partial<ProviderSettings>) => {
     try {
       const response = await window.electronAPI.saveSettings(updates);
-      if (!response.success) { console.error('Failed to save settings:', response.error); return false; }
+      if (!response.success) {
+        const errorDetail: StructuredSettingsError = response.errorDetail || {
+          ok: false,
+          code: 'IO',
+          message: response.error || 'Failed to save settings.',
+          detail: String(response.error || 'Failed to save settings.')
+        };
+        console.error(`[saveSettings] [${errorDetail.code}] ${errorDetail.message}\n${errorDetail.detail}`);
+        set({ lastSaveError: errorDetail });
+        return false;
+      }
+      set({ lastSaveError: null });
       const current = get().settings;
       if (current) {
         const apiKeysConfigured = { ...current.apiKeysConfigured };
-        for (const [provider, value] of Object.entries(updates.apiKeys || {})) {
+        for (const [provider, value] of Object.entries(((updates as any).apiKeys || {}) as Record<string, unknown>)) {
           if (typeof value === 'string' && value.trim()) apiKeysConfigured[provider as ProviderType] = true;
         }
-        set({ settings: { ...current, ...updates, apiKeys: {}, apiKeysConfigured, customEndpoints: { ...current.customEndpoints, ...updates.customEndpoints } } });
+        set({ settings: { ...current, ...updates, apiKeys: {}, apiKeysConfigured, customEndpoints: { ...current.customEndpoints, ...((updates as any).customEndpoints || {}) } } });
       }
       // Funnel persisted selections through the unified store: its sync
       // watcher updates the main-process active agent config + gateway.
@@ -572,7 +640,20 @@ export const useChatStore = create<ChatState>((set, get) => ({
         // Unified store unavailable; settings still persisted and broadcast.
       }
       return true;
-    } catch (err) { console.error('Failed to save settings:', err); return false; }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const detail = err instanceof Error && err.stack ? err.stack : String(err);
+      console.error(`[saveSettings] [IO] ${msg}\n${detail}`);
+      set({
+        lastSaveError: {
+          ok: false,
+          code: 'IO',
+          message: msg,
+          detail
+        }
+      });
+      return false;
+    }
   },
 
   switchProvider: async (providerId: string, modelId?: string) => {
@@ -628,6 +709,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       proposedDiffs: [],
       statusText: 'Thinking…',
       isStreaming: true,
+      streaming: true,
+      renderMode: 'streaming',
+      thoughts: [],
       metadata: {
         source: 'provider-stream',
         providerId: currentTaskProviderId,
@@ -648,6 +732,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       pendingApproval: null,
       currentStatus: 'Thinking…',
       currentThought: '',
+      currentThoughts: [],
       streamingText: '',
       activeErrorCard: null
     });
@@ -676,6 +761,36 @@ export const useChatStore = create<ChatState>((set, get) => ({
     let flushRaf: number | null = null;
     let lastFlushTime = 0;
     const FLUSH_INTERVAL_MS = 100;
+
+    // Step 3: Stream Watchdog (auto-finalize if no chunks arrive for 4000ms)
+    const taskStartTime = Date.now();
+    let watchdogTimer: ReturnType<typeof setTimeout> | null = null;
+    const WATCHDOG_MS = 4000;
+
+    const resetWatchdog = () => {
+      if (watchdogTimer) {
+        clearTimeout(watchdogTimer);
+        watchdogTimer = null;
+      }
+      if (get().isStreaming && get().currentTaskId === taskId) {
+        watchdogTimer = setTimeout(() => {
+          if (get().isStreaming && get().currentTaskId === taskId) {
+            console.warn(`[ChatStore] Watchdog triggered: 4000ms elapsed without stream chunk for task ${taskId}. Auto-finalizing.`);
+            finalizeStream();
+          }
+        }, WATCHDOG_MS);
+      }
+    };
+
+    const clearWatchdog = () => {
+      if (watchdogTimer) {
+        clearTimeout(watchdogTimer);
+        watchdogTimer = null;
+      }
+    };
+
+    // Arm watchdog on initial task start
+    resetWatchdog();
 
     const flushTokenBuffer = () => {
       if (flushTimer) {
@@ -766,16 +881,22 @@ export const useChatStore = create<ChatState>((set, get) => ({
       lastReasoningFlushTime = performance.now();
       isReasoningFlushing = false;
 
+      // Step 1: Thoughts as a structured array
+      const currentThoughts = get().currentThoughts || [];
+      const updatedThoughts = appendThoughtChunk(currentThoughts, batch);
+
       const targetMessage = get().messages.find((m) => m.taskId === taskId && m.role === 'assistant');
       if (targetMessage) {
         get().updateMessage(targetMessage.id, {
-          reasoning: (targetMessage.reasoning || '') + batch
+          thoughts: updatedThoughts,
+          reasoning: updatedThoughts.join('\n')
         });
       }
 
-      set((state) => ({
-        currentThought: state.currentThought + batch
-      }));
+      set({
+        currentThoughts: updatedThoughts,
+        currentThought: updatedThoughts.join('\n')
+      });
     };
 
     const scheduleReasoningFlush = () => {
@@ -801,7 +922,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
     };
 
-    const finishTask = (status = '') => {
+    /**
+     * Step 3: Rich Text Pipeline Repair (Finalization)
+     * Flushes remaining buffers into message.content (copied string primitive),
+     * sets message.streaming = false, message.renderMode = 'markdown',
+     * preserves thoughts array, and resets task state.
+     */
+    const finalizeStream = (status = '', errorCard?: ChatErrorCard) => {
+      clearWatchdog();
       flushTokenBuffer();
       flushReasoningBuffer();
       if (flushTimer) {
@@ -824,19 +952,59 @@ export const useChatStore = create<ChatState>((set, get) => ({
         try { dispose(); } catch {}
       });
       activeStreamDisposables = [];
-      set((state) => ({
-        isRunning: false,
-        isStreaming: false,
-        currentTaskId: null,
-        activeAssistantMessageId: null,
-        pendingApproval: null,
-        currentStatus: status,
-        streamingText: '',
-        currentThought: '',
-        messages: state.messages.map((m) =>
-          m.taskId === taskId ? { ...m, isStreaming: false, statusText: '' } : m
-        )
-      }));
+
+      const durationSeconds = Math.max(1, Math.round((Date.now() - taskStartTime) / 1000));
+
+      set((state) => {
+        const messages = state.messages.map((m) => {
+          if (m.taskId !== taskId) return m;
+
+          // Copy content string primitive (do not keep live buffer reference)
+          const finalizedContent = String(m.content || '');
+          const rawThoughts = Array.isArray(m.thoughts) && m.thoughts.length > 0
+            ? m.thoughts
+            : (state.currentThoughts.length > 0 ? state.currentThoughts : (m.reasoning ? m.reasoning.split('\n').filter(Boolean) : []));
+          const finalizedThoughts = [...rawThoughts];
+
+          return {
+            ...m,
+            content: finalizedContent,
+            streaming: false,
+            isStreaming: false,
+            renderMode: 'markdown' as const,
+            statusText: '',
+            thoughts: finalizedThoughts,
+            thoughtDurationSeconds: m.thoughtDurationSeconds || durationSeconds,
+            reasoning: finalizedThoughts.join('\n'),
+            errorCard: errorCard || m.errorCard,
+            metadata: m.metadata
+              ? { ...m.metadata, streamEventCount: Math.max(1, currentTaskStreamEvents) }
+              : {
+                  source: 'provider-stream' as const,
+                  providerId: currentTaskProviderId,
+                  modelId: currentTaskModelId,
+                  streamEventCount: Math.max(1, currentTaskStreamEvents)
+                }
+          };
+        });
+
+        return {
+          messages,
+          isRunning: false,
+          isStreaming: false,
+          currentTaskId: null,
+          activeAssistantMessageId: null,
+          pendingApproval: null,
+          currentStatus: status,
+          streamingText: '',
+          currentThought: '',
+          currentThoughts: [],
+          activeErrorCard: errorCard || state.activeErrorCard
+        };
+      });
+
+      const lastMessage = get().messages.find((m) => m.taskId === taskId);
+      if (lastMessage && lastMessage.role === 'assistant') syncMessageToCanvas(lastMessage);
 
       // Process any queued messages after task completion
       const queued = get().queuedMessages;
@@ -849,6 +1017,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
           void get().sendMessage(nextMessage, workspacePath, activeTab?.path, activeTab?.content);
         }, 150);
       }
+    };
+
+    const finishTask = (status = '') => {
+      finalizeStream(status);
     };
 
     activeStreamDisposables.forEach((dispose) => {
@@ -866,6 +1038,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         for (const chunk of chunks) {
           if (chunk.taskId !== taskId || get().currentTaskId !== taskId) continue;
           currentTaskStreamEvents++;
+          resetWatchdog();
 
           if (chunk.type === 'token') {
             if (currentTaskStreamEvents === 1) {
@@ -905,6 +1078,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         if (typeof data.taskId !== 'string' || typeof data.token !== 'string') return;
         if (data.taskId !== taskId || get().currentTaskId !== taskId) return;
         currentTaskStreamEvents++;
+        resetWatchdog();
         if (currentTaskStreamEvents === 1) {
           requestAnimationFrame(() => {
             setTimeout(() => {
@@ -930,6 +1104,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         if (typeof data.taskId !== 'string' || typeof data.token !== 'string') return;
         if (data.taskId !== taskId || get().currentTaskId !== taskId) return;
         currentTaskStreamEvents++;
+        resetWatchdog();
         reasoningBuffer += data.token;
         scheduleReasoningFlush();
       }));
@@ -1039,37 +1214,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
       activeStreamDisposables.push(window.electronAPI.onAgentDone((raw) => {
         const parsed = AgentDonePayloadSchema.safeParse(raw);
         if (!parsed.success || parsed.data.taskId !== taskId || get().currentTaskId !== taskId) return;
-        flushTokenBuffer();
-        flushReasoningBuffer();
-        const state = get();
         if (parsed.data.cancelled) {
-          const cancelledMessages = cancelRunningTools(state.messages);
+          const cancelledMessages = cancelRunningTools(get().messages);
           set({
             isStreaming: false,
             messages: cancelledMessages.map((m) =>
               m.taskId === taskId ? { ...m, isStreaming: false, statusText: '' } : m
             )
           });
-          finishTask('Task stopped.');
+          finalizeStream('Task stopped.');
         } else {
-          const streamCount = Math.max(1, currentTaskStreamEvents);
-          const messages = state.messages.map((m) => {
-            if (m.taskId !== taskId) return m;
-            return {
-              ...m,
-              isStreaming: false,
-              statusText: '',
-              metadata: {
-                source: 'provider-stream' as const,
-                providerId: currentTaskProviderId,
-                modelId: currentTaskModelId,
-                streamEventCount: streamCount
-              }
-            };
-          });
-          set({ messages, isStreaming: false });
-          const lastMessage = messages.find((m) => m.taskId === taskId);
-          if (lastMessage && lastMessage.role === 'assistant') syncMessageToCanvas(lastMessage);
+          const lastMessage = get().messages.find((m) => m.taskId === taskId);
           if (traceOptions?.traceId && window.electronAPI?.recordTraceHop) {
             window.electronAPI.recordTraceHop(traceOptions.traceId, 'H10', {
               status: 'PASS',
@@ -1081,7 +1236,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
               }
             });
           }
-          finishTask();
+          finalizeStream();
         }
       }));
     }
@@ -1103,32 +1258,20 @@ export const useChatStore = create<ChatState>((set, get) => ({
         const content = card
           ? `**[${card.taxonomyCode}]** ${card.message}\n\n*Remediation:* ${card.remedy}`
           : `**Agent error:** ${parsed.data.error || 'The task could not be completed.'}`;
-        set({
-          activeErrorCard: card,
-          messages: state.messages.map((m) =>
-            m.taskId === taskId
-              ? {
-                  ...m,
-                  errorCard: card,
-                  content: m.content || content,
-                  statusText: ''
-                }
-              : m
-          )
-        });
         if (traceOptions?.traceId && window.electronAPI?.recordTraceHop) {
           window.electronAPI.recordTraceHop(traceOptions.traceId, 'H10', {
             status: 'FAIL',
             error: parsed.data.error || 'The task could not be completed.'
           });
         }
-        finishTask('Task failed.');
+        finalizeStream('Task failed.', card);
       }));
     }
 
     // Backup listener for approvals and status
     activeStreamDisposables.push(window.electronAPI.onAgentStream((chunk: AgentStreamChunk) => {
       if (chunk.taskId !== taskId || get().currentTaskId !== taskId) return;
+      resetWatchdog();
       if (chunk.type === 'status') {
         let statusText = chunk.content || '';
         if (/thinking/i.test(statusText)) {
@@ -1187,21 +1330,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
       };
       const applyBridgeError = (messageText: string): void => {
         const card = bridgeErrorCard(messageText);
-        const content = `**[${card.taxonomyCode}]** ${card.message}\n\n*Remediation:* ${card.remedy}`;
-        set({
-          activeErrorCard: card,
-          messages: get().messages.map((m) =>
-            m.taskId === taskId
-              ? { ...m, errorCard: card, content: m.content || content, statusText: '' }
-              : m
-          )
-        });
-        finishTask('Task failed.');
+        finalizeStream('Task failed.', card);
       };
 
       activeStreamDisposables.push(window.electronAPI.onOpenCodeStream((chunk) => {
         if (get().currentTaskId !== taskId) return;
         currentTaskStreamEvents++;
+        resetWatchdog();
         if (currentTaskStreamEvents === 1) {
           requestAnimationFrame(() => {
             setTimeout(() => {
@@ -1217,27 +1352,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         activeStreamDisposables.push(window.electronAPI.onOpenCodeDone((payload) => {
           if (get().currentTaskId !== taskId) return;
           openCodeBridgeRouteActive = false;
-          flushTokenBuffer();
-          flushReasoningBuffer();
-          const messages = get().messages.map((m) =>
-            m.taskId === taskId
-              ? {
-                  ...m,
-                  isStreaming: false,
-                  statusText: '',
-                  metadata: {
-                    source: 'provider-stream' as const,
-                    providerId: currentTaskProviderId,
-                    modelId: currentTaskModelId,
-                    streamEventCount: Math.max(1, currentTaskStreamEvents)
-                  }
-                }
-              : m
-          );
-          set({ messages, isStreaming: false });
-          const lastMessage = messages.find((m) => m.taskId === taskId);
-          if (lastMessage && lastMessage.role === 'assistant') syncMessageToCanvas(lastMessage);
-          finishTask(payload?.stopped ? 'Task stopped.' : '');
+          finalizeStream(payload?.stopped ? 'Task stopped.' : '');
         }));
       }
       if (window.electronAPI.onOpenCodeError) {
@@ -1406,7 +1521,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       window.electronAPI.stopOpenCodeProcess().catch(() => undefined);
     }
     if (taskId) void window.electronAPI.stopAgentTask(taskId);
-    set({ messages: [], isRunning: false, currentTaskId: null, pendingApproval: null, streamingText: '', currentThought: '', currentStatus: '', contextTokens: 1200, activeErrorCard: null });
+    set({ messages: [], isRunning: false, currentTaskId: null, pendingApproval: null, streamingText: '', currentThought: '', currentThoughts: [], currentStatus: '', contextTokens: 1200, activeErrorCard: null });
   },
   toggleSettings: () => set((state) => ({ isSettingsOpen: !state.isSettingsOpen, activeSettingsTab: undefined })),
   openSettings: (tab?: string) => set({ isSettingsOpen: true, activeSettingsTab: tab }),

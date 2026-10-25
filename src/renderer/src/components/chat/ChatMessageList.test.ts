@@ -5,7 +5,7 @@ describe('Smart Sticky-Scroll Auto-Follow Logic', () => {
     scrollHeight: number;
     scrollTop: number;
     clientHeight: number;
-    scrollTo: ReturnType<typeof vi.fn>;
+    scrollTo: ((opts: { top: number; behavior?: ScrollBehavior }) => void);
   };
 
   beforeEach(() => {

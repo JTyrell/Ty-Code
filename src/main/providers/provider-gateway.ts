@@ -30,12 +30,22 @@ import { opencodeBridge, buildBridgePromptFromMessages } from '../services/openc
 import { policyEngine } from '../services/policy/policy-engine';
 import { usageLedger as tokenAccountingLedger } from '../services/usage/usage-ledger';
 import { countTokens, type LayerToken } from '../services/usage/token-accounting';
+import { fccSidecarManager } from '../services/fcc-sidecar-manager';
+import { modelRotationManager } from '../services/model-rotation-manager';
+import { fccModelMapper } from '../services/fcc-model-mapper';
 
 const OPENCODE_FREE_PROTOCOL = 'opencode-cli://';
 
 import https from 'node:https';
 import http from 'node:http';
-import { Agent as UndiciAgent } from 'undici';
+type UndiciAgent = any;
+const UndiciAgentClass: any = (() => {
+  try {
+    return (require as any)('undici').Agent;
+  } catch {
+    return class {};
+  }
+})();
 import { BrowserWindow } from 'electron';
 import { DEFAULT_PRESET_MODELS } from '../../preload/preset-models';
 export { DEFAULT_PRESET_MODELS, getVerifiedModels, type VerifiedModelConfig };
@@ -94,7 +104,7 @@ export function getProviderDispatcher(urlStr: string): UndiciAgent | undefined {
     const hostKey = `${parsed.protocol}//${parsed.hostname}:${parsed.port || (parsed.protocol === 'https:' ? 443 : 80)}`;
     let dispatcher = undiciDispatcherPool.get(hostKey);
     if (!dispatcher) {
-      dispatcher = new UndiciAgent({
+      dispatcher = new UndiciAgentClass({
         keepAliveTimeout: 30_000,
         keepAliveMaxTimeout: 300_000
       });
@@ -346,7 +356,14 @@ export interface GatewayToolCall {
   arguments: string;
 }
 
-const FCC_SIDECAR_URL = 'http://localhost:8082/v1/chat/completions';
+export function getFccSidecarChatUrl(): string {
+  if (fccSidecarManager.isActive()) {
+    return `${fccSidecarManager.getBaseUrl()}/chat/completions`;
+  }
+  return `http://localhost:${fccSidecarManager.getPort()}/v1/chat/completions`;
+}
+
+const FCC_SIDECAR_URL = 'http://localhost:8765/v1/chat/completions';
 const KILO_URL = 'https://api.kilo.ai/api/gateway/chat/completions';
 
 const TY_CODE_FREE_PROVIDER = 'ty-code-free';
@@ -771,11 +788,14 @@ export async function sendChatRequest(
           }
         })();
           console.log(`[FCC][AUTO] provider=${providerId} model=${modelId} genuineBinary=${canServe ? 'up' : 'down'}`);
-        if (canServe) {
+        if (canServe || fccSidecarManager.isActive()) {
           let fccEntry: VerifiedModelConfig | undefined;
           try {
-            const fccCatalog = await fetchFCCCatalog();
-            fccEntry = fccCatalog.find((m) => (m.modelId || '').toLowerCase() === (modelId || '').toLowerCase());
+            fccEntry = await fccModelMapper.getModel(modelId);
+            if (!fccEntry) {
+              const fccCatalog = await fetchFCCCatalog();
+              fccEntry = fccCatalog.find((m) => (m.modelId || '').toLowerCase() === (modelId || '').toLowerCase());
+            }
           } catch {
             fccEntry = undefined;
           }
@@ -783,8 +803,9 @@ export async function sendChatRequest(
             console.log(`[FCC][AUTO] Tier 0 — dynamic FCC catalog entry ${fccEntry.providerId} (${fccEntry.modelId})`);
             config = fccEntry;
           } else {
-            console.log(`[FCC][AUTO] Tier 1 — routing through FCC sidecar at ${FCC_SIDECAR_URL}`);
-            config = { modelId, name: 'FCC Free Tier', url: FCC_SIDECAR_URL, requiresKey: false, providerId: 'anthropic-claude-free' };
+            const sidecarUrl = getFccSidecarChatUrl();
+            console.log(`[FCC][AUTO] Tier 1 — routing through FCC sidecar at ${sidecarUrl}`);
+            config = { modelId, name: 'FCC Free Tier', url: sidecarUrl, requiresKey: false, providerId: 'fcc' };
           }
         } else {
           const nativeFallback = pickHandoffCandidate(allModels, 'fcc-proxy', modelId);
@@ -833,11 +854,12 @@ export async function sendChatRequest(
   // whose embedded stub cannot serve completions without a genuine
   // free-claude-code binary. When the sidecar URL is not user-overridden and
   // the binary is down, re-route through the FCC auto tiers instead of failing.
-  const sidecarUrlPattern = /\b(127\.0\.0\.1|localhost):8082\b/;
+  const sidecarUrlPattern = /\b(127\.0\.0\.1|localhost):(8082|8765)\b/;
   if (
     (config.providerId === 'fcc' || config.providerId === 'fcc-proxy') &&
     sidecarUrlPattern.test(config.url) &&
-    !canFccServeCompletions()
+    !canFccServeCompletions() &&
+    !fccSidecarManager.isActive()
   ) {
     console.log(`[FCC][HYBRID] FCC route unavailable for "${modelId}"; applying FCC auto-tier fallback`);
     const nativeFallback = pickHandoffCandidate(allModels, 'fcc-proxy', modelId);
@@ -1159,6 +1181,9 @@ export async function sendChatRequest(
         usageCachedTokens = json.message.usage.cache_read_input_tokens;
       }
     }
+    if (json.fcc_quota && typeof json.fcc_quota.consumed === 'number') {
+      fccManager.recordTokenUsage(json.fcc_quota.consumed);
+    }
   };
 
   const recordResponseUsage = (responseText: string) => {
@@ -1308,6 +1333,13 @@ export async function sendChatRequest(
       stream,
       ...(context === 'debugger' ? { max_tokens: 8192 } : {})
     };
+    if (isFcc || isFccProxy) {
+      const explicitHarness = (context as any)?.harness || (config as any)?.harness || 'auto';
+      payload.harness = explicitHarness;
+      if (!fccSidecarManager.isActive()) {
+        void fccSidecarManager.start();
+      }
+    }
     if (Array.isArray(tools) && tools.length > 0) {
       payload.tools = tools.map((t) => ({
         type: 'function',
@@ -1974,6 +2006,15 @@ export function pickHandoffCandidate(
   );
   if (sameModelAlt) return sameModelAlt;
 
+  // Use ModelRotationManager fallback chain if coming from FCC
+  if ((currentProviderId || '').toLowerCase() === 'fcc' || (currentProviderId || '').toLowerCase() === 'fcc-proxy') {
+    const nextProv = modelRotationManager.getNextProvider('fcc');
+    if (nextProv) {
+      const match = eligible.find((m) => (m.providerId || '').toLowerCase() === nextProv.toLowerCase());
+      if (match) return match;
+    }
+  }
+
   const freePool = eligible.filter(isFreeCandidate);
   const pool = freePool.length > 0 ? freePool : eligible;
   return pool[0];
@@ -2059,6 +2100,9 @@ export class ProviderGateway {
       }
       return rawCustom;
     }
+    if (provider === 'fcc' || provider === 'fcc-proxy') {
+      return fccSidecarManager.getBaseUrl();
+    }
     const freeProvider = freeProviderRegistry.getProvider(provider);
     if (freeProvider?.base_url && freeProvider.base_url !== 'auto') return freeProvider.base_url;
     const preconfigured = getPreconfiguredProvider(provider);
@@ -2077,7 +2121,8 @@ export class ProviderGateway {
       case 'gemini':
       case 'google-ai-studio': return 'https://generativelanguage.googleapis.com';
       case 'ollama': return 'http://localhost:11434/v1';
-      case 'fcc-proxy': return 'http://localhost:8082/v1';
+      case 'fcc':
+      case 'fcc-proxy': return fccSidecarManager.getBaseUrl();
       default: return 'https://openrouter.ai/api/v1';
     }
   }

@@ -6,11 +6,14 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   SETTINGS_SCHEMA_VERSION,
-   EditorSettingsSchema,
-   ExtensionSettingsSchema,
-   GeneralSettingsSchema,
-   IntegrationsSettingsSchema,
-   LanguageServerSettingsSchema,
+  classifySettingsError,
+  safeSerializeSettings,
+  migrateSettingsDocument,
+  EditorSettingsSchema,
+  ExtensionSettingsSchema,
+  GeneralSettingsSchema,
+  IntegrationsSettingsSchema,
+  LanguageServerSettingsSchema,
   ModelSettingsSchema,
   ProviderSettingsSchema,
   RoutingSettingsSchema,
@@ -55,7 +58,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function normalizeGlobal(value: unknown): SettingsData {
   const raw = isRecord(value) ? value : {};
-  const source = isRecord(raw.settings) ? raw.settings : raw;
+  const migrated = migrateSettingsDocument(raw);
+  const source = isRecord(migrated.settings) ? migrated.settings : migrated;
   const defaults = SettingsSchema.parse(DEFAULT_SETTINGS);
   const endpointEntries = Object.entries(isRecord(source.customEndpoints) ? source.customEndpoints : {})
     .filter(([key, endpoint]) => key.length > 0 && key.length <= 128 && typeof endpoint === 'string' && endpoint.length <= 4096)
@@ -69,7 +73,10 @@ function normalizeGlobal(value: unknown): SettingsData {
     ProviderSettingsSchema.safeParse({
       activeProvider: typeof source.activeProvider === 'string' && source.activeProvider ? source.activeProvider : defaults.activeProvider,
       apiKeys: {},
-      customEndpoints: { ...defaults.customEndpoints, ...Object.fromEntries(endpointEntries) }
+      customEndpoints: { ...defaults.customEndpoints, ...Object.fromEntries(endpointEntries) },
+      offlineDemoMode: source.offlineDemoMode,
+      hasCompletedOnboarding: source.hasCompletedOnboarding,
+      fccEnabled: source.fccEnabled
     }),
     ModelSettingsSchema.safeParse({
       activeModel: typeof source.activeModel === 'string' && source.activeModel.length <= 512 ? source.activeModel : defaults.activeModel,
@@ -86,7 +93,7 @@ function normalizeGlobal(value: unknown): SettingsData {
     }),
     TerminalSettingsSchema.safeParse({
       terminalProfiles: source.terminalProfiles ?? defaults.terminalProfiles,
-      defaultTerminalProfileId: source.defaultTerminalProfileId ?? defaults.defaultTerminalProfileId
+      defaultTerminalProfileId: typeof source.defaultTerminalProfileId === 'string' ? source.defaultTerminalProfileId : defaults.defaultTerminalProfileId
     }),
     EditorSettingsSchema.safeParse({
       'editor.reviewPolicy': source['editor.reviewPolicy'] ?? defaults['editor.reviewPolicy'],
@@ -217,31 +224,64 @@ export class SettingsManager {
   public async saveLayer(scope: SettingsScope, updates: unknown): Promise<void> {
     await this.refresh();
     if (scope === 'workspace' && isRecord(updates) && Object.prototype.hasOwnProperty.call(updates, 'telemetry')) {
-      throw new Error('Telemetry consent is global and cannot be changed by workspace settings.');
+      const err = new Error('Telemetry consent is global and cannot be changed by workspace settings.');
+      (err as any).code = 'VALIDATION';
+      throw err;
     }
     if (scope === 'global') {
       if (isRecord(updates) && Object.prototype.hasOwnProperty.call(updates, 'apiKeys')) {
-        throw new Error('Credentials must be saved through the secure provider settings channel.');
+        const err = new Error('Credentials must be saved through the secure provider settings channel.');
+        (err as any).code = 'VALIDATION';
+        throw err;
       }
       const patch = SettingsPatchSchema.safeParse(updates);
-      if (!patch.success) throw new Error(`Global settings failed schema validation: ${patch.error.issues[0]?.message || 'invalid settings'}`);
-      const next = SettingsSchema.safeParse({
+      if (!patch.success) {
+        const firstIssue = patch.error.issues[0]?.message || 'invalid settings';
+        const err = new Error(`Global settings failed schema validation: ${firstIssue}`);
+        (err as any).code = 'VALIDATION';
+        throw err;
+      }
+      const rawCandidate: Record<string, unknown> = {
         ...this.globalSettings,
         ...patch.data,
         apiKeys: {},
-        customEndpoints: { ...this.globalSettings.customEndpoints, ...patch.data.customEndpoints },
-        editor: { ...this.globalSettings.editor, ...patch.data.editor },
-        languageServers: { ...this.globalSettings.languageServers, ...patch.data.languageServers },
-        security: { ...this.globalSettings.security, ...patch.data.security },
-        telemetry: { ...this.globalSettings.telemetry, ...patch.data.telemetry }
-      });
-      if (!next.success) throw new Error(`Global settings failed schema validation: ${next.error.issues[0]?.message || 'invalid settings'}`);
+        customEndpoints: { ...this.globalSettings.customEndpoints, ...(patch.data.customEndpoints || {}) },
+        editor: { ...this.globalSettings.editor, ...(patch.data.editor || {}) },
+        languageServers: { ...this.globalSettings.languageServers, ...(patch.data.languageServers || {}) },
+        security: { ...this.globalSettings.security, ...(patch.data.security || {}) },
+        telemetry: { ...this.globalSettings.telemetry, ...(patch.data.telemetry || {}) }
+      };
+      // Clean up undefined values so they don't overwrite valid defaults
+      for (const [k, v] of Object.entries(rawCandidate)) {
+        if (v === undefined && (this.globalSettings as any)[k] !== undefined) {
+          rawCandidate[k] = (this.globalSettings as any)[k];
+        }
+      }
+      if (typeof rawCandidate.defaultTerminalProfileId !== 'string') {
+        rawCandidate.defaultTerminalProfileId = '';
+      }
+      const next = SettingsSchema.safeParse(rawCandidate);
+      if (!next.success) {
+        const firstIssue = next.error.issues[0]?.message || 'invalid settings';
+        const err = new Error(`Global settings failed schema validation: ${firstIssue}`);
+        (err as any).code = 'VALIDATION';
+        throw err;
+      }
       await this.writeFile(this.globalSettingsPath, next.data);
       this.globalSettings = next.data;
     } else {
-      if (!this.workspacePath) throw new Error('Select a workspace before saving workspace settings.');
+      if (!this.workspacePath) {
+        const err = new Error('Select a workspace before saving workspace settings.');
+        (err as any).code = 'IO';
+        throw err;
+      }
       const patch = WorkspaceSettingsSchema.safeParse(updates);
-      if (!patch.success) throw new Error(`Workspace settings failed schema validation: ${patch.error.issues[0]?.message || 'invalid settings'}`);
+      if (!patch.success) {
+        const firstIssue = patch.error.issues[0]?.message || 'invalid settings';
+        const err = new Error(`Workspace settings failed schema validation: ${firstIssue}`);
+        (err as any).code = 'VALIDATION';
+        throw err;
+      }
       const next = WorkspaceSettingsSchema.safeParse({
         ...this.workspaceSettings,
         ...patch.data,
@@ -250,7 +290,12 @@ export class SettingsManager {
         languageServers: { ...this.workspaceSettings.languageServers, ...patch.data.languageServers },
         security: { ...this.workspaceSettings.security, ...patch.data.security }
       });
-      if (!next.success) throw new Error(`Workspace settings failed schema validation: ${next.error.issues[0]?.message || 'invalid settings'}`);
+      if (!next.success) {
+        const firstIssue = next.error.issues[0]?.message || 'invalid settings';
+        const err = new Error(`Workspace settings failed schema validation: ${firstIssue}`);
+        (err as any).code = 'VALIDATION';
+        throw err;
+      }
       await this.writeFile(await this.resolveWorkspaceSettingsPath(true), next.data);
       this.workspaceSettings = next.data;
       await this.configureWorkspaceWatcher();
@@ -269,7 +314,26 @@ export class SettingsManager {
     const before = JSON.stringify([this.globalSettings, this.workspaceSettings]);
     try {
       const raw = await fs.readFile(this.globalSettingsPath, 'utf8');
-      const parsed: unknown = JSON.parse(raw);
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(raw);
+      } catch (parseErr: unknown) {
+        // Step 3: Corrupted file recovery: back up broken file to settings.corrupt-{timestamp}.json
+        const corruptTimestamp = Date.now();
+        const backupPath = path.join(
+          path.dirname(this.globalSettingsPath),
+          `settings.corrupt-${corruptTimestamp}.json`
+        );
+        console.warn(`[SettingsManager] Corrupted settings JSON detected at ${this.globalSettingsPath}. Backing up to ${backupPath} and recovering to defaults:`, parseErr);
+        try {
+          await fs.writeFile(backupPath, raw, 'utf8');
+        } catch (backupErr) {
+          console.error('[SettingsManager] Failed writing corrupt backup:', backupErr);
+        }
+        this.globalSettings = SettingsSchema.parse(DEFAULT_SETTINGS);
+        await this.writeFile(this.globalSettingsPath, this.globalSettings);
+        return;
+      }
       if (!isRecord(parsed)) throw new Error('Global settings root must be a JSON object.');
       this.globalSettings = normalizeGlobal(parsed);
       if (parsed.schemaVersion !== SETTINGS_SCHEMA_VERSION) {
@@ -286,7 +350,22 @@ export class SettingsManager {
     try {
       const workspaceFile = await this.resolveWorkspaceSettingsPath(false);
       const raw = await fs.readFile(workspaceFile, 'utf8');
-      const parsed: unknown = JSON.parse(raw);
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(raw);
+      } catch (parseErr: unknown) {
+        const corruptTimestamp = Date.now();
+        const backupPath = path.join(
+          path.dirname(workspaceFile),
+          `settings.corrupt-${corruptTimestamp}.json`
+        );
+        console.warn(`[SettingsManager] Corrupted workspace settings JSON at ${workspaceFile}. Backing up to ${backupPath} and resetting:`, parseErr);
+        try {
+          await fs.writeFile(backupPath, raw, 'utf8');
+        } catch {}
+        this.workspaceSettings = {};
+        return;
+      }
       if (!isRecord(parsed)) throw new Error('Workspace settings root must be a JSON object.');
       const { schemaVersion: _version, apiKeys: _apiKeys, ...clean } = parsed;
       const result = WorkspaceSettingsSchema.safeParse(clean);
@@ -342,14 +421,36 @@ export class SettingsManager {
 
   private async writeFile(filePath: string, value: Record<string, unknown> | SettingsData | WorkspaceSettingsPatch): Promise<void> {
     await fs.mkdir(path.dirname(filePath), { recursive: true });
-    const tempPath = `${filePath}.${process.pid}.${randomUUID()}.tmp`;
+    const tempPath = path.join(path.dirname(filePath), `${path.basename(filePath)}.tmp`);
     const { apiKeys: _apiKeys, ...withoutSecrets } = value as Record<string, unknown>;
+    const serialized = safeSerializeSettings({
+      ...withoutSecrets,
+      schemaVersion: SETTINGS_SCHEMA_VERSION
+    });
     try {
-      await fs.writeFile(tempPath, JSON.stringify({ ...withoutSecrets, schemaVersion: SETTINGS_SCHEMA_VERSION }, null, 2), { encoding: 'utf8', mode: 0o600 });
-      await fs.rename(tempPath, filePath);
+      await fs.writeFile(tempPath, serialized, { encoding: 'utf8', mode: 0o600 });
+      let renameSuccess = false;
+      let lastRenameError: unknown = null;
+      for (let attempt = 0; attempt < 5; attempt++) {
+        try {
+          await fs.rename(tempPath, filePath);
+          renameSuccess = true;
+          break;
+        } catch (renameErr) {
+          lastRenameError = renameErr;
+          await new Promise((resolve) => setTimeout(resolve, 25 * (attempt + 1)));
+        }
+      }
+      if (!renameSuccess) {
+        throw lastRenameError;
+      }
     } catch (error) {
       await fs.rm(tempPath, { force: true }).catch(() => undefined);
-      throw error;
+      const classified = classifySettingsError(error);
+      const err = new Error(classified.message);
+      (err as any).code = classified.code;
+      (err as any).stack = classified.detail;
+      throw err;
     }
   }
 

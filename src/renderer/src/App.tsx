@@ -18,6 +18,7 @@ import { OnboardingWizard } from './components/OnboardingWizard';
 import { FirstRunOnboardingModal } from './components/FirstRunOnboardingModal';
 import { WorkspaceEditReview } from './components/WorkspaceEditReview';
 import { ToastContainer } from './components/ToastContainer';
+import { toast } from './state/toast-store';
 import { ExtensionInputDialog } from './components/ExtensionInputDialog';
 import { AgentApprovalModal } from './components/AgentApprovalModal';
 import { ExtensionTracePanel } from './components/extensions/ExtensionTracePanel';
@@ -309,6 +310,21 @@ const MainWorkbench: React.FC = () => {
       } else if ((e.ctrlKey || e.metaKey) && e.key === '`') {
         e.preventDefault();
         handleToggleTerminal();
+      } else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        const currentPath = useWorkspaceStore.getState().workspacePath;
+        void (async () => {
+          try {
+            const res = await window.electronAPI.scanWorkspace(currentPath);
+            if (res.success && res.data) {
+              toast.success('Workspace synced', `${res.data.primaryLanguage} • ${res.data.architecture}`);
+            } else {
+              toast.error('Sync failed', res.error || 'Failed to scan workspace');
+            }
+          } catch (err: unknown) {
+            toast.error('Sync failed', err instanceof Error ? err.message : String(err));
+          }
+        })();
       }
     };
 

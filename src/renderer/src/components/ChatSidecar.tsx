@@ -27,6 +27,7 @@ import { ChatErrorCard } from './ChatErrorCard';
 import { BackgroundAgentsPanel } from './agent/BackgroundAgentsPanel';
 import { ChatInput } from './chat/ChatInput';
 import { useChatInputStore } from '../state/chat-input-store';
+import { toast } from '../state/toast-store';
 import { ChatMessageItem } from './ChatMessage';
 import { ChatMessageList, type ChatMessageListHandle } from './chat/ChatMessageList';
 import type { AgentToolApproval, ChatMessage, ToolCall, ToolExecutionStatus, ChatErrorCard as ChatErrorCardType, ProviderType } from '../../../preload/types';
@@ -1367,6 +1368,24 @@ export const ChatSidecar: React.FC = () => {
       .map((attachment) => `@${attachment.name}\n${attachment.content}`)
       .filter(Boolean);
     const composedPrompt = contextParts.length > 0 ? [input.trim(), ...contextParts].join('\n\n').trim() : input.trim();
+    if (composedPrompt.toLowerCase() === '/sync' || composedPrompt.toLowerCase().startsWith('/sync ')) {
+      historyIndexRef.current = -1;
+      useChatInputStore.getState().clearAttachments();
+      setInput('');
+      void (async () => {
+        try {
+          const res = await window.electronAPI.scanWorkspace(workspacePath);
+          if (res.success && res.data) {
+            toast.success('Workspace synced', `${res.data.primaryLanguage} • ${res.data.architecture}`);
+          } else {
+            toast.error('Sync failed', res.error || 'Failed to scan workspace.');
+          }
+        } catch (err: unknown) {
+          toast.error('Sync failed', err instanceof Error ? err.message : String(err));
+        }
+      })();
+      return;
+    }
     const images = media.length > 0 ? media.map((attachment) => attachment.content) : undefined;
     if (!composedPrompt && !images) return;
     if (composedPrompt) rememberPrompt(composedPrompt);

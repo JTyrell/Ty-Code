@@ -1,6 +1,12 @@
 import type { z } from 'zod';
 import type { ExtensionCapabilitySchema, ExtensionManifestSchema } from './extension-schemas';
 import type { SecurityPolicySettings, SettingsData, SettingsPatch, SettingsScope, TelemetrySettings, WorkspaceSettingsPatch } from '../shared/types/settings';
+import type { WorkspaceProfile } from '../main/services/context-engine/types';
+import type { CorrectionCategory, CorrectionEntry, CorrectionSurface } from '../main/services/context-engine/correction-memory';
+import type { MCPServerConfig } from '../main/services/context-engine/mcp-router';
+import type { ContextScoreResult, ContextScoreBreakdown, ContextScoreCategory } from '../main/services/context-engine/context-scorer';
+import type { DesignProfile, DesignComponent } from '../main/services/context-engine/design-system-extractor';
+export type { WorkspaceProfile, CorrectionCategory, CorrectionEntry, CorrectionSurface, MCPServerConfig, ContextScoreResult, ContextScoreBreakdown, ContextScoreCategory, DesignProfile, DesignComponent };
 import type { FreeProvider, ModelTier, TierClassification, ProviderHealthStatus } from '../shared/types/free-providers';
 import type { DetectedApiKey, CustomProviderConfig, StoredKeySummary, ByokExportBundle, ByokImportResult, KeyDetectionSource } from '../shared/types/byok';
 import type { OpenCodeDetectionResult, OpenCodeFreeTierSummary, OpenCodeImportResult, AgentFramework } from '../shared/types/opencode-sync';
@@ -189,10 +195,20 @@ export interface VerifiedModelCatalogSummary {
   ollamaConnected: boolean;
 }
 
+export type SettingsErrorCode = 'VALIDATION' | 'IO' | 'PARSE' | 'LOCK';
+
+export interface StructuredSettingsError {
+  ok: false;
+  code: SettingsErrorCode;
+  message: string;
+  detail: string;
+}
+
 export interface IpcResponse<T = unknown> {
   success: boolean;
   data?: T;
   error?: string;
+  errorDetail?: StructuredSettingsError;
 }
 
 // ---------------------------------------------------------------------------
@@ -492,6 +508,10 @@ export interface ChatMessage {
   proposedDiffs?: ProposedDiff[];
   proposedDocument?: AgentDocument;
   reasoning?: string;
+  thoughts?: string[];
+  thoughtDurationSeconds?: number;
+  streaming?: boolean;
+  renderMode?: 'markdown' | 'plaintext' | 'streaming';
   errorCard?: ChatErrorCard;
   metadata?: AssistantStreamMetadata;
   isCached?: boolean;
@@ -932,6 +952,16 @@ export interface ElectronAPI {
   selectWorkspaceFolder: () => Promise<IpcResponse<string>>;
   openFolderDialog: () => Promise<IpcResponse<string>>;
   openFolderInExplorer: (folderPath: string) => Promise<IpcResponse<void>>;
+  scanWorkspace: (rootPath?: string) => Promise<IpcResponse<WorkspaceProfile>>;
+  saveCorrection: (options: { workspacePath?: string; rule: string; category?: 'style' | 'architecture' | 'stack'; surface?: CorrectionSurface }) => Promise<IpcResponse<CorrectionEntry>>;
+  getCorrections: (workspacePath?: string) => Promise<IpcResponse<string[]>>;
+  getCorrectionEntries: (workspacePath?: string) => Promise<IpcResponse<CorrectionEntry[]>>;
+  deleteCorrection: (options: { workspacePath?: string; id: string }) => Promise<IpcResponse<boolean>>;
+  getRecommendedMCPs: (workspacePath?: string) => Promise<IpcResponse<MCPServerConfig[]>>;
+  getContextScore: (workspacePath?: string) => Promise<IpcResponse<{ scoreResult: ContextScoreResult; profile: WorkspaceProfile; corrections: CorrectionEntry[] }>>;
+  resyncWorkspaceContext: (workspacePath?: string) => Promise<IpcResponse<{ scoreResult: ContextScoreResult; profile: WorkspaceProfile; corrections: CorrectionEntry[] }>>;
+  getDesignProfile: (workspacePath?: string) => Promise<IpcResponse<DesignProfile>>;
+  onCorrectionAdded?: (callback: (entry: CorrectionEntry) => void) => () => void;
   onWorkspaceReady?: (callback: (data: { path: string }) => void) => () => void;
   onOpenFolder?: (callback: (data: { folderPath: string }) => void) => () => void;
   onWorkspaceRequestOpen?: (callback: (data: unknown) => void) => () => void;
@@ -1238,6 +1268,8 @@ export interface ElectronAPI {
   fccSetRunInBackground: (enabled: boolean) => Promise<IpcResponse<boolean>>;
   fccIsRunInBackground: () => Promise<IpcResponse<boolean>>;
   fccListSessionBridges: () => Promise<IpcResponse<SessionBridgeInfo[]>>;
+  fccVoiceInput: (audioData: ArrayBuffer | Uint8Array | string, options?: { mimeType?: string; language?: string }) => Promise<IpcResponse<{ text: string; confidence?: number; language?: string; durationMs?: number }>>;
+  fccBrowserSession: (options: { action: string; url?: string; script?: string; reuseSession?: boolean }) => Promise<IpcResponse<any>>;
 
   // Phase 5.4: OpenKilo Plugin Integration (Layer 5)
   openkiloGetStatus: () => Promise<IpcResponse<OpenKiloStatus>>;

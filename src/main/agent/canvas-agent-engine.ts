@@ -14,6 +14,29 @@
 import { canvasSyncManager, type CanvasComponentNode } from '../services/canvas-sync-manager';
 import type { CanvasPlatform } from '../services/canvas-sync-manager';
 import { settingsManager } from '../services/settings-manager';
+import { extractDesignSystem, type DesignProfile } from '../services/context-engine/design-system-extractor';
+import { getOrScanWorkspaceProfile } from '../services/context-engine/workspace-scanner';
+import type { WorkspaceProfile } from '../services/context-engine/types';
+import { onCorrectionAdded, computeWorkspaceHash, type CorrectionEvent, getCorrections } from '../services/context-engine/correction-memory';
+
+const liveCanvasCorrections = new Map<string, Set<string>>();
+
+export function getCanvasLiveCorrections(workspacePathOrHash: string): string[] {
+  const hash = computeWorkspaceHash(workspacePathOrHash);
+  return Array.from(liveCanvasCorrections.get(hash) || []);
+}
+
+// Global Correction Hook: Live sync across all surfaces
+onCorrectionAdded((event: CorrectionEvent) => {
+  const { workspaceHash, rule, surface } = event;
+  console.log(`[CanvasAgentEngine] Live learned rule registered (${surface}): "${rule}"`);
+  let set = liveCanvasCorrections.get(workspaceHash);
+  if (!set) {
+    set = new Set<string>();
+    liveCanvasCorrections.set(workspaceHash, set);
+  }
+  set.add(rule);
+});
 
 // ---------------------------------------------------------------------------
 // EXACT system prompt templates per target platform
@@ -153,6 +176,71 @@ export const CANVAS_LANGUAGE_FOR_PLATFORM: Record<CanvasPlatform, string> = {
   swiftui: 'swift',
   other: 'tsx'
 };
+
+/**
+ * Builds project-native design system and framework rules constraints
+ * for injection into the Canvas AI system prompt.
+ */
+export function buildProjectDesignPrompt(
+  designProfile: DesignProfile | null,
+  workspaceProfile: WorkspaceProfile | null,
+  learnedRules: string[] = []
+): string {
+  const colorStrings =
+    designProfile && Object.keys(designProfile.colors).length > 0
+      ? Object.entries(designProfile.colors)
+          .map(([name, hex]) => `${name}: ${hex}`)
+          .join(', ')
+      : 'primary: #a855f7, secondary: #6366f1, background: #0f172a, foreground: #f8fafc, accent: #10b981';
+
+  const uiLibrary = designProfile?.uiLibrary || 'shadcn/ui';
+  const componentList =
+    designProfile?.components && designProfile.components.length > 0
+      ? designProfile.components.map((c) => c.name).join(', ')
+      : 'Button, Card, Input, Badge, Dialog';
+
+  const framework =
+    designProfile?.framework ||
+    (workspaceProfile?.frameworks && workspaceProfile.frameworks.length > 0
+      ? workspaceProfile.frameworks[0]
+      : 'React');
+
+  const routerType =
+    designProfile?.routerType ||
+    (workspaceProfile?.architecture?.toLowerCase().includes('monorepo') ? 'app-router' : workspaceProfile?.architecture || 'app-router');
+
+  const isAppRouter =
+    routerType.toLowerCase().includes('app') ||
+    framework.toLowerCase().includes('next') ||
+    (workspaceProfile?.frameworks || []).some((f) => f.toLowerCase().includes('next'));
+
+  const directiveNote = isAppRouter
+    ? " Ensure all generated components include the correct directives (e.g., 'use client' for Next.js App Router interactive components)."
+    : '';
+
+  let rulesBlock = '';
+  if (learnedRules.length > 0) {
+    const formattedRules = learnedRules.map((rule) => {
+      let r = rule;
+      const lower = rule.toLowerCase();
+      if (lower.includes('lucide-react') && (lower.includes('icons') || lower.includes('react-icons'))) {
+        r = 'Always use `lucide-react` for icons; NEVER import or generate `react-icons`.';
+      }
+      return `- ${r}`;
+    }).join('\n');
+    rulesBlock = `\n\n[UNIVERSAL LEARNED WORKSPACE RULES (MANDATORY)]\n${formattedRules}\nYou MUST strictly adhere to all learned rules above. For example, if a rule specifies 'Always use lucide-react for icons', you MUST NEVER import or use 'react-icons' or any other icon library.`;
+  }
+
+  return (
+    `\n\n[PROJECT DESIGN SYSTEM]\n` +
+    `You MUST use the following Tailwind theme colors: ${colorStrings}.\n` +
+    `You MUST use the following base components from ${uiLibrary}: ${componentList}.\n` +
+    `Do NOT invent new CSS classes if a Tailwind utility or base component exists.\n\n` +
+    `[FRAMEWORK RULES]\n` +
+    `This project uses ${framework} (${routerType}).${directiveNote}` +
+    rulesBlock
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Response parsing (exact code, strict requirement #4)
@@ -425,6 +513,7 @@ export interface CanvasAgentRunOptions {
   runId?: string;
   onToken?: (content: string) => void;
   abortSignal?: AbortSignal;
+  workspaceRoot?: string;
 }
 
 /** Deterministic action label for the main-chat canvas-update notification. */
@@ -479,7 +568,27 @@ export class CanvasAgentEngine {
       // Defaults hold.
     }
 
-    const systemPrompt = CANVAS_SYSTEM_PROMPTS[platform] ?? REACT_WEB_SYSTEM_PROMPT;
+    let projectDesignPrompt = '';
+    try {
+      const workspaceRoot = opts.workspaceRoot || process.cwd();
+      const hash = computeWorkspaceHash(workspaceRoot);
+      const [designProfile, workspaceProfile, persistentRules] = await Promise.all([
+        extractDesignSystem(workspaceRoot).catch(() => null),
+        getOrScanWorkspaceProfile(workspaceRoot).catch(() => null),
+        getCorrections(workspaceRoot).catch(() => [])
+      ]);
+      const liveRules = Array.from(liveCanvasCorrections.get(hash) || []);
+      const allRules = Array.from(new Set([...persistentRules, ...liveRules]));
+      projectDesignPrompt = buildProjectDesignPrompt(designProfile, workspaceProfile, allRules);
+    } catch {
+      // Non-blocking fallback
+    }
+
+    const basePrompt = CANVAS_SYSTEM_PROMPTS[platform] ?? REACT_WEB_SYSTEM_PROMPT;
+    const systemPrompt = platform === 'web' || platform === 'other'
+      ? `${basePrompt}${projectDesignPrompt}`
+      : basePrompt;
+
     const currentTree = snapshot.canvasComponents;
     const modify = isModifyIntent(prompt) || currentTree.length > 0;
 

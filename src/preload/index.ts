@@ -16,6 +16,28 @@ const api: ElectronAPI = {
   selectWorkspaceFolder: () => ipcRenderer.invoke('fs:select-workspace'),
   openFolderDialog: () => ipcRenderer.invoke('workspace:open-folder-dialog'),
   openFolderInExplorer: (folderPath: string) => ipcRenderer.invoke('workspace:open-folder', folderPath),
+  scanWorkspace: (rootPath?: string) => ipcRenderer.invoke('workspace:scan', rootPath),
+  saveCorrection: (options: { workspacePath?: string; rule: string; category?: 'style' | 'architecture' | 'stack'; surface?: 'chat' | 'debugger' | 'canvas' | 'global' }) =>
+    ipcRenderer.invoke('context:save-correction', options),
+  getCorrections: (workspacePath?: string) =>
+    ipcRenderer.invoke('context:get-corrections', workspacePath),
+  getCorrectionEntries: (workspacePath?: string) =>
+    ipcRenderer.invoke('context:get-correction-entries', workspacePath),
+  deleteCorrection: (options: { workspacePath?: string; id: string }) =>
+    ipcRenderer.invoke('context:delete-correction', options),
+  getRecommendedMCPs: (workspacePath?: string) =>
+    ipcRenderer.invoke('context:get-recommended-mcps', workspacePath),
+  getContextScore: (workspacePath?: string) =>
+    ipcRenderer.invoke('context:get-score', workspacePath),
+  resyncWorkspaceContext: (workspacePath?: string) =>
+    ipcRenderer.invoke('context:resync-workspace', workspacePath),
+  getDesignProfile: (workspacePath?: string) =>
+    ipcRenderer.invoke('context:get-design-profile', workspacePath),
+  onCorrectionAdded: (callback: (entry: import('./types').CorrectionEntry) => void) => {
+    const handler = (_: IpcRendererEvent, entry: import('./types').CorrectionEntry) => callback(entry);
+    ipcRenderer.on('context:correction-added', handler);
+    return () => ipcRenderer.removeListener('context:correction-added', handler);
+  },
   onWorkspaceReady: (callback: (data: { path: string }) => void) => {
     const handler = (_: IpcRendererEvent, data: { path: string }) => callback(data);
     ipcRenderer.on('workspace:ready', handler);
@@ -469,6 +491,8 @@ const api: ElectronAPI = {
   fccSetRunInBackground: (enabled: boolean) => ipcRenderer.invoke('fcc:set-run-in-background', enabled),
   fccIsRunInBackground: () => ipcRenderer.invoke('fcc:is-run-in-background'),
   fccListSessionBridges: () => ipcRenderer.invoke('fcc:list-session-bridges'),
+  fccVoiceInput: (audioData, options) => ipcRenderer.invoke('fcc:voice-input', audioData, options),
+  fccBrowserSession: (options) => ipcRenderer.invoke('fcc:browser-session', options),
 
   // Phase 5.4: OpenKilo Plugin Integration (Layer 5)
   openkiloGetStatus: () => ipcRenderer.invoke('openkilo:get-status'),

@@ -1,6 +1,9 @@
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import type { AnalysisResult, AnalysisSeverity } from '../../windows/debugger-window';
+import type { WorkspaceProfile } from '../context-engine/types';
+import { getWorkspaceProfile, getOrScanWorkspaceProfile } from '../context-engine/workspace-scanner';
+import { getCorrectionEntries } from '../context-engine/correction-memory';
 
 export interface ArchGraphNode {
   id: string;
@@ -38,6 +41,8 @@ export interface ArchProjectReport {
   truncated: boolean;
   debtScore: ArchDebtScore;
   warnings: AnalysisResult[];
+  archDrifts?: AnalysisResult[];
+  profile?: WorkspaceProfile | null;
 }
 
 const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.mts', '.cts']);
@@ -149,6 +154,7 @@ interface ParsedSourceFile {
   id: string;
   loc: number;
   specifiers: string[];
+  content: string;
 }
 
 function extractSpecifiers(content: string): string[] {
@@ -333,8 +339,165 @@ function buildWarning(
   };
 }
 
-export async function runArchAnalysis(projectRoot: string): Promise<ArchProjectReport> {
+/**
+ * Context-Driven Architectural Drift Detection (Step 1)
+ *
+ * Compares source file patterns and imports against the WorkspaceProfile
+ * and User Correction Memories:
+ * 1. Next.js App Router: Flags legacy Pages Router patterns (getServerSideProps, getStaticProps) as [ARCH_DRIFT]
+ * 2. Monorepo: Flags cross-workspace imports that violate package boundaries as [ARCH_DRIFT]
+ * 3. Database / ORM: Flags raw SQL strings bypassing the detected ORM as [ARCH_DRIFT]
+ * 4. Correction Memory: Flags user-forbidden patterns as [CRITICAL]
+ */
+export function detectArchitecturalDrifts(
+  fileId: string,
+  content: string,
+  specifiers: string[],
+  profile: WorkspaceProfile | null,
+  corrections: string[] = []
+): AnalysisResult[] {
+  const drifts: AnalysisResult[] = [];
+  if (!profile && corrections.length === 0) return drifts;
+
+  const frameworksLower = (profile?.frameworks || []).map((f) => f.toLowerCase());
+  const architectureLower = (profile?.architecture || '').toLowerCase();
+  const databasesLower = (profile?.databases || []).map((d) => d.toLowerCase());
+
+  // 1. Next.js App Router: Flag legacy Pages Router patterns (getServerSideProps, getStaticProps, getStaticPaths)
+  const isNextAppRouter =
+    frameworksLower.some((f) => f.includes('next')) &&
+    (architectureLower.includes('app router') ||
+      architectureLower.includes('hybrid') ||
+      Boolean(profile?.keyDirectories && (profile.keyDirectories['app'] || profile.keyDirectories['src/app'])) ||
+      fileId.startsWith('app/') ||
+      fileId.startsWith('src/app/'));
+
+  if (isNextAppRouter) {
+    const hasLegacyProps =
+      /\bexport\s+(?:async\s+)?(?:function|const)\s+(getServerSideProps|getStaticProps|getStaticPaths)\b/.test(
+        content
+      );
+    if (hasLegacyProps) {
+      drifts.push(
+        buildWarning(
+          'arch-drift-legacy-next-pattern',
+          'high',
+          `[ARCH_DRIFT] Legacy Pattern Detected: '${fileId}' uses Pages Router lifecycle methods (getServerSideProps/getStaticProps) in a Next.js App Router codebase.`,
+          fileId,
+          'Migrate data fetching to Next.js Server Components or native async/await fetch with Next.js caching directives.'
+        )
+      );
+    }
+  }
+
+  // 2. Monorepo: Flag cross-workspace imports that violate package boundaries
+  const isMonorepo =
+    architectureLower.includes('monorepo') ||
+    fileId.startsWith('packages/') ||
+    fileId.startsWith('apps/');
+  if (isMonorepo) {
+    for (const specifier of specifiers) {
+      const boundaryMatch = specifier.match(/^\.\.\/(?:\.\.\/)*(?:packages|apps)\/([^/]+)/);
+      if (boundaryMatch) {
+        const targetPkg = boundaryMatch[1];
+        drifts.push(
+          buildWarning(
+            'arch-drift-monorepo-boundary',
+            'high',
+            `[ARCH_DRIFT] Cross-Workspace Import Violation: '${fileId}' imports '${specifier}' across workspace packages via relative path traversal.`,
+            fileId,
+            `Import using the workspace package name (e.g. '@repo/${targetPkg}') or configured tsconfig path aliases instead of relative path traversal across packages.`
+          )
+        );
+      }
+    }
+  }
+
+  // 3. Database / ORM: Flag raw SQL strings bypassing the detected ORM (Prisma/Drizzle/TypeORM)
+  const hasDatabases = databasesLower.length > 0;
+  const isDbSource =
+    !fileId.toLowerCase().includes('migrations/') &&
+    !fileId.toLowerCase().includes('/seed.') &&
+    !fileId.toLowerCase().includes('/schema.');
+
+  if (hasDatabases && isDbSource) {
+    const hasOrm = frameworksLower.some((f) =>
+      ['prisma', 'drizzle', 'typeorm', 'sequelize', 'mongoose'].some((orm) => f.includes(orm))
+    );
+    const rawSqlPattern =
+      /(?:\.query|\.execute|\.queryRawUnsafe|\.raw)\s*\(\s*['"`]\s*(?:SELECT|INSERT|UPDATE|DELETE)\b/i;
+
+    if (hasOrm || databasesLower.some((d) => d.includes('postgres') || d.includes('mysql') || d.includes('sqlite'))) {
+      if (rawSqlPattern.test(content)) {
+        drifts.push(
+          buildWarning(
+            'arch-drift-bypassed-data-layer',
+            'high',
+            `[ARCH_DRIFT] Bypassed Data Layer: Raw SQL query detected in '${fileId}' bypassing detected ORM / repository layer (${profile?.databases?.join(', ') || 'Database'}).`,
+            fileId,
+            'Route database queries through the project repository layer or standard ORM model methods (Prisma / Drizzle) to maintain schema type-safety.'
+          )
+        );
+      }
+    }
+  }
+
+  // 4. Correction Memories: Flag user-forbidden patterns as CRITICAL
+  for (const rule of corrections) {
+    const lowerRule = rule.toLowerCase();
+    if (lowerRule.includes('never use `var`') || lowerRule.includes('never use var')) {
+      if (/\bvar\s+[a-zA-Z_$]/.test(content)) {
+        drifts.push(
+          buildWarning(
+            'arch-correction-violation',
+            'critical',
+            `[CRITICAL] Workspace Preference Violation in '${fileId}': Forbidden 'var' keyword detected. Rule: "${rule}"`,
+            fileId,
+            `Replace 'var' with 'const' or 'let' as required by workspace rules.`
+          )
+        );
+      }
+    }
+    if (lowerRule.includes('repositories') && (lowerRule.includes('controllers') || lowerRule.includes('direct'))) {
+      if ((fileId.includes('controllers') || fileId.includes('routes')) && /(?:prisma\.|db\.|client\.)/.test(content)) {
+        drifts.push(
+          buildWarning(
+            'arch-correction-violation',
+            'critical',
+            `[CRITICAL] Workspace Preference Violation in '${fileId}': Direct database call in controller layer. Rule: "${rule}"`,
+            fileId,
+            `Move database queries to the repository layer (src/repositories).`
+          )
+        );
+      }
+    }
+  }
+
+  return drifts;
+}
+
+export async function runArchAnalysis(
+  projectRoot: string,
+  options?: { profile?: WorkspaceProfile | null }
+): Promise<ArchProjectReport> {
   const root = path.resolve(projectRoot);
+
+  let profile = options?.profile ?? null;
+  if (!profile) {
+    try {
+      profile = await getWorkspaceProfile(root);
+    } catch {
+      profile = null;
+    }
+  }
+
+  let corrections: string[] = [];
+  try {
+    const rawEntries = await getCorrectionEntries(root);
+    corrections = rawEntries.map((e) => e.rule);
+  } catch {
+    corrections = [];
+  }
 
   const packageJsonResult = await readJson(path.join(root, 'package.json'));
   const packageJson = packageJsonResult.data
@@ -377,15 +540,15 @@ export async function runArchAnalysis(projectRoot: string): Promise<ArchProjectR
       const stat = await fsp.stat(absolute);
       if (stat.size > MAX_FILE_BYTES) {
         oversizedFiles.push(id);
-        parsedFiles.push({ id, loc: 0, specifiers: [] });
+        parsedFiles.push({ id, loc: 0, specifiers: [], content: '' });
         continue;
       }
       raw = await fsp.readFile(absolute, 'utf8');
     } catch {
-      parsedFiles.push({ id, loc: 0, specifiers: [] });
+      parsedFiles.push({ id, loc: 0, specifiers: [], content: '' });
       continue;
     }
-    parsedFiles.push({ id, loc: raw.split('\n').length, specifiers: extractSpecifiers(raw) });
+    parsedFiles.push({ id, loc: raw.split('\n').length, specifiers: extractSpecifiers(raw), content: raw });
   }
 
   const parsedById = new Map(parsedFiles.map((file) => [file.id, file]));
@@ -522,6 +685,16 @@ export async function runArchAnalysis(projectRoot: string): Promise<ArchProjectR
     )
   );
 
+  // Architectural Drift Detection (Step 1 & Step 3)
+  const archDrifts: AnalysisResult[] = [];
+  for (const file of parsedFiles) {
+    if (file.content) {
+      const drifts = detectArchitecturalDrifts(file.id, file.content, file.specifiers, profile, corrections);
+      archDrifts.push(...drifts);
+    }
+  }
+  warnings.push(...archDrifts);
+
   return {
     projectRoot: root,
     packageJson,
@@ -530,6 +703,8 @@ export async function runArchAnalysis(projectRoot: string): Promise<ArchProjectR
     cycles,
     truncated: collected.truncated,
     debtScore,
-    warnings
+    warnings,
+    archDrifts,
+    profile
   };
 }

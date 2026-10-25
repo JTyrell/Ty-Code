@@ -107,5 +107,17 @@ describe('punctuation-normaliser', () => {
     it('returns empty string for empty input', () => {
       expect(normalisePunctuation('')).toBe('');
     });
+
+    it('preserves pipe tables byte-identical so markdown table syntax is never corrupted', () => {
+      const table = [
+        '| Column 1 | Column 2 | Column 3 |',
+        '| :--- | :---: | ---: |',
+        '| Row 1 — value | 10 – 20 items | Note… ellipsis |',
+        '| Plain text | Another — value | 2024–2026 |'
+      ].join('\n');
+
+      // Every line beginning with '|' must be byte-for-byte identical
+      expect(normalisePunctuation(table)).toBe(table);
+    });
   });
 });

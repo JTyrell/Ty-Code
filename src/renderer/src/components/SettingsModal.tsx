@@ -25,7 +25,8 @@ import {
   LockKeyhole,
   Activity,
   ToggleLeft,
-  ToggleRight
+  ToggleRight,
+  AlertTriangle
 } from 'lucide-react';
 import { useChatStore } from '../state/chat-store';
 import { useTypographyStore, CHAT_FONT_FAMILY_OPTIONS, CHAT_FONT_SIZE_MIN, CHAT_FONT_SIZE_MAX } from '../state/typography-store';
@@ -70,11 +71,12 @@ import { useOnboardingStore } from '../state/onboarding-store';
 import { DiagnosticsPanel } from './settings/DiagnosticsPanel';
 import { ProvidersModelsTab } from './settings/ProvidersModelsTab';
 import { UsageLedgerView } from './dashboard/UsageLedgerView';
+import { CorrectionsManager } from './settings/CorrectionsManager';
 import type { FreeProvider } from '../../../shared/types/free-providers';
 import type { StoredKeySummary, CustomProviderConfig } from '../../../shared/types/byok';
 
 type UpdateChannelPreference = 'stable' | 'beta' | 'nightly';
-type SettingsTab = 'apikeys' | 'providers' | 'byok' | 'usage' | 'openkilo' | 'opencode' | 'integrations' | 'orchestration' | 'fcc' | 'endpoints' | 'params' | 'terminal' | 'lsp' | 'editor' | 'shortcuts' | 'extensions' | 'security' | 'privacy' | 'diagnostics';
+type SettingsTab = 'apikeys' | 'providers' | 'byok' | 'usage' | 'openkilo' | 'opencode' | 'integrations' | 'orchestration' | 'fcc' | 'rules' | 'endpoints' | 'params' | 'terminal' | 'lsp' | 'editor' | 'shortcuts' | 'extensions' | 'security' | 'privacy' | 'diagnostics';
 
 const DEFAULT_SECURITY_SETTINGS: SecurityPolicySettings = {
   terminalPolicy: 'restricted',
@@ -160,6 +162,7 @@ export const SettingsModal: React.FC = () => {
     if (tab === 'fleet' || tab === 'health') return 'diagnostics';
     if (tab === 'models') return 'providers';
     if (tab === 'keys') return 'apikeys';
+    if (tab === 'rules' || tab === 'corrections' || tab === 'memory') return 'rules';
     return tab as SettingsTab;
   }, []);
 
@@ -845,30 +848,81 @@ export const SettingsModal: React.FC = () => {
 
   const handleSave = async () => {
     setError('');
-    const saved = await saveSettings({
-      telemetry: { enabled: telemetryEnabled },
-      freeMode,
-      quotaAlertThreshold: Number(quotaAlertThreshold),
-      autoRotateProviders,
-      customEndpoints: { ollama: ollamaUrl, 'fcc-proxy': fccProxyUrl },
-      temperature: Number(temperature),
-      maxTokens: Number(maxTokens),
-      terminalProfiles: profiles,
-      defaultTerminalProfileId: defaultProfileId || undefined,
-      thirdPartyRuntimeEnabled,
-      'editor.reviewPolicy': reviewPolicy,
-      'lsp.autoStart': lspAutoStart,
-      editor: { fontSize, tabSize, minimap, bracketPairs, autoSave: autoSaveMode, autoSaveDelay, wordWrap: editorWordWrap, formatOnSave: settings?.editor?.formatOnSave || false },
-      languageServers: Object.fromEntries(lspServers.map((server) => [server.languageId, { enabled: server.status !== 'disabled', args: server.args, path: customLspPaths[server.languageId]?.trim() || undefined }]))
-    });
-    if (window.electronAPI?.orchestrationSetFreeMode) {
-      await window.electronAPI.orchestrationSetFreeMode(freeMode);
+    setSecuritySaving(true);
+    try {
+      const consolidatedPayload: Record<string, unknown> = {
+        telemetry: { enabled: telemetryEnabled },
+        freeMode,
+        quotaAlertThreshold: Number(quotaAlertThreshold),
+        autoRotateProviders,
+        temperature: Number(temperature),
+        maxTokens: Number(maxTokens),
+        customEndpoints: {
+          ...(settings?.customEndpoints || {}),
+          ollama: ollamaUrl,
+          'fcc-proxy': fccProxyUrl
+        },
+        terminalProfiles: profiles,
+        defaultTerminalProfileId: defaultProfileId || '',
+        thirdPartyRuntimeEnabled,
+        'editor.reviewPolicy': reviewPolicy,
+        'lsp.autoStart': lspAutoStart,
+        editor: {
+          ...(settings?.editor || {}),
+          fontSize,
+          tabSize,
+          minimap,
+          bracketPairs,
+          autoSave: autoSaveMode,
+          autoSaveDelay,
+          wordWrap: editorWordWrap,
+          formatOnSave: settings?.editor?.formatOnSave || false,
+          chatFontFamily,
+          chatFontSize,
+          matrixDecodeEnabled,
+          ukPunctuationEnabled
+        },
+        languageServers: Object.fromEntries(lspServers.map((server) => [
+          server.languageId,
+          {
+            enabled: server.status !== 'disabled',
+            args: server.args,
+            path: customLspPaths[server.languageId]?.trim() || undefined
+          }
+        ])),
+        security: securitySettings,
+        activeProvider: settings?.activeProvider || 'ty-code-free',
+        activeModel: settings?.activeModel || '',
+        ...(settings?.activeHarness ? { activeHarness: settings.activeHarness } : {})
+      };
+
+      const saved = await saveSettings(consolidatedPayload);
+
+      if (settingsScope === 'workspace' && window.electronAPI?.saveSettingsLayer) {
+        const { systemAccessConfirmed: _, ...workspacePolicy } = securitySettings;
+        await window.electronAPI.saveSettingsLayer('workspace', { security: workspacePolicy });
+      }
+
+      if (window.electronAPI?.orchestrationSetFreeMode) {
+        await window.electronAPI.orchestrationSetFreeMode(freeMode);
+      }
+
+      if (!saved) {
+        const lastErr = useChatStore.getState().lastSaveError;
+        const code = lastErr?.code || 'IO';
+        const msg = lastErr?.message || 'Settings could not be saved.';
+        setError(`[${code}] ${msg}`);
+        return;
+      }
+
+      toast.success('Settings Saved', 'All settings have been successfully applied and persisted.');
+      toggleSettings();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(`[IO] ${msg}`);
+    } finally {
+      setSecuritySaving(false);
     }
-    if (!saved) {
-      setError('Failed to save settings. See the application log for details.');
-      return;
-    }
-    toggleSettings();
   };
 
   // Provider Onboarding Handlers
@@ -1054,6 +1108,15 @@ export const SettingsModal: React.FC = () => {
             data-tab="integrations"
           >
             <Layers size={13} color="#c084fc" />Integrations &amp; Skills
+          </button>
+          <button
+            className={activeTab === 'rules' ? 'is-active' : ''}
+            onClick={() => setActiveTab('rules')}
+            style={{ color: activeTab === 'rules' ? 'var(--accent-primary)' : undefined }}
+            id="tab-btn-rules"
+            data-tab="rules"
+          >
+            <Sparkles size={13} color="#c084fc" />Project Rules &amp; Memory
           </button>
           <button
             className={activeTab === 'endpoints' ? 'is-active' : ''}
@@ -1447,6 +1510,11 @@ export const SettingsModal: React.FC = () => {
           {/* Tab: Modular Skills & External Integration Registry (Phase 3.1) */}
           {activeTab === 'integrations' && (
             <IntegrationsPanel />
+          )}
+
+          {/* Tab: Universal Correction Memory & Project Rules (Learning Loop) */}
+          {activeTab === 'rules' && (
+            <CorrectionsManager />
           )}
 
           {/* Tab: Smart Orchestration & Unified Experience (Layer 6) */}
@@ -2413,7 +2481,60 @@ export const SettingsModal: React.FC = () => {
             <DiagnosticsPanel />
           )}
 
-          {error && <div className="settings-error" role="alert">{error}</div>}
+          {error && (
+            <div
+              className="settings-error-banner"
+              role="alert"
+              style={{
+                margin: '16px 20px',
+                padding: '12px 16px',
+                borderRadius: '8px',
+                backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                border: '1px solid rgba(239, 68, 68, 0.4)',
+                color: '#fca5a5',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '12px'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
+                <AlertTriangle size={16} style={{ flexShrink: 0, color: '#ef4444' }} />
+                <span style={{ fontSize: '13px', fontWeight: 500, wordBreak: 'break-word' }}>
+                  {error}
+                </span>
+              </div>
+              <button
+                type="button"
+                id="copy-settings-error-detail-btn"
+                onClick={async () => {
+                  const lastErr = useChatStore.getState().lastSaveError;
+                  const copyText = lastErr
+                    ? `[${lastErr.code}] ${lastErr.message}\n\nDetail:\n${lastErr.detail}`
+                    : error;
+                  try {
+                    await navigator.clipboard.writeText(copyText);
+                    toast.success('Copied', 'Error details copied to clipboard.');
+                  } catch {
+                    toast.error('Copy Failed', 'Could not copy to clipboard.');
+                  }
+                }}
+                style={{
+                  flexShrink: 0,
+                  padding: '4px 10px',
+                  fontSize: '12px',
+                  fontWeight: 500,
+                  backgroundColor: 'rgba(239, 68, 68, 0.25)',
+                  border: '1px solid rgba(239, 68, 68, 0.5)',
+                  borderRadius: '6px',
+                  color: '#fff',
+                  cursor: 'pointer'
+                }}
+              >
+                Copy error detail
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Floating BYOK Wizard window — opens over the settings modal whenever a
@@ -2516,8 +2637,8 @@ export const SettingsModal: React.FC = () => {
 
         <footer className="settings-footer">
           <button className="settings-cancel" onClick={toggleSettings}>Cancel</button>
-          <button className="settings-save" disabled={securitySaving} onClick={() => activeTab === 'security' ? void handleSaveSecurity() : void handleSave()}>
-            {securitySaving ? 'Saving…' : activeTab === 'security' ? 'Save Security Settings' : 'Save Settings'}
+          <button className="settings-save" disabled={securitySaving} onClick={() => void handleSave()}>
+            {securitySaving ? 'Saving…' : 'Save Settings'}
           </button>
         </footer>
       </section>

@@ -35,13 +35,16 @@ import {
   Zap,
   Bot,
   User,
-  Presentation
+  Presentation,
+  Lightbulb
 } from 'lucide-react';
 import type { ChatMessage, ProposedDiff, ToolExecutionRecord } from '../../../preload/types';
 import { ChatErrorCard } from './ChatErrorCard';
 import { MessageRenderer } from './chat/MessageRenderer';
+import { ThinkingPanel } from './chat/ThinkingPanel';
 import { useTypographyStore, buildChatTypographyStyle } from '../state/typography-store';
 import { normalisePunctuation } from '../services/punctuation-normaliser';
+import { toast } from '../state/toast-store';
 import { useChatStore } from '../state/chat-store';
 import { useWorkspaceStore } from '../state/workspace-store';
 import { useDocumentReviewStore } from '../state/document-review-store';
@@ -861,7 +864,10 @@ const ChatMessageItemComponent: React.FC<ChatMessageProps> = ({
   const isAssistant = message.role === 'assistant';
   const isUser = message.role === 'user';
   const isSystem = message.role === 'system';
-  const isStreaming = propIsStreaming ?? Boolean(message.isStreaming ?? (isLastAssistant && isRunning));
+  const isMessageStreaming = propIsStreaming ?? Boolean(message.streaming ?? message.isStreaming ?? (isLastAssistant && isRunning));
+  const renderMode = message.renderMode ?? (isMessageStreaming ? 'streaming' : 'markdown');
+  const isStreaming = renderMode === 'streaming';
+  const liveThoughts = useChatStore((s) => s.currentThoughts);
 
   const activeDocument = useDocumentReviewStore((s) => s.activeDocument);
   const openDocument = useDocumentReviewStore((s) => s.openDocument);
@@ -871,6 +877,12 @@ const ChatMessageItemComponent: React.FC<ChatMessageProps> = ({
   const setAgentMode = useChatStore((s) => s.setAgentMode);
   const respondToApproval = useChatStore((s) => s.respondToApproval);
   const pendingApproval = useChatStore((s) => s.pendingApproval);
+  const [showRememberModal, setShowRememberModal] = useState(false);
+  const [rememberCategory, setRememberCategory] = useState<'style' | 'architecture' | 'stack'>('style');
+  const [rememberRuleText, setRememberRuleText] = useState('');
+  const [isSavingCorrection, setIsSavingCorrection] = useState(false);
+  const [savedCorrectionSuccess, setSavedCorrectionSuccess] = useState(false);
+  const workspacePath = useWorkspaceStore((s) => s.workspacePath);
 
   // Typography & Motion: container-scoped CSS variables. Every markdown block
   // inside inherits these, so user font edits restyle the message without
@@ -973,6 +985,29 @@ const ChatMessageItemComponent: React.FC<ChatMessageProps> = ({
     }
   };
 
+  const handleSaveCorrection = async () => {
+    if (!rememberRuleText.trim()) return;
+    setIsSavingCorrection(true);
+    try {
+      const res = await window.electronAPI.saveCorrection({
+        workspacePath,
+        rule: rememberRuleText.trim(),
+        category: rememberCategory
+      });
+      if (res.success && res.data) {
+        toast.success('Preference remembered', res.data.rule);
+        setSavedCorrectionSuccess(true);
+        setShowRememberModal(false);
+      } else {
+        toast.error('Failed to save preference', res.error || 'Unknown error');
+      }
+    } catch (err: unknown) {
+      toast.error('Failed to save preference', err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsSavingCorrection(false);
+    }
+  };
+
   // -------------------------------------------------------------------------
   // Render: USER MESSAGE
   // -------------------------------------------------------------------------
@@ -1023,6 +1058,160 @@ const ChatMessageItemComponent: React.FC<ChatMessageProps> = ({
           )}
           <div style={{ whiteSpace: 'pre-wrap' }}>{message.content}</div>
         </div>
+
+        {/* User preference remember button & modal */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '4px', fontSize: '10px' }}>
+          <button
+            type="button"
+            onClick={() => {
+              setRememberRuleText(message.content);
+              setShowRememberModal(!showRememberModal);
+            }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              fontSize: '10.5px',
+              color: savedCorrectionSuccess ? 'var(--accent-green)' : 'var(--text-muted)',
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              padding: '2px 4px',
+              borderRadius: '4px'
+            }}
+            title="Remember this preference in workspace Correction Memory"
+            onMouseEnter={(e) => { e.currentTarget.style.color = '#e5a50a'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.color = savedCorrectionSuccess ? 'var(--accent-green)' : 'var(--text-muted)'; }}
+          >
+            {savedCorrectionSuccess ? (
+              <>
+                <Check size={11} style={{ color: 'var(--accent-green)' }} />
+                <span>Preference remembered</span>
+              </>
+            ) : (
+              <>
+                <Lightbulb size={11} style={{ color: '#e5a50a' }} />
+                <span>Remember this preference</span>
+              </>
+            )}
+          </button>
+        </div>
+
+        {showRememberModal && (
+          <div
+            style={{
+              marginTop: '6px',
+              padding: '10px',
+              borderRadius: '8px',
+              background: 'var(--bg-secondary)',
+              border: '1px solid var(--border-strong)',
+              boxShadow: '0 8px 24px rgba(0, 0, 0, 0.4)',
+              width: '100%',
+              maxWidth: '360px',
+              fontSize: '11px',
+              color: 'var(--text-primary)',
+              textAlign: 'left'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600 }}>
+                <Lightbulb size={13} style={{ color: '#e5a50a' }} />
+                <span>Correction Memory</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowRememberModal(false)}
+                style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '8px' }}>
+              Save this preference to your workspace audit ledger so the AI never repeats this mistake.
+            </div>
+
+            <div style={{ display: 'flex', gap: '4px', marginBottom: '8px' }}>
+              {(['style', 'architecture', 'stack'] as const).map((cat) => (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => setRememberCategory(cat)}
+                  style={{
+                    flex: 1,
+                    padding: '3px 6px',
+                    borderRadius: '4px',
+                    border: rememberCategory === cat ? '1px solid var(--accent-primary)' : '1px solid var(--border-subtle)',
+                    background: rememberCategory === cat ? 'var(--accent-primary)' : 'var(--bg-tertiary)',
+                    color: rememberCategory === cat ? '#ffffff' : 'var(--text-secondary)',
+                    fontSize: '10px',
+                    textTransform: 'capitalize',
+                    cursor: 'pointer',
+                    fontWeight: rememberCategory === cat ? 600 : 400
+                  }}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
+
+            <textarea
+              value={rememberRuleText}
+              onChange={(e) => setRememberRuleText(e.target.value)}
+              rows={2}
+              placeholder="Rule (e.g. ALWAYS use Zod for validation)"
+              style={{
+                width: '100%',
+                padding: '6px 8px',
+                borderRadius: '6px',
+                border: '1px solid var(--border-subtle)',
+                background: 'var(--bg-primary)',
+                color: 'var(--text-primary)',
+                fontSize: '11px',
+                fontFamily: 'var(--font-mono, monospace)',
+                resize: 'vertical',
+                marginBottom: '8px',
+                boxSizing: 'border-box'
+              }}
+            />
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px' }}>
+              <button
+                type="button"
+                onClick={() => setShowRememberModal(false)}
+                style={{
+                  padding: '4px 8px',
+                  borderRadius: '4px',
+                  border: '1px solid var(--border-subtle)',
+                  background: 'transparent',
+                  color: 'var(--text-muted)',
+                  cursor: 'pointer',
+                  fontSize: '10px'
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveCorrection}
+                disabled={isSavingCorrection || !rememberRuleText.trim()}
+                style={{
+                  padding: '4px 10px',
+                  borderRadius: '4px',
+                  border: 'none',
+                  background: 'var(--accent-primary)',
+                  color: '#ffffff',
+                  fontWeight: 600,
+                  cursor: isSavingCorrection || !rememberRuleText.trim() ? 'not-allowed' : 'pointer',
+                  opacity: isSavingCorrection || !rememberRuleText.trim() ? 0.6 : 1,
+                  fontSize: '10px'
+                }}
+              >
+                {isSavingCorrection ? 'Remembering…' : 'Save Preference'}
+              </button>
+            </div>
+          </div>
+        )}
       </article>
     );
   }
@@ -1176,8 +1365,15 @@ const ChatMessageItemComponent: React.FC<ChatMessageProps> = ({
           </div>
         </div>
 
-        {/* 1. THINKING STATE: Clean, Shimmering Indicator */}
-        {isThinking && (
+        {/* 1. THINKING PANEL (Step 2: Structured thought array rendering) */}
+        {((message.thoughts && message.thoughts.length > 0) || (isMessageStreaming && liveThoughts && liveThoughts.length > 0) || message.reasoning) ? (
+          <ThinkingPanel
+            messageId={message.id}
+            thoughts={message.thoughts && message.thoughts.length > 0 ? message.thoughts : (message.reasoning ? message.reasoning.split('\n').filter(Boolean) : [])}
+            isStreaming={isMessageStreaming}
+            durationSeconds={message.thoughtDurationSeconds}
+          />
+        ) : isThinking ? (
           <div style={{ position: 'relative', overflow: 'hidden', borderRadius: '10px', background: 'var(--surface-2)', border: '1px solid var(--border-subtle)', borderLeft: '3px solid var(--accent-primary)', padding: '8px 12px', margin: '8px 0', display: 'flex', alignItems: 'center', gap: '10px' }}>
             {/* Shimmer gradient overlay */}
             <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.08), transparent)', animation: 'shimmer 2s infinite', pointerEvents: 'none' }} />
@@ -1186,13 +1382,10 @@ const ChatMessageItemComponent: React.FC<ChatMessageProps> = ({
               {thinkingLabel}
             </span>
           </div>
-        )}
+        ) : null}
 
-        {/* 2. AGENT ACTIVITY: the harness work (thinking, summarized thinking,
-            tool use, command execution, notices) is fully separated from the
-            user-facing response. Collapsed once the turn completes; toggle
-            manually at any time. */}
-        {activitySteps > 0 && (
+        {/* 2. AGENT ACTIVITY: tool use and command execution records */}
+        {toolList.length > 0 && (
           <div style={{ margin: '8px 0', borderRadius: '10px', border: '1px solid var(--border-subtle)', background: 'var(--bg-primary)', overflow: 'hidden', fontSize: '11px' }}>
             <button
               type="button"
@@ -1209,17 +1402,14 @@ const ChatMessageItemComponent: React.FC<ChatMessageProps> = ({
                 textAlign: 'left',
                 userSelect: 'none'
               }}
-              title="Toggle agent activity: thinking, tool use, command execution"
+              title="Toggle agent activity: tool use, command execution"
             >
               <Bot size={12} style={{ color: 'var(--accent-primary)', flexShrink: 0 }} />
               <span style={{ fontWeight: 600 }}>Agent Activity</span>
               <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-                {reasoningWords > 0 && <span>thought {reasoningWords}w</span>}
-                {toolList.length > 0 && (
-                  <span>
-                    {toolList.length} tool{toolList.length === 1 ? '' : 's'}
-                  </span>
-                )}
+                <span>
+                  {toolList.length} tool{toolList.length === 1 ? '' : 's'}
+                </span>
               </span>
               {runningToolLabel && (
                 <span style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: '4px', fontSize: '10px', fontWeight: 600, color: 'var(--accent-primary)' }}>
@@ -1235,23 +1425,6 @@ const ChatMessageItemComponent: React.FC<ChatMessageProps> = ({
 
             {activityOpen && (
               <div style={{ padding: '6px 8px 8px', paddingTop: 6, display: 'flex', flexDirection: 'column', gap: '6px', borderTop: '1px solid var(--border-subtle)' }}>
-                {/* Thought process (live reasoning + summarized thinking) */}
-                {message.reasoning && (
-                  <details style={{ borderRadius: '8px', border: '1px solid var(--border-subtle)', background: 'var(--surface-2)', overflow: 'hidden', fontSize: '11px' }}>
-                    <summary style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 12px', cursor: 'pointer', color: 'var(--text-secondary)', fontWeight: 600, userSelect: 'none', listStyle: 'none' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <Sparkles size={12} style={{ color: 'var(--accent-primary)' }} />
-                        <span>Thought Process</span>
-                        <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>({reasoningWords} words)</span>
-                      </div>
-                      <ChevronDown size={12} style={{ color: 'var(--text-muted)' }} />
-                    </summary>
-                    <div style={{ padding: '6px 12px 12px', borderTop: '1px solid var(--border-subtle)', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', fontSize: '11px', lineHeight: 1.65, maxHeight: '224px', overflowY: 'auto', whiteSpace: 'pre-wrap', userSelect: 'text' }}>
-                      {message.reasoning}
-                    </div>
-                  </details>
-                )}
-
                 {/* Tool use / command execution records grouped by consecutive category */}
                 {toolGroups.map((group) => (
                   <ToolActionGroupBlock key={group.id} group={group} />
@@ -1572,7 +1745,160 @@ const ChatMessageItemComponent: React.FC<ChatMessageProps> = ({
           </div>
 
           {/* Right: Quick actions (Copy, Regenerate) */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', position: 'relative' }}>
+            {message.content && (
+              <button
+                type="button"
+                onClick={() => {
+                  setRememberRuleText(message.content);
+                  setShowRememberModal(!showRememberModal);
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  fontSize: '10px',
+                  color: savedCorrectionSuccess ? 'var(--accent-green)' : 'var(--text-muted)',
+                  background: 'transparent',
+                  border: 'none',
+                  cursor: 'pointer'
+                }}
+                title="Remember this preference in workspace Correction Memory"
+                onMouseEnter={(e) => { e.currentTarget.style.color = '#e5a50a'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.color = savedCorrectionSuccess ? 'var(--accent-green)' : 'var(--text-muted)'; }}
+              >
+                {savedCorrectionSuccess ? (
+                  <>
+                    <Check size={11} style={{ color: 'var(--accent-green)' }} />
+                    <span>Remembered</span>
+                  </>
+                ) : (
+                  <>
+                    <Lightbulb size={11} style={{ color: '#e5a50a' }} />
+                    <span>Remember preference</span>
+                  </>
+                )}
+              </button>
+            )}
+
+            {showRememberModal && !isUser && (
+              <div
+                style={{
+                  position: 'absolute',
+                  right: 0,
+                  bottom: '26px',
+                  zIndex: 40,
+                  width: '320px',
+                  padding: '10px',
+                  borderRadius: '8px',
+                  background: 'var(--bg-secondary)',
+                  border: '1px solid var(--border-strong)',
+                  boxShadow: '0 8px 24px rgba(0, 0, 0, 0.4)',
+                  fontSize: '11px',
+                  color: 'var(--text-primary)',
+                  textAlign: 'left'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600 }}>
+                    <Lightbulb size={13} style={{ color: '#e5a50a' }} />
+                    <span>Correction Memory</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowRememberModal(false)}
+                    style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '8px' }}>
+                  Save this preference to your workspace audit ledger so the AI never repeats this mistake.
+                </div>
+
+                <div style={{ display: 'flex', gap: '4px', marginBottom: '8px' }}>
+                  {(['style', 'architecture', 'stack'] as const).map((cat) => (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => setRememberCategory(cat)}
+                      style={{
+                        flex: 1,
+                        padding: '3px 6px',
+                        borderRadius: '4px',
+                        border: rememberCategory === cat ? '1px solid var(--accent-primary)' : '1px solid var(--border-subtle)',
+                        background: rememberCategory === cat ? 'var(--accent-primary)' : 'var(--bg-tertiary)',
+                        color: rememberCategory === cat ? '#ffffff' : 'var(--text-secondary)',
+                        fontSize: '10px',
+                        textTransform: 'capitalize',
+                        cursor: 'pointer',
+                        fontWeight: rememberCategory === cat ? 600 : 400
+                      }}
+                    >
+                      {cat}
+                    </button>
+                  ))}
+                </div>
+
+                <textarea
+                  value={rememberRuleText}
+                  onChange={(e) => setRememberRuleText(e.target.value)}
+                  rows={2}
+                  placeholder="Rule (e.g. NEVER use var, use const or let)"
+                  style={{
+                    width: '100%',
+                    padding: '6px 8px',
+                    borderRadius: '6px',
+                    border: '1px solid var(--border-subtle)',
+                    background: 'var(--bg-primary)',
+                    color: 'var(--text-primary)',
+                    fontSize: '11px',
+                    fontFamily: 'var(--font-mono, monospace)',
+                    resize: 'vertical',
+                    marginBottom: '8px',
+                    boxSizing: 'border-box'
+                  }}
+                />
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setShowRememberModal(false)}
+                    style={{
+                      padding: '4px 8px',
+                      borderRadius: '4px',
+                      border: '1px solid var(--border-subtle)',
+                      background: 'transparent',
+                      color: 'var(--text-muted)',
+                      cursor: 'pointer',
+                      fontSize: '10px'
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveCorrection}
+                    disabled={isSavingCorrection || !rememberRuleText.trim()}
+                    style={{
+                      padding: '4px 10px',
+                      borderRadius: '4px',
+                      border: 'none',
+                      background: 'var(--accent-primary)',
+                      color: '#ffffff',
+                      fontWeight: 600,
+                      cursor: isSavingCorrection || !rememberRuleText.trim() ? 'not-allowed' : 'pointer',
+                      opacity: isSavingCorrection || !rememberRuleText.trim() ? 0.6 : 1,
+                      fontSize: '10px'
+                    }}
+                  >
+                    {isSavingCorrection ? 'Remembering…' : 'Save Preference'}
+                  </button>
+                </div>
+              </div>
+            )}
+
             {message.content && (
               <button
                 type="button"

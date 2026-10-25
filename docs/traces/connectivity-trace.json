@@ -1,7 +1,7 @@
 {
   "runId": "trace_run_1792904238600",
-  "timestamp": "2026-10-25T04:57:18.600Z",
-  "gitCommit": "824c8bfe44e02ddaec8b65aa88e7d4a0d21ead7e",
+  "timestamp": "2026-10-25T06:01:40.620Z",
+  "gitCommit": "d6369116c4c514589d8e76a6cf0bf5dca14c3308",
   "command": "npm run test:live",
   "cannedPrompt": "Reply with exactly: TRACE-OK",
   "appVersion": "1.0.0",

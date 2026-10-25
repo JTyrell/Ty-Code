@@ -18,6 +18,7 @@
 
 import React, { useState, useEffect, useMemo, useRef, useCallback, memo } from 'react';
 import DOMPurify from 'dompurify';
+import { marked } from 'marked';
 import MarkdownParserWorker from '../../workers/markdown-parser.worker?worker';
 import HighlightWorker from '../../workers/highlight.worker?worker';
 import type { MarkdownWorkerResponse } from '../../workers/markdown-parser.worker';
@@ -238,6 +239,32 @@ const MessageRendererImpl: React.FC<MessageRendererProps> = ({ content, isStream
     };
   }, [normalizedContent, isStreaming, markdownWorker, highlightWorker]);
 
+  // Immediate fallback HTML using marked (GFM tables, bold, headings)
+  // so finalized responses never flash or get stuck as raw markdown source
+  const fallbackHtml = useMemo(() => {
+    if (isStreaming || !normalizedContent) return null;
+    try {
+      const parsed = marked.parse(normalizedContent, { gfm: true, breaks: true }) as string;
+      return DOMPurify.sanitize(parsed, {
+        USE_PROFILES: { html: true, mathMl: true, svg: true },
+        ADD_TAGS: [
+          'button', 'svg', 'path', 'line', 'rect', 'circle',
+          'math', 'semantics', 'mrow', 'msup', 'msub', 'msubsup',
+          'mi', 'mn', 'mo', 'annotation', 'span', 'div'
+        ],
+        ADD_ATTR: [
+          'target', 'rel', 'data-code', 'type', 'aria-hidden',
+          'style', 'class', 'xmlns', 'encoding', 'viewBox', 'd',
+          'height', 'width', 'fill', 'stroke', 'preserveAspectRatio'
+        ]
+      });
+    } catch {
+      return null;
+    }
+  }, [normalizedContent, isStreaming]);
+
+  const displayHtml = renderedHtml || fallbackHtml;
+
   // STREAM: plain text with ScrambleText (zero markdown AST during streaming)
   if (isStreaming) {
     return (
@@ -275,33 +302,11 @@ const MessageRendererImpl: React.FC<MessageRendererProps> = ({ content, isStream
     );
   }
 
-  // Waiting for the worker on a message that mounted already complete or stream just ended:
-  // plain fallback with locked ScrambleText (zero animation, zero rAF)
-  if (renderedHtml === null) {
-    return (
-      <div
-        className="message-content-streaming contain-content"
-        style={{
-          fontSize: 'var(--chat-font-size, 12px)',
-          lineHeight: 'var(--chat-line-height, 1.7)',
-          color: 'var(--text-primary)',
-          whiteSpace: 'pre-wrap',
-          wordBreak: 'break-word',
-          fontFamily: 'var(--chat-font-family, inherit)',
-          userSelect: 'text',
-          contain: 'content'
-        }}
-      >
-        <ScrambleText
-          text={normalizedContent}
-          enabled={false}
-          streaming={false}
-        />
-      </div>
-    );
+  if (!displayHtml) {
+    return null;
   }
 
-  // ON STREAM COMPLETE: Render worker-parsed, highlighted, and DOMPurify-sanitized HTML
+  // ON STREAM COMPLETE: Render rich HTML (with tables, headings, code blocks)
   return (
     <div
       className="markdown-content chat-message-markdown-html prose prose-invert prose-sm max-w-none contain-content"
@@ -313,7 +318,7 @@ const MessageRendererImpl: React.FC<MessageRendererProps> = ({ content, isStream
         contain: 'content'
       }}
       onClick={handleContainerClick}
-      dangerouslySetInnerHTML={{ __html: renderedHtml }}
+      dangerouslySetInnerHTML={{ __html: displayHtml }}
     />
   );
 };

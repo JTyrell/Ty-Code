@@ -27,6 +27,7 @@ import { fccCatalogSync } from './fcc/catalog-sync';
 import { fetchFCCCatalog } from './fcc-catalog-sync';
 import { OPENKILO_CURATED_FREE_MODELS } from './orchestration/openkilo-provider';
 import { discoverOpenCodeFreeModels } from './opencode-config-manager';
+import { fccModelMapper } from './fcc-model-mapper';
 
 /** Pseudo-endpoint for OpenCode CLI-bridged models; never dialled via HTTP. */
 export const OPENCODE_BRIDGE_URL = 'opencode-cli://bridge/chat/completions';
@@ -38,6 +39,7 @@ export interface VerifiedModelConfig {
   url: string;
   requiresKey: boolean;
   providerId: string;
+  harness?: string;
 }
 
 /**
@@ -311,14 +313,15 @@ export async function getVerifiedModels(): Promise<VerifiedModelConfig[]> {
     return cachedModels!;
   }
 
-  const [baked, localModels, fccModels] = await Promise.all([
+  const [baked, localModels, fccModels, fccDiscovered] = await Promise.all([
     Promise.resolve(buildBakedModels()),
     detectLocalOllamaModels().catch(() => [] as VerifiedModelConfig[]),
-    fetchFCCCatalog().catch(() => [] as VerifiedModelConfig[])
+    fetchFCCCatalog().catch(() => [] as VerifiedModelConfig[]),
+    fccModelMapper.getDiscoveredModels().catch(() => [] as VerifiedModelConfig[])
   ]);
 
   const merged = new Map<string, VerifiedModelConfig>();
-  for (const model of [...baked, ...fccModels, ...localModels]) {
+  for (const model of [...fccDiscovered, ...baked, ...fccModels, ...localModels]) {
     if (!model.modelId || !model.url) continue;
     const key = `${(model.providerId || '').toLowerCase()}::${model.modelId}`;
     if (merged.has(key)) continue;

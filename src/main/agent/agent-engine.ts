@@ -28,6 +28,72 @@ import { backgroundAgentOrchestrator } from './background-agent-orchestrator';
 import { ShellSandbox } from './shell-sandbox';
 import { agentObservability } from './agent-observability';
 import { skillRegistry } from './agent-skills';
+import { getCorrections, onCorrectionAdded, computeWorkspaceHash, type CorrectionEvent } from '../services/context-engine/correction-memory';
+import { modelRotationManager } from '../services/model-rotation-manager';
+
+interface ActiveSessionContext {
+  taskId: string;
+  workspacePath: string;
+  workspaceHash: string;
+  messages: ChatCompletionMessage[];
+  onChunk: (chunk: AgentStreamChunk) => void;
+}
+
+const activeAgentSessions = new Map<string, ActiveSessionContext>();
+const runtimeRulesByWorkspace = new Map<string, Set<string>>();
+
+export function getRuntimeLearnedRules(workspacePathOrHash: string): string[] {
+  const hash = computeWorkspaceHash(workspacePathOrHash);
+  return Array.from(runtimeRulesByWorkspace.get(hash) || []);
+}
+
+// Global Correction Hook: live sync learned rules into the active chat session without app restart or /sync
+onCorrectionAdded((event: CorrectionEvent) => {
+  const { workspaceHash, rule, surface } = event;
+  console.log(`[AgentEngine] Live correction added (${surface}): "${rule}"`);
+
+  let rules = runtimeRulesByWorkspace.get(workspaceHash);
+  if (!rules) {
+    rules = new Set<string>();
+    runtimeRulesByWorkspace.set(workspaceHash, rules);
+  }
+  rules.add(rule);
+
+  for (const session of activeAgentSessions.values()) {
+    if (session.workspaceHash === workspaceHash || session.workspacePath === workspaceHash) {
+      // Dynamically append to active session's system prompt context
+      const liveRuleContext = `\n\n[LEARNED RULE (LIVE APPLIED)]\n- ${rule}\nYou MUST strictly adhere to this rule immediately.`;
+      let systemFound = false;
+      for (let i = session.messages.length - 1; i >= 0; i--) {
+        if (session.messages[i].role === 'system') {
+          session.messages[i] = {
+            ...session.messages[i],
+            content: session.messages[i].content + liveRuleContext
+          };
+          systemFound = true;
+          break;
+        }
+      }
+      if (!systemFound) {
+        session.messages.unshift({
+          role: 'system',
+          content: liveRuleContext
+        });
+      }
+
+      // Inject subtle UI notification in the Chat Sidecar
+      try {
+        session.onChunk({
+          type: 'status',
+          taskId: session.taskId,
+          content: `🧠 Rule learned: ${rule}. Applied to current session.`
+        });
+      } catch (err) {
+        console.warn('[AgentEngine] Failed to send rule learned status chunk:', err);
+      }
+    }
+  }
+});
 
 import { connectivityTracer } from '../services/diagnostics/connectivity-tracer';
 import { getWorkspaceSummary, getOpenFilesContent, buildWorkspaceContextBlock } from '../services/workspace-context-manager';
@@ -437,6 +503,23 @@ export class AgentEngine {
       systemPrompt += skillRegistry.activateSkill(activeSkill);
     }
 
+    // Omni-Orchestrator Injection: Workspace Profile and Correction Memory
+    try {
+      const omniContext = await modelRotationManager.getOmniContextInjection(workspacePath);
+      if (omniContext) {
+        systemPrompt += `\n\n${omniContext}`;
+      }
+    } catch {
+      // Best-effort
+    }
+
+    // Real-Time Learned Rules (live memory enforcement without restart or /sync)
+    const currentWorkspaceHash = computeWorkspaceHash(workspacePath);
+    const liveRules = Array.from(runtimeRulesByWorkspace.get(currentWorkspaceHash) || []);
+    if (liveRules.length > 0) {
+      systemPrompt += `\n\n[LIVE LEARNED RULES]\n${liveRules.map((r) => `- ${r}`).join('\n')}`;
+    }
+
     // Build initial messages immediately with lightweight system prompt
     let messages: ChatCompletionMessage[] = [{ role: 'system', content: systemPrompt }];
     for (const message of history.slice(-10)) {
@@ -453,6 +536,16 @@ export class AgentEngine {
         ? ({ role: 'user', content: prompt, images: params.images } as ChatCompletionMessage)
         : { role: 'user', content: prompt }
     );
+
+    const activeTaskId = params.taskId || sessionId;
+    const sessionCtx: ActiveSessionContext = {
+      taskId: activeTaskId,
+      workspacePath,
+      workspaceHash: currentWorkspaceHash,
+      messages,
+      onChunk
+    };
+    activeAgentSessions.set(activeTaskId, sessionCtx);
 
     if (params.traceId) {
       connectivityTracer.recordHop(params.traceId, 'H4', {
@@ -619,7 +712,8 @@ export class AgentEngine {
       }
     };
 
-    while (stateManager.iterationCount < stateManager.maxIterations) {
+    try {
+      while (stateManager.iterationCount < stateManager.maxIterations) {
       if (abortSignal?.aborted) {
         onChunk({ type: 'cancelled' });
         return;
@@ -1375,9 +1469,16 @@ export class AgentEngine {
               messages.push({ role: 'assistant', content: savedPartialStream });
             }
             const rateLimited = /\[RATE_LIMITED\]|\(429\)|rate limit/i.test(message);
+
+            // Omni-Orchestrator Injection: ensure failover model inherits Workspace Profile & Correction Memory
+            let omniContextBlock = '';
+            try {
+              omniContextBlock = await modelRotationManager.getOmniContextInjection(workspacePath);
+            } catch {}
+
             messages.push({
               role: 'system',
-              content: `[SYSTEM: Provider switched to ${next.providerId} due to ${rateLimited ? 'rate limit' : 'provider outage'}. Continue the task.]`
+              content: `[SYSTEM: Provider switched to ${next.providerId} (${next.modelId}) due to ${rateLimited ? 'rate limit' : 'provider outage'}. Continue the task.]${omniContextBlock ? `\n\n${omniContextBlock}` : ''}`
             });
 
             onChunk({ type: 'status', content: `Provider switched to ${next.providerId}. Continuing the current task.` });
@@ -1419,8 +1520,11 @@ export class AgentEngine {
         return;
       }
     }
-    onChunk({ type: 'status', content: `Reached the tool-execution limit (${stateManager.maxIterations} iterations).` });
-    onChunk({ type: 'done' });
-    persistSessionState(true);
+      onChunk({ type: 'status', content: `Reached the tool-execution limit (${stateManager.maxIterations} iterations).` });
+      onChunk({ type: 'done' });
+      persistSessionState(true);
+    } finally {
+      activeAgentSessions.delete(activeTaskId);
+    }
   }
 }

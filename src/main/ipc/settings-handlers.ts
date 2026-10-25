@@ -6,11 +6,15 @@ import type { CredentialStorageStatus, IpcResponse, ProviderSettings, ProviderTy
 import {
   SecurityPolicySettingsSchema,
   SettingsPatchSchema,
+  classifySettingsError,
+  safeSerializeSettings,
   type SecurityPolicySettings,
   type SettingsData,
+  type SettingsPatch,
   type SettingsScope,
   type WorkspaceSettingsPatch
 } from '../../shared/types/settings';
+export { classifySettingsError };
 import { migrateProviderSettings } from '../services/orchestration/migration';
 import { settingsManager, DEFAULT_SETTINGS } from '../services/settings-manager';
 import { credentialStore } from '../services/auth/credential-store';
@@ -118,7 +122,17 @@ export async function readStoredCredentials(): Promise<{
     catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
   }
   if (!raw) return { parsed: {}, keys: {}, encryptedKeys: {} };
-  const value: unknown = JSON.parse(raw);
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch (parseErr) {
+    const corruptBackupPath = path.join(path.dirname(sourcePath), `settings.corrupt-${Date.now()}.json`);
+    console.warn(`[settings-handlers] Corrupt credentials document detected at ${sourcePath}. Backing up to ${corruptBackupPath}:`, parseErr);
+    try {
+      await fs.writeFile(corruptBackupPath, raw, 'utf8');
+    } catch {}
+    return { parsed: {}, keys: {}, encryptedKeys: {} };
+  }
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Legacy settings document must be a JSON object.');
   let parsed = value as Record<string, unknown>;
   const storedKeys = parsed.apiKeys && typeof parsed.apiKeys === 'object' && !Array.isArray(parsed.apiKeys)
@@ -165,10 +179,23 @@ export async function writeStoredCredentials(apiKeys: Record<string, string>): P
     if (typeof secret === 'string' && secret.trim()) encrypted[provider] = encryptSecret(secret.trim());
   }
   await fs.mkdir(path.dirname(SETTINGS_FILE), { recursive: true });
-  const temporaryFile = `${SETTINGS_FILE}.${process.pid}.${Date.now()}.tmp`;
+  const temporaryFile = path.join(path.dirname(SETTINGS_FILE), `${path.basename(SETTINGS_FILE)}.tmp`);
   try {
-    await fs.writeFile(temporaryFile, JSON.stringify({ apiKeys: encrypted }, null, 2), { encoding: 'utf8', mode: 0o600 });
-    await fs.rename(temporaryFile, SETTINGS_FILE);
+    const serialized = safeSerializeSettings({ apiKeys: encrypted });
+    await fs.writeFile(temporaryFile, serialized, { encoding: 'utf8', mode: 0o600 });
+    let renameSuccess = false;
+    let lastRenameErr: unknown = null;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        await fs.rename(temporaryFile, SETTINGS_FILE);
+        renameSuccess = true;
+        break;
+      } catch (err) {
+        lastRenameErr = err;
+        await new Promise((resolve) => setTimeout(resolve, 25 * (attempt + 1)));
+      }
+    }
+    if (!renameSuccess) throw lastRenameErr;
   } catch (error) {
     await fs.rm(temporaryFile, { force: true }).catch(() => undefined);
     throw error;
@@ -212,10 +239,23 @@ export async function mergeStoredApiKeys(
 
   const document = { ...parsed, apiKeys: mergedCipher };
   await fs.mkdir(path.dirname(SETTINGS_FILE), { recursive: true });
-  const temporaryFile = `${SETTINGS_FILE}.${process.pid}.${Date.now()}.tmp`;
+  const temporaryFile = path.join(path.dirname(SETTINGS_FILE), `${path.basename(SETTINGS_FILE)}.tmp`);
   try {
-    await fs.writeFile(temporaryFile, JSON.stringify(document, null, 2), { encoding: 'utf8', mode: 0o600 });
-    await fs.rename(temporaryFile, SETTINGS_FILE);
+    const serialized = safeSerializeSettings(document);
+    await fs.writeFile(temporaryFile, serialized, { encoding: 'utf8', mode: 0o600 });
+    let renameSuccess = false;
+    let lastRenameErr: unknown = null;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        await fs.rename(temporaryFile, SETTINGS_FILE);
+        renameSuccess = true;
+        break;
+      } catch (err) {
+        lastRenameErr = err;
+        await new Promise((resolve) => setTimeout(resolve, 25 * (attempt + 1)));
+      }
+    }
+    if (!renameSuccess) throw lastRenameErr;
   } catch (error) {
     await fs.rm(temporaryFile, { force: true }).catch(() => undefined);
     throw error;
@@ -275,7 +315,7 @@ async function readEffectiveSettings(): Promise<ProviderSettings> {
   let effective: SettingsData;
   try {
     const legacySettings = migrateProviderSettings({ ...parsed, apiKeys: mergedApiKeys });
-    await settingsManager.initializeFromLegacySettings(legacySettings);
+    await settingsManager.initializeFromLegacySettings(legacySettings as unknown as SettingsPatch);
     effective = await settingsManager.getEffectiveSettings();
   } catch (err) {
     console.warn('[settings-handlers] Error during settings hydration:', err);
@@ -285,7 +325,7 @@ async function readEffectiveSettings(): Promise<ProviderSettings> {
       effective = DEFAULT_SETTINGS;
     }
   }
-  return { ...effective, apiKeys: mergedApiKeys, apiKeysConfigured: undefined };
+  return { ...effective, apiKeys: mergedApiKeys, apiKeysConfigured: undefined } as unknown as ProviderSettings;
 }
 
 /** Renderer-safe settings: API key values are never returned over IPC. */
@@ -334,7 +374,7 @@ export async function getProviderSettings(): Promise<IpcResponse<ProviderSetting
     console.error('[settings-handlers] getProviderSettings error:', error);
     try {
       const fallback = await settingsManager.getEffectiveSettings();
-      return { success: true, data: { ...fallback, apiKeys: {} } };
+      return { success: true, data: { ...fallback, apiKeys: {} } as unknown as ProviderSettings };
     } catch {
       return { success: true, data: { ...DEFAULT_SETTINGS, apiKeys: {} } as any };
     }
@@ -355,7 +395,9 @@ export async function saveSettingsLayer(scope: SettingsScope, updates: unknown):
     await settingsManager.saveLayer(scope, updates);
     return { success: true };
   } catch (error: unknown) {
-    return { success: false, error: error instanceof Error ? error.message : String(error) };
+    const { code, message, detail } = classifySettingsError(error);
+    console.error(`[saveSettingsLayer] [${code}] ${message}\n${detail}`);
+    return { success: false, error: message, errorDetail: { ok: false, code, message, detail } };
   }
 }
 
@@ -372,23 +414,48 @@ export async function saveSecurityPolicy(policy: Partial<SecurityPolicySettings>
   try {
     const current = await settingsManager.getLayerSettings('global') as SettingsData;
     const candidate = SecurityPolicySettingsSchema.safeParse({ ...current.security, ...policy });
-    if (!candidate.success) throw new Error(candidate.error.issues[0]?.message || 'Security policy settings are invalid.');
+    if (!candidate.success) {
+      const err = new Error(candidate.error.issues[0]?.message || 'Security policy settings are invalid.');
+      (err as any).code = 'VALIDATION';
+      throw err;
+    }
     await settingsManager.saveLayer('global', { security: candidate.data });
     return { success: true };
   } catch (error: unknown) {
-    return { success: false, error: error instanceof Error ? error.message : String(error) };
+    const { code, message, detail } = classifySettingsError(error);
+    console.error(`[saveSecurityPolicy] [${code}] ${message}\n${detail}`);
+    return { success: false, error: message, errorDetail: { ok: false, code, message, detail } };
   }
 }
 
-export async function saveSettings(updates: Partial<ProviderSettings>): Promise<IpcResponse<void>> {
+export async function saveSettings(updates: Record<string, unknown> | Partial<ProviderSettings>): Promise<IpcResponse<void>> {
   try {
     const parsedPatch = SettingsPatchSchema.safeParse(updates);
-    if (!parsedPatch.success) throw new Error(`Settings failed schema validation: ${parsedPatch.error.issues[0]?.message || 'invalid settings'}`);
-    if (parsedPatch.data.security !== undefined) throw new Error('Security policy must be changed through the trusted security settings channel.');
-    const { apiKeys, ...globalUpdates } = parsedPatch.data;
-    if (apiKeys !== undefined && !getCredentialStorageStatus().available) {
-      throw new Error(getCredentialStorageStatus().message);
+    if (!parsedPatch.success) {
+      const firstIssue = parsedPatch.error.issues[0]?.message || 'invalid settings';
+      const err = new Error(`Settings failed schema validation: ${firstIssue}`);
+      (err as any).code = 'VALIDATION';
+      throw err;
     }
+    const { apiKeys, security, ...otherUpdates } = parsedPatch.data;
+    if (apiKeys !== undefined && !getCredentialStorageStatus().available) {
+      const err = new Error(getCredentialStorageStatus().message);
+      (err as any).code = 'IO';
+      throw err;
+    }
+
+    const globalUpdates: Record<string, unknown> = { ...otherUpdates };
+    if (security !== undefined) {
+      const secValidation = SecurityPolicySettingsSchema.safeParse(security);
+      if (!secValidation.success) {
+        const firstIssue = secValidation.error.issues[0]?.message || 'invalid security settings';
+        const err = new Error(`Security policy validation failed: ${firstIssue}`);
+        (err as any).code = 'VALIDATION';
+        throw err;
+      }
+      globalUpdates.security = secValidation.data;
+    }
+
     await settingsManager.saveLayer('global', globalUpdates);
 
     if (apiKeys !== undefined) {
@@ -420,7 +487,13 @@ export async function saveSettings(updates: Partial<ProviderSettings>): Promise<
 
     return { success: true };
   } catch (error: unknown) {
-    return { success: false, error: error instanceof Error ? error.message : String(error) };
+    const { code, message, detail } = classifySettingsError(error);
+    console.error(`[saveSettings] [${code}] ${message}\n${detail}`);
+    return {
+      success: false,
+      error: message,
+      errorDetail: { ok: false, code, message, detail }
+    };
   }
 }
 

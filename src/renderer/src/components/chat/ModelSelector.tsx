@@ -632,7 +632,7 @@ export const ModelSelector: React.FC = () => {
   }, []);
 
   // Filter models based on query and availability groups
-  const { availableRows, lockedRows, localRows } = useMemo(() => {
+  const { fccRows, availableRows, lockedRows, localRows } = useMemo(() => {
     const list = availabilityList ?? [];
     const q = modelQuery.trim().toLowerCase();
     const matches = (r: AvailableModelConfig): boolean => {
@@ -643,8 +643,14 @@ export const ModelSelector: React.FC = () => {
         r.providerId.toLowerCase().includes(q);
     };
 
-    // 1. Available Now: Free models, models with valid keys (excluding local running models)
-    const available = list.filter((r) => matches(r) && r.availabilityStatus === 'available' && !isLocalEntry(r));
+    const isFcc = (r: AvailableModelConfig): boolean =>
+      r.providerId === 'fcc' || r.providerId === 'fcc-proxy' || r.modelId.startsWith('fcc:');
+
+    // 0. FCC Free Tier: High-priority multi-harness free fleet
+    const fcc = list.filter((r) => matches(r) && isFcc(r) && r.availabilityStatus === 'available');
+
+    // 1. Available Now: Free models, models with valid keys (excluding local running models & FCC Free Tier)
+    const available = list.filter((r) => matches(r) && r.availabilityStatus === 'available' && !isLocalEntry(r) && !isFcc(r));
 
     // 2. Unlock with Key: Models requiring keys or services the user does not have
     const locked = list.filter((r) => matches(r) && r.availabilityStatus !== 'available' && !isLocalEntry(r));
@@ -653,6 +659,7 @@ export const ModelSelector: React.FC = () => {
     const local = list.filter((r) => matches(r) && isLocalEntry(r) && r.availabilityStatus === 'available');
 
     return {
+      fccRows: fcc,
       availableRows: available,
       lockedRows: locked,
       localRows: local
@@ -1299,6 +1306,20 @@ export const ModelSelector: React.FC = () => {
 
           {/* Grouped Model Sections */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {/* 0. ⚡ FCC Free Tier */}
+            {fccRows.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                {renderSectionHeader('models-group-fcc', '⚡ FCC Free Tier', fccRows.length, {
+                  bg: 'rgba(234, 179, 8, 0.08)',
+                  border: 'rgba(234, 179, 8, 0.25)',
+                  text: '#fbbf24',
+                  badgeBg: '#eab308',
+                  badgeText: '#000000'
+                })}
+                {fccRows.map((r) => renderModelRow(r, false))}
+              </div>
+            )}
+
             {/* 1. ⚡ Available Now (green badge) */}
             {availableRows.length > 0 && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -1342,7 +1363,7 @@ export const ModelSelector: React.FC = () => {
             )}
 
             {/* Empty Search State */}
-            {availableRows.length === 0 && localRows.length === 0 && lockedRows.length === 0 && (
+            {fccRows.length === 0 && availableRows.length === 0 && localRows.length === 0 && lockedRows.length === 0 && (
               <div
                 style={{
                   padding: '16px 8px',

@@ -14,6 +14,7 @@ const TARGET_VOICE_SAMPLE_RATE = 16_000;
 const VOICE_MAX_RECORDING_MS = 90_000;
 
 const SLASH_COMMANDS: Array<{ command: string; description: string; template: string }> = [
+  { command: '/sync', description: 'Rescan workspace and sync stack profile', template: '/sync' },
   { command: '/review', description: 'Review focused code for bugs and security issues', template: '/review ' },
   { command: '/test', description: 'Generate tests with happy, edge, and error coverage', template: '/test ' },
   { command: '/refactor', description: 'Refactor while preserving behavior', template: '/refactor ' }

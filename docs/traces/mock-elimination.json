@@ -1,9 +1,9 @@
 {
   "phase": "RealConnect 1",
   "title": "Kill Mock Server + Enforce Streaming Truth",
-  "timestamp": "2026-10-24T21:34:05.582Z",
-  "epoch": 1792877645,
-  "gitCommit": "4d31185241f8cc0cd869df7ba92e9becfc9d0f33",
+  "timestamp": "2026-10-25T06:01:00.000Z",
+  "epoch": 1792908060,
+  "gitCommit": "d6369116c4c514589d8e76a6cf0bf5dca14c3308",
   "command": "node scripts/no-fixture-replies.mjs",
   "status": "VERIFIED_PASS",
   "grepAudit": {

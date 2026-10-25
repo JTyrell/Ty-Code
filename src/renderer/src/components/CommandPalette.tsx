@@ -247,6 +247,29 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         }
       },
       {
+        id: 'workspace.syncStackProfile',
+        title: 'Workspace: Sync & Rescan Stack Profile',
+        category: 'General',
+        shortcut: 'Ctrl+Shift+S',
+        icon: <RefreshCw size={14} color="var(--accent-primary)" />,
+        action: () => {
+          onClose();
+          const currentPath = useWorkspaceStore.getState().workspacePath;
+          void (async () => {
+            try {
+              const res = await window.electronAPI.scanWorkspace(currentPath);
+              if (res.success && res.data) {
+                toast.success('Workspace synced', `${res.data.primaryLanguage} • ${res.data.architecture}`);
+              } else {
+                toast.error('Sync failed', res.error || 'Failed to scan workspace');
+              }
+            } catch (err: unknown) {
+              toast.error('Sync failed', err instanceof Error ? err.message : String(err));
+            }
+          })();
+        }
+      },
+      {
         id: 'workbench.terminal',
         title: 'Toggle Terminal Emulator',
         category: 'Terminal',

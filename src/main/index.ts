@@ -33,7 +33,7 @@ import {
   handleLspRename, handleLspDocumentSymbols, handleLspWorkspaceSymbols,
   handleLspCodeActions, handleLspSignatureHelp, getLspManager
 } from './ipc/lsp-handlers';
-import { getCredentialStorageStatusResponse, getSettings, getSettingsLayer, getSecurityPolicy, saveSecurityPolicy, saveSettings, saveSettingsLayer, readOnboardingState, writeOnboardingState, mergeStoredApiKeys } from './ipc/settings-handlers';
+import { getCredentialStorageStatusResponse, getSettings, getSettingsLayer, getSecurityPolicy, saveSecurityPolicy, saveSettings, saveSettingsLayer, readOnboardingState, writeOnboardingState, mergeStoredApiKeys, classifySettingsError } from './ipc/settings-handlers';
 import { setActiveAgentConfig } from './agent/agent-config';
 import { settingsManager } from './services/settings-manager';
 import { startAgentTask, stopAgentTask, respondAgentApproval, applyDiff, handleUserApproveDiff } from './ipc/agent-handlers';
@@ -91,6 +91,7 @@ import { fileURLToPath } from 'url';
 
 import { initAiFeatureServices, updateAiServicesWorkspace, registerAiFeatureHandlers } from './ipc/ai-features-handlers';
 import { fccManager } from './services/orchestration/fcc-manager';
+import { fccSidecarManager } from './services/fcc-sidecar-manager';
 import { checkFCCHealth } from './services/fcc-manager';
 import { fccIntegrityChecker } from './services/orchestration/fcc-integrity';
 import { fccEmbeddedCore } from './services/fcc/embedded-core';
@@ -113,6 +114,11 @@ import { quotaTracker } from './services/orchestration/quota-tracker';
 import { smartModelSelector } from './services/orchestration/smart-selector';
 import { performanceManager } from './services/orchestration/performance-manager';
 import { contextCompressor } from './services/orchestration/context-compressor';
+import { scanWorkspace, getOrScanWorkspaceProfile, clearWorkspaceProfileCache } from './services/context-engine/workspace-scanner';
+import { saveCorrection, getCorrections, getCorrectionEntries, deleteCorrection, onCorrectionAdded } from './services/context-engine/correction-memory';
+import { getRecommendedMCPs } from './services/context-engine/mcp-router';
+import { calculateContextScore, auditWorkspaceContext, type ContextScoreResult } from './services/context-engine/context-scorer';
+import { extractDesignSystem, clearDesignProfileCache } from './services/context-engine/design-system-extractor';
 import { moduleManager } from './services/module-manager';
 import { moduleRegistry } from './services/module-registry';
 import { mcpManager } from './services/mcp-manager';
@@ -498,7 +504,8 @@ function registerIpcHandlers(): void {
       if (!isTrustedExtensionFrame(event)) return { ok: false, error: 'Untrusted renderer frame.' };
       if (typeof rawPrompt !== 'string') return { ok: false, error: 'Prompt must be a string.' };
       try {
-        const result: CanvasAgentGenerationResult = await canvasAgentEngine.generate(rawPrompt, undefined);
+        const targetWorkspace = currentWorkspacePath || workspaceManager.currentWorkspacePath || process.cwd();
+        const result: CanvasAgentGenerationResult = await canvasAgentEngine.generate(rawPrompt, { workspaceRoot: targetWorkspace });
         return { ok: result.ok, data: result, ...(result.error ? { error: result.error } : {}) };
       } catch (err: unknown) {
         return { ok: false, error: err instanceof Error ? err.message : String(err) };
@@ -511,15 +518,17 @@ function registerIpcHandlers(): void {
     'canvas:chat-send',
     async (event, rawPayload: unknown): Promise<{ ok: boolean; data?: CanvasAgentGenerationResult & { runId: string }; error?: string }> => {
       if (!isTrustedExtensionFrame(event)) return { ok: false, error: 'Untrusted renderer frame.' };
-      const payload = (typeof rawPayload === 'object' && rawPayload !== null ? rawPayload : {}) as { prompt?: unknown };
+      const payload = (typeof rawPayload === 'object' && rawPayload !== null ? rawPayload : {}) as { prompt?: unknown; workspaceRoot?: string };
       if (typeof payload.prompt !== 'string' || !payload.prompt.trim()) {
         return { ok: false, error: 'Prompt must be a non-empty string.' };
       }
       const runId = `run_${globalThis.crypto.randomUUID()}`;
       try {
         canvasSyncManager.pushAgentEvent({ runId, type: 'status', content: 'Generating UI…' });
+        const targetWorkspace = payload.workspaceRoot?.trim() || currentWorkspacePath || workspaceManager.currentWorkspacePath || process.cwd();
         const result = await canvasAgentEngine.generate(payload.prompt, {
           runId,
+          workspaceRoot: targetWorkspace,
           onToken: (content) => canvasSyncManager.pushAgentEvent({ runId, type: 'token', content })
         });
         canvasSyncManager.pushAgentEvent({ runId, type: result.ok ? 'done' : 'error', content: result.error || result.summary });
@@ -627,6 +636,150 @@ function registerIpcHandlers(): void {
       debuggerSyncManager.pushStateUpdate({ workspacePath: workspaceManager.currentWorkspacePath });
     }
     return result;
+  });
+  ipcMain.handle('workspace:scan', async (event, rootPath?: unknown) => {
+    if (!isTrustedExtensionFrame(event)) {
+      return { success: false, error: 'Untrusted renderer frame.' };
+    }
+    try {
+      const targetPath = typeof rootPath === 'string' && rootPath.trim()
+        ? rootPath.trim()
+        : (currentWorkspacePath || workspaceManager.currentWorkspacePath || process.cwd());
+      const profile = await scanWorkspace(targetPath);
+      return { success: true, data: profile };
+    } catch (err: unknown) {
+      console.error('[workspace:scan] Failed to scan workspace:', err);
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+  ipcMain.handle('context:save-correction', async (event, payload: { workspacePath?: string; rule: string; category?: 'style' | 'architecture' | 'stack'; surface?: 'chat' | 'debugger' | 'canvas' | 'global' }) => {
+    if (!isTrustedExtensionFrame(event)) {
+      return { success: false, error: 'Untrusted renderer frame.' };
+    }
+    try {
+      const targetPath = payload.workspacePath?.trim() || currentWorkspacePath || workspaceManager.currentWorkspacePath || process.cwd();
+      const entry = await saveCorrection(targetPath, payload.rule, payload.category || 'style', payload.surface || 'chat');
+      // Broadcast to all active browser windows for real-time renderer UI reflection
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
+          win.webContents.send('context:correction-added', entry);
+        }
+      }
+      return { success: true, data: entry };
+    } catch (err: unknown) {
+      console.error('[context:save-correction] Error:', err);
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+  ipcMain.handle('context:get-corrections', async (event, workspacePath?: unknown) => {
+    if (!isTrustedExtensionFrame(event)) {
+      return { success: false, error: 'Untrusted renderer frame.' };
+    }
+    try {
+      const targetPath = typeof workspacePath === 'string' && workspacePath.trim()
+        ? workspacePath.trim()
+        : (currentWorkspacePath || workspaceManager.currentWorkspacePath || process.cwd());
+      const rules = await getCorrections(targetPath);
+      return { success: true, data: rules };
+    } catch (err: unknown) {
+      console.error('[context:get-corrections] Error:', err);
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+  ipcMain.handle('context:get-recommended-mcps', async (event, workspacePath?: unknown) => {
+    if (!isTrustedExtensionFrame(event)) {
+      return { success: false, error: 'Untrusted renderer frame.' };
+    }
+    try {
+      const targetPath = typeof workspacePath === 'string' && workspacePath.trim()
+        ? workspacePath.trim()
+        : (currentWorkspacePath || workspaceManager.currentWorkspacePath || process.cwd());
+      const profile = await scanWorkspace(targetPath);
+      const recommendations = getRecommendedMCPs(profile);
+      return { success: true, data: recommendations };
+    } catch (err: unknown) {
+      console.error('[context:get-recommended-mcps] Error:', err);
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+  ipcMain.handle('context:get-score', async (event, workspacePath?: unknown) => {
+    if (!isTrustedExtensionFrame(event)) {
+      return { success: false, error: 'Untrusted renderer frame.' };
+    }
+    try {
+      const targetPath = typeof workspacePath === 'string' && workspacePath.trim()
+        ? workspacePath.trim()
+        : (currentWorkspacePath || workspaceManager.currentWorkspacePath || process.cwd());
+      const profile = await getOrScanWorkspaceProfile(targetPath);
+      const corrections = await getCorrectionEntries(targetPath);
+      const scoreResult = calculateContextScore(profile, corrections.length);
+      return { success: true, data: { scoreResult, profile, corrections } };
+    } catch (err: unknown) {
+      console.error('[context:get-score] Error:', err);
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+  ipcMain.handle('context:delete-correction', async (event, payload: { workspacePath?: string; id: string }) => {
+    if (!isTrustedExtensionFrame(event)) {
+      return { success: false, error: 'Untrusted renderer frame.' };
+    }
+    try {
+      const targetPath = payload.workspacePath?.trim() || currentWorkspacePath || workspaceManager.currentWorkspacePath || process.cwd();
+      const deleted = await deleteCorrection(targetPath, payload.id);
+      return { success: true, data: deleted };
+    } catch (err: unknown) {
+      console.error('[context:delete-correction] Error:', err);
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+  ipcMain.handle('context:get-correction-entries', async (event, workspacePath?: unknown) => {
+    if (!isTrustedExtensionFrame(event)) {
+      return { success: false, error: 'Untrusted renderer frame.' };
+    }
+    try {
+      const targetPath = typeof workspacePath === 'string' && workspacePath.trim()
+        ? workspacePath.trim()
+        : (currentWorkspacePath || workspaceManager.currentWorkspacePath || process.cwd());
+      const entries = await getCorrectionEntries(targetPath);
+      return { success: true, data: entries };
+    } catch (err: unknown) {
+      console.error('[context:get-correction-entries] Error:', err);
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+  ipcMain.handle('context:resync-workspace', async (event, workspacePath?: unknown) => {
+    if (!isTrustedExtensionFrame(event)) {
+      return { success: false, error: 'Untrusted renderer frame.' };
+    }
+    try {
+      const targetPath = typeof workspacePath === 'string' && workspacePath.trim()
+        ? workspacePath.trim()
+        : (currentWorkspacePath || workspaceManager.currentWorkspacePath || process.cwd());
+      clearWorkspaceProfileCache();
+      clearDesignProfileCache();
+      const profile = await scanWorkspace(targetPath);
+      const corrections = await getCorrectionEntries(targetPath);
+      const scoreResult = calculateContextScore(profile, corrections.length);
+      return { success: true, data: { scoreResult, profile, corrections } };
+    } catch (err: unknown) {
+      console.error('[context:resync-workspace] Error:', err);
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+  ipcMain.handle('context:get-design-profile', async (event, workspacePath?: unknown) => {
+    if (!isTrustedExtensionFrame(event)) {
+      return { success: false, error: 'Untrusted renderer frame.' };
+    }
+    try {
+      const targetPath = typeof workspacePath === 'string' && workspacePath.trim()
+        ? workspacePath.trim()
+        : (currentWorkspacePath || workspaceManager.currentWorkspacePath || process.cwd());
+      const profile = await extractDesignSystem(targetPath);
+      return { success: true, data: profile };
+    } catch (err: unknown) {
+      console.error('[context:get-design-profile] Error:', err);
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
   });
   ipcMain.handle('fs:set-workspace', async (_event, folderPath: string) => {
     if (!folderPath) return { success: false, error: 'Invalid folder path' };
@@ -1004,12 +1157,22 @@ function registerIpcHandlers(): void {
     ? saveSecurityPolicy(policy)
     : { success: false, error: 'Untrusted renderer frame.' });
   ipcMain.handle('settings:save', async (event, updates) => {
-    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
-    const result = await saveSettings(updates);
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.', errorDetail: { ok: false, code: 'IO', message: 'Untrusted renderer frame.', detail: 'Caller frame was not trusted.' } };
+    try {
+      const result = await saveSettings(updates);
     if (result.success && updates?.telemetry?.enabled === false) await getTelemetryManager().clearData();
     if (result.success && updates?.['lsp.autoStart'] !== undefined) getLspManager(currentWorkspacePath).setAutoStart(updates['lsp.autoStart']);
     if (result.success) clearAvailabilityCache();
-    return result;
+      return result;
+    } catch (err: unknown) {
+      const { code, message, detail } = classifySettingsError(err);
+      console.error(`[ipc:settings:save] [${code}] ${message}\n${detail}`);
+      return {
+        success: false,
+        error: message,
+        errorDetail: { ok: false, code, message, detail }
+      };
+    }
   });
 
   // Renderer selection changes funnel here: validate -> active agent config ->
@@ -3551,6 +3714,24 @@ function registerFccHandlers(): void {
     data: localSessionBridge.listSessions()
   }));
 
+  ipcMain.handle('fcc:voice-input', async (_event, audioData: any, options?: any) => {
+    try {
+      const res = await fccSidecarManager.transcribeAudio(audioData, options?.mimeType);
+      return { success: true, data: res };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('fcc:browser-session', async (_event, options: any) => {
+    try {
+      const res = await fccSidecarManager.manageBrowserSession(options?.action || 'launch', options);
+      return { success: true, data: res };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
   // Unified catalog for the redesigned "AI Providers & Models" tab: verified
   // models + zero-telemetry availability booleans (no credentials, and the
   // internal wire URLs stay main-process only).
@@ -3866,6 +4047,7 @@ function cleanupAllResources(): void {  cleanupAllPtys();
   }
   try {
     void fccManager.stop();
+    void fccSidecarManager.stop();
   } catch {
     // Ignore FCC cleanup error
   }
@@ -4413,6 +4595,7 @@ app.whenReady().then(async () => {
     'custom',
     async () => {
       void fccManager.start();
+      void fccSidecarManager.start();
     }
   );
 

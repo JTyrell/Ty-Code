@@ -1,9 +1,12 @@
 import { parentPort } from 'node:worker_threads';
 import { runArchAnalysis } from '../arch-engine';
 
+import type { WorkspaceProfile } from '../../context-engine/types';
+
 interface ArchJob {
   kind: 'arch';
   projectRoot: string;
+  profile?: WorkspaceProfile | null;
 }
 
 function post(response: unknown): void {
@@ -20,7 +23,7 @@ if (parentPort) {
   parentPort.on('message', async (message: unknown) => {
     if (!isArchJob(message)) return;
     try {
-      post({ ok: true, result: await runArchAnalysis(message.projectRoot) });
+      post({ ok: true, result: await runArchAnalysis(message.projectRoot, { profile: message.profile }) });
     } catch (error) {
       post({ ok: false, error: error instanceof Error ? error.message : String(error) });
     }

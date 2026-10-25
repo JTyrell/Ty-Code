@@ -33,7 +33,9 @@ import {
   ToggleRight,
   Trash2,
   Type as TypeGlyph,
-  X
+  X,
+  FileCode,
+  Sparkles
 } from 'lucide-react';
 import { ChromePicker } from 'react-color';
 import type { ColorResult } from 'react-color';
@@ -49,6 +51,10 @@ import { extractImageCss } from '../../utils/image-to-css';
 import type { ImageCssResult } from '../../utils/image-to-css';
 import { WorkspaceGate } from '../common/WorkspaceGate';
 import { useWorkspaceStore } from '../../state/workspace-store';
+import { useWorkspaceEditStore } from '../../state/workspace-edit-store';
+import { toast } from '../../state/toast-store';
+import { handleAutoAppliedTransaction } from '../../services/workspace-edit-commands';
+import type { DesignProfile, DesignComponent } from '../../../../preload/types';
 
 // ---------------------------------------------------------------------------
 // Platform + library catalogs
@@ -572,9 +578,10 @@ interface ColorFieldProps {
   value: string;
   onChange: (value: string) => void;
   fallbackHex: string;
+  projectColors?: Record<string, string>;
 }
 
-const ColorField: React.FC<ColorFieldProps> = ({ value, onChange, fallbackHex }) => {
+const ColorField: React.FC<ColorFieldProps> = ({ value, onChange, fallbackHex, projectColors }) => {
   const [open, setOpen] = useState(false);
   const [inputValue, setInputValue] = useState(value);
   const isUserTypingRef = useRef(false);
@@ -586,52 +593,80 @@ const ColorField: React.FC<ColorFieldProps> = ({ value, onChange, fallbackHex })
   const swatchColor = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(value.trim()) ? value.trim() : fallbackHex;
 
   return (
-    <div style={{ position: 'relative', display: 'flex', flex: 1, gap: 5, alignItems: 'center', minWidth: 0 }}>
-      <button
-        type="button"
-        title="Open color picker"
-        onClick={() => setOpen((prev) => !prev)}
-        style={{
-          width: 16,
-          height: 16,
-          borderRadius: 4,
-          border: '1px solid var(--border-subtle)',
-          background: swatchColor,
-          flexShrink: 0,
-          cursor: 'pointer',
-          padding: 0
-        }}
-      />
-      {open && (
-        <>
-          <div
-            onClick={() => setOpen(false)}
-            style={{ position: 'fixed', inset: 0, zIndex: 39 }}
-          />
-          <div style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 40 }}>
-            <ChromePicker
-              color={swatchColor}
-              onChangeComplete={(color: ColorResult) => {
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, gap: 5, minWidth: 0 }}>
+      <div style={{ position: 'relative', display: 'flex', gap: 5, alignItems: 'center', width: '100%', minWidth: 0 }}>
+        <button
+          type="button"
+          title="Open color picker"
+          onClick={() => setOpen((prev) => !prev)}
+          style={{
+            width: 16,
+            height: 16,
+            borderRadius: 4,
+            border: '1px solid var(--border-subtle)',
+            background: swatchColor,
+            flexShrink: 0,
+            cursor: 'pointer',
+            padding: 0
+          }}
+        />
+        {open && (
+          <>
+            <div
+              onClick={() => setOpen(false)}
+              style={{ position: 'fixed', inset: 0, zIndex: 39 }}
+            />
+            <div style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 40 }}>
+              <ChromePicker
+                color={swatchColor}
+                onChangeComplete={(color: ColorResult) => {
+                  isUserTypingRef.current = false;
+                  onChange(color.hex);
+                }}
+              />
+            </div>
+          </>
+        )}
+        <input
+          style={propInputStyle}
+          value={inputValue}
+          placeholder="var(--accent-primary) | #3b82f6"
+          onFocus={() => {
+            isUserTypingRef.current = true;
+          }}
+          onChange={(event) => {
+            isUserTypingRef.current = true;
+            setInputValue(event.target.value);
+            onChange(event.target.value);
+          }}
+        />
+      </div>
+      {projectColors && Object.keys(projectColors).length > 0 && (
+        <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap', width: '100%', marginTop: 2 }}>
+          {Object.entries(projectColors).slice(0, 10).map(([name, hex]) => (
+            <button
+              key={name}
+              type="button"
+              title={`${name}: ${hex}`}
+              onClick={() => {
                 isUserTypingRef.current = false;
-                onChange(color.hex);
+                setInputValue(hex);
+                onChange(hex);
+              }}
+              style={{
+                width: 13,
+                height: 13,
+                borderRadius: 3,
+                background: hex,
+                border: inputValue === hex ? '1.5px solid var(--accent-primary)' : '1px solid var(--border-subtle)',
+                cursor: 'pointer',
+                padding: 0,
+                flexShrink: 0
               }}
             />
-          </div>
-        </>
+          ))}
+        </div>
       )}
-      <input
-        style={propInputStyle}
-        value={inputValue}
-        placeholder="var(--accent-primary) | linear-gradient(...)"
-        onFocus={() => {
-          isUserTypingRef.current = true;
-        }}
-        onChange={(event) => {
-          isUserTypingRef.current = true;
-          setInputValue(event.target.value);
-          onChange(event.target.value);
-        }}
-      />
     </div>
   );
 };
@@ -639,9 +674,10 @@ const ColorField: React.FC<ColorFieldProps> = ({ value, onChange, fallbackHex })
 interface PropsPanelProps {
   node: CanvasNode | null;
   platform: CanvasPlatform;
+  designProfile?: DesignProfile | null;
 }
 
-const PropertiesPanel: React.FC<PropsPanelProps> = ({ node, platform }) => {
+const PropertiesPanel: React.FC<PropsPanelProps> = ({ node, platform, designProfile }) => {
   const updateNodeProps = useCanvasStore((state) => state.updateNodeProps);
 
   if (!node) {
@@ -697,6 +733,7 @@ const PropertiesPanel: React.FC<PropsPanelProps> = ({ node, platform }) => {
         <ColorField
           value={str(p, 'color')}
           fallbackHex={typeDefaultBackground(node.type)}
+          projectColors={designProfile?.colors}
           onChange={(next) => updateNodeProps(node.id, { color: next })}
         />
       </PropRow>
@@ -704,6 +741,7 @@ const PropertiesPanel: React.FC<PropsPanelProps> = ({ node, platform }) => {
         <ColorField
           value={str(p, 'textColor')}
           fallbackHex={DEFAULT_TEXT_COLOR}
+          projectColors={designProfile?.colors}
           onChange={(next) => updateNodeProps(node.id, { textColor: next })}
         />
       </PropRow>
@@ -882,40 +920,253 @@ const FrameForPlatform = (platform: CanvasPlatform): FrameSpec => {
 // Component library panel
 // ---------------------------------------------------------------------------
 
-const LibraryPanel: React.FC<{ onAdd: (type: string) => void }> = ({ onAdd }) => (
-  <div style={{ padding: '10px 10px 12px', display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 6 }}>
-    {LIBRARY.map((entry) => (
-      <button
-        key={entry.type}
-        type="button"
-        onClick={() => onAdd(entry.type)}
-        title={`Add ${entry.label}`}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 7,
-          padding: '8px 9px',
-          borderRadius: 8,
-          background: 'var(--surface-2)',
-          border: '1px solid var(--border-subtle)',
-          color: 'var(--text-primary)',
-          fontSize: 10.5,
-          cursor: 'pointer',
-          textAlign: 'left'
-        }}
-        onMouseEnter={(event) => {
-          event.currentTarget.style.background = 'var(--border-subtle)';
-        }}
-        onMouseLeave={(event) => {
-          event.currentTarget.style.background = 'var(--surface-2)';
-        }}
-      >
-        <span style={{ color: entry.color, display: 'flex' }}>{entry.icon}</span>
-        {entry.label}
-      </button>
-    ))}
-  </div>
-);
+interface LibraryPanelProps {
+  onAdd: (type: string, name?: string, props?: Record<string, CanvasPropValue>) => void;
+  designProfile?: DesignProfile | null;
+}
+
+const LibraryPanel: React.FC<LibraryPanelProps> = ({ onAdd, designProfile }) => {
+  const projectComponents = designProfile?.components || [];
+  return (
+    <div style={{ padding: '8px 10px 12px', display: 'flex', flexDirection: 'column', gap: 10, overflowY: 'auto' }}>
+      {projectComponents.length > 0 && (
+        <div>
+          <div
+            style={{
+              fontSize: 9.5,
+              fontWeight: 700,
+              color: 'var(--accent-primary)',
+              marginBottom: 6,
+              letterSpacing: '0.4px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}
+          >
+            <span>PROJECT: {designProfile?.uiLibrary || 'COMPONENTS'}</span>
+            <span
+              style={{
+                fontSize: 8.5,
+                padding: '1px 5px',
+                borderRadius: 999,
+                background: 'rgba(168, 85, 247, 0.18)',
+                color: 'var(--accent-primary)'
+              }}
+            >
+              {projectComponents.length}
+            </span>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 5, maxHeight: 150, overflowY: 'auto' }}>
+            {projectComponents.map((comp) => (
+              <button
+                key={comp.name}
+                type="button"
+                onClick={() =>
+                  onAdd(comp.name.toLowerCase(), comp.name, {
+                    importPath: comp.importPath,
+                    library: designProfile?.uiLibrary || ''
+                  })
+                }
+                title={`Add ${comp.name} (${comp.importPath})`}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '6px 7px',
+                  borderRadius: 6,
+                  background: 'var(--surface-2)',
+                  border: '1px solid rgba(168, 85, 247, 0.3)',
+                  color: 'var(--text-primary)',
+                  fontSize: 10,
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap'
+                }}
+                onMouseEnter={(event) => {
+                  event.currentTarget.style.background = 'rgba(168, 85, 247, 0.15)';
+                }}
+                onMouseLeave={(event) => {
+                  event.currentTarget.style.background = 'var(--surface-2)';
+                }}
+              >
+                <span style={{ color: 'var(--accent-primary)', display: 'flex', flexShrink: 0 }}>
+                  <Box size={11} />
+                </span>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{comp.name}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div>
+        <div style={{ fontSize: 9.5, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 6, letterSpacing: '0.4px' }}>
+          BASE PRIMITIVES
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 6 }}>
+          {LIBRARY.map((entry) => (
+            <button
+              key={entry.type}
+              type="button"
+              onClick={() => onAdd(entry.type)}
+              title={`Add ${entry.label}`}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 7,
+                padding: '7px 8px',
+                borderRadius: 7,
+                background: 'var(--surface-2)',
+                border: '1px solid var(--border-subtle)',
+                color: 'var(--text-primary)',
+                fontSize: 10,
+                cursor: 'pointer',
+                textAlign: 'left'
+              }}
+              onMouseEnter={(event) => {
+                event.currentTarget.style.background = 'var(--border-subtle)';
+              }}
+              onMouseLeave={(event) => {
+                event.currentTarget.style.background = 'var(--surface-2)';
+              }}
+            >
+              <span style={{ color: entry.color, display: 'flex' }}>{entry.icon}</span>
+              {entry.label}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// Project-native code generator for Safe Edit Review Gate
+// ---------------------------------------------------------------------------
+
+export function generateProjectNativeCode(
+  nodes: CanvasNode[],
+  platform: CanvasPlatform,
+  designProfile: DesignProfile | null,
+  componentName = 'GeneratedComponent'
+): string {
+  const isAppRouter = designProfile?.routerType === 'app-router' || designProfile?.framework === 'Next.js';
+  const uiLibrary = designProfile?.uiLibrary;
+
+  let code = '';
+  if (isAppRouter && (platform === 'web' || platform === 'other')) {
+    code += `'use client';\n\n`;
+  }
+
+  code += `import React from 'react';\n`;
+
+  const usedProjectComponents = new Set<string>();
+
+  function collectNodes(nodeList: CanvasNode[]) {
+    for (const node of nodeList) {
+      const match = designProfile?.components?.find(
+        (c) => c.name.toLowerCase() === (node.name || node.type).toLowerCase()
+      );
+      if (match) {
+        usedProjectComponents.add(match.name);
+      }
+      if (node.children && node.children.length > 0) {
+        collectNodes(node.children);
+      }
+    }
+  }
+
+  if (uiLibrary === 'shadcn/ui' && designProfile?.components) {
+    collectNodes(nodes);
+    for (const compName of usedProjectComponents) {
+      code += `import { ${compName} } from '@/components/ui/${compName.toLowerCase()}';\n`;
+    }
+  } else if (uiLibrary === 'Material UI') {
+    const muiImports: string[] = [];
+    function collectMui(nodeList: CanvasNode[]) {
+      for (const node of nodeList) {
+        if (node.type === 'button') muiImports.push('Button');
+        if (node.type === 'card') muiImports.push('Card', 'CardContent');
+        if (node.type === 'input') muiImports.push('TextField');
+        if (node.children && node.children.length > 0) collectMui(node.children);
+      }
+    }
+    collectMui(nodes);
+    if (muiImports.length > 0) {
+      code += `import { ${Array.from(new Set(muiImports)).join(', ')} } from '@mui/material';\n`;
+    }
+  }
+
+  code += `\nexport default function ${componentName}() {\n`;
+  code += `  return (\n`;
+  code += `    <div className="relative w-full min-h-[500px] bg-background text-foreground p-6 rounded-xl border border-border shadow-sm">\n`;
+
+  function renderNodeJsx(node: CanvasNode, indent = '      '): string {
+    const p = node.props;
+    const text = String(p.text || '');
+    const color = p.color ? String(p.color) : '';
+    const textColor = p.textColor ? String(p.textColor) : '';
+    const styleObj: Record<string, string | number> = {};
+    if (p.x !== undefined && p.y !== undefined) {
+      styleObj.position = 'absolute';
+      styleObj.left = `${p.x}px`;
+      styleObj.top = `${p.y}px`;
+    }
+    if (p.width) styleObj.width = `${p.width}px`;
+    if (p.height) styleObj.height = `${p.height}px`;
+    if (color && !color.startsWith('var(')) styleObj.background = color;
+    if (textColor && !textColor.startsWith('var(')) styleObj.color = textColor;
+
+    const styleAttr = Object.keys(styleObj).length > 0
+      ? ` style={${JSON.stringify(styleObj)}}`
+      : '';
+
+    const lowerType = node.type.toLowerCase();
+    const isStandard = ['button', 'card', 'input', 'text', 'image', 'container'].includes(lowerType);
+    const isCustomProjectComp = designProfile?.components?.some((c) => c.name.toLowerCase() === lowerType);
+
+    if (!isStandard && isCustomProjectComp) {
+      const compName = designProfile?.components?.find((c) => c.name.toLowerCase() === lowerType)?.name || node.name || 'Component';
+      return `${indent}<${compName}${styleAttr}>${text || ''}${node.children.map((c) => renderNodeJsx(c, indent + '  ')).join('')}</${compName}>\n`;
+    }
+
+    switch (lowerType) {
+      case 'button':
+        if (usedProjectComponents.has('Button')) {
+          return `${indent}<Button className="bg-primary text-primary-foreground font-semibold"${styleAttr}>${text || 'Button'}</Button>\n`;
+        }
+        return `${indent}<button className="px-4 py-2 rounded-md bg-primary text-primary-foreground font-medium hover:opacity-90 transition"${styleAttr}>${text || 'Button'}</button>\n`;
+      case 'card':
+        if (usedProjectComponents.has('Card')) {
+          return `${indent}<Card className="rounded-xl border bg-card text-card-foreground shadow"${styleAttr}>\n${indent}  <div className="p-6">${text ? `<h3 className="font-semibold text-lg mb-2">${text}</h3>\n` : ''}${node.children.map((c) => renderNodeJsx(c, indent + '    ')).join('')}${indent}  </div>\n${indent}</Card>\n`;
+        }
+        return `${indent}<div className="rounded-xl border border-border bg-card p-6 shadow-sm"${styleAttr}>\n${indent}  <h3 className="font-semibold text-lg mb-2">${text || 'Card Title'}</h3>\n${node.children.map((c) => renderNodeJsx(c, indent + '  ')).join('')}${indent}</div>\n`;
+      case 'input':
+        if (usedProjectComponents.has('Input')) {
+          return `${indent}<Input placeholder="${text || 'Enter value...'}" className="w-full max-w-sm rounded-md border border-input bg-background"${styleAttr} />\n`;
+        }
+        return `${indent}<input type="text" placeholder="${text || 'Enter text...'}" className="px-3 py-2 rounded-md border border-input bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-ring"${styleAttr} />\n`;
+      case 'text':
+        return `${indent}<p className="text-sm text-foreground"${styleAttr}>${text || 'Sample Text'}</p>\n`;
+      case 'image':
+        return `${indent}<div className="rounded-lg bg-muted flex items-center justify-center overflow-hidden"${styleAttr}>\n${indent}  <span className="text-xs text-muted-foreground">Image Placeholder</span>\n${indent}</div>\n`;
+      default:
+        return `${indent}<div className="rounded-lg bg-card border border-border"${styleAttr}>\n${node.children.map((c) => renderNodeJsx(c, indent + '  ')).join('')}${indent}</div>\n`;
+    }
+  }
+
+  for (const rootNode of nodes) {
+    code += renderNodeJsx(rootNode);
+  }
+
+  code += `    </div>\n`;
+  code += `  );\n`;
+  code += `}\n`;
+
+  return code;
+}
 
 // ---------------------------------------------------------------------------
 // Main editor
@@ -947,6 +1198,26 @@ export const M3ECanvas: React.FC = () => {
   const [imageCss, setImageCss] = useState<ImageCssResult | null>(null);
   const [isProcessingImage, setIsProcessingImage] = useState(false);
   const [copiedCss, setCopiedCss] = useState(false);
+  const [designProfile, setDesignProfile] = useState<DesignProfile | null>(null);
+  const [showApplyModal, setShowApplyModal] = useState(false);
+  const [targetFilePath, setTargetFilePath] = useState('src/components/GeneratedCanvasView.tsx');
+  const [targetCompName, setTargetCompName] = useState('GeneratedCanvasView');
+  const [isApplyingToWorkspace, setIsApplyingToWorkspace] = useState(false);
+
+  // Fetch project design profile (Tailwind colors, UI components) on open
+  useEffect(() => {
+    let active = true;
+    if (window.electronAPI?.getDesignProfile) {
+      window.electronAPI.getDesignProfile(workspaceRoot).then((res) => {
+        if (active && res.success && res.data) {
+          setDesignProfile(res.data);
+        }
+      }).catch((err) => {
+        console.warn('[M3ECanvas] Failed to load design profile:', err);
+      });
+    }
+    return () => { active = false; };
+  }, [workspaceRoot]);
 
   // Wire the store into the main-process CanvasSyncManager, only when workspace is ready.
   useEffect(() => {
@@ -1049,11 +1320,71 @@ export const M3ECanvas: React.FC = () => {
   );
 
   const handleAdd = useCallback(
-    (type: string) => {
-      addNode({ type });
+    (type: string, name?: string, props?: Record<string, CanvasPropValue>) => {
+      addNode({ type, name, props });
     },
     [addNode]
   );
+
+  const handleApplyToWorkspace = useCallback(async () => {
+    setIsApplyingToWorkspace(true);
+    try {
+      const generatedCode = generateProjectNativeCode(
+        nodes,
+        activePlatform,
+        designProfile,
+        targetCompName.trim() || 'GeneratedCanvasView'
+      );
+
+      let originalText = '';
+      try {
+        const readRes = await window.electronAPI.readFile(targetFilePath);
+        if (readRes.success && typeof readRes.data === 'string') {
+          originalText = readRes.data;
+        }
+      } catch {
+        originalText = '';
+      }
+
+      const request = {
+        filePath: targetFilePath,
+        lineNumber: 1,
+        originalText,
+        replacementText: generatedCode,
+        title: `Apply Canvas UI · ${targetCompName || 'GeneratedCanvasView'}`,
+        forcePreview: true
+      };
+
+      const response = await window.electronAPI.previewSnippetEdit(request);
+      if (!response.success || !response.data) {
+        throw new Error(response.error || 'Could not create workspace edit preview.');
+      }
+
+      if (response.data.applied) {
+        handleAutoAppliedTransaction(response.data.applied);
+        toast.success('Applied to File', `Updated ${targetFilePath}`);
+        setShowApplyModal(false);
+      } else if (response.data.preview) {
+        useWorkspaceEditStore.getState().setRequest({
+          preview: response.data.preview,
+          isStale: false,
+          refresh: async () => {
+            const refreshed = await window.electronAPI.previewSnippetEdit({ ...request, forcePreview: true });
+            if (!refreshed.success || !refreshed.data?.preview) {
+              throw new Error(refreshed.error || 'Could not refresh edit preview.');
+            }
+            return refreshed.data.preview;
+          }
+        });
+        toast.info('Review Generated UI', 'Review the diff before confirming file changes.');
+        setShowApplyModal(false);
+      }
+    } catch (err: unknown) {
+      toast.error('Could not apply UI to file', err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsApplyingToWorkspace(false);
+    }
+  }, [nodes, activePlatform, designProfile, targetCompName, targetFilePath]);
 
   const handleExportPng = useCallback(async () => {
     const target = deviceExportRef.current;
@@ -1210,6 +1541,49 @@ export const M3ECanvas: React.FC = () => {
             <Download size={12} />
             Export PNG
           </button>
+          {designProfile && (
+            <div
+              title={`Framework: ${designProfile.framework || 'Web'} (${designProfile.routerType || 'Standard'}) • UI: ${designProfile.uiLibrary || 'Tailwind'} • ${Object.keys(designProfile.colors).length} theme colors`}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 5,
+                padding: '5px 9px',
+                borderRadius: 6,
+                background: 'rgba(168, 85, 247, 0.12)',
+                border: '1px solid rgba(168, 85, 247, 0.3)',
+                fontSize: 10.5,
+                color: 'var(--accent-primary)',
+                fontWeight: 600
+              }}
+            >
+              <Sparkles size={11} />
+              <span>{designProfile.uiLibrary || 'Project Native'}</span>
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={() => setShowApplyModal(true)}
+            disabled={nodes.length === 0}
+            title="Apply generated UI code to a project file with Monaco Diff review gate"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 5,
+              padding: '6px 10px',
+              borderRadius: 6,
+              background: 'rgba(59, 130, 246, 0.18)',
+              border: '1px solid rgba(59, 130, 246, 0.45)',
+              color: 'var(--accent-primary)',
+              fontSize: 10.5,
+              fontWeight: 600,
+              cursor: nodes.length === 0 ? 'not-allowed' : 'pointer',
+              whiteSpace: 'nowrap'
+            }}
+          >
+            <FileCode size={12} />
+            Apply to File
+          </button>
           <button
             type="button"
             onClick={() => {
@@ -1276,7 +1650,7 @@ export const M3ECanvas: React.FC = () => {
             <Plus size={12} color="var(--accent-primary)" />
             COMPONENT LIBRARY
           </div>
-          <LibraryPanel onAdd={handleAdd} />
+          <LibraryPanel onAdd={handleAdd} designProfile={designProfile} />
 
           <div
             style={{
@@ -1619,9 +1993,134 @@ export const M3ECanvas: React.FC = () => {
               </button>
             )}
           </div>
-          <PropertiesPanel node={selectedNode} platform={activePlatform} />
+          <PropertiesPanel node={selectedNode} platform={activePlatform} designProfile={designProfile} />
         </aside>
       </div>
+
+      {/* Safe Edit Review Gate Modal: Apply UI to Project File */}
+      {showApplyModal && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 100,
+            background: 'rgba(0, 0, 0, 0.65)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 20
+          }}
+        >
+          <div
+            style={{
+              width: 440,
+              maxWidth: '100%',
+              background: 'var(--surface-1)',
+              border: '1px solid var(--border-default)',
+              borderRadius: 12,
+              padding: 20,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 14,
+              boxShadow: '0 20px 50px rgba(0, 0, 0, 0.6)'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>
+                <FileCode size={16} color="var(--accent-primary)" />
+                Apply Canvas UI to Project
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowApplyModal(false)}
+                style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: 2 }}
+              >
+                <X size={14} />
+              </button>
+            </div>
+
+            <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+              Generated UI code will be sent to the <strong>Safe Edit Review Gate</strong> (Monaco Diff Editor), allowing you to review all line-by-line changes before anything is written to disk.
+            </div>
+
+            {designProfile && (
+              <div style={{ padding: '8px 10px', borderRadius: 6, background: 'rgba(168, 85, 247, 0.1)', border: '1px solid rgba(168, 85, 247, 0.25)', fontSize: 10.5 }}>
+                <div style={{ fontWeight: 600, color: 'var(--accent-primary)', marginBottom: 2 }}>
+                  Project Rules Applied:
+                </div>
+                <div style={{ color: 'var(--text-secondary)' }}>
+                  • Framework: {designProfile.framework || 'React'} ({designProfile.routerType || 'Standard'})
+                  {designProfile.routerType === 'app-router' ? " ('use client' directive active)" : ''}
+                  <br />
+                  • UI Components: {designProfile.uiLibrary || 'Tailwind CSS'}
+                  <br />
+                  • Theme Tokens: {Object.keys(designProfile.colors).length} project colors
+                </div>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <label style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--text-muted)' }}>Target File Path (relative to workspace root)</label>
+              <input
+                style={propInputStyle}
+                value={targetFilePath}
+                onChange={(e) => setTargetFilePath(e.target.value)}
+                placeholder="src/components/MyComponent.tsx"
+              />
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <label style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--text-muted)' }}>Component Function Name</label>
+              <input
+                style={propInputStyle}
+                value={targetCompName}
+                onChange={(e) => setTargetCompName(e.target.value)}
+                placeholder="MyComponent"
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, marginTop: 4, justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={() => setShowApplyModal(false)}
+                disabled={isApplyingToWorkspace}
+                style={{
+                  padding: '7px 12px',
+                  borderRadius: 6,
+                  background: 'var(--surface-2)',
+                  border: '1px solid var(--border-subtle)',
+                  color: 'var(--text-secondary)',
+                  fontSize: 11,
+                  cursor: 'pointer'
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleApplyToWorkspace()}
+                disabled={isApplyingToWorkspace || !targetFilePath.trim()}
+                style={{
+                  padding: '7px 14px',
+                  borderRadius: 6,
+                  background: 'var(--accent-primary)',
+                  border: 'none',
+                  color: '#ffffff',
+                  fontSize: 11,
+                  fontWeight: 600,
+                  cursor: isApplyingToWorkspace ? 'wait' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6
+                }}
+              >
+                {isApplyingToWorkspace ? 'Preparing Diff…' : 'Review Diff in Monaco'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
     </WorkspaceGate>
   );

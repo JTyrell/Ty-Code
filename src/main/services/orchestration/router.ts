@@ -15,6 +15,7 @@ import { ConnectionPool, connectionPool } from './connection-pool';
 import { ProviderRegistry, providerRegistry, type ProviderMetadata, type ModelMetadata } from './provider-registry';
 import { getRoutingStrategy } from './strategies';
 import { fccManager } from './fcc-manager';
+import { modelRotationManager, FALLBACK_CHAIN } from '../model-rotation-manager';
 import { credentialStore } from '../auth/credential-store';
 import type { ProviderCandidate, RoutingContext } from './strategies/types';
 
@@ -186,8 +187,8 @@ export class OmniRouteRouter {
           continue;
         }
       } else {
-        // API key providers require an API key unless they offer an open free tier (like OpenRouter or OpenKilo free models) or activeProvider
-        if (!isConfigured && provider.id !== 'openrouter' && provider.id !== 'openkilo' && !provider.isFreeTierAvailable && provider.id !== settings.activeProvider) {
+        // API key providers require an API key unless they offer an open free tier (like OpenRouter, OpenKilo, or FCC free models) or activeProvider
+        if (!isConfigured && provider.id !== 'openrouter' && provider.id !== 'openkilo' && provider.id !== 'fcc' && provider.id !== 'fcc-proxy' && !provider.isFreeTierAvailable && provider.id !== settings.activeProvider) {
           continue;
         }
       }

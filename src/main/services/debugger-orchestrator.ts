@@ -2,13 +2,35 @@ import { Worker } from 'node:worker_threads';
 import fsPromises from 'node:fs/promises';
 import path from 'node:path';
 import { BrowserWindow, ipcMain } from 'electron';
-import { runDynamicAnalysis, mapDynamicResultToFindings } from './debugger-engines/dynamic-engine';
+import { runDynamicAnalysis, mapDynamicResultToFindings, profileFileDatabaseQueries } from './debugger-engines/dynamic-engine';
 import { generateRoleBasedReport } from './debugger-engines/ai-analyst';
 import { debuggerModelRouter } from './debugger-engines/debugger-model-router';
 import type { ArchProjectReport } from './debugger-engines/arch-engine';
+import { getOrScanWorkspaceProfile } from './context-engine/workspace-scanner';
+import type { WorkspaceProfile } from './context-engine/types';
 import { resolveWorkerRuntimeFile } from './debugger-engines/runtime-paths';
 import type { AnalysisResult, AnalysisRole, AnalysisSeverity } from '../windows/debugger-window';
 import type { VerifiedModelConfig } from './verified-models';
+import { onCorrectionAdded, computeWorkspaceHash, type CorrectionEvent, getCorrections } from './context-engine/correction-memory';
+
+const liveDebuggerCorrections = new Map<string, Set<string>>();
+
+export function getDebuggerLiveCorrections(workspacePathOrHash: string): string[] {
+  const hash = computeWorkspaceHash(workspacePathOrHash);
+  return Array.from(liveDebuggerCorrections.get(hash) || []);
+}
+
+// Global Correction Hook: Live sync across all surfaces
+onCorrectionAdded((event: CorrectionEvent) => {
+  const { workspaceHash, rule, surface } = event;
+  console.log(`[DebuggerOrchestrator] Live learned rule registered (${surface}): "${rule}"`);
+  let set = liveDebuggerCorrections.get(workspaceHash);
+  if (!set) {
+    set = new Set<string>();
+    liveDebuggerCorrections.set(workspaceHash, set);
+  }
+  set.add(rule);
+});
 
 export type DebuggerEngineName = 'static' | 'dynamic' | 'arch';
 
@@ -226,6 +248,9 @@ export async function runFullAnalysis(
   console.log(`[DEBUGGER] Architectural analysis using model: ${archModel.modelId} (${archModel.providerId})`);
   console.log(`[DEBUGGER] AI reasoning using model: ${aiModel.modelId} (${aiModel.providerId})`);
 
+  // Context Engine Integration: retrieve workspace profile for architectural drift & DB profiling
+  const profile: WorkspaceProfile | null = await getOrScanWorkspaceProfile(projectRoot).catch(() => null);
+
   const staticStep: Promise<WorkerOutcome<AnalysisResult[]> | WorkerFailure> = targetFile
     ? runWorkerJob<AnalysisResult[]>(
         'static-worker.js',
@@ -237,7 +262,9 @@ export async function runFullAnalysis(
   const dynamicStep: Promise<AnalysisResult[]> = targetFile
     ? (async () => {
         const runtime = await runDynamicAnalysis(targetFile);
-        return mapDynamicResultToFindings(runtime, targetFile);
+        const runtimeFindings = mapDynamicResultToFindings(runtime, targetFile);
+        const dbFindings = await profileFileDatabaseQueries(targetFile, { profile, projectRoot });
+        return [...runtimeFindings, ...dbFindings];
       })()
     : Promise.resolve([]);
 
@@ -246,7 +273,7 @@ export async function runFullAnalysis(
     dynamicStep,
     runWorkerJob<ArchProjectReport>(
       'arch-worker.js',
-      { kind: 'arch', projectRoot, model: archModel.modelId, provider: archModel.providerId },
+      { kind: 'arch', projectRoot, profile, model: archModel.modelId, provider: archModel.providerId },
       ARCH_ENGINE_BUDGET_MS
     )
   ]);
@@ -288,6 +315,47 @@ export async function runFullAnalysis(
           : archOutcome.value.error;
     engineErrors.push({ engine: 'arch', error: errorText });
     results.push(failureFinding('arch', errorText));
+  }
+
+  // Real-time learned rules enforcement for targetFile
+  if (targetFile) {
+    try {
+      const fileContent = await fsPromises.readFile(targetFile, 'utf8');
+      const hash = computeWorkspaceHash(projectRoot);
+      const persistentCorrections = await getCorrections(projectRoot).catch(() => []);
+      const liveRules = Array.from(liveDebuggerCorrections.get(hash) || []);
+      const allRules = Array.from(new Set([...persistentCorrections, ...liveRules]));
+
+      for (const rule of allRules) {
+        const lowerRule = rule.toLowerCase();
+        if (
+          lowerRule.includes('never use `var`') ||
+          lowerRule.includes('never use var') ||
+          (lowerRule.includes('var') && (lowerRule.includes('const') || lowerRule.includes('let')))
+        ) {
+          const lines = fileContent.split('\n');
+          for (let i = 0; i < lines.length; i++) {
+            if (/\bvar\s+[a-zA-Z_$]/.test(lines[i])) {
+              const relPath = path.relative(projectRoot, targetFile).replace(/\\/g, '/');
+              results.push({
+                id: `arch-correction-violation:${targetFile}:${i + 1}`,
+                severity: 'critical',
+                engine: 'arch',
+                role: 'dev',
+                message: `[CRITICAL] Workspace Preference Violation in '${relPath}': Forbidden 'var' keyword detected. Rule: "${rule}"`,
+                filePath: targetFile,
+                line: i + 1,
+                ruleId: 'arch-correction-violation',
+                suggestedFix: "Replace 'var' with 'const' or 'let' as required by workspace rules.",
+                timestamp: Date.now()
+              });
+            }
+          }
+        }
+      }
+    } catch {
+      // non-blocking
+    }
   }
 
   const engineResults = dedupeAndSort(results);

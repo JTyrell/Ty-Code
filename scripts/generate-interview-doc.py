@@ -335,6 +335,88 @@ def create_interview_doc(output_path):
     )
 
     add_qa(
+        "How do you minimize Time-to-First-Token (TTFT) and optimize end-to-end streaming latency?",
+        "To deliver instantaneous visual feedback without compromising throughput, Ty-Code optimizes latency across three critical tiers:\n\n"
+        "1. Main Process Outbound Coalescing with Immediate Chunk #1 Flush:\n"
+        "Tokens stream from AI providers through the Main process. Instead of blasting IPC messages per token, tokens coalesce into 16–24ms batches. "
+        "Crucially, Chunk #1 bypasses batching and flushes synchronously across IPC in 0ms. This ensures Time-to-First-Token (TTFT) is minimal "
+        "while eliminating IPC serialization overhead during sustained 300+ token/s bursts.\n\n"
+        "2. Per-Host HTTPS Connection Pooling (keepAlive: true):\n"
+        "ProviderGateway maintains persistent HTTPS agents and Undici dispatchers per provider host with keepAlive: true, 15-second keepalive timeouts, "
+        "and socket reuse. Sequential prompts reuse active TLS sessions and TCP connections, saving 80 to 250ms of handshake latency per request.\n\n"
+        "3. CSS Layout Containment & Virtualization:\n"
+        "Message rows are virtualized via @tanstack/react-virtual and isolated with React.memo. Each message container applies content-visibility: auto "
+        "and contain-intrinsic-size: auto 130px. Off-screen conversation turns completely bypass layout and paint calculations until scrolled into view.\n\n"
+        "4. Deferred AST Syntax Highlighting:\n"
+        "During live streaming, messages render raw text through ScrambleText. Heavy markdown AST construction and highlight.js tokenization run only once "
+        "upon receiving the [DONE] stream termination token.",
+        "Latency Optimization & Network Architecture"
+    )
+
+    add_qa(
+        "Explain the Smart Sticky-Scroll Auto-Follow algorithm and how you prevented layout jumps and per-pixel re-renders.",
+        "Implementing auto-scrolling during high-speed AI streaming is fraught with edge cases: programmatic smooth scrolling queues animations, "
+        "deferred markdown highlighting shifts container heights, and reading scroll position in React state causes catastrophic per-pixel re-renders.\n\n"
+        "We designed a multi-layer Smart Sticky-Scroll architecture in ChatMessageList:\n\n"
+        "1. Ref-Based Pin Detection (Zero Re-render Cost):\n"
+        "We track pinned state using const pinnedToBottom = useRef(true). A { passive: true } scroll listener throttled by requestAnimationFrame computes "
+        "distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight. The user is considered pinned when distanceFromBottom < 64px. "
+        "A single piece of React state (detachedFromBottom) flips ONLY when the boolean changes value, guaranteeing zero React re-renders while scrolling.\n\n"
+        "2. Auto-Follow on Buffer Flush (Behavior: 'auto'):\n"
+        "After each 24ms double-buffered flush commits text to the DOM, if pinnedToBottom.current is true, el.scrollTop = el.scrollHeight executes using behavior 'auto'. "
+        "Programmatic smooth scrolling is strictly prohibited during streaming because queued browser animations cause visual jitter and artificial lag.\n\n"
+        "3. ResizeObserver Height Protection:\n"
+        "A ResizeObserver monitors the inner virtual container. When post-stream events (syntax highlighting on [DONE], code block expansion, image loading) "
+        "increase document height while pinned, the observer re-pins scrollTop immediately. If the user is detached (reading previous messages), the observer "
+        "exits immediately, preventing jarring layout jumps.\n\n"
+        "4. Floating 'Jump to latest' Pill & Re-Pin Events:\n"
+        "When detachedFromBottom is true, a floating pill with an ArrowDown icon and backdrop blur appears bottom-center. Clicking the pill or submitting a "
+        "new message forces pinnedToBottom.current = true and triggers a smooth scroll to the bottom. Scrolling manually back within 64px automatically hides the pill.",
+        "UI Engineering & DOM Synchronization"
+    )
+
+    add_qa(
+        "How does the Matrix Decode glyph-scramble animation work, and how did you guarantee zero latency?",
+        "To provide a tactile visual aesthetic during token streaming, we built a 'Matrix Decode' glyph-scramble animation (ScrambleText).\n\n"
+        "1. Provably Zero Latency:\n"
+        "The animation never gates, buffers, delays, or re-requests tokens. It is strictly a decoupled presentation transform operating on text already "
+        "committed to the render buffer. Tokens are painted into memory immediately.\n\n"
+        "2. Per-Character Dynamic Lock Formula:\n"
+        "When character index i first appears in the text buffer, it is assigned a lock timestamp:\n"
+        "lockAt = now + 90ms + (i % 5) * 12ms\n"
+        "On each animation frame, characters where lockAt <= now render as their real glyph. Unlocked characters render a pseudo-random glyph from a Katakana "
+        "and hex charset ('アイウエオカキクケコサシスセソ0123456789ABCDEF#$%&'). Whitespace and newlines are never scrambled to prevent word-wrap shifts.\n\n"
+        "3. Bounded O(1) Trailing Window:\n"
+        "To prevent CPU degradation on long responses, scrambling is strictly bounded to the trailing 200 characters (SCRAMBLE_WINDOW = 200). "
+        "All older characters render permanently locked with zero per-frame CPU computation.\n\n"
+        "4. Lifecycle & Accessibility Guards:\n"
+        "• Single Self-Cancelling rAF Loop: Starts only when unlocked characters exist and auto-terminates when all characters lock or upon unmount.\n"
+        "• Tab Visibility Guard: Automatically pauses the rAF loop when document.hidden is true.\n"
+        "• Reduced Motion: Respects prefers-reduced-motion: reduce by immediately rendering locked text.\n"
+        "• Accessibility: Uses aria-label={text} and aria-live='off' so screen readers receive clean canonical prose without scrambled characters.",
+        "Animation Performance & Accessibility"
+    )
+
+    add_qa(
+        "How does Ty-Code enforce enterprise typography and code-safe UK English punctuation?",
+        "Enterprise communication demands consistent typography, rich markdown presentations, and professional punctuation style without corrupting source code.\n\n"
+        "1. Zustand Typography System (useTypographyStore):\n"
+        "Exposes persistent settings for chatFontFamily ('sans', 'serif', 'mono', 'plex'), chatFontSize (12–18px, default 14), matrixDecodeEnabled, "
+        "and ukPunctuationEnabled. Subscribed via atomic selectors to eliminate unnecessary component re-renders.\n\n"
+        "2. Rich Markdown Enhancements:\n"
+        "Rendered with custom components for alternating zebra-striped tables with sticky headers, task lists with styled interactive checkboxes, "
+        "KaTeX mathematical expressions, and Mermaid architectural diagrams.\n\n"
+        "3. System Prompt UK English Rules:\n"
+        "Injected across all provider prompts: standard UK spellings (colour, organise, analyse, favour), eliminating em dashes in prose, "
+        "and favoring short, direct clauses with commas, semicolons, or colons.\n\n"
+        "4. Code-Safe Punctuation Normaliser (normalisePunctuation):\n"
+        "Post-processing AI output requires extreme caution so that source code is never mutated. The normaliser parses markdown into fenced code blocks "
+        "(```...```), inline code spans (`...`), HTML tags, and prose segments. Em dashes (—) and spaced en dashes ( – ) are replaced with commas or hyphens "
+        "strictly in prose segments. Fenced code, CLI flags (--option), language constructs (x--), and numeric ranges (1999–2005) remain 100% immutable.",
+        "Typography & Natural Language Normalization"
+    )
+
+    add_qa(
         "Explain Ty-Code's local-first security sandbox and permission tiers.",
         "To allow agents to work autonomously without risking system damage, Ty-Code uses three security layers:\n\n"
         "1. Terminal Execution Policy:\n"
@@ -504,6 +586,20 @@ def create_interview_doc(output_path):
         "Technical Challenge and Ground Truth"
     )
 
+    add_qa(
+        "Why is programmatic smooth scrolling dangerous during high-speed AI streaming?",
+        "\"A critical engineering gotcha we resolved was smooth scrolling animation queueing.\n\n"
+        "When an AI model streams at 150 to 300+ tokens per second, token buffer commits occur every 20 to 24ms. "
+        "If the scroll container uses CSS 'scroll-behavior: smooth' or if code calls el.scrollTo({ behavior: 'smooth' }), "
+        "the browser's layout engine attempts to interpolate between dozens of rapid height updates. "
+        "These smooth scroll animations queue up in the compositor, creating severe frame drops, visual rubber-banding, "
+        "and detached scroll states where the viewport lags far behind the live token stream.\n\n"
+        "We solved this by strictly enforcing behavior: 'auto' (instantaneous assignment) during all streaming flushes, "
+        "setting .chat-feed { scroll-behavior: auto; }, and reserving smooth scrolling solely for discrete, user-initiated actions "
+        "(such as clicking the 'Jump to latest' pill or submitting a new message).\"",
+        "DOM Animation Queueing & Compositor Performance"
+    )
+
     # -------------------------------------------------------------
     # SECTION 7: INTERVIEW CHEAT SHEET
     # -------------------------------------------------------------
@@ -511,10 +607,11 @@ def create_interview_doc(output_path):
     
     cheat_items = [
         ("Architecture Pattern", "Multi-Process Electron Architecture (Main, Preload, Renderer) with strict Process Isolation and contextBridge."),
-        ("Design Patterns Used", "Adapter Pattern (ProviderGateway), ReAct Loop (Agent Engine), Observer and Disposable Pattern (IPC Streaming), Selector Subscriptions (Zustand)."),
-        ("Key Protocols", "Server-Sent Events (SSE), JSON-RPC 2.0 (Language Server Protocol), ANSI escape sequences (XTerm.js and node-pty), Electron IPC."),
+        ("Design Patterns Used", "Adapter Pattern (ProviderGateway), ReAct Loop (Agent Engine), Observer and Disposable Pattern (IPC Streaming), Atomic Selector Subscriptions (Zustand), Self-Cancelling Animation Loop (ScrambleText)."),
+        ("Key Protocols", "Server-Sent Events (SSE), JSON-RPC 2.0 (Language Server Protocol), ANSI escape sequences (XTerm.js and node-pty), Electron IPC, HTTPS keepAlive connection pooling."),
         ("Security Standards", "OS safeStorage (DPAPI, Keychain, libsecret), Three-Tier Terminal Sandbox (Always Ask, Restricted, Always Proceed), Workspace Path Traversal Containment."),
-        ("Performance Optimizations", "Double-buffered token streaming with 24ms sync, Monaco Diff review gating, token auto-compaction at 95% threshold, atomic selector subscriptions.")
+        ("Performance Optimizations", "Main Process token coalescing (16–24ms) with immediate Chunk #1 flush (0ms TTFT); Double-buffered 24ms rAF renderer flush; Smart sticky-scroll auto-follow with <64px pin detection and zero-per-pixel re-renders; ResizeObserver height-jump isolation; Bounded 200-char Matrix Decode glyph scramble; CSS content-visibility: auto layout virtualization; Per-host HTTPS keepAlive socket reuse; Token auto-compaction at 95% threshold; Monaco Diff review gating."),
+        ("Typography & Text Processing", "Modular Zustand typography system (System Sans, Georgia Serif, JetBrains Mono, IBM Plex Mono); Code-safe UK English punctuation AST normaliser protecting fenced code blocks, inline spans, and CLI syntax.")
     ]
 
     for term, definition in cheat_items:
@@ -532,6 +629,25 @@ def create_interview_doc(output_path):
     doc.save(output_path)
     print(f"Successfully generated clean Word document: {output_path}")
 
+def convert_docx_to_pdf(docx_path, pdf_path):
+    try:
+        import win32com.client
+        word = win32com.client.Dispatch("Word.Application")
+        word.Visible = False
+        abs_docx = os.path.abspath(docx_path)
+        abs_pdf = os.path.abspath(pdf_path)
+        doc = word.Documents.Open(abs_docx)
+        doc.SaveAs(abs_pdf, FileFormat=17) # 17 = wdFormatPDF
+        doc.Close()
+        word.Quit()
+        print(f"Successfully generated clean PDF document: {pdf_path}")
+        return True
+    except Exception as e:
+        print(f"Word automation PDF generation failed: {e}")
+        return False
+
 if __name__ == "__main__":
     out = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else "Ty-Code_Architecture_and_Interview_Guide.docx")
     create_interview_doc(out)
+    pdf_out = os.path.splitext(out)[0] + ".pdf"
+    convert_docx_to_pdf(out, pdf_out)

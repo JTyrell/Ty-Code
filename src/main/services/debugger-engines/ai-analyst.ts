@@ -19,10 +19,12 @@
  *   compliance cannot crash the pipeline.
  */
 
+import path from 'node:path';
 import { ProviderGateway, type ChatCompletionMessage } from '../../providers/provider-gateway';
 import { settingsManager } from '../settings-manager';
 import type { AnalysisResult, AnalysisRole } from '../../windows/debugger-window';
 import type { ArchProjectReport } from './arch-engine';
+import { getCorrectionEntries } from '../context-engine/correction-memory';
 
 export interface RoleReportIssue {
   title: string;
@@ -73,9 +75,9 @@ export interface RoleReportResult {
 }
 
 export const ROLE_PROMPTS: Record<AnalysisRole, string> = {
-  dev: 'You are a Staff Engineer. Analyze these static and dynamic errors. Provide the exact line number, the root cause, and a 3-line code fix. Focus on memory leaks, race conditions, and security flaws.',
+  dev: 'You are a Staff Engineer. Analyze these static, dynamic, database profiling, and architectural drift findings. Explain why architectural drift and database query bottlenecks matter based on the specific stack. Provide the exact line number, the root cause, and a 3-line code fix. Focus on architectural violations, index optimizations, memory leaks, race conditions, and security flaws.',
   qa: 'You are a Lead QA. Analyze the process flow and dynamic execution traces. Identify missing edge cases, unhandled user inputs, and test coverage gaps. Suggest 3 specific test cases to write.',
-  pm: 'You are a Technical Product Manager. Ignore syntax errors. Analyze the architectural graph and technical debt score. Explain the business risk, estimated refactoring time, and if this blocks the current sprint. Use non-technical language.'
+  pm: 'You are a Technical Product Manager. Ignore syntax errors. Analyze the architectural graph, technical debt score, and architectural drift findings. Explain why the drift matters based on the specific stack, the business risk, estimated refactoring time, and if this blocks the current sprint. Use non-technical language.'
 };
 
 const MAX_FINDINGS_IN_CONTEXT = 80;
@@ -168,7 +170,20 @@ export function summarizeForContext(
         .filter((node) => node.isGodFile)
         .sort((left, right) => right.loc - left.loc)
         .slice(0, 10)
-        .map((node) => ({ id: node.id, loc: node.loc, importsout: node.importsOut }))
+        .map((node) => ({ id: node.id, loc: node.loc, importsout: node.importsOut })),
+      archDrifts: (arch.archDrifts || []).map((drift) => ({
+        rule: drift.ruleId,
+        file: drift.filePath,
+        message: drift.message
+      })),
+      profile: arch.profile
+        ? {
+            primaryLanguage: arch.profile.primaryLanguage,
+            frameworks: arch.profile.frameworks,
+            databases: arch.profile.databases,
+            architecture: arch.profile.architecture
+          }
+        : null
     };
   }
 
@@ -190,15 +205,21 @@ function clip(text: string, max: number): string {
   return text.length <= max ? text : `${text.slice(0, Math.max(0, max - 1))}…`;
 }
 
-function buildRoleSchemaPrompt(role: AnalysisRole): string {
+export function buildRoleSchemaPrompt(role: AnalysisRole, forbiddenRules: string[] = []): string {
   const common =
     'OUTPUT FORMAT (mandatory, no exceptions): respond with ONLY a JSON array — no markdown fences, no commentary before or after. ' +
     'Every element must be an object with string values (numbers where stated), matching one of these shapes EXACTLY as listed in "items". ' +
     'Write all human-facing text in the language of the target audience for this role.';
 
+  const forbiddenPrompt =
+    forbiddenRules.length > 0
+      ? `The user has explicitly forbidden the following patterns in this workspace:\n${forbiddenRules.map((rule) => `- ${rule}`).join('\n')}\nFlag any violations as CRITICAL.`
+      : '';
+
   if (role === 'dev') {
     return [
       ROLE_PROMPTS.dev,
+      ...(forbiddenPrompt ? [forbiddenPrompt] : []),
       common,
       'SCHEMA: items is an array of { "title": string, "filePath": string, "line": number, "rootCause": string, "fix": string }. ' +
         '"fix" is the code fix in at most 3 lines joined with \\n. "filePath" and "line" must come from the findings (never invent file paths). ' +
@@ -208,6 +229,7 @@ function buildRoleSchemaPrompt(role: AnalysisRole): string {
   if (role === 'qa') {
     return [
       ROLE_PROMPTS.qa,
+      ...(forbiddenPrompt ? [forbiddenPrompt] : []),
       common,
       'SCHEMA: items is an array of { "featureArea": string, "risk": string, "testCases": string[] }. ' +
         '"testCases" contains exactly 3 concrete test case descriptions. Derive areas/risks from the real findings, do not fabricate files. ' +
@@ -216,6 +238,7 @@ function buildRoleSchemaPrompt(role: AnalysisRole): string {
   }
   return [
     ROLE_PROMPTS.pm,
+    ...(forbiddenPrompt ? [forbiddenPrompt] : []),
     common,
     'SCHEMA: items is an array of { "headline": string, "businessImpact": string, "refactoringTime": string, "blocksSprint": boolean, "recommendation": string }. ' +
       '"refactoringTime" is an estimate in business days or a descriptive range (non-technical language). "blocksSprint" answers whether this debt endangers the current sprint. ' +
@@ -273,10 +296,16 @@ function issueToResult(role: AnalysisRole, index: number, entry: unknown): Analy
   const base = aiResultBase(role);
 
   if (title || rootCause) {
+    const isCritical =
+      title.includes('[CRITICAL]') ||
+      title.toLowerCase().includes('forbidden') ||
+      rootCause.toLowerCase().includes('forbidden') ||
+      rootCause.toLowerCase().includes('critical violation');
+
     return {
       ...base,
       id: `ai:${role}:issue:${index}`,
-      severity: 'info',
+      severity: isCritical ? 'critical' : 'info',
       message: `${title}${rootCause ? ` — ${rootCause}` : ''}`.slice(0, 400),
       filePath,
       line,
@@ -420,7 +449,17 @@ export async function generateRoleBasedReport(
     : await resolveProviderModel();
 
   try {
-    const systemPrompt = buildRoleSchemaPrompt(role);
+    const workspaceRoot =
+      options?.arch?.projectRoot ?? (options?.targetFile ? path.dirname(options.targetFile) : process.cwd());
+    let forbiddenRules: string[] = [];
+    try {
+      const entries = await getCorrectionEntries(workspaceRoot);
+      forbiddenRules = entries.map((e) => e.rule);
+    } catch {
+      forbiddenRules = [];
+    }
+
+    const systemPrompt = buildRoleSchemaPrompt(role, forbiddenRules);
     const contextPayload = summarizeForContext(rawResults, {
       targetFile: options?.targetFile,
       arch: options?.arch

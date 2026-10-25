@@ -72,11 +72,11 @@ export function segmentMarkdown(markdown: string): MarkdownSegment[] {
  * - Restores protected numeric range en dashes
  * - Cleans up spacing artifacts and collapses double spaces (preserving newlines)
  */
-export function transformProse(prose: string): string {
-  if (!prose) return '';
+export function transformProseLine(line: string): string {
+  if (!line) return '';
 
   // 1. Replace ellipsis '…' with '...'
-  let res = prose.replace(/…/g, '...');
+  let res = line.replace(/…/g, '...');
 
   // 2. Protect unspaced en dashes inside numeric ranges (e.g. 1999–2005, 10–20, 2024–2026)
   res = res.replace(/(\d+)–(\d+)/g, (_, start, end) => `${start}@@TYCODE_NUM_RANGE@@${end}`);
@@ -104,6 +104,22 @@ export function transformProse(prose: string): string {
   res = res.replace(/[^\S\r\n]{2,}/g, ' ');
 
   return res;
+}
+
+export function transformProse(prose: string): string {
+  if (!prose) return '';
+
+  // Process line by line: skip any line beginning with '|' (table rows) byte-for-byte
+  const lines = prose.split('\n');
+  const transformed = lines.map((line) => {
+    // Skip table rows beginning with '|' (or optional leading whitespace then '|')
+    if (/^\s*\|/.test(line)) {
+      return line;
+    }
+    return transformProseLine(line);
+  });
+
+  return transformed.join('\n');
 }
 
 /**
