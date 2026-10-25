@@ -1,9 +1,9 @@
 {
   "phase": "RealConnect 3",
   "title": "Inline Provider Setup Card + Live Connectivity Proofs",
-  "timestamp": "2026-10-25T06:01:40.620Z",
-  "epoch": 1792908100,
-  "gitCommit": "d6369116c4c514589d8e76a6cf0bf5dca14c3308",
+  "timestamp": "2026-10-25T10:48:27.024Z",
+  "epoch": 1792925307,
+  "gitCommit": "711a6ac6d36823b8c20606e0c01d53b382c41212",
   "command": "npm run test:live",
   "status": "VERIFIED_PASS",
   "liveProofs": {
@@ -46,7 +46,7 @@
     "test5_offlineBehavior": {
       "status": "PASS",
       "taxonomyCode": "NETWORK_BLOCKED",
-      "elapsedMs": 18,
+      "elapsedMs": 20,
       "assertion": "Taxonomy code NETWORK_BLOCKED/TIMEOUT within 10s without hang",
       "passed": true
     }

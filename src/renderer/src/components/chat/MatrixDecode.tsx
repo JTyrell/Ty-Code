@@ -38,7 +38,14 @@ export const MatrixDecode: React.FC<MatrixDecodeProps> = ({
     return undefined;
   }, [mode, onSweepEnd]);
 
-  return <ScrambleText text={text} enabled={isEnabled} streaming={isStreaming} />;
+  return (
+    <ScrambleText
+      text={text}
+      enabled={isEnabled}
+      streaming={isStreaming}
+      onSettled={onSweepEnd}
+    />
+  );
 };
 
 export default MatrixDecode;

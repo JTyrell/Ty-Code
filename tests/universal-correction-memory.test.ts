@@ -49,7 +49,7 @@ describe('Universal Correction Memory Enforcement (The Learning Loop)', () => {
 
     const entry = await saveCorrection(
       testWorkspacePath,
-      'Never use var, use const or let',
+      'NEVER use `var`, use `const` or `let`.',
       'style',
       'chat'
     );
@@ -115,8 +115,8 @@ describe('Universal Correction Memory Enforcement (The Learning Loop)', () => {
   });
 
   it('Step 3: Debugger Live Sync instantly detects and flags "Never use var" violations', async () => {
-    // 1. Emit correction: "Never use var" from chat
-    await saveCorrection(testWorkspacePath, 'Never use var, use const or let', 'style', 'chat');
+    // 1. Emit correction: "NEVER use `var`, use `const` or `let`." from chat
+    await saveCorrection(testWorkspacePath, 'NEVER use `var`, use `const` or `let`.', 'style', 'chat');
 
     // Verify debugger registered the rule live
     const debuggerRules = getDebuggerLiveCorrections(testWorkspacePath);

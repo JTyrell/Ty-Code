@@ -93,10 +93,15 @@ export function formatRule(rawRule: string, category: CorrectionCategory): strin
   const trimmed = rawRule.trim();
   if (!trimmed) return '';
 
+  // If already formatted with ALWAYS/NEVER/MUST, keep as is
+  if (/^(ALWAYS|NEVER|MUST|DO NOT|PREFER)\b/i.test(trimmed)) {
+    return trimmed;
+  }
+
   const lower = trimmed.toLowerCase();
 
   // Canonical style & architecture constraints
-  if (category === 'style' && lower.includes('var') && (lower.includes('const') || lower.includes('let') || lower.includes('never use var') || lower.startsWith('no var') || lower === 'never use var')) {
+  if (category === 'style' && lower.includes('var') && (lower.includes('const') || lower.includes('let'))) {
     return 'NEVER use `var`, use `const` or `let`.';
   }
 
@@ -106,11 +111,6 @@ export function formatRule(rawRule: string, category: CorrectionCategory): strin
 
   if (lower.includes('repositories') && (lower.includes('controller') || lower.includes('direct'))) {
     return 'Database queries must go through the `src/repositories` layer, not directly in controllers.';
-  }
-
-  // If already formatted with ALWAYS/NEVER/MUST, keep as is
-  if (/^(ALWAYS|NEVER|MUST|DO NOT|PREFER)\b/i.test(trimmed)) {
-    return trimmed;
   }
 
   // Pattern: "don't use X, use Y" or "no X, use Y"

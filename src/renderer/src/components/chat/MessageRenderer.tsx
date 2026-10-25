@@ -82,8 +82,28 @@ const MessageRendererImpl: React.FC<MessageRendererProps> = ({ content, isStream
   const [renderedHtml, setRenderedHtml] = useState<string | null>(null);
   const currentReqIdRef = useRef<string>('');
 
+  // Markdown Swap Gating: keep plain scrambled view mounted until decode frontier settles
+  const [isSettled, setIsSettled] = useState<boolean>(!isStreaming);
+
   const matrixDecodeEnabled = useTypographyStore((s) => s.matrixDecodeEnabled);
   const ukPunctuationEnabled = useTypographyStore((s) => s.ukPunctuationEnabled);
+
+  useEffect(() => {
+    if (isStreaming) {
+      setIsSettled(false);
+    }
+  }, [isStreaming]);
+
+  // If matrix decode is disabled in settings, don't gate markdown swap when stream ends
+  useEffect(() => {
+    if (!matrixDecodeEnabled && !isStreaming) {
+      setIsSettled(true);
+    }
+  }, [matrixDecodeEnabled, isStreaming]);
+
+  const handleSettled = useCallback(() => {
+    setIsSettled(true);
+  }, []);
 
   const normalizedContent = useMemo(
     () => normalisePunctuation(content, { enabled: ukPunctuationEnabled }),
@@ -265,8 +285,10 @@ const MessageRendererImpl: React.FC<MessageRendererProps> = ({ content, isStream
 
   const displayHtml = renderedHtml || fallbackHtml;
 
-  // STREAM: plain text with ScrambleText (zero markdown AST during streaming)
-  if (isStreaming) {
+  // STREAM / DECODE SWEEP: plain text with ScrambleText (zero markdown AST during streaming or settle sweep)
+  const showScrambleView = isStreaming || (!isSettled && matrixDecodeEnabled);
+
+  if (showScrambleView) {
     return (
       <div
         className="message-content-streaming contain-content"
@@ -285,18 +307,7 @@ const MessageRendererImpl: React.FC<MessageRendererProps> = ({ content, isStream
           text={normalizedContent}
           enabled={matrixDecodeEnabled}
           streaming={isStreaming}
-        />
-        <span
-          className="streaming-cursor"
-          style={{
-            display: 'inline-block',
-            width: '6px',
-            height: '13px',
-            marginLeft: '2px',
-            verticalAlign: 'text-bottom',
-            backgroundColor: 'var(--accent-primary, #60a5fa)',
-            opacity: 0.8
-          }}
+          onSettled={handleSettled}
         />
       </div>
     );
