@@ -344,7 +344,7 @@ export class OptimizationPipeline {
     const freeProviderDefs = [
       { id: 'openrouter', name: 'OpenRouter Free Tier', dailyBudget: 200_000, defaultModel: 'dots-studio/dots-3-note-preview:free' },
       { id: 'google-ai-studio', name: 'Google AI Studio Free', dailyBudget: 1_000_000, defaultModel: 'gemini-2.5-flash' },
-      { id: 'groq', name: 'Groq High-Speed Free', dailyBudget: 500_000, defaultModel: 'llama-3.3-70b-versatile' },
+      { id: 'groq', name: 'Groq High-Speed Free', dailyBudget: 500_000, defaultModel: 'openai/gpt-oss-120b' },
       { id: 'huggingchat', name: 'HuggingChat Free', dailyBudget: 150_000, defaultModel: 'meta-llama/Llama-3.3-70B-Instruct' },
       { id: 'openkilo', name: 'OpenKilo Zero-Key Free', dailyBudget: 300_000, defaultModel: 'deepseek/deepseek-chat' },
       { id: 'copilot', name: 'GitHub Copilot (Subscription)', dailyBudget: 2_000_000, defaultModel: 'gpt-4o' },

@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import type { FreeProvider } from '../../../../shared/types/free-providers';
 import type { StoredKeySummary } from '../../../../shared/types/byok';
+import { HoverMarquee } from '../ui/HoverMarquee';
 import './ProviderCards.css';
 
 export interface ProviderCardsProps {
@@ -195,9 +196,11 @@ export const ProviderCards: React.FC<ProviderCardsProps> = ({
                       {getProviderIcon(provider.id, 20)}
                     </div>
                     <div className="byok-card-meta">
-                      <h4 className="byok-card-title">
-                        {provider.name}
-                      </h4>
+                      <HoverMarquee
+                        as="h4"
+                        className="byok-card-title"
+                        text={provider.name}
+                      />
                       <span className="byok-card-subtitle">
                         {isZeroConfig ? 'Zero Config (No Key)' : isConfigured ? 'Custom Key Active' : 'Key Optional'}
                       </span>

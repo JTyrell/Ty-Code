@@ -10,7 +10,12 @@ export const EditorPreferencesSchema = z.object({
   autoSave: z.enum(['off', 'afterDelay', 'onFocusChange']).optional(),
   autoSaveDelay: z.number().int().min(100).max(60_000).optional(),
   wordWrap: z.enum(['off', 'on', 'wordWrapColumn', 'bounded']).optional(),
-  formatOnSave: z.boolean().optional()
+  formatOnSave: z.boolean().optional(),
+  // Chat typography & motion (Typography & Motion settings section)
+  chatFontFamily: z.enum(['sans', 'serif', 'mono', 'plex']).optional(),
+  chatFontSize: z.number().int().min(12).max(18).optional(),
+  matrixDecodeEnabled: z.boolean().optional(),
+  ukPunctuationEnabled: z.boolean().optional()
 }).strict();
 
 const TerminalProfileSchema = z.object({

@@ -26,6 +26,7 @@ import { toast } from '../../state/toast-store';
 import { useSettingsStore, TY_CODE_FREE_PROVIDER } from '../../state/settings-store';
 import { ModelCatalogVerifierPanel } from './ModelCatalogVerifierPanel';
 import type { VerifiedModelCatalogSummary } from '../../../../preload/types';
+import { HoverMarquee } from '../ui/HoverMarquee';
 import './ProvidersModelsTab.css';
 
 type CatalogModel = VerifiedModelCatalogSummary['models'][number];
@@ -806,9 +807,12 @@ export function ProvidersModelsTab({ onOpenApiKeys, onOpenByok, onOpenProviderSe
 
                             <div className="pm-card-info">
                               <div className="pm-card-name-row">
-                                <span className="pm-card-title" title={model.name}>
-                                  {model.name}
-                                </span>
+                                <HoverMarquee
+                                  as="span"
+                                  className="pm-card-title"
+                                  text={model.name}
+                                  title={model.name}
+                                />
                                 {isActive && (
                                   <span className="pm-active-pill">
                                     <Check size={9} strokeWidth={3} />

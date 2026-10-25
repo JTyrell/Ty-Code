@@ -55,7 +55,7 @@ If your JetBrains IDE supports custom OpenAI endpoints in the AI Assistant or th
 2. Add a new **OpenAI** provider:
    - **Server / Base URL**: `http://127.0.0.1:52140/v1`
    - **API Key**: `<YOUR_TYCODE_BEARER_TOKEN>`
-   - **Model**: `auto` or select from the fleet catalog (e.g. `gemini-2.5-flash`, `llama-3.3-70b-versatile`).
+   - **Model**: `auto` or select from the fleet catalog (e.g. `gemini-2.5-flash`, `openai/gpt-oss-120b`).
 
 ---
 

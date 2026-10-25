@@ -22,7 +22,7 @@ Ty-Code aggregates quotas across 5 independent provider networks to ensure you n
 | **OpenKilo Gateway** | **500,000,000 tokens** | DeepSeek R1-0528, Qwen3 Coder, Llama 3.3 70B, Gemma 3 27B, Mistral Small |
 | **Local Free Proxy (FCC)** | **1,350,000,000 tokens** | 61+ provider endpoints & community mirrors |
 | **OpenRouter Free Tier** | **200,000,000 tokens** | `:free` namespace models (long-context multimodal, reasoning, and coding models) |
-| **Groq Cloud** | **50,000,000 tokens** | Ultra-fast LPU inference (`llama-3.3-70b-versatile`) |
+| **Groq Cloud** | **50,000,000 tokens** | Ultra-fast LPU inference (`openai/gpt-oss-120b`, `qwen/qwen3.6-27b`) |
 | **Local Ollama** | **Unlimited** | Fully private local models (`deepseek-coder`, `qwen2.5-coder`) |
 
 ---

@@ -100,7 +100,10 @@ export async function startLiveTestServer(): Promise<TestServerInstance> {
           const hadWriteResult = Array.isArray(messages) && messages.some(
             (m: any) => m?.role === 'user' && typeof m?.content === 'string' && /\[Tool Result for write_file\]/.test(m.content)
           );
-          if (hadWriteResult) {
+          const hadReadBack = Array.isArray(messages) && messages.some(
+            (m: any) => m?.role === 'user' && typeof m?.content === 'string' && /\[Tool Result for read_file\]/.test(m.content)
+          );
+          if (hadWriteResult && hadReadBack) {
             const summaryChunk = {
               id: `chatcmpl-${Date.now()}-final`,
               object: 'chat.completion.chunk',
@@ -117,6 +120,39 @@ export async function startLiveTestServer(): Promise<TestServerInstance> {
               ]
             };
             res.write(`data: ${JSON.stringify(summaryChunk)}\n\n`);
+            res.write('data: [DONE]\n\n');
+            res.end();
+            return;
+          }
+          if (hadWriteResult) {
+            const readBackChunk = {
+              id: `chatcmpl-${Date.now()}-read`,
+              object: 'chat.completion.chunk',
+              created: Math.floor(Date.now() / 1000),
+              model: 'llama-3.3-70b-versatile',
+              choices: [
+                {
+                  index: 0,
+                  delta: {
+                    tool_calls: [
+                      {
+                        index: 0,
+                        id: `call_read_${Date.now()}`,
+                        type: 'function',
+                        function: {
+                          name: 'read_file',
+                          arguments: JSON.stringify({
+                            filePath: 'live-check.md'
+                          })
+                        }
+                      }
+                    ]
+                  },
+                  finish_reason: null
+                }
+              ]
+            };
+            res.write(`data: ${JSON.stringify(readBackChunk)}\n\n`);
             res.write('data: [DONE]\n\n');
             res.end();
             return;

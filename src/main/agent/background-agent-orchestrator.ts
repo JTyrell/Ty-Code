@@ -229,7 +229,7 @@ export class BackgroundAgentOrchestrator {
       let activeModel = settings.activeModel || '';
       if (!activeModel || (activeProvider === 'openkilo' && !activeModel.endsWith(':free') && !activeModel.endsWith('/free'))) {
         if (activeProvider === 'openkilo') activeModel = 'kilo-auto/free';
-        else if (activeProvider === 'groq') activeModel = 'llama-3.3-70b-versatile';
+        else if (activeProvider === 'groq') activeModel = 'openai/gpt-oss-120b';
         else activeModel = 'google/gemma-4-31b-it:free';
       }
 

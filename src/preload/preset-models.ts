@@ -6,7 +6,7 @@ export const DEFAULT_PRESET_MODELS: ModelConfig[] = [
   { id: 'qwen/qwen-2.5-coder-32b-instruct', name: 'Qwen 2.5 Coder 32B (OpenRouter)', provider: 'openrouter', isFree: false, description: 'Specialized competitive coding model' },
   { id: 'dots-studio/dots-3-note-preview:free', name: 'Dots 3 Note Preview (Free OpenRouter)', provider: 'openrouter', isFree: true, description: 'Free tier general-purpose preview model' },
   { id: 'nvidia/nemotron-3.5-super-vl:free', name: 'Nemotron 3.5 Super VL (Free OpenRouter)', provider: 'openrouter', isFree: true, description: 'Free 1M-context reasoning and multimodal model' },
-  { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B (Groq)', provider: 'groq', isFree: false, description: 'Ultra-fast token streaming (~300 tokens/sec)' },
+  { id: 'openai/gpt-oss-120b', name: 'GPT OSS 120B (Groq)', provider: 'groq', isFree: true, description: 'Ultra-fast token streaming on Groq LPUs; free-tier replacement for retired llama-3.3-70b-versatile' },
   { id: 'qwen-2.5-coder-32b', name: 'Qwen 2.5 Coder 32B (Groq)', provider: 'groq', isFree: false, description: 'Blazing fast dedicated coder' },
   { id: 'deepseek-chat', name: 'DeepSeek V3 (Direct)', provider: 'deepseek', isFree: false, description: 'Direct official DeepSeek endpoint' },
   { id: 'deepseek-reasoner', name: 'DeepSeek R1 (Direct)', provider: 'deepseek', isFree: false, description: 'Direct official DeepSeek reasoning model' },

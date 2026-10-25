@@ -11,7 +11,7 @@ import type { AgentMode, ToolContext } from './tools/types';
 import { SessionStore, type SessionData } from './session-store';
 import { SecurityPolicyEngine } from '../security-policy';
 import { settingsManager, type SettingsManager } from '../settings-manager';
-import { getEccRulesPrompt, isLocalModel } from '../../agent/system-prompt';
+import { getEccRulesPrompt, isLocalModel, UK_STYLE_RULES } from '../../agent/system-prompt';
 import { moduleRegistry } from '../module-registry';
 
 export interface RunOpenCodeAgentParams {
@@ -184,7 +184,9 @@ export class OpenCodeAgentManager {
       '2. **Execution Plan (Phased):** Phase 1 (Discovery), Phase 2 (Implementation), Phase 3 (Verification).',
       '3. **Failure Risks & Mitigations:** missing context or potential sandbox blocks.',
       '4. **Checkpoint Proposal:** the specific step where you pause, update the Todo List, and wait for human review.',
-      'CRITICAL RULE: Do not begin executing the task. Output the report first and wait for explicit approval. Mutating tools (write, edit, patch, bash) remain gated by the harness until the user approves.'
+      'CRITICAL RULE: Do not begin executing the task. Output the report first and wait for explicit approval. Mutating tools (write, edit, patch, bash) remain gated by the harness until the user approves.',
+      '',
+      UK_STYLE_RULES
     );
 
     return basePrompt.join('\n');

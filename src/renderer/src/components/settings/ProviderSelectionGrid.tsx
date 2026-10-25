@@ -12,6 +12,7 @@ import {
   CircleDot
 } from 'lucide-react';
 import type { PreConfiguredProvider } from '../../../../preload/types';
+import { HoverMarquee } from '../ui/HoverMarquee';
 
 export type ConnectionStatus = 'connected' | 'disconnected' | 'error' | 'testing';
 
@@ -171,10 +172,12 @@ export const ProviderSelectionGrid: React.FC<ProviderSelectionGridProps> = ({
                 </div>
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', width: '100%' }}>
-                <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>
-                  {p.name}
-                </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', width: '100%', minWidth: 0 }}>
+                <HoverMarquee
+                  as="span"
+                  style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}
+                  text={p.name}
+                />
                 {p.setupType === 'zero_config' && (
                   <span
                     style={{

@@ -114,7 +114,7 @@ async function resolveProviderModel(): Promise<{ provider: string; model: string
   let model = settings.activeModel || '';
   if (!model || (provider === 'openkilo' && !model.endsWith(':free') && !model.endsWith('/free'))) {
     if (provider === 'openkilo') model = 'kilo-auto/free';
-    else if (provider === 'groq') model = 'llama-3.3-70b-versatile';
+    else if (provider === 'groq') model = 'openai/gpt-oss-120b';
     else model = 'google/gemma-4-31b-it:free';
   }
   return { provider, model };

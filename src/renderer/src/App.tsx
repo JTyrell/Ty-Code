@@ -23,6 +23,7 @@ import { AgentApprovalModal } from './components/AgentApprovalModal';
 import { ExtensionTracePanel } from './components/extensions/ExtensionTracePanel';
 import { transitionProfiler } from './services/perf/transition-profiler';
 import { useChatStore } from './state/chat-store';
+import { initTypographyStore, useTypographyStore } from './state/typography-store';
 import { useWorkspaceStore } from './state/workspace-store';
 import { useEditorNavigationStore } from './state/editor-navigation-store';
 import { useDebuggerStore } from './state/debugger-store';
@@ -244,6 +245,8 @@ const MainWorkbench: React.FC = () => {
     });
 
     initSettings();
+    initTypographyStore();
+    void useTypographyStore.getState().hydrate();
 
     // Auto-load current workspace tree
     (async () => {

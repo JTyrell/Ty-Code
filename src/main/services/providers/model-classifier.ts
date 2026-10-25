@@ -40,7 +40,7 @@ export const MODEL_TIERS: Record<ModelTier, TierClassification> = {
       'cohere/north-mini-code:free',
       'claude-3-5-sonnet-20241022 (via FCC)',
       'codellama/CodeLlama-34b-Instruct-hf',
-      'llama-3.3-70b-versatile (Groq)'
+      'openai/gpt-oss-120b (Groq)'
     ],
     recommendedUseCases: [
       'Function and component implementation',
@@ -57,7 +57,7 @@ export const MODEL_TIERS: Record<ModelTier, TierClassification> = {
       'kilo-auto/free',
       'openrouter/free',
       'dots-studio/dots-3-note-preview:free',
-      'llama-3.3-70b-versatile (Groq)',
+      'qwen/qwen3.6-27b (Groq)',
       'meta-llama/Llama-3.3-70B-Instruct-Turbo-Free'
     ],
     recommendedUseCases: [
@@ -72,7 +72,7 @@ export const MODEL_TIERS: Record<ModelTier, TierClassification> = {
     name: 'Tier C: Ultra-Fast & Efficient',
     description: 'Best for quick responses, simple queries, sub-second auto-completions, and low-latency edits',
     models: [
-      'llama-3.1-8b-instant (Groq)',
+      'openai/gpt-oss-20b (Groq)',
       'gemini-2.0-flash-exp',
       'liquid/lfm-2.5-2.6b:free',
       'mistralai/Mistral-7B-Instruct-v0.3'

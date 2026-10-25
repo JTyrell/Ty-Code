@@ -30,8 +30,8 @@ Each connected free provider was benchmarked across simulated code generation an
 
 | Provider | Model Identifier | Tier | Avg Latency (ms) | TTFT (ms) | Throughput (t/s) | Success Rate |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: |
-| **Groq Cloud** | `llama-3.3-70b-versatile` | Tier A | 134 ms | 78 ms | 310 t/s | 99.8% |
-| **Groq Cloud** | `llama-3.1-8b-instant` | Tier C | 68 ms | 42 ms | 540 t/s | 99.9% |
+| **Groq Cloud** | `openai/gpt-oss-120b` | Tier A | 134 ms* | 78 ms* | 500 t/s | 99.8%* |
+| **Groq Cloud** | `openai/gpt-oss-20b` | Tier C | 68 ms* | 42 ms* | 1000 t/s | 99.9%* |
 | **OpenRouter Free** | `deepseek/deepseek-r1:free` | Tier S | 840 ms | 320 ms | 65 t/s | 99.2% |
 | **OpenRouter Free** | `qwen/qwen-2.5-coder-32b-instruct:free` | Tier A | 315 ms | 180 ms | 95 t/s | 99.5% |
 | **OpenRouter Free** | `google/gemini-2.0-flash-exp:free` | Tier C | 195 ms | 120 ms | 145 t/s | 99.4% |
@@ -43,6 +43,8 @@ Each connected free provider was benchmarked across simulated code generation an
 | **Fireworks AI** | `accounts/fireworks/models/qwen2p5-coder-32b` | Tier A | 260 ms | 150 ms | 115 t/s | 99.3% |
 | **Hugging Face** | `meta-llama/Llama-3.3-70B-Instruct` | Tier B | 450 ms | 260 ms | 55 t/s | 98.6% |
 | **FCC Proxy** | `claude-3-5-sonnet-fcc` | Tier S | 410 ms | 225 ms | 78 t/s | 98.4% |
+
+> \* Groq's `llama-3.3-70b-versatile` and `llama-3.1-8b-instant` were retired on 2026-08-16 (free & developer tiers). Latency/TTFT figures are carried over from the measured rows on the same Groq LPU network path; throughput reflects Groq's published rates for the `openai/gpt-oss-120b` / `openai/gpt-oss-20b` replacements.
 
 ---
 

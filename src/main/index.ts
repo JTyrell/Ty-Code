@@ -227,6 +227,7 @@ import { registerPromptAssemblerHandlers } from './ipc/preferences-handlers';
  */
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
+  process.stdout.write('[INSTANCE] Another Ty-Code instance is already running; focusing it instead of starting a second copy.\n');
   app.quit();
 }
 
@@ -3920,10 +3921,43 @@ function createWindow(): void {
       webviewTag: true
     }
   });
-  mainWindow = window;
+   mainWindow = window;
   workspaceManager.setMainWindow(window);
   connectivityTracer.setMainWindow(window);
   bootProfiler.recordMark('window_created');
+
+  // Dev-boot diagnostics: surface renderer-side failures in the main log so a
+  // blank window is diagnosable without opening devtools.
+  if (process.env.VITE_DEV_SERVER_URL || !app.isPackaged) {
+    window.webContents.on('preload-error', (_event, preloadPath, error) => {
+      console.error(`[RENDERER] preload-error ${preloadPath}: ${error instanceof Error ? error.stack : String(error)}`);
+    });
+    window.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+      if (isMainFrame) console.error(`[RENDERER] did-fail-load code=${errorCode} desc=${errorDescription} url=${validatedURL}`);
+    });
+    window.webContents.on('render-process-gone', (_event, details) => {
+      console.error(`[RENDERER] render-process-gone reason=${details.reason} exitCode=${details.exitCode}`);
+    });
+    window.webContents.on('console-message' as never, (...args: unknown[]) => {
+      // Electron 39+: (event: {level: string, message: string, ...}); older builds: (event, level: number, message: string, line, sourceId)
+      const first = args[0] as { level?: string | number; message?: string } | undefined;
+      let level: string | number = 'info';
+      let message = '';
+      if (first && typeof first.message === 'string' && first.level !== undefined) {
+        level = first.level;
+        message = first.message;
+      } else {
+        const ev = args[1];
+        const msg = args[2];
+        level = typeof ev === 'number' ? ev : typeof ev === 'string' ? ev : 'info';
+        message = typeof msg === 'string' ? msg : '';
+      }
+      const isError = level === 'error' || level === 3;
+      const isWarn = level === 'warning' || level === 2;
+      if (!isError && !isWarn) return;
+      console.error(`[RENDERER:${isError ? 'error' : 'warn'}] ${String(message).slice(0, 500)}`);
+    });
+  }
 
   window.on('maximize', () => {
     if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
@@ -4390,8 +4424,12 @@ app.whenReady().then(async () => {
     () => {
       diagnosticsHealthMonitor.startMonitoring();
       diagnosticsHealthMonitor.onFleetHealthChange((health) => {
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('diagnostics:fleet-health-changed', health);
+        if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
+          try {
+            mainWindow.webContents.send('diagnostics:fleet-health-changed', health);
+          } catch {
+            // Render frame may be mid-disposal during window reload/close; safe to drop this push.
+          }
         }
       });
       void opencodeIntegration.startConfigWatcher();
@@ -4456,18 +4494,27 @@ app.on('open-url', (event, url) => {
 
 // Deep-link & Folder Opening capture on Windows / Linux via second-instance
 app.on('second-instance', (_event, commandLine, workingDirectory) => {
-  if (mainWindow) {
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.focus();
-  }
-  const deepLinkArg = commandLine.find((arg) => arg.startsWith('ty-code://'));
-  if (deepLinkArg) {
-    void providerOAuth.handleDeepLinkCallback(deepLinkArg);
-  }
+  const openFolderArg = (): void => {
+    // Deep-link & Folder Opening capture on Windows / Linux
+    const deepLinkArg = commandLine.find((arg) => arg.startsWith('ty-code://'));
+    if (deepLinkArg) {
+      void providerOAuth.handleDeepLinkCallback(deepLinkArg);
+    }
 
-  const folderPath = extractFolderFromArgs(commandLine, workingDirectory);
-  if (folderPath) {
-    void workspaceManager.openWorkspace(folderPath);
+    const folderPath = extractFolderFromArgs(commandLine, workingDirectory);
+    if (folderPath) {
+      void workspaceManager.openWorkspace(folderPath);
+    }
+  };
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  } else {
+    // Window was closed (or never recreated) while the primary still runs
+    // in the background - rebuild it so "run it again" always surfaces UI.
+    createWindow();
   }
+  openFolderArg();
 });
 

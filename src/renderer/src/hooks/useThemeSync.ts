@@ -118,9 +118,12 @@ export const useThemeSync = (): AppTheme => {
     // 3. Intra-window custom event listener
     const handleCustomEvent = (e: Event) => {
       const customEvent = e as CustomEvent<AppTheme>;
+      // NOTE: applyAppTheme() dispatches 'ty-theme-change' on every
+      // application, so re-applying here would echo the event back and
+      // recurse forever (blank window via RangeError). The dispatcher
+      // already applied the body classes - just adopt the new value.
       if (customEvent.detail) {
         const next = normalizeAppTheme(customEvent.detail);
-        applyAppTheme(next, false);
         setTheme(next);
       }
     };

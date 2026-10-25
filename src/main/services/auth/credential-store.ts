@@ -568,7 +568,7 @@ export class CredentialStore {
         if (!res.ok) {
           throw new Error(`Groq returned HTTP ${res.status}`);
         }
-        return { success: true, providerId, latencyMs: Date.now() - startTime, modelDetected: 'llama-3.3-70b-versatile' };
+        return { success: true, providerId, latencyMs: Date.now() - startTime, modelDetected: 'openai/gpt-oss-120b' };
       }
 
       // 4. OpenAI test

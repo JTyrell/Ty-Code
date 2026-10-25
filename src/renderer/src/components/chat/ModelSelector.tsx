@@ -176,8 +176,8 @@ export const FALLBACK_CATALOG: Record<ModelTier, RankedModelCandidate[]> = {
   ],
   tier_c_fast: [
     {
-      modelId: 'llama-3.1-8b-instant',
-      modelName: 'Llama 3.1 8B Instant (Groq)',
+      modelId: 'openai/gpt-oss-20b',
+      modelName: 'GPT OSS 20B (Groq)',
       providerId: 'groq-free',
       providerName: 'Groq',
       tier: 'tier_c_fast',
@@ -186,7 +186,7 @@ export const FALLBACK_CATALOG: Record<ModelTier, RankedModelCandidate[]> = {
       healthScore: 1.0,
       isRateLimited: false,
       compositeRankScore: 200,
-      selectionReason: 'Sub-100ms ultra-fast execution'
+      selectionReason: 'Sub-second ultra-fast execution on Groq LPUs'
     },
     {
       modelId: 'minimax/minimax-m3.1-flash:free',

@@ -362,6 +362,10 @@ export interface EditorPreferences {
   autoSaveDelay?: number;
   wordWrap?: 'off' | 'on' | 'wordWrapColumn' | 'bounded';
   formatOnSave?: boolean;
+  chatFontFamily?: 'sans' | 'serif' | 'mono' | 'plex';
+  chatFontSize?: number;
+  matrixDecodeEnabled?: boolean;
+  ukPunctuationEnabled?: boolean;
 }
 
 export type AgentMode = 'build' | 'plan' | 'general';

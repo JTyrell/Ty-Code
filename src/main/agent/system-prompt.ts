@@ -229,8 +229,12 @@ CRITICAL INSTRUCTIONS & PRINCIPLES:
     prompt += `\n\nThis is a simple question. Answer it directly and concisely \u2014 no tool calls, no scoping report, and no action plan are needed. Just reply to the user.\n\n`;
   }
 
+  prompt += `\n\n${UK_STYLE_RULES}`;
+
   return prompt;
 }
+
+export const UK_STYLE_RULES = `STYLE RULES: Write in standard UK English. Use UK spellings (colour, organise, analyse, realise, favour). Never use em dashes or spaced en dashes as sentence punctuation; use commas, semicolons, colons, or parentheses instead. Use hyphens only for compound words and numeric ranges. Prefer short, direct clauses over parenthetical asides.`;
 
 export const AGENT_TOOLS_DEFINITIONS = [
   {

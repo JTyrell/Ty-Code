@@ -1,0 +1,68 @@
+/* =========================================================================
+   Ty-Code UI: Hover Marquee Effect
+   Smooth horizontal scroll on hover for long provider and model names
+   ========================================================================= */
+
+.hover-marquee-root {
+  display: block;
+  position: relative;
+  overflow: hidden;
+  white-space: nowrap;
+  max-width: 100%;
+  min-width: 0;
+  text-overflow: ellipsis;
+}
+
+.hover-marquee-content {
+  display: inline-block;
+  white-space: nowrap;
+  will-change: transform;
+  transition: transform 0.25s ease-out;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 
+   When can-marquee is active and the element OR its containing card is hovered:
+   Switch text-overflow to clip, expand max-width, and run the smooth slide animation
+*/
+.hover-marquee-root.can-marquee:hover,
+.byok-card:hover .hover-marquee-root.can-marquee,
+.pm-model-card:hover .hover-marquee-root.can-marquee,
+.wizard-provider-card:hover .hover-marquee-root.can-marquee,
+.wizard-model-row:hover .hover-marquee-root.can-marquee,
+[id^="wizard-provider-card"]:hover .hover-marquee-root.can-marquee,
+[id^="wizard-model-row"]:hover .hover-marquee-root.can-marquee,
+[id^="provider-card"]:hover .hover-marquee-root.can-marquee,
+[id^="model-card"]:hover .hover-marquee-root.can-marquee {
+  text-overflow: clip;
+}
+
+.hover-marquee-root.can-marquee:hover .hover-marquee-content,
+.byok-card:hover .hover-marquee-root.can-marquee .hover-marquee-content,
+.pm-model-card:hover .hover-marquee-root.can-marquee .hover-marquee-content,
+.wizard-provider-card:hover .hover-marquee-root.can-marquee .hover-marquee-content,
+.wizard-model-row:hover .hover-marquee-root.can-marquee .hover-marquee-content,
+[id^="wizard-provider-card"]:hover .hover-marquee-root.can-marquee .hover-marquee-content,
+[id^="wizard-model-row"]:hover .hover-marquee-root.can-marquee .hover-marquee-content,
+[id^="provider-card"]:hover .hover-marquee-root.can-marquee .hover-marquee-content,
+[id^="model-card"]:hover .hover-marquee-root.can-marquee .hover-marquee-content {
+  max-width: none;
+  overflow: visible;
+  text-overflow: clip;
+  animation: hover-marquee-slide var(--marquee-duration, 3.2s) cubic-bezier(0.42, 0, 0.58, 1) infinite;
+  animation-delay: 0.35s;
+}
+
+@keyframes hover-marquee-slide {
+  0%, 15% {
+    transform: translateX(0);
+  }
+  60%, 80% {
+    transform: translateX(var(--marquee-dist, 0px));
+  }
+  95%, 100% {
+    transform: translateX(0);
+  }
+}

@@ -1076,13 +1076,147 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent-primary);
 
 /* ==========================================================================
    Typography, Lists, Code, and KaTeX Math Polish (Prompt 3)
+   Prompt 1 (Typography & Motion): the chat message container supplies
+   --chat-font-family / --chat-font-size / --chat-line-height, so markdown
+   blocks are documentation-grade AND user-tunable from Settings.
    ========================================================================== */
 
 .prose,
 .chat-message-markdown-html {
-  font-size: 12.5px;
-  line-height: 1.65;
+  font-size: var(--chat-font-size, 12.5px);
+  line-height: var(--chat-line-height, 1.65);
+  font-family: var(--chat-font-family, 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
   color: var(--text-primary);
+}
+
+/* Documentation-grade heading scale */
+.chat-message-markdown-html h1,
+.chat-message-markdown-html h2,
+.chat-message-markdown-html h3,
+.chat-message-markdown-html h4,
+.chat-message-markdown-html h5,
+.chat-message-markdown-html h6 {
+  margin: 18px 0 8px 0 !important;
+  font-weight: 700 !important;
+  color: var(--text-primary) !important;
+  letter-spacing: -0.01em;
+}
+
+.chat-message-markdown-html h1 {
+  font-size: 1.45em !important;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+}
+
+.chat-message-markdown-html h2 {
+  font-size: 1.3em !important;
+  padding-bottom: 3px;
+  border-bottom: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+}
+
+.chat-message-markdown-html h3 { font-size: 1.16em !important; }
+
+.chat-message-markdown-html h4,
+.chat-message-markdown-html h5,
+.chat-message-markdown-html h6 {
+  font-size: 1.06em !important;
+  color: var(--text-secondary) !important;
+}
+
+.chat-message-markdown-html p {
+  margin: 0 0 0.55em 0 !important;
+}
+
+.chat-message-markdown-html strong {
+  color: var(--text-primary) !important;
+  font-weight: 700;
+}
+
+.chat-message-markdown-html em { color: var(--text-secondary); }
+
+/* Blockquote: left accent rail */
+.chat-message-markdown-html blockquote {
+  margin: 10px 0 !important;
+  padding: 6px 12px !important;
+  border-left: 3px solid var(--accent-primary, #60a5fa) !important;
+  background: var(--surface-2, rgba(255, 255, 255, 0.03)) !important;
+  border-radius: 0 8px 8px 0 !important;
+  color: var(--text-secondary) !important;
+}
+
+.chat-message-markdown-html blockquote p:last-child { margin-bottom: 0 !important; }
+
+/* Zebra tables */
+.chat-message-markdown-html table {
+  margin: 10px 0 !important;
+  border-collapse: collapse !important;
+  width: 100% !important;
+  font-size: 0.94em !important;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08)) !important;
+  overflow: hidden;
+}
+
+.chat-message-markdown-html th,
+.chat-message-markdown-html td {
+  padding: 5px 10px !important;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08)) !important;
+  text-align: left !important;
+}
+
+.chat-message-markdown-html th {
+  background: var(--surface-2, rgba(255, 255, 255, 0.05)) !important;
+  color: var(--text-primary) !important;
+  font-weight: 700 !important;
+}
+
+.chat-message-markdown-html tbody tr:nth-child(2n) {
+  background: var(--surface-2, rgba(255, 255, 255, 0.025)) !important;
+}
+
+/* Horizontal rule */
+.chat-message-markdown-html hr {
+  margin: 14px 0 !important;
+  border: none !important;
+  border-top: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08)) !important;
+}
+
+/* Links: subtle underline + external-link marker handled by CSS only (the
+   clicks are delegated to window.electronAPI.openExternal in the container). */
+.chat-message-markdown-html a,
+.chat-message-markdown-html a:visited {
+  color: var(--accent-primary, #60a5fa) !important;
+  text-decoration: none !important;
+  border-bottom: 1px solid color-mix(in srgb, var(--accent-primary, #60a5fa) 45%, transparent);
+}
+
+.chat-message-markdown-html a:hover {
+  text-decoration: none !important;
+  filter: brightness(1.15);
+}
+
+.chat-message-markdown-html a[href^="http"]::after {
+  content: '\2197';
+  font-size: 0.72em;
+  margin-left: 2px;
+  opacity: 0.55;
+  vertical-align: super;
+}
+
+/* GFM task-list checkboxes (marked outputs <input type="checkbox" disabled>) */
+.chat-message-markdown-html li > input[type='checkbox'] {
+  margin-right: 6px !important;
+  accent-color: var(--accent-primary, #60a5fa);
+}
+
+.chat-message-markdown-html li:has(> input[type='checkbox']) {
+  list-style: none !important;
+  margin-left: -18px !important;
+}
+
+.chat-message-markdown-html li:has(> input[type='checkbox']:checked) {
+  color: var(--text-muted);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
 }
 
 .chat-message-markdown-html ul {
@@ -1115,13 +1249,24 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent-primary);
   margin: 4px 0 !important;
 }
 
-/* Inline code with subtle background, border, and monospace styling */
+/* Matrix decode animation (Typography & Motion) */
+.matrix-decode-text {
+  text-shadow: 0 0 6px color-mix(in srgb, var(--accent-primary, #60a5fa) 45%, transparent);
+}
+
+.matrix-decode-active {
+  background:
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--accent-primary, #60a5fa) 7%, transparent) 0%,
+      transparent 55%);
+}
+
 .chat-message-markdown-html code:not(pre code) {
   padding: 2px 6px !important;
   margin: 0 2px !important;
   border-radius: 4px !important;
   font-family: var(--font-mono, monospace) !important;
-  font-size: 11px !important;
+  font-size: calc(var(--chat-font-size, 12px) - 1px) !important;
   color: var(--accent-cyan, #38bdf8) !important;
   background: rgba(255, 255, 255, 0.08) !important;
   border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.1)) !important;
@@ -1383,6 +1528,21 @@ body.theme-light .doc-review-section,
 body.theme-group-light .doc-review-section {
   background-color: var(--bg-secondary) !important;
   border-color: var(--border-subtle) !important;
+}
+
+/* Latency & Rendering Performance: Offscreen History Containment */
+.chat-message-bubble,
+.chat-virtual-row {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 130px;
+}
+
+.scramble-text {
+  display: inline;
+}
+
+.scramble-text-active {
+  color: inherit;
 }
 
 

@@ -33,9 +33,92 @@ import { countTokens, type LayerToken } from '../services/usage/token-accounting
 
 const OPENCODE_FREE_PROTOCOL = 'opencode-cli://';
 
+import https from 'node:https';
+import http from 'node:http';
+import { Agent as UndiciAgent } from 'undici';
 import { BrowserWindow } from 'electron';
 import { DEFAULT_PRESET_MODELS } from '../../preload/preset-models';
 export { DEFAULT_PRESET_MODELS, getVerifiedModels, type VerifiedModelConfig };
+
+const httpsAgentPool = new Map<string, https.Agent>();
+const httpAgentPool = new Map<string, http.Agent>();
+const undiciDispatcherPool = new Map<string, UndiciAgent>();
+
+/**
+ * Returns a pooled HTTPS/HTTP agent configured with keepAlive: true per provider host,
+ * reusing established TLS handshakes and TCP sockets across requests.
+ */
+export function getProviderHttpsAgent(urlStr: string): https.Agent | http.Agent {
+  try {
+    const parsed = new URL(urlStr);
+    const isHttps = parsed.protocol === 'https:';
+    const hostKey = `${parsed.protocol}//${parsed.hostname}:${parsed.port || (isHttps ? 443 : 80)}`;
+    if (isHttps) {
+      let agent = httpsAgentPool.get(hostKey);
+      if (!agent) {
+        agent = new https.Agent({
+          keepAlive: true,
+          keepAliveMsecs: 15_000,
+          maxSockets: 32,
+          maxFreeSockets: 10,
+          timeout: 60_000
+        });
+        httpsAgentPool.set(hostKey, agent);
+      }
+      return agent;
+    } else {
+      let agent = httpAgentPool.get(hostKey);
+      if (!agent) {
+        agent = new http.Agent({
+          keepAlive: true,
+          keepAliveMsecs: 15_000,
+          maxSockets: 32,
+          maxFreeSockets: 10,
+          timeout: 60_000
+        });
+        httpAgentPool.set(hostKey, agent);
+      }
+      return agent;
+    }
+  } catch {
+    return new https.Agent({ keepAlive: true });
+  }
+}
+
+/**
+ * Returns a pooled Undici Agent dispatcher with keepAlive configured per host.
+ */
+export function getProviderDispatcher(urlStr: string): UndiciAgent | undefined {
+  try {
+    const parsed = new URL(urlStr);
+    const hostKey = `${parsed.protocol}//${parsed.hostname}:${parsed.port || (parsed.protocol === 'https:' ? 443 : 80)}`;
+    let dispatcher = undiciDispatcherPool.get(hostKey);
+    if (!dispatcher) {
+      dispatcher = new UndiciAgent({
+        keepAliveTimeout: 30_000,
+        keepAliveMaxTimeout: 300_000
+      });
+      undiciDispatcherPool.set(hostKey, dispatcher);
+    }
+    return dispatcher;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Dispatches fetch with pooled HTTPS keepAlive agents and undici dispatchers
+ * so TLS handshakes are efficiently reused across provider requests.
+ */
+export function providerFetch(url: string, init?: RequestInit): Promise<Response> {
+  const agent = getProviderHttpsAgent(url);
+  const dispatcher = getProviderDispatcher(url);
+  return fetch(url, {
+    ...init,
+    agent,
+    dispatcher
+  } as RequestInit);
+}
 
 /**
  * End-to-End Chat Latency Tracker (Diagnostic Telemetry)
@@ -188,17 +271,18 @@ export const chatLatencyTracker = new ChatLatencyTracker();
 tokenAccountingLedger.registerHopProvider(chatLatencyTracker.getHops.bind(chatLatencyTracker));
 
 /**
- * StreamChunkBatcher: Main Process High-Frequency Stream Batcher (Phase 3: 32ms cadence)
- * Accumulates rapid token / thought chunks from SSE streams and flushes to IPC every 32ms (~30fps)
- * to avoid IPC bridge saturation while guaranteeing zero token loss.
+ * StreamChunkBatcher: Main Process High-Frequency Stream Batcher (16-24ms cadence, immediate first token)
+ * Accumulates rapid token / thought chunks from SSE streams and flushes to IPC every 20ms
+ * to avoid IPC bridge saturation while guaranteeing zero token loss and zero delay on token #1.
  */
 export class StreamChunkBatcher {
   private queue: string[] = [];
   private flushTimer: NodeJS.Timeout | null = null;
   private readonly flushIntervalMs: number;
   private readonly onFlush: (accumulated: string) => void;
+  private isFirst = true;
 
-  constructor(onFlush: (accumulated: string) => void, flushIntervalMs = 32) {
+  constructor(onFlush: (accumulated: string) => void, flushIntervalMs = 20) {
     this.onFlush = onFlush;
     this.flushIntervalMs = flushIntervalMs;
   }
@@ -206,6 +290,12 @@ export class StreamChunkBatcher {
   public push(chunk: string): void {
     if (!chunk) return;
     this.queue.push(chunk);
+    // Flush the very first token immediately (no coalescing on chunk #1) for minimum TTFT
+    if (this.isFirst) {
+      this.isFirst = false;
+      this.flush();
+      return;
+    }
     if (!this.flushTimer) {
       this.flushTimer = setTimeout(() => {
         this.flushTimer = null;
@@ -1276,7 +1366,7 @@ export async function sendChatRequest(
     // Record H3 (Gateway Adapter): right before fetch() is called to the LLM provider
     chatLatencyTracker.recordH3(currentTaskId);
 
-    const response = await fetch(config.url, {
+    const response = await providerFetch(config.url, {
       method: 'POST',
       headers,
       body: JSON.stringify(payload),
@@ -1467,10 +1557,10 @@ export async function sendChatRequest(
 
     const tokenBatcher = new StreamChunkBatcher((chunk) => {
       if (onToken) onToken(chunk);
-    }, 32);
+    }, 20);
     const reasoningBatcher = new StreamChunkBatcher((chunk) => {
       if (onReasoning) onReasoning(chunk);
-    }, 32);
+    }, 20);
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder('utf-8');
@@ -1772,7 +1862,7 @@ export function isFreeModel(modelId: string, providerId: string): boolean {
   if (providerId === 'openkilo' || providerId === 'kilo' || providerId === 'opencode') return true;
   if (/:free($|:|\/)/i.test(modelId) || modelId.toLowerCase().includes(':free')) return true;
   if (providerId === 'groq' || providerId === 'groq-free') {
-    const groqFree = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'];
+    const groqFree = ['openai/gpt-oss-120b', 'qwen/qwen3.6-27b', 'openai/gpt-oss-20b'];
     if (groqFree.includes(modelId)) return true;
   }
   return false;
@@ -2024,7 +2114,7 @@ export class ProviderGateway {
       const listUrl = `${rootUrl}/v1beta/models`;
       const listHeaders: Record<string, string> = { 'Accept': 'application/json' };
       if (apiKey?.trim()) listHeaders['x-goog-api-key'] = apiKey.trim();
-      const listRes = await fetch(listUrl, {
+      const listRes = await providerFetch(listUrl, {
         method: 'GET',
         headers: listHeaders,
         signal: AbortSignal.timeout(10_000)
@@ -2079,7 +2169,7 @@ export class ProviderGateway {
     let rawModels: Array<{ id: string; name?: string; description?: string; context_length?: number }> = [];
 
     try {
-      const response = await fetch(`${baseUrl}/models`, {
+      const response = await providerFetch(`${baseUrl}/models`, {
         method: 'GET',
         headers,
         signal: AbortSignal.timeout(10_000)
@@ -2308,7 +2398,7 @@ export class ProviderGateway {
     // Native Anthropic test endpoint
     if (norm === 'anthropic' || norm === 'claude' || norm === 'anthropic-claude') {
       try {
-        const res = await fetch('https://api.anthropic.com/v1/models', {
+        const res = await providerFetch('https://api.anthropic.com/v1/models', {
           headers: {
             'x-api-key': effectiveKey,
             'anthropic-version': '2023-06-01'
@@ -2324,7 +2414,7 @@ export class ProviderGateway {
           providerHealthMonitor.recordRequestOutcome(providerId, false, latencyMs, 'Invalid Anthropic API key');
           return { success: false, latencyMs, error: 'Invalid Anthropic API key' };
         }
-        const msgRes = await fetch('https://api.anthropic.com/v1/messages', {
+        const msgRes = await providerFetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',
           headers: {
             'x-api-key': effectiveKey,
@@ -2357,7 +2447,7 @@ export class ProviderGateway {
     // Native Google Gemini test endpoint
     if (isGoogle) {
       try {
-        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(effectiveKey)}`, {
+        const res = await providerFetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(effectiveKey)}`, {
           signal: AbortSignal.timeout(10_000)
         });
         const latencyMs = Math.max(1, Math.round(performance.now() - startTime));
@@ -2374,7 +2464,7 @@ export class ProviderGateway {
       }
     }
 
-    const testModel = modelId || (isGoogle ? 'gemini-2.0-flash' : preconfigured?.defaultModel || (providerId === 'groq' ? 'llama-3.3-70b-versatile' : providerId.includes('openkilo') ? 'kilo-auto/free' : 'dots-studio/dots-3-note-preview:free'));
+    const testModel = modelId || (isGoogle ? 'gemini-2.0-flash' : preconfigured?.defaultModel || (providerId === 'groq' ? 'openai/gpt-oss-120b' : providerId.includes('openkilo') ? 'kilo-auto/free' : 'dots-studio/dots-3-note-preview:free'));
 
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -2390,7 +2480,7 @@ export class ProviderGateway {
     const chatUrl = isGoogle ? this.googleChatUrl(baseUrl)! : `${baseUrl}/chat/completions`;
 
     try {
-      const response = await fetch(chatUrl, {
+      const response = await providerFetch(chatUrl, {
         method: 'POST',
         headers,
         body: JSON.stringify({
@@ -2772,7 +2862,7 @@ export class ProviderGateway {
         ? AbortSignal.any([abortSignal, timeoutSignal])
         : timeoutSignal;
       
-      response = await fetch(gatewayUrl, {
+      response = await providerFetch(gatewayUrl, {
         method: 'POST',
         headers,
         body: JSON.stringify(body),
@@ -2889,10 +2979,10 @@ export class ProviderGateway {
 
     const tokenBatcher = new StreamChunkBatcher((chunk) => {
       callbacks.onToken?.(chunk);
-    }, 32);
+    }, 20);
     const thoughtBatcher = new StreamChunkBatcher((chunk) => {
       callbacks.onThought?.(chunk);
-    }, 32);
+    }, 20);
 
     const consume = (payload: StreamPayload) => {
       if (payload.usage) {

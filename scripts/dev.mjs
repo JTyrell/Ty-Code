@@ -103,7 +103,11 @@ async function runDev() {
   await buildDebuggerWorkers(rootDir);
 
   console.log('[Dev] Launching Electron...');
-  const electronProcess = spawn(electron, ['.'], {
+  const electronLaunchArgs = ['.'];
+  if (process.env.TYCODE_DEV_CDP === '1') {
+    electronLaunchArgs.push('--remote-debugging-port=9223');
+  }
+  const electronProcess = spawn(electron, electronLaunchArgs, {
     cwd: rootDir,
     env: {
       ...process.env,

@@ -66,7 +66,7 @@ const harnesses: Record<AgentHarnessType, AgentHarness> = {
     name: 'Pi CLI Harness',
     cliName: 'pi-cli',
     description: 'High-interactivity dialog coding assistant harness',
-    defaultModel: 'llama-3.3-70b-versatile',
+    defaultModel: 'openai/gpt-oss-120b',
     promptFormat: 'pi-v1',
     toolProtocol: 'json-function',
     systemPromptRole: 'Collaborative Pair Programmer',

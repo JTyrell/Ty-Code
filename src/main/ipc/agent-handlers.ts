@@ -160,7 +160,7 @@ export async function startAgentTask(
       batchTimer = setTimeout(() => {
         batchTimer = null;
         flushBatch();
-      }, 32);
+      }, 20); // 16-24ms cadence for optimal UI smoothness and minimal IPC bridge overhead
     }
   };
 

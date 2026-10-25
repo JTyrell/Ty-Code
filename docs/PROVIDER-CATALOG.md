@@ -15,7 +15,7 @@ Users supply their own API key, stored encrypted via OS-level hardware backing (
 | **Anthropic** | `anthropic` | `claude-3-5-sonnet-20241022`<br>`claude-3-5-haiku`<br>`claude-3-opus-20240229` | 200,000 | `claude-3-5-sonnet-20241022` | `https://api.anthropic.com/v1` |
 | **OpenAI** | `openai` | `gpt-4o`<br>`gpt-4o-mini`<br>`o1`<br>`o3-mini` | 128,000 | `gpt-4o` | `https://api.openai.com/v1` |
 | **Google Gemini** | `gemini` | `gemini-2.0-flash`<br>`gemini-1.5-pro`<br>`gemini-1.5-flash` | 1,000,000 | `gemini-2.0-flash` | `https://generativelanguage.googleapis.com/v1beta` |
-| **Groq** | `groq` | `llama-3.3-70b-versatile`<br>`llama-3.1-8b-instant`<br>`mixtral-8x7b-32768` | 128,000 | `llama-3.3-70b-versatile` | `https://api.groq.com/openai/v1` |
+| **Groq** | `groq` | `openai/gpt-oss-120b`<br>`qwen/qwen3.6-27b`<br>`openai/gpt-oss-20b` | 131,072 | `openai/gpt-oss-120b` | `https://api.groq.com/openai/v1` |
 | **DeepSeek** | `deepseek` | `deepseek-chat`<br>`deepseek-reasoner` | 64,000 | `deepseek-chat` | `https://api.deepseek.com` |
 | **OpenRouter** | `openrouter` | 300+ commercial & open-source models with unified routing | Dynamic | `anthropic/claude-3.5-sonnet` | `https://openrouter.ai/api/v1` |
 
@@ -28,7 +28,7 @@ Permanent and zero-cost cloud options with automated rate-limit extraction and f
 | Provider | Provider ID | Flagship Free Models | Daily/Minute Rate Limits | "Get Free Key" URL |
 | :--- | :--- | :--- | :--- | :--- |
 | **OpenRouter Free** | `openrouter` | `deepseek/deepseek-r1:free`<br>`qwen/qwen-2.5-coder-32b-instruct:free`<br>`meta-llama/llama-3.3-70b-instruct:free`<br>`google/gemini-2.0-flash-exp:free` | 20 requests / min<br>200 requests / day | [openrouter.ai/keys](https://openrouter.ai/keys) |
-| **Groq Free Tier** | `groq` | `llama-3.3-70b-versatile`<br>`llama-3.1-8b-instant`<br>`mixtral-8x7b-32768` | 30 requests / min<br>14,400 requests / day<br>300+ tokens/sec | [console.groq.com/keys](https://console.groq.com/keys) |
+| **Groq Free Tier** | `groq` | `openai/gpt-oss-120b`<br>`qwen/qwen3.6-27b`<br>`openai/gpt-oss-20b` | 30 requests / min<br>14,400 requests / day<br>1000+ tokens/sec | [console.groq.com/keys](https://console.groq.com/keys) |
 | **Google AI Studio** | `google-ai-studio` | `gemini-2.0-flash`<br>`gemini-1.5-pro` | 15 requests / min<br>1,500 requests / day<br>1M token window | [aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey) |
 
 ---

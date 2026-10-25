@@ -38,10 +38,13 @@ function liveOpenCodeOpenRouterFreeModels(): string[] {
 
 export const OPENCODE_CURATED_FREE_MODELS: Record<string, string[]> = {
   openrouter: liveOpenCodeOpenRouterFreeModels(),
-  // Both verified live at Groq (community-key era probes, 200 OK).
+  // Groq retired llama-3.3-70b-versatile & llama-3.1-8b-instant on
+  // 2026-08-16 (free & developer tiers); these are the current free-tier
+  // replacements per groq.com/docs/deprecations.
   groq: [
-    'llama-3.3-70b-versatile',
-    'llama-3.1-8b-instant'
+    'openai/gpt-oss-120b',
+    'qwen/qwen3.6-27b',
+    'openai/gpt-oss-20b'
   ],
   // Google's free tier roster rotates per key/region: nothing is claimed from
   // Ty-Code. geminiFreeModels reflects ONLY what the user's OpenCode config

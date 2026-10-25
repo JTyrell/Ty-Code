@@ -40,6 +40,8 @@ import {
 import type { ChatMessage, ProposedDiff, ToolExecutionRecord } from '../../../preload/types';
 import { ChatErrorCard } from './ChatErrorCard';
 import { MessageRenderer } from './chat/MessageRenderer';
+import { useTypographyStore, buildChatTypographyStyle } from '../state/typography-store';
+import { normalisePunctuation } from '../services/punctuation-normaliser';
 import { useChatStore } from '../state/chat-store';
 import { useWorkspaceStore } from '../state/workspace-store';
 import { useDocumentReviewStore } from '../state/document-review-store';
@@ -838,7 +840,7 @@ export interface ChatMessageProps {
   isStreaming?: boolean;
 }
 
-export const ChatMessageItem: React.FC<ChatMessageProps> = ({
+const ChatMessageItemComponent: React.FC<ChatMessageProps> = ({
   message,
   isLastAssistant = false,
   isRunning = false,
@@ -869,6 +871,17 @@ export const ChatMessageItem: React.FC<ChatMessageProps> = ({
   const setAgentMode = useChatStore((s) => s.setAgentMode);
   const respondToApproval = useChatStore((s) => s.respondToApproval);
   const pendingApproval = useChatStore((s) => s.pendingApproval);
+
+  // Typography & Motion: container-scoped CSS variables. Every markdown block
+  // inside inherits these, so user font edits restyle the message without
+  // re-entering the MessageRenderer worker pipeline (it is memoized).
+  const chatFontFamily = useTypographyStore((s) => s.chatFontFamily);
+  const chatFontSize = useTypographyStore((s) => s.chatFontSize);
+  const ukPunctuationEnabled = useTypographyStore((s) => s.ukPunctuationEnabled);
+  const chatTypographyVars = useMemo(
+    () => buildChatTypographyStyle(chatFontFamily, chatFontSize),
+    [chatFontFamily, chatFontSize]
+  );
 
   const proposedDoc = message.proposedDocument || (
     activeDocument && (
@@ -951,7 +964,10 @@ export const ChatMessageItem: React.FC<ChatMessageProps> = ({
 
   const handleCopyMessage = async () => {
     if (message.content) {
-      await navigator.clipboard.writeText(message.content);
+      const textToCopy = ukPunctuationEnabled
+        ? normalisePunctuation(message.content)
+        : message.content;
+      await navigator.clipboard.writeText(textToCopy);
       setCopiedMessage(true);
       setTimeout(() => setCopiedMessage(false), 1600);
     }
@@ -970,7 +986,10 @@ export const ChatMessageItem: React.FC<ChatMessageProps> = ({
           alignItems: 'flex-end',
           margin: '8px 0',
           padding: '0 4px',
-          contain: 'content'
+          contain: 'content',
+          contentVisibility: 'auto',
+          containIntrinsicSize: 'auto 80px',
+          ...chatTypographyVars
         }}
       >
         <div
@@ -982,9 +1001,9 @@ export const ChatMessageItem: React.FC<ChatMessageProps> = ({
             background: 'linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-primary-hover) 100%)',
             color: '#ffffff',
             padding: '10px 14px',
-            fontSize: '12px',
+            fontSize: 'var(--chat-font-size, 12px)',
+            lineHeight: 'var(--chat-line-height, 1.6)',
             boxShadow: '0 2px 8px rgba(0, 0, 0, 0.18)',
-            lineHeight: 1.6,
             userSelect: 'text',
             contain: 'content'
           }}
@@ -1086,7 +1105,10 @@ export const ChatMessageItem: React.FC<ChatMessageProps> = ({
         flexDirection: 'column',
         width: '100%',
         color: 'var(--text-secondary)',
-        contain: 'content'
+        contain: 'content',
+        contentVisibility: 'auto',
+        containIntrinsicSize: 'auto 140px',
+        ...chatTypographyVars
       }}
     >
       <div
@@ -1585,5 +1607,6 @@ export const ChatMessageItem: React.FC<ChatMessageProps> = ({
   );
 };
 
+export const ChatMessageItem = React.memo(ChatMessageItemComponent);
 export { ChatMessageItem as ChatMessage };
 export default ChatMessageItem;

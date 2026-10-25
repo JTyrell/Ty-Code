@@ -40,9 +40,9 @@ Add Ty-Code's local endpoint to your `models` list:
       "apiKey": "<YOUR_TYCODE_BEARER_TOKEN>"
     },
     {
-      "title": "Ty-Code Llama 3.3 70B",
+      "title": "Ty-Code GPT OSS 120B",
       "provider": "openai",
-      "model": "llama-3.3-70b-versatile",
+      "model": "openai/gpt-oss-120b",
       "apiBase": "http://127.0.0.1:52140/v1",
       "apiKey": "<YOUR_TYCODE_BEARER_TOKEN>"
     }

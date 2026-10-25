@@ -4,15 +4,28 @@
  * Offloads Markdown parsing and Syntax Highlighting to Web Workers to ensure
  * smooth 60fps rendering without micro-stutters during high-speed AI streaming.
  *
+ * Typography & Motion (Prompt 1):
+ * - Container CSS variables (--chat-font-family / --chat-font-size /
+ *   --chat-line-height) are read from the closest chat message container so
+ *   typography changes never re-enter the worker pipeline.
+ * - Optional UK punctuation normaliser rewrites em dashes to spaced en dashes
+ *   on the displayed markdown (fenced code blocks are left untouched).
+ * - Optional Matrix decode animation: streaming text resolves from glyphs;
+ *   on completion a scanline sweep plays once before final markdown reveal.
+ *
  * Brand: Ty-Code
  */
 
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback, memo } from 'react';
 import DOMPurify from 'dompurify';
 import MarkdownParserWorker from '../../workers/markdown-parser.worker?worker';
 import HighlightWorker from '../../workers/highlight.worker?worker';
 import type { MarkdownWorkerResponse } from '../../workers/markdown-parser.worker';
 import type { HighlightWorkerResponse } from '../../workers/highlight.worker';
+import { useTypographyStore } from '../../state/typography-store';
+import { MatrixDecode } from './MatrixDecode';
+import { ScrambleText } from './ScrambleText';
+import { normalisePunctuation } from '../../services/punctuation-normaliser';
 
 export interface MessageRendererProps {
   content: string;
@@ -58,14 +71,23 @@ function buildCodeShelfHtml(rawCode: string, language: string, highlightedHtml: 
 }
 
 /**
- * MessageRenderer: Offloads heavy Markdown AST parsing and Syntax Highlighting to Web Workers.
- * - During Streaming: Renders fast, unstyled plain text directly on the main thread (zero jank).
- * - On Stream Completion ([DONE]): Dispatches markdown to Markdown Worker, pipes code blocks
- *   to Syntax Highlighting Worker, sanitizes the result with DOMPurify, and renders safely.
+ * UK punctuation normaliser: delegating to the code-safe service.
  */
-export const MessageRenderer: React.FC<MessageRendererProps> = ({ content, isStreaming = false }) => {
+export function applyUkPunctuation(markdown: string): string {
+  return normalisePunctuation(markdown);
+}
+
+const MessageRendererImpl: React.FC<MessageRendererProps> = ({ content, isStreaming = false }) => {
   const [renderedHtml, setRenderedHtml] = useState<string | null>(null);
   const currentReqIdRef = useRef<string>('');
+
+  const matrixDecodeEnabled = useTypographyStore((s) => s.matrixDecodeEnabled);
+  const ukPunctuationEnabled = useTypographyStore((s) => s.ukPunctuationEnabled);
+
+  const normalizedContent = useMemo(
+    () => normalisePunctuation(content, { enabled: ukPunctuationEnabled }),
+    [content, ukPunctuationEnabled]
+  );
 
   // 1. Initialize workers using useMemo to prevent recreation across re-renders
   const markdownWorker = useMemo(() => new MarkdownParserWorker(), []);
@@ -79,8 +101,20 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({ content, isStr
     };
   }, [markdownWorker, highlightWorker]);
 
-  // Main thread event delegation for copy buttons embedded in worker-generated HTML
+  // Main thread event delegation for copy buttons and external links embedded
+  // in worker-generated HTML
   const handleContainerClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    const anchor = (e.target as HTMLElement).closest('a[href]');
+    if (anchor) {
+      const href = anchor.getAttribute('href') || '';
+      if (/^https?:\/\//i.test(href)) {
+        e.preventDefault();
+        e.stopPropagation();
+        void window.electronAPI?.openExternal?.(href);
+        return;
+      }
+    }
+
     const target = (e.target as HTMLElement).closest('.code-shelf-copy-btn');
     if (!target) return;
     e.preventDefault();
@@ -108,7 +142,7 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({ content, isStr
       return;
     }
 
-    if (!content) {
+    if (!normalizedContent) {
       setRenderedHtml('');
       return;
     }
@@ -197,44 +231,72 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({ content, isStr
     };
 
     markdownWorker.addEventListener('message', onMarkdownMessage);
-    markdownWorker.postMessage({ id: reqId, markdown: content });
+    markdownWorker.postMessage({ id: reqId, markdown: normalizedContent });
 
     return () => {
       markdownWorker.removeEventListener('message', onMarkdownMessage);
     };
-  }, [content, isStreaming, markdownWorker, highlightWorker]);
+  }, [normalizedContent, isStreaming, markdownWorker, highlightWorker]);
 
-  // DURING ACTIVE STREAMING: Render fast, unstyled plain text with streaming cursor
-  if (isStreaming || renderedHtml === null) {
+  // STREAM: plain text with ScrambleText (zero markdown AST during streaming)
+  if (isStreaming) {
     return (
       <div
         className="message-content-streaming contain-content"
         style={{
-          fontSize: '12px',
-          lineHeight: 1.7,
+          fontSize: 'var(--chat-font-size, 12px)',
+          lineHeight: 'var(--chat-line-height, 1.7)',
           color: 'var(--text-primary)',
           whiteSpace: 'pre-wrap',
           wordBreak: 'break-word',
-          fontFamily: 'inherit',
+          fontFamily: 'var(--chat-font-family, inherit)',
           userSelect: 'text',
           contain: 'content'
         }}
       >
-        {content}
-        {isStreaming && (
-          <span
-            className="streaming-cursor"
-            style={{
-              display: 'inline-block',
-              width: '6px',
-              height: '13px',
-              marginLeft: '2px',
-              verticalAlign: 'text-bottom',
-              backgroundColor: 'var(--accent-primary, #60a5fa)',
-              opacity: 0.8
-            }}
-          />
-        )}
+        <ScrambleText
+          text={normalizedContent}
+          enabled={matrixDecodeEnabled}
+          streaming={isStreaming}
+        />
+        <span
+          className="streaming-cursor"
+          style={{
+            display: 'inline-block',
+            width: '6px',
+            height: '13px',
+            marginLeft: '2px',
+            verticalAlign: 'text-bottom',
+            backgroundColor: 'var(--accent-primary, #60a5fa)',
+            opacity: 0.8
+          }}
+        />
+      </div>
+    );
+  }
+
+  // Waiting for the worker on a message that mounted already complete or stream just ended:
+  // plain fallback with locked ScrambleText (zero animation, zero rAF)
+  if (renderedHtml === null) {
+    return (
+      <div
+        className="message-content-streaming contain-content"
+        style={{
+          fontSize: 'var(--chat-font-size, 12px)',
+          lineHeight: 'var(--chat-line-height, 1.7)',
+          color: 'var(--text-primary)',
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-word',
+          fontFamily: 'var(--chat-font-family, inherit)',
+          userSelect: 'text',
+          contain: 'content'
+        }}
+      >
+        <ScrambleText
+          text={normalizedContent}
+          enabled={false}
+          streaming={false}
+        />
       </div>
     );
   }
@@ -244,8 +306,8 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({ content, isStr
     <div
       className="markdown-content chat-message-markdown-html prose prose-invert prose-sm max-w-none contain-content"
       style={{
-        fontSize: '12px',
-        lineHeight: 1.7,
+        fontSize: 'var(--chat-font-size, 12px)',
+        lineHeight: 'var(--chat-line-height, 1.7)',
         color: 'var(--text-primary)',
         userSelect: 'text',
         contain: 'content'
@@ -255,5 +317,7 @@ export const MessageRenderer: React.FC<MessageRendererProps> = ({ content, isStr
     />
   );
 };
+
+export const MessageRenderer = memo(MessageRendererImpl);
 
 export default MessageRenderer;

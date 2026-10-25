@@ -55,12 +55,13 @@ export const ERROR_CODE_DESCRIPTIONS: Record<DiagnosticErrorCode, string> = {
 export const DEFAULT_FALLBACK_PROVIDERS: Record<string, string> = {
   'opencode-free': 'Ty-Code Free (zero-config community free tier)',
   'opencode': 'Ty-Code Free (zero-config community free tier)',
-  'openrouter-free': 'OpenKilo (zero-config anonymous free tier)',
-  'groq-free': 'OpenKilo or OpenRouter Free',
-  'together-ai-free': 'Groq (Free Tier) or OpenKilo',
-  'fireworks-ai-free': 'OpenKilo or Groq',
-  'huggingface-free': 'OpenKilo or Together AI',
-  'google-ai-studio-free': 'OpenRouter Free or OpenKilo',
+  'openrouter': 'Ty-Code Free (zero-config community free tier)',
+  'openrouter-free': 'Ty-Code Free (zero-config community free tier)',
+  'groq-free': 'Ty-Code Free, or OpenRouter Free',
+  'together-ai-free': 'Ty-Code Free, or Groq (Free Tier)',
+  'fireworks-ai-free': 'Ty-Code Free, or Groq (Free Tier)',
+  'huggingface-free': 'Ty-Code Free, or Together AI',
+  'google-ai-studio-free': 'Ty-Code Free, or OpenRouter Free',
   'anthropic-claude-free': 'OpenRouter Free (gemma-4-31b-it:free)'
 };
 
@@ -81,7 +82,11 @@ export function classifyDiagnosticError(
   const rawBody = context.responseBody || context.rawEvidenceChunk || '';
   const lowerBody = rawBody.toLowerCase();
   const signupUrl = context.signupUrl || 'https://openrouter.ai/keys';
-  const fallback = DEFAULT_FALLBACK_PROVIDERS[providerId] || 'OpenKilo (Kilo Gateway Free Tier)';
+  // Do not route fallback suggestions to the anonymous OpenKilo pool by
+  // default: it is throttled aggressively upstream, so recommending it after
+  // a rate limit just moves the user into another 429. The zero-config
+  // community tier (ty-code-free) is the resilient first choice.
+  const fallback = DEFAULT_FALLBACK_PROVIDERS[providerId] || 'Ty-Code Free (zero-config community free tier)';
 
   // 0a. IPC_UNREGISTERED
   if (
@@ -131,7 +136,7 @@ export function classifyDiagnosticError(
     };
   }
 
-  // 2. TIMEOUT (30s first token limit or explicit timeout)
+  // 2. TIMEOUT (explicit timeout/abort at any step; streaming retains its own wording)
   if (
     context.step === 'streaming' &&
     (lowerMsg.includes('timeout') || lowerMsg.includes('timed out') || lowerMsg.includes('30s') || lowerMsg.includes('aborted'))
@@ -141,6 +146,18 @@ export function classifyDiagnosticError(
       humanMessage: 'no first token within 30s',
       remedy: 'Provider too slow or hung; last raw bytes attached',
       rawEvidence: rawBody || errMsg || 'Connection timed out after 30000ms with 0 tokens received.'
+    };
+  }
+
+  if (
+    (lowerMsg.includes('aborted due to timeout') || lowerMsg.includes('timed out') || lowerMsg.includes('timeout')) &&
+    (context.step === 'reachability' || context.step === 'auth' || context.step === 'tool_call' || context.step === 'latency')
+  ) {
+    return {
+      code: 'TIMEOUT',
+      humanMessage: 'Provider did not respond within the step timeout',
+      remedy: 'The connection stalled before an HTTP response arrived. Retry once; repeated timeouts point to the network path (proxy/firewall) or a provider outage rather than credentials.',
+      rawEvidence: rawBody || errMsg
     };
   }
 
@@ -252,16 +269,23 @@ export function classifyDiagnosticError(
     lowerBody.includes('model_not_found') ||
     lowerBody.includes('model_unavailable')
   ) {
-    const freeList = context.validFreeModels && context.validFreeModels.length > 0
-      ? context.validFreeModels.join(', ')
-      : 'kilo-auto/free, poolside/laguna-s-2.1:free, nvidia/nemotron-3.5-super-vl:free';
     const provName = context.providerName || (providerId === 'openrouter' ? 'OpenRouter' : providerId ? providerId.charAt(0).toUpperCase() + providerId.slice(1) : 'Provider');
+    const configuredModel = (context.configuredModel || '').toLowerCase();
+    const validFreeModels = (context.validFreeModels || []).filter((m) => m.toLowerCase() !== configuredModel);
+    const freeList = validFreeModels.length > 0
+      ? validFreeModels.join(', ')
+      : 'kilo-auto/free, poolside/laguna-s-2.1:free, nvidia/nemotron-3.5-super-vl:free';
+    const isGroq = (providerId || '').toLowerCase().includes('groq');
+    const groqRetired = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'];
+    const groqRetirement = isGroq && groqRetired.some((m) => configuredModel.includes(m))
+      ? ` Groq retired "${configuredModel}" on 2026-08-16 for free and developer tiers; migrate to openai/gpt-oss-120b, qwen/qwen3.6-27b, or openai/gpt-oss-20b (all free-tier eligible).`
+      : '';
     return {
       code: 'MODEL_UNAVAILABLE',
       humanMessage: 'Model ID not found or not free (404)',
-      remedy: `Model unavailable on ${provName}; here are the currently valid free models: ${freeList}`,
-      validFreeModels: context.validFreeModels,
-      actionUrl: 'settings:providers',
+      remedy: `Model unavailable on ${provName}; here are the currently valid free models: ${freeList}.${groqRetirement}`,
+      validFreeModels,
+      actionUrl: 'ty-code://settings/providers',
       actionLabel: 'Select Model',
       suggestedAction: 'select-model',
       rawEvidence: rawBody || errMsg

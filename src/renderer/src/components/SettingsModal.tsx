@@ -28,6 +28,10 @@ import {
   ToggleRight
 } from 'lucide-react';
 import { useChatStore } from '../state/chat-store';
+import { useTypographyStore, CHAT_FONT_FAMILY_OPTIONS, CHAT_FONT_SIZE_MIN, CHAT_FONT_SIZE_MAX } from '../state/typography-store';
+import type { ChatFontFamily } from '../state/typography-store';
+import { MatrixDecode } from './chat/MatrixDecode';
+import { ScrambleText } from './chat/ScrambleText';
 import { useExtensionStore } from '../state/extension-store';
 import { useUsageDashboardStore } from '../state/usage-dashboard-store';
 import type {
@@ -116,9 +120,9 @@ const FALLBACK_PROVIDERS: PreConfiguredProvider[] = [
     name: 'Groq',
     baseUrl: 'https://api.groq.com/openai/v1',
     setupType: 'api_key',
-    notes: 'Highlight ultra-fast free tier models (llama-3.3-70b-versatile, etc.).',
+    notes: 'Highlight ultra-fast free tier models (openai/gpt-oss-120b, qwen/qwen3.6-27b, openai/gpt-oss-20b).',
     signupUrl: 'https://console.groq.com/keys',
-    defaultModel: 'llama-3.3-70b-versatile'
+    defaultModel: 'openai/gpt-oss-120b'
   },
   {
     id: 'ollama',
@@ -368,6 +372,32 @@ export const SettingsModal: React.FC = () => {
     return saved === 'beta' || saved === 'nightly' ? saved : 'stable';
   });
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
+
+  // Typography & Motion state (live-apply store; persists via settings.editor)
+  const chatFontFamily = useTypographyStore((s) => s.chatFontFamily);
+  const chatFontSize = useTypographyStore((s) => s.chatFontSize);
+  const matrixDecodeEnabled = useTypographyStore((s) => s.matrixDecodeEnabled);
+  const ukPunctuationEnabled = useTypographyStore((s) => s.ukPunctuationEnabled);
+  const setChatFontFamily = useTypographyStore((s) => s.setChatFontFamily);
+  const setChatFontSize = useTypographyStore((s) => s.setChatFontSize);
+  const setMatrixDecodeEnabled = useTypographyStore((s) => s.setMatrixDecodeEnabled);
+  const setUkPunctuationEnabled = useTypographyStore((s) => s.setUkPunctuationEnabled);
+  const [matrixPreviewKey, setMatrixPreviewKey] = useState(0);
+  const [matrixPreviewStreaming, setMatrixPreviewStreaming] = useState(false);
+  const matrixPreviewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const triggerMatrixPreview = useCallback(() => {
+    setMatrixPreviewKey((k) => k + 1);
+    setMatrixPreviewStreaming(true);
+    if (matrixPreviewTimerRef.current) clearTimeout(matrixPreviewTimerRef.current);
+    matrixPreviewTimerRef.current = setTimeout(() => {
+      setMatrixPreviewStreaming(false);
+    }, 1200);
+  }, []);
+
+  useEffect(() => () => {
+    if (matrixPreviewTimerRef.current) clearTimeout(matrixPreviewTimerRef.current);
+  }, []);
 
   // Keybindings state
   const [keybindingSearch, setKeybindingSearch] = useState('');
@@ -1980,6 +2010,92 @@ export const SettingsModal: React.FC = () => {
                   />
                   <span>Bracket Pair Colorization</span>
                 </label>
+              </div>
+
+              {/* Typography & Motion: chat typography + text motion, live-applied */}
+              <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <div className="settings-section-heading">
+                  <strong>Typography &amp; Motion</strong>
+                  <span>Chat typography and text motion effects. Changes apply live to open chat windows, no restart needed.</span>
+                </div>
+
+                <div>
+                  <label className="settings-field-label" htmlFor="chat-font-family">Chat font family</label>
+                  <select
+                    id="chat-font-family"
+                    value={chatFontFamily}
+                    onChange={(event) => void setChatFontFamily(event.target.value as ChatFontFamily)}
+                    style={{ width: '100%' }}
+                  >
+                    {CHAT_FONT_FAMILY_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                  <p className="settings-hint">Applies to chat messages. Code blocks keep the monospace stack.</p>
+                </div>
+
+                <div>
+                  <label className="settings-field-label">Chat font size: {chatFontSize}px</label>
+                  <input
+                    type="range"
+                    min={CHAT_FONT_SIZE_MIN}
+                    max={CHAT_FONT_SIZE_MAX}
+                    step={1}
+                    value={chatFontSize}
+                    onChange={(event) => void setChatFontSize(Number(event.target.value))}
+                    style={{ width: '100%' }}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '12px' }}>
+                    <input
+                      type="checkbox"
+                      checked={matrixDecodeEnabled}
+                      onChange={(event) => {
+                        void setMatrixDecodeEnabled(event.target.checked);
+                        if (event.target.checked) triggerMatrixPreview();
+                      }}
+                    />
+                    <span>Matrix decode text animation</span>
+                  </label>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', borderRadius: '8px', border: '1px solid var(--border-subtle)', background: 'var(--bg-primary)', fontSize: '11.5px' }}>
+                    <ScrambleText
+                      key={matrixPreviewKey}
+                      text={'console.log("matrix decode online");'}
+                      enabled={matrixDecodeEnabled}
+                      streaming={matrixPreviewStreaming}
+                    />
+                    {matrixDecodeEnabled && (
+                      <button
+                        type="button"
+                        onClick={triggerMatrixPreview}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: 'var(--accent-primary)',
+                          cursor: 'pointer',
+                          fontSize: '11px',
+                          padding: '2px 6px',
+                          borderRadius: '4px'
+                        }}
+                      >
+                        Replay
+                      </button>
+                    )}
+                  </div>
+                  <span className="settings-hint">While a response streams, trailing characters decode through glyphs before locking (~90-150ms). Zero latency impact. Automatically disabled when prefers-reduced-motion is on.</span>
+                </div>
+
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '12px' }}>
+                  <input
+                    type="checkbox"
+                    checked={ukPunctuationEnabled}
+                    onChange={(event) => void setUkPunctuationEnabled(event.target.checked)}
+                  />
+                  <span>UK punctuation normaliser (no em dashes)</span>
+                </label>
+                <p className="settings-hint">Displays assistant markdown with British-style spaced en dashes. The original text stays untouched.</p>
               </div>
 
               {/* Updates Section */}

@@ -40,9 +40,9 @@ export const PRECONFIGURED_PROVIDERS: PreConfiguredProvider[] = [
     name: 'Groq',
     baseUrl: 'https://api.groq.com/openai/v1',
     setupType: 'api_key',
-    notes: 'Highlight ultra-fast free tier models (llama-3.3-70b-versatile, etc.).',
+    notes: 'Highlight ultra-fast free tier models (openai/gpt-oss-120b, qwen/qwen3.6-27b, openai/gpt-oss-20b).',
     signupUrl: 'https://console.groq.com/keys',
-    defaultModel: 'llama-3.3-70b-versatile',
+    defaultModel: 'openai/gpt-oss-120b',
     icon: 'groq'
   },
   {

@@ -242,11 +242,11 @@ export class ProviderRegistry {
       headersFactory: ({ apiKey }) => ({ Authorization: `Bearer ${apiKey || ''}` }),
       supportedModels: [
         {
-          id: 'llama-3.3-70b-versatile',
-          name: 'Llama 3.3 70B (Groq)',
+          id: 'openai/gpt-oss-120b',
+          name: 'GPT OSS 120B (Groq)',
           contextWindow: 131_072,
-          maxOutputTokens: 4096,
-          capabilities: { reasoning: false, tools: true, vision: false, codingScore: 88, speedTokensPerSec: 320, isFree: false },
+          maxOutputTokens: 65_536,
+          capabilities: { reasoning: false, tools: true, vision: false, codingScore: 88, speedTokensPerSec: 500, isFree: true },
           costTier: 'low',
           primaryTask: 'fast-edit'
         },

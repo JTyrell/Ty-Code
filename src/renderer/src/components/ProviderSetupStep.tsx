@@ -84,12 +84,13 @@ export const PROVIDER_CATALOG: Record<string, ProviderCatalogEntry> = {
       'Copy your new key (starts with gsk_)'
     ],
     keyFormat: 'gsk_... (40+ characters)',
-    defaultModel: 'llama-3.3-70b-versatile',
+    defaultModel: 'openai/gpt-oss-120b',
     freeModels: [
-      'llama-3.3-70b-versatile',
-      'llama-3.1-8b-instant'
+      'openai/gpt-oss-120b',
+      'qwen/qwen3.6-27b',
+      'openai/gpt-oss-20b'
     ],
-    badges: ['Ultra-Fast', '300+ tok/s'],
+    badges: ['Ultra-Fast', '1000+ tok/s'],
     accentColor: 'var(--accent-amber)'
   },
   'google-gemini': {
@@ -189,7 +190,7 @@ export const ProviderSetupStep: React.FC<ProviderSetupStepProps> = ({
     gemini: 'gemini-2.0-flash',
     'google-gemini': 'gemini-2.0-flash',
     openrouter: 'nvidia/nemotron-3-ultra-550b-a55b:free',
-    groq: 'llama-3.3-70b-versatile',
+    groq: 'openai/gpt-oss-120b',
     copilot: 'claude-3.5-sonnet',
     openkilo: 'kilo-auto/free',
     'openkilo-free': 'kilo-auto/free',

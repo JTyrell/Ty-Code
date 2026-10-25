@@ -75,9 +75,9 @@ export class EditorConfigExporter {
             apiKey: authToken
           },
           {
-            title: 'Ty-Code Llama 3.3 70B',
+            title: 'Ty-Code GPT OSS 120B',
             provider: 'openai',
-            model: 'llama-3.3-70b-versatile',
+            model: 'openai/gpt-oss-120b',
             apiBase: baseUrl,
             apiKey: authToken
           }

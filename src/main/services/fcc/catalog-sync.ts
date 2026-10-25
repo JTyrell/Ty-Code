@@ -130,26 +130,26 @@ export const INITIAL_61_FCC_CATALOG: FCCProviderHealthInfo[] = [
     signupUrl: 'https://console.groq.com/keys',
     models: [
       {
-        id: 'llama-3.3-70b-versatile',
-        name: 'Llama 3.3 70B Versatile (Groq)',
-        contextWindow: 128_000,
-        maxOutputTokens: 8192,
+        id: 'openai/gpt-oss-120b',
+        name: 'GPT OSS 120B (Groq)',
+        contextWindow: 131_072,
+        maxOutputTokens: 65_536,
         isFree: true,
-        capabilities: { coding: true, fast: true, tools: true, speedTokensPerSec: 310 },
+        capabilities: { coding: true, fast: true, tools: true, speedTokensPerSec: 500 },
         provenance: 'FCC',
         costTier: 'free',
-        description: '300+ tokens/sec ultra-fast execution on LPUs'
+        description: 'Groq replacement for the retired llama-3.3-70b-versatile (free & developer tiers, retired 2026-08-16)'
       },
       {
-        id: 'llama-3.1-8b-instant',
-        name: 'Llama 3.1 8B Instant',
-        contextWindow: 128_000,
-        maxOutputTokens: 8192,
+        id: 'openai/gpt-oss-20b',
+        name: 'GPT OSS 20B (Groq)',
+        contextWindow: 131_072,
+        maxOutputTokens: 65_536,
         isFree: true,
-        capabilities: { fast: true, tools: true, speedTokensPerSec: 520 },
+        capabilities: { fast: true, tools: true, speedTokensPerSec: 1000 },
         provenance: 'FCC',
         costTier: 'free',
-        description: 'Sub-100ms ultra-low latency autocomplete'
+        description: 'Groq replacement for the retired llama-3.1-8b-instant (retired 2026-08-16)'
       }
     ]
   },

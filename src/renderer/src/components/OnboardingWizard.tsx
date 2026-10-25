@@ -364,9 +364,7 @@ export const OnboardingWizard: React.FC = () => {
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <span style={{ fontSize: '20px' }} role="img" aria-label="Rocket">
-                    ðŸš€
-                  </span>
+                  <Rocket size={20} color="var(--accent-primary)" style={{ flexShrink: 0 }} />
                   <h2 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: 'var(--accent-primary)' }}>
                     Unlock Premium Models
                   </h2>
@@ -598,9 +596,7 @@ export const OnboardingWizard: React.FC = () => {
           }}
         >
           <div style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '7px' }}>
-            <span role="img" aria-label="Lock">
-              ðŸ”’
-            </span>
+            <Lock size={13} style={{ color: 'var(--accent-primary)', flexShrink: 0 }} />
             <strong style={{ color: 'var(--text-primary)' }}>Zero-Telemetry Guarantee:</strong>
             <span>Your code and credentials never leave this machine in plaintext.</span>
           </div>

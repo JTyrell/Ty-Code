@@ -37,6 +37,7 @@ import {
 } from 'lucide-react';
 import type { FreeProvider } from '../../../../shared/types/free-providers';
 import type { DiscoveredModel, TestConnectionResult } from '../../../../preload/types';
+import { HoverMarquee } from '../ui/HoverMarquee';
 
 export interface BYOKWizardProps {
   freeProviders: FreeProvider[];
@@ -462,9 +463,13 @@ export const BYOKWizard: React.FC<BYOKWizardProps> = ({
                     transition: 'all 0.15s ease'
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <span style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text-primary)' }}>{p.name}</span>
-                    {isSelected && <CheckCircle2 size={16} color="var(--accent-primary)" />}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', minWidth: 0 }}>
+                    <HoverMarquee
+                      as="span"
+                      style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text-primary)' }}
+                      text={p.name}
+                    />
+                    {isSelected && <CheckCircle2 size={16} color="var(--accent-primary)" style={{ flexShrink: 0 }} />}
                   </div>
 
                   <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
@@ -1095,18 +1100,20 @@ export const BYOKWizard: React.FC<BYOKWizardProps> = ({
                       background: isDefault ? 'rgba(99, 102, 241, 0.12)' : 'rgba(30, 41, 59, 0.4)'
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, flex: 1 }}>
                       <input
                         type="checkbox"
                         id={`chk-model-${model.id}`}
                         checked={isChecked}
                         onChange={() => toggleModelSelection(model.id)}
-                        style={{ cursor: 'pointer' }}
+                        style={{ cursor: 'pointer', flexShrink: 0 }}
                       />
-                      <div>
-                        <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--text-primary)' }}>
-                          {model.name}
-                        </span>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <HoverMarquee
+                          as="span"
+                          style={{ fontSize: '13px', fontWeight: 500, color: 'var(--text-primary)' }}
+                          text={model.name}
+                        />
                         {model.name !== model.id && (
                           <span style={{ fontSize: '11px', color: '#64748b', marginLeft: '6px', fontFamily: 'monospace' }}>
                             {model.id}

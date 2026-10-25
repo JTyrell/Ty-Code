@@ -14,7 +14,7 @@ Ty-Code classifies prompts into one of six core task domains using syntactic pat
 | :--- | :--- | :--- | :--- |
 | **Code Generation** | `qwen/qwen3-coder:free` / `deepseek-coder` | 262,144 tokens | Automatically selected for refactoring, writing functions, algorithmic problem solving, tests, and syntax debugging. |
 | **Complex Reasoning** | `deepseek/deepseek-r1-0528` / `deepseek-r1` | 164,000 tokens | Activated for chain-of-thought, mathematical proofs, architectural planning, logic puzzles, and multi-file analysis. |
-| **Fast Responses** | `groq/llama-3.3-70b-versatile` / `mistral-small` | 128,000 tokens | Routed to ultra-fast Groq LPU inference for real-time Monaco inline ghost-text completions, keystroke autocompletion, and low-latency explanations. |
+| **Fast Responses** | `groq/openai/gpt-oss-120b` / `openai/gpt-oss-20b` | 131,072 tokens | Routed to ultra-fast Groq LPU inference for real-time Monaco inline ghost-text completions, keystroke autocompletion, and low-latency explanations. |
 | **Large Context** | Long-context coding and multimodal models | 262,144+ tokens | Triggered when prompt and codebase context exceeds 32,000 tokens (e.g. multi-file repositories, large logs, AST indexes). |
 | **Vision & Multimodal** | Vision-capable multimodal models | 131,072+ tokens | Selected whenever screenshots, UI wireframes, diagrams, or image attachments are present in the user request. |
 | **Simple Queries** | `meta-llama/llama-3.2-3b-instruct:free` / `llama-3.1-8b` | 128,000 tokens | Conserves high-capacity quotas by handling straightforward greetings, command syntax lookups, and basic formatting with compact, fast models. |
@@ -82,6 +82,6 @@ A dedicated toggle in the Dashboard and Settings Modal that enforces $0 commerci
 
 ## 5. Premium Coding Experience
 
-- **Monaco Inline Ghost Text**: Powered by fast-response models (`llama-3.3-70b-versatile` / `qwen3-coder`) with 200ms debounce typing detection.
+- **Monaco Inline Ghost Text**: Powered by fast-response models (`openai/gpt-oss-20b` / `qwen3-coder`) with 200ms debounce typing detection.
 - **Multi-File Context Awareness**: Reconciles large-context models (up to 262K tokens) for comprehensive workspace understanding.
 - **Terminal & Git Integration**: Autonomous command generation, commit message synthesis, and merge conflict resolution.

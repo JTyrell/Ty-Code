@@ -17,7 +17,7 @@ Welcome to **Ty-Code**! Ty-Code is designed from the ground up to give developer
 | Provider | Access Type | Highlight Models | Best For |
 | :--- | :--- | :--- | :--- |
 | **OpenRouter Free** | Free Tier (`:free`) | `deepseek-r1:free`, `qwen-2.5-coder-32b:free`, `llama-3.3-70b:free` | Deep mathematical reasoning & coding |
-| **Groq Cloud** | Free Direct API | `llama-3.3-70b-versatile`, `llama-3.1-8b-instant` | Sub-100ms ultra-fast code generation |
+| **Groq Cloud** | Free Direct API | `openai/gpt-oss-120b`, `qwen/qwen3.6-27b`, `openai/gpt-oss-20b` | Sub-second ultra-fast code generation |
 | **OpenKilo Gateway** | Zero-Config Anonymous | `claude-3-5-sonnet`, `deepseek-r1-0528`, `qwen3-coder` | 40+ free models with zero API key setup |
 | **Google AI Studio** | Free Tier (Gemini) | `gemini-2.0-flash-exp`, `gemini-1.5-pro` | 1M+ large context windows & multimodal vision |
 | **GitHub Models** | Free via GitHub PAT | `gpt-4o-mini`, `Meta-Llama-3.1-70B` | Enterprise Azure-backed inference |

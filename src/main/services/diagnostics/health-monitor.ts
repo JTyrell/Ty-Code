@@ -282,6 +282,19 @@ export class DiagnosticsHealthMonitor {
     detail.status = 'RATE_LIMITED';
     detail.lastPingTime = Date.now();
     detail.lastError = error;
+
+    // Consecutive-failure backoff: repeated 429s on the same provider (the
+    // anonymous pools hammer easily) double the cooldown up to 30 minutes so
+    // background pings stop re-entering a rate-limited pool every minute.
+    if (cooldownMs <= this.defaultCooldownMs) {
+      const failNum = detail.consecutiveFailures;
+      const backoffMs = Math.min(
+        this.defaultCooldownMs * Math.pow(2, Math.max(0, failNum - 1)),
+        30 * 60_000
+      );
+      cooldownMs = Math.max(cooldownMs, backoffMs);
+    }
+
     detail.cooldownUntil = Date.now() + cooldownMs;
     detail.cooldownRemainingSec = Math.ceil(cooldownMs / 1000);
     detail.consecutiveFailures++;
@@ -388,6 +401,22 @@ export class DiagnosticsHealthMonitor {
     const reg = freeProviderRegistry.getProvider(providerId);
     if (!reg || reg.base_url === 'auto') {
       // No deterministic endpoint to probe: never fabricate health, keep it unproven
+      detail.lastPingTime = now;
+      if (detail.status === 'UNTESTED') {
+        detail.status = 'UNTESTED';
+        detail.isHealthy = false;
+      }
+      return detail;
+    }
+
+    if (reg.auth_type === 'api_key_optional') {
+      // Key-bearing free providers (openrouter-free, groq-free, ...) are never
+      // probed by the background monitor: the ping cannot attach the user's
+      // stored credential (and must not - each probe would burn their
+      // free-tier request budget), so an unkeyed probe would only yield a
+      // misleading 401 "UNCONFIGURED". Health evidence for these comes
+      // exclusively from real traffic outcomes or the explicit diagnostics
+      // suite, which attaches the stored key.
       detail.lastPingTime = now;
       if (detail.status === 'UNTESTED') {
         detail.status = 'UNTESTED';

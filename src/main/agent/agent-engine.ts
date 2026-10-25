@@ -679,7 +679,7 @@ export class AgentEngine {
               if (activeProvider === 'openkilo') {
                 activeModel = 'kilo-auto/free';
               } else if (activeProvider === 'groq') {
-                activeModel = 'llama-3.3-70b-versatile';
+                activeModel = 'openai/gpt-oss-120b';
               } else {
                 activeModel = 'google/gemma-4-31b-it:free';
               }

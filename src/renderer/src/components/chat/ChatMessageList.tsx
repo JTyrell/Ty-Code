@@ -20,6 +20,7 @@ import React, {
   type UIEvent
 } from 'react';
 import { useVirtualizer, type VirtualItem } from '@tanstack/react-virtual';
+import { ArrowDown } from 'lucide-react';
 import type { ChatMessage, ProposedDiff } from '../../../../preload/types';
 import { ChatMessageItem } from './ChatMessage';
 
@@ -47,6 +48,8 @@ export interface ChatMessageListHandle {
   scrollToIndex: (index: number, smooth?: boolean) => void;
   getScrollElement: () => HTMLDivElement | null;
   isAtBottom: () => boolean;
+  autoFollow: () => void;
+  rePin: (smooth?: boolean) => void;
 }
 
 export const ChatMessageList = forwardRef<ChatMessageListHandle, ChatMessageListProps>(
@@ -71,10 +74,15 @@ export const ChatMessageList = forwardRef<ChatMessageListHandle, ChatMessageList
     ref
   ) => {
     const parentRef = useRef<HTMLDivElement | null>(null);
+    const innerWrapperRef = useRef<HTMLDivElement | null>(null);
     const headerRef = useRef<HTMLDivElement | null>(null);
     const [headerHeight, setHeaderHeight] = useState<number>(0);
-    const isAtBottomRef = useRef<boolean>(true);
-    const lastScrollTopRef = useRef<number>(0);
+
+    // Step 1: Pin Detection (Ref-Based, Zero Re-Render Cost)
+    const pinnedToBottom = useRef<boolean>(true);
+    const scrollRafRef = useRef<number | null>(null);
+    const [detachedFromBottom, setDetachedFromBottom] = useState<boolean>(false);
+    const detachedFromBottomRef = useRef<boolean>(false);
 
     // Track dynamic header height to offset virtualization coordinates accurately
     useLayoutEffect(() => {
@@ -100,34 +108,80 @@ export const ChatMessageList = forwardRef<ChatMessageListHandle, ChatMessageList
       getItemKey: useCallback((index: number) => messages[index]?.id ?? index, [messages])
     });
 
-    // Auto-scroll handler: track if user manually scrolled up
-    const handleScroll = (e: UIEvent<HTMLDivElement>) => {
-      const el = e.currentTarget;
-      const threshold = 72; // px threshold from bottom to consider "at bottom"
-      const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-      isAtBottomRef.current = distanceFromBottom <= threshold;
-      lastScrollTopRef.current = el.scrollTop;
-      onScroll?.(e);
-    };
-
-    // Scroll to bottom helper
-    const scrollToBottom = useCallback((smooth = false) => {
+    // Step 1: Attach a { passive: true } scroll listener throttled by requestAnimationFrame
+    useEffect(() => {
       const el = parentRef.current;
       if (!el) return;
-      isAtBottomRef.current = true;
+
+      const handleScrollThrottled = (e: Event) => {
+        if (scrollRafRef.current !== null) return;
+        scrollRafRef.current = requestAnimationFrame(() => {
+          scrollRafRef.current = null;
+          if (!parentRef.current) return;
+          const container = parentRef.current;
+          const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+          // Step 1: distanceFromBottom < 64 threshold
+          const isPinned = distanceFromBottom < 64;
+          pinnedToBottom.current = isPinned;
+
+          const isDetached = !isPinned;
+          // Step 1 & 4: Flip React state ONLY when boolean changes value, never on every scroll pixel
+          if (detachedFromBottomRef.current !== isDetached) {
+            detachedFromBottomRef.current = isDetached;
+            setDetachedFromBottom(isDetached);
+          }
+        });
+        onScroll?.(e as unknown as UIEvent<HTMLDivElement>);
+      };
+
+      el.addEventListener('scroll', handleScrollThrottled, { passive: true });
+      return () => {
+        el.removeEventListener('scroll', handleScrollThrottled);
+        if (scrollRafRef.current !== null) {
+          cancelAnimationFrame(scrollRafRef.current);
+          scrollRafRef.current = null;
+        }
+      };
+    }, [onScroll]);
+
+    // Step 2 & 3: Auto-follow helper (behavior 'auto' during streaming)
+    const autoFollow = useCallback(() => {
+      if (!pinnedToBottom.current) return;
+      const el = parentRef.current;
+      if (!el) return;
       if (messages.length > 0) {
         rowVirtualizer.scrollToIndex(messages.length - 1, {
           align: 'end',
-          behavior: smooth ? 'smooth' : 'auto'
+          behavior: 'auto'
         });
       }
-      // Guarantee scroll reaches bottom even if dynamic elements resize
-      requestAnimationFrame(() => {
-        if (el) {
+      el.scrollTop = el.scrollHeight;
+    }, [messages.length, rowVirtualizer]);
+
+    // Step 3: Explicit Re-Pin & Scroll to bottom
+    const scrollToBottom = useCallback(
+      (smooth = false) => {
+        pinnedToBottom.current = true;
+        if (detachedFromBottomRef.current) {
+          detachedFromBottomRef.current = false;
+          setDetachedFromBottom(false);
+        }
+        const el = parentRef.current;
+        if (!el) return;
+        if (messages.length > 0) {
+          rowVirtualizer.scrollToIndex(messages.length - 1, {
+            align: 'end',
+            behavior: smooth ? 'smooth' : 'auto'
+          });
+        }
+        if (smooth) {
+          el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+        } else {
           el.scrollTop = el.scrollHeight;
         }
-      });
-    }, [messages.length, rowVirtualizer]);
+      },
+      [messages.length, rowVirtualizer]
+    );
 
     // Expose handle methods to parent components
     useImperativeHandle(
@@ -141,12 +195,14 @@ export const ChatMessageList = forwardRef<ChatMessageListHandle, ChatMessageList
           });
         },
         getScrollElement: () => parentRef.current,
-        isAtBottom: () => isAtBottomRef.current
+        isAtBottom: () => pinnedToBottom.current,
+        autoFollow,
+        rePin: (smooth = true) => scrollToBottom(smooth)
       }),
-      [scrollToBottom, rowVirtualizer]
+      [scrollToBottom, autoFollow, rowVirtualizer]
     );
 
-    // Auto-scroll on new messages or incoming streaming chunks when user is at bottom
+    // Step 2: Auto-follow on buffer flush (commits new text to DOM)
     const latestMessage = messages[messages.length - 1];
     const latestContent = latestMessage?.content;
     const isStreaming = Boolean(
@@ -154,106 +210,154 @@ export const ChatMessageList = forwardRef<ChatMessageListHandle, ChatMessageList
     );
 
     useLayoutEffect(() => {
-      if (!isAtBottomRef.current || messages.length === 0) return;
-      const el = parentRef.current;
-      if (!el) return;
+      autoFollow();
+    }, [messages.length, latestContent, isStreaming, autoFollow]);
 
-      const rafId = requestAnimationFrame(() => {
-        if (!isAtBottomRef.current || !el) return;
-        rowVirtualizer.scrollToIndex(messages.length - 1, {
-          align: 'end',
-          behavior: 'auto'
-        });
+    // Step 2: ResizeObserver on inner content wrapper (post-stream height jumps, code block expansion)
+    useEffect(() => {
+      const innerEl = innerWrapperRef.current;
+      if (!innerEl) return;
+
+      const resizeObserver = new ResizeObserver(() => {
+        if (!pinnedToBottom.current) return;
+        const el = parentRef.current;
+        if (!el) return;
         el.scrollTop = el.scrollHeight;
       });
 
-      return () => cancelAnimationFrame(rafId);
-    }, [messages.length, latestContent, isStreaming, rowVirtualizer]);
+      resizeObserver.observe(innerEl);
+
+      // Also re-pin on window resize while pinned
+      const handleWindowResize = () => {
+        if (!pinnedToBottom.current) return;
+        const el = parentRef.current;
+        if (!el) return;
+        el.scrollTop = el.scrollHeight;
+      };
+      window.addEventListener('resize', handleWindowResize, { passive: true });
+
+      return () => {
+        resizeObserver.disconnect();
+        window.removeEventListener('resize', handleWindowResize);
+      };
+    }, [messages.length > 0]);
+
+    // Step 3: Jump to latest pill handler
+    const handleJumpToLatest = useCallback(() => {
+      scrollToBottom(true);
+    }, [scrollToBottom]);
 
     const virtualItems = rowVirtualizer.getVirtualItems();
 
     return (
       <div
-        ref={parentRef}
-        onScroll={handleScroll}
-        className={`chat-feed ${className || ''}`}
+        className={`chat-feed-container ${className || ''}`}
         style={{
-          height: '100%',
-          overflowY: 'auto',
-          overflowX: 'hidden',
-          contain: 'strict',
           position: 'relative',
+          height: '100%',
+          width: '100%',
+          minHeight: 0,
+          overflow: 'hidden',
           ...style
         }}
-        role="log"
-        aria-live="polite"
-        tabIndex={0}
       >
-        {/* Optional Header (e.g. Empty State, Previous Session Offer) */}
-        {header && (
-          <div
-            ref={headerRef}
-            className="chat-feed-header contain-content"
-            style={{ contain: 'content' }}
+        <div
+          ref={parentRef}
+          className="chat-feed"
+          style={{
+            height: '100%',
+            overflowY: 'auto',
+            overflowX: 'hidden',
+            contain: 'strict',
+            position: 'relative',
+            scrollBehavior: 'auto'
+          }}
+          role="log"
+          aria-live="polite"
+          tabIndex={0}
+        >
+          {/* Optional Header (e.g. Empty State, Previous Session Offer) */}
+          {header && (
+            <div
+              ref={headerRef}
+              className="chat-feed-header contain-content"
+              style={{ contain: 'content' }}
+            >
+              {header}
+            </div>
+          )}
+
+          {/* Virtualized Message Canvas */}
+          {messages.length > 0 && (
+            <div
+              ref={innerWrapperRef}
+              className="chat-virtual-container"
+              style={{
+                height: `${rowVirtualizer.getTotalSize()}px`,
+                width: '100%',
+                position: 'relative'
+              }}
+            >
+              {virtualItems.map((virtualRow: VirtualItem) => {
+                const message = messages[virtualRow.index];
+                if (!message) return null;
+
+                const isLastAssistant = message.id === lastAssistantId;
+                const isItemStreaming = isLastAssistant && (message.isStreaming ?? isRunning);
+                const virtualRowStart = virtualRow.start - (rowVirtualizer.options.scrollMargin ?? 0);
+
+                return (
+                  <div
+                    key={virtualRow.key}
+                    data-index={virtualRow.index}
+                    ref={rowVirtualizer.measureElement}
+                    className="chat-virtual-row contain-content"
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      width: '100%',
+                      transform: `translateY(${virtualRowStart}px)`,
+                      boxSizing: 'border-box',
+                      contain: 'content',
+                      contentVisibility: 'auto',
+                      containIntrinsicSize: 'auto 130px'
+                    }}
+                  >
+                    <ChatMessageItem
+                      message={message}
+                      isLastAssistant={isLastAssistant}
+                      isRunning={isRunning}
+                      isStreaming={isItemStreaming}
+                      currentStatus={currentStatus}
+                      contextTokens={contextTokens}
+                      onRegenerate={onRegenerate}
+                      onInspectDiff={onInspectDiff}
+                      onApplyDiff={onApplyDiff}
+                      onRetryError={onRetryError}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Optional Footer (e.g. Plan Reviews, Security Approvals, Active Errors) */}
+          {footer && <div className="chat-feed-footer contain-content" style={{ contain: 'content' }}>{footer}</div>}
+        </div>
+
+        {/* Step 3: "Jump to latest" pill anchored bottom-center */}
+        {detachedFromBottom && (
+          <button
+            type="button"
+            className="chat-jump-to-latest-pill"
+            onClick={handleJumpToLatest}
+            aria-label="Jump to latest messages"
           >
-            {header}
-          </div>
+            <ArrowDown size={13} className="chat-jump-icon" aria-hidden="true" />
+            <span>Jump to latest</span>
+          </button>
         )}
-
-        {/* Virtualized Message Canvas */}
-        {messages.length > 0 && (
-          <div
-            className="chat-virtual-container"
-            style={{
-              height: `${rowVirtualizer.getTotalSize()}px`,
-              width: '100%',
-              position: 'relative'
-            }}
-          >
-            {virtualItems.map((virtualRow: VirtualItem) => {
-              const message = messages[virtualRow.index];
-              if (!message) return null;
-
-              const isLastAssistant = message.id === lastAssistantId;
-              const isItemStreaming = isLastAssistant && (message.isStreaming ?? isRunning);
-              const virtualRowStart = virtualRow.start - (rowVirtualizer.options.scrollMargin ?? 0);
-
-              return (
-                <div
-                  key={virtualRow.key}
-                  data-index={virtualRow.index}
-                  ref={rowVirtualizer.measureElement}
-                  className="chat-virtual-row contain-content"
-                  style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    width: '100%',
-                    transform: `translateY(${virtualRowStart}px)`,
-                    boxSizing: 'border-box',
-                    contain: 'content'
-                  }}
-                >
-                  <ChatMessageItem
-                    message={message}
-                    isLastAssistant={isLastAssistant}
-                    isRunning={isRunning}
-                    isStreaming={isItemStreaming}
-                    currentStatus={currentStatus}
-                    contextTokens={contextTokens}
-                    onRegenerate={onRegenerate}
-                    onInspectDiff={onInspectDiff}
-                    onApplyDiff={onApplyDiff}
-                    onRetryError={onRetryError}
-                  />
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Optional Footer (e.g. Plan Reviews, Security Approvals, Active Errors) */}
-        {footer && <div className="chat-feed-footer contain-content" style={{ contain: 'content' }}>{footer}</div>}
       </div>
     );
   }

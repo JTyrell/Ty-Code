@@ -645,7 +645,7 @@ export const QuotaExhaustedCard: React.FC<{ errorCard: ChatErrorCardType; onRetr
             <button
               type="button"
               className="chat-error-alt-btn"
-              onClick={() => void handleSwitchToProvider('groq', 'llama-3.3-70b-versatile')}
+              onClick={() => void handleSwitchToProvider('groq', 'openai/gpt-oss-120b')}
             >
               Switch to Groq Free
             </button>
@@ -1165,11 +1165,14 @@ export const ChatSidecar: React.FC = () => {
       streamingTextRef.current = '';
       activeStreamTargetIdRef.current = null;
     }
+
+    // Step 2: Auto-follow on double-buffered flush if pinned
+    chatListRef.current?.autoFollow();
   }, [lastAssistantId, updateMessage]);
 
   const scheduleCommit = useCallback(() => {
     const elapsed = performance.now() - lastCommitTimeRef.current;
-    const waitTime = Math.max(0, 100 - elapsed);
+    const waitTime = Math.max(0, 24 - elapsed);
 
     if (waitTime === 0) {
       flushStreamingRef(false);

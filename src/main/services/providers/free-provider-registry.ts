@@ -45,14 +45,15 @@ export const PERMANENT_FREE_PROVIDERS: FreeProvider[] = [
     base_url: 'https://api.groq.com/openai/v1',
     auth_type: 'api_key_optional',
     best_free_models: [
-      'llama-3.3-70b-versatile',
-      'llama-3.1-8b-instant'
+      'openai/gpt-oss-120b',
+      'qwen/qwen3.6-27b',
+      'openai/gpt-oss-20b'
     ],
     setup_instructions: 'Get free API key at console.groq.com',
     model_capabilities: {
-      ultra_fast: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'],
-      coding: ['llama-3.3-70b-versatile'],
-      general: ['llama-3.1-8b-instant']
+      ultra_fast: ['openai/gpt-oss-20b'],
+      coding: ['openai/gpt-oss-120b'],
+      general: ['qwen/qwen3.6-27b']
     },
     signup_url: 'https://console.groq.com/keys'
   },
@@ -252,7 +253,7 @@ export class FreeProviderRegistry {
 
     // 4. Provider-specific heuristics
     if (providerId === 'groq' || providerId === 'groq-free') {
-      const groqFree = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'];
+      const groqFree = ['openai/gpt-oss-120b', 'qwen/qwen3.6-27b', 'openai/gpt-oss-20b'];
       if (groqFree.some((gm) => lowerModel.includes(gm.toLowerCase()))) return true;
     }
 
@@ -335,7 +336,7 @@ export class FreeProviderRegistry {
         return {
           providerId: 'groq-free',
           providerName: 'Groq (Free Tier)',
-          modelId: 'llama-3.1-8b-instant'
+          modelId: 'openai/gpt-oss-20b'
         };
       case 'large_context':
         return {
@@ -354,7 +355,7 @@ export class FreeProviderRegistry {
         return {
           providerId: 'groq-free',
           providerName: 'Groq (Free Tier)',
-          modelId: 'llama-3.3-70b-versatile'
+          modelId: 'openai/gpt-oss-120b'
         };
     }
   }

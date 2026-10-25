@@ -277,6 +277,38 @@ export class DiagnosticService {
       return buildNotConfiguredResult(provider, steps);
     }
 
+    // OpenCode supplies ride the OpenCode CLI bridge (per-session borrowed
+    // providers), not a hostable REST endpoint. A plain chat/completions
+    // probe against OpenRouter without the CLI context would report a
+    // meaningless 401 "Missing Authentication header", so skip explicitly.
+    if (provider.auth_type === 'opencode_integration') {
+      steps.auth = {
+        step: 'auth',
+        status: 'SKIPPED',
+        durationMs: 0,
+        message: apiKey
+          ? 'OpenCode integration detected; supplies are routed through the opencode CLI bridge and are exercised via chat usage, not this REST probe.'
+          : 'OpenCode supplies are served by the opencode CLI bridge once installed; this REST probe does not target that path.'
+      };
+      return {
+        providerId: provider.id,
+        providerName: provider.name,
+        authType: provider.auth_type,
+        baseUrl,
+        status: 'SKIPPED',
+        errorCode: 'CONFIG_MISSING',
+        failedStep: 'auth',
+        humanMessage: apiKey
+          ? 'OpenCode integration detected (CLI bridge).'
+          : 'OpenCode integration not configured yet (opencode CLI not detected).',
+        remedy: apiKey
+          ? 'Nothing is broken: the opencode CLI providers stream through the CLI bridge during chat; capability results confirm real output there.'
+          : 'Install/run the opencode CLI once (it writes its config + OAuth token); Ty-Code borrows its providers automatically afterward.',
+        steps,
+        testedModel: provider.best_free_models[0] || undefined
+      };
+    }
+
     // Community tier without a resolvable key: provisioning is temporarily
     // unavailable (endpoint down, offline cache empty, or rate limited). The
     // runtime degrades to the anonymous OpenKilo pool; that covers real

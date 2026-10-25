@@ -89,8 +89,8 @@ export const ROUTER_MODEL_CATALOG: ModelCatalogEntry[] = [
     baseLatencyMs: 400
   },
   {
-    modelId: 'llama-3.3-70b-versatile',
-    modelName: 'Llama 3.3 70B Versatile (Groq Ultra-Fast)',
+    modelId: 'openai/gpt-oss-120b',
+    modelName: 'GPT OSS 120B (Groq Ultra-Fast)',
     providerId: 'groq-free',
     providerName: 'Groq',
     tier: 'tier_a_coding',
@@ -129,8 +129,8 @@ export const ROUTER_MODEL_CATALOG: ModelCatalogEntry[] = [
 
   // Tier C: Quick Responses & Ultra-Fast Confirmation
   {
-    modelId: 'llama-3.1-8b-instant',
-    modelName: 'Llama 3.1 8B Instant (Groq)',
+    modelId: 'openai/gpt-oss-20b',
+    modelName: 'GPT OSS 20B (Groq)',
     providerId: 'groq-free',
     providerName: 'Groq',
     tier: 'tier_c_fast',

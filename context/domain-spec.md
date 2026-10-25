@@ -115,7 +115,7 @@ graph TD
    - Default Coding Models: `deepseek/deepseek-chat`, `deepseek/deepseek-r1`, `qwen/qwen-2.5-coder-32b-instruct`, `meta-llama/llama-3.3-70b-instruct:free`
 2. **Groq**:
    - Base URL: `https://api.groq.com/openai/v1`
-   - Ultra-fast token generation (~250-500 tokens/sec) with `llama-3.3-70b-versatile` or `qwen-2.5-coder-32b`.
+   - Ultra-fast token generation (~500-1000 tokens/sec) with `openai/gpt-oss-120b`, `qwen/qwen3.6-27b`, or `openai/gpt-oss-20b` (Groq retired `llama-3.3-70b-versatile`/`llama-3.1-8b-instant` on 2026-08-16).
 3. **Local Ollama**:
    - Base URL: `http://localhost:11434/v1`
    - 100% offline, private inference with models such as `qwen2.5-coder:14b`, `deepseek-r1:14b`.

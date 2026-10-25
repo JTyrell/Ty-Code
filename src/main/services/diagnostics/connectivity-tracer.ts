@@ -44,10 +44,13 @@ export const CANNED_TRACE_PROMPT = 'Reply with exactly: TRACE-OK';
 
 /**
  * Connectivity probes always ride a model that was answered live with the
- * Community Key on 2026-10-21 (single-shot chat/completions probes against
+ * Community Key (single-shot chat/completions probes against
  * OpenRouter; Kilo checked the same day for the anonymous pool). Re-probe
  * before changing any slug here so lower layers (H6) never fail because the
  * probe picked a retired model rather than real connectivity problems.
+ * Groq: llama-3.3-70b-versatile / llama-3.1-8b-instant were retired on
+ * 2026-08-16 for free & developer tiers (groq.com/docs/deprecations);
+ * openai/gpt-oss-20b is the current free-tier fast probe target.
  */
 const PROBE_MODEL_MATRIX: Record<string, string> = {
   'ty-code-free': 'google/gemma-4-31b-it:free',
@@ -55,8 +58,8 @@ const PROBE_MODEL_MATRIX: Record<string, string> = {
   'openkilo-free': 'kilo-auto/free',
   openrouter: 'google/gemma-4-31b-it:free',
   'openrouter-free': 'google/gemma-4-31b-it:free',
-  groq: 'llama-3.1-8b-instant',
-  'groq-free': 'llama-3.1-8b-instant'
+  groq: 'openai/gpt-oss-20b',
+  'groq-free': 'openai/gpt-oss-20b'
 };
 
 function resolveProbeModel(providerId: string): string {
