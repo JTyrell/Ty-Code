@@ -17,6 +17,8 @@
  */
 import { getProviderSettings } from '../ipc/settings-handlers';
 import { getCommunityKey, warmUpCommunityKey } from '../services/credential-vault';
+import { routeEventPolicy, type RouteNotice, type SelectionOrigin } from '../providers/route-event-policy';
+import { providerHealthStore } from '../providers/provider-health-store';
 
 export type ActiveConfigKeyStatus = 'own' | 'community' | 'anonymous' | 'missing';
 
@@ -37,6 +39,12 @@ export interface ActiveProviderConfigSummary {
   degraded?: boolean;
   /** Machine-readable context for the renderer toast. */
   reason?: 'MISSING_KEY' | 'UNRESOLVED_COMMUNITY' | undefined;
+  /**
+   * Present ONLY when RouteEventPolicy allows the renderer to tell the user
+   * something (ACTIONABLE once per provider, LEDGER_PLUS_ONCE once per
+   * session). Absent means: stay silent, no toast.
+   */
+  notice?: RouteNotice | undefined;
 }
 
 const TY_CODE_FREE_PROVIDER = 'ty-code-free';
@@ -117,7 +125,11 @@ export function seedActiveConfig(providerId: string | undefined, modelId: string
  * resolution failures are reported through the summary so the renderer can
  * present a UI error and keep its previous selection.
  */
-export async function setActiveAgentConfig(providerId: string, modelId: string): Promise<ActiveProviderConfigSummary> {
+export async function setActiveAgentConfig(
+  providerId: string,
+  modelId: string,
+  origin: SelectionOrigin = 'auto'
+): Promise<ActiveProviderConfigSummary> {
   const requestedProvider = (providerId || '').trim();
   const requestedModel = (modelId || '').trim();
 
@@ -169,6 +181,10 @@ export async function setActiveAgentConfig(providerId: string, modelId: string):
   // 3. Keyed provider: resolve the credential from the merged settings layer.
   const ownKey = await resolveOwnKey(requestedProvider);
   if (ownKey) {
+    // A saved key re-arms the provider: clear sticky invalid_key health and
+    // the once-per-session actionable warning.
+    providerHealthStore.clear(requestedProvider);
+    routeEventPolicy.onKeySaved(requestedProvider);
     currentAgentConfig = {
       providerId: requestedProvider,
       modelId: normalizeModel(requestedProvider, requestedModel),
@@ -196,13 +212,24 @@ export async function setActiveAgentConfig(providerId: string, modelId: string):
       modelId: TY_CODE_FREE_MODEL,
       updatedAt: Date.now()
     };
+    // Policy decides whether this downgrade may reach the renderer. Automatic
+    // syncs (hydration, store mirrors, window mounts) are SILENT or once per
+    // session; only an explicit user selection is ACTIONABLE (once per provider).
+    const notice = routeEventPolicy.resolveKeyMissingNotice({
+      providerId: requestedProvider,
+      apiKeyOptional: false, // this branch is only reached for key-requiring providers
+      origin,
+      landedOnWorkingFree: true
+    });
     return {
       providerId: TY_CODE_FREE_PROVIDER,
       modelId: TY_CODE_FREE_MODEL,
       keyStatus: 'community',
       maskedKey: maskKey(communityKey),
+      // `degraded`/`reason` are ledger-grade facts the renderer must not toast on.
       degraded: true,
-      reason: 'MISSING_KEY'
+      reason: 'MISSING_KEY',
+      ...(notice ? { notice } : {})
     };
   }
 

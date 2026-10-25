@@ -18,6 +18,8 @@ import { fccManager } from './fcc-manager';
 import { modelRotationManager, FALLBACK_CHAIN } from '../model-rotation-manager';
 import { credentialStore } from '../auth/credential-store';
 import type { ProviderCandidate, RoutingContext } from './strategies/types';
+import { providerHealthStore } from '../../providers/provider-health-store';
+import { routeEventPolicy } from '../../providers/route-event-policy';
 
 export interface FailoverEvent {
   attempt: number;
@@ -298,11 +300,19 @@ export class OmniRouteRouter {
       options = optionsOrMessages;
     }
 
-    const { context = {}, settings = {} as ProviderSettings, messages, execute, onFailover } = options;
+    const { context = {}, settings = {} as ProviderSettings, messages, execute } = options;
 
     const failoverEnabled = settings.enableFailover !== false;
     const maxRetries = failoverEnabled ? (settings.maxFailoverRetries ?? 3) : 1;
+    // Sticky health is read at request time: providers with a persisted
+    // invalid_key (or a live Retry-After TTL) are excluded before the first
+    // attempt, so they are never re-walked and never re-announced.
     const excludedProviders = new Set<string>(context.excludedProviders || []);
+    for (const dead of providerHealthStore.deadProviderSet()) {
+      excludedProviders.add(dead);
+      excludedProviders.add(`${dead}-free`);
+      routeEventPolicy.recordSkip(undefined, dead);
+    }
     const failoverHistory: FailoverEvent[] = [];
 
     let attempt = 0;
@@ -357,6 +367,17 @@ export class OmniRouteRouter {
         this.pool.recordFailure(candidate.provider.id, errorMsg, statusCode);
         excludedProviders.add(candidate.provider.id);
 
+        // Sticky health: auth rejections persist, rate limits keep a TTL in memory.
+        if (statusCode === 401 || statusCode === 403 || /invalid api key|api key not valid|unauthori[sz]ed/i.test(errorMsg)) {
+          providerHealthStore.markInvalidKey(candidate.provider.id, statusCode ?? 401);
+        } else if (statusCode === 429 || /\[RATE_LIMITED\]/.test(errorMsg)) {
+          const retryAfter = errorMsg.match(/retry[- ]after[^\d]*(\d+)/i);
+          providerHealthStore.markRateLimited(candidate.provider.id, retryAfter ? Number(retryAfter[1]) : undefined);
+        }
+        // Ledger + trail only. Retries against the same provider collapse into
+        // one hop with an attempt counter; nothing is emitted from here.
+        routeEventPolicy.recordHop(undefined, candidate.provider.id, statusCode ?? 'err');
+
         const event: FailoverEvent = {
           attempt,
           failedProvider: candidate.provider.id,
@@ -375,7 +396,11 @@ export class OmniRouteRouter {
           }
           event.nextProvider = next.provider.id;
           event.nextModel = next.model.id;
-          onFailover?.(event);
+          routeEventPolicy.setLanding(undefined, next.provider.id);
+          // No per-hop notification: the hop is already in the per-turn trail and
+          // the single consolidated [ROUTE] line is emitted once at `done`.
+          // `options.onFailover` is retained in the options type for API
+          // compatibility but is intentionally never invoked per hop.
         } else {
           // Out of retry attempts
           throw new Error(

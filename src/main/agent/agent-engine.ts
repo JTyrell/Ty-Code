@@ -30,6 +30,8 @@ import { agentObservability } from './agent-observability';
 import { skillRegistry } from './agent-skills';
 import { getCorrections, onCorrectionAdded, computeWorkspaceHash, type CorrectionEvent } from '../services/context-engine/correction-memory';
 import { modelRotationManager } from '../services/model-rotation-manager';
+import { routeEventPolicy } from '../providers/route-event-policy';
+import { providerHealthStore } from '../providers/provider-health-store';
 
 interface ActiveSessionContext {
   taskId: string;
@@ -310,7 +312,26 @@ export class AgentEngine {
   }
 
   async run(params: RunAgentParams): Promise<void> {
-    const { prompt, workspacePath, history, settings, activeFilePath, activeFileContent, onChunk, requestApproval, abortSignal, onRequestWorkspaceOpen, mode = 'BUILD' } = params;
+    const { prompt, workspacePath, history, settings, activeFilePath, activeFileContent, onChunk: rawOnChunk, requestApproval, abortSignal, onRequestWorkspaceOpen, mode = 'BUILD' } = params;
+
+    // ===== Route event policy: ONE consolidated route event per user turn =====
+    // Per-hop failover/handoff/retry events are recorded into the trail and the
+    // local ledger only. At `done`, a single `status` chunk carries the whole
+    // trail, e.g. "[ROUTE] openrouter(401) -> google(401) -> ty-code-free(ok)".
+    // No new AgentStreamChunk types are introduced.
+    const routeTurnId = params.taskId || `turn_${Date.now().toString(36)}`;
+    let finalRouteProvider = '';
+    routeEventPolicy.beginTurn(routeTurnId);
+    const onChunk = (chunk: AgentStreamChunk): void => {
+      if (chunk.type === 'done') {
+        const trailLine = routeEventPolicy.finishTurn(routeTurnId, finalRouteProvider);
+        if (trailLine) rawOnChunk({ type: 'status', content: trailLine });
+      } else if (chunk.type === 'error' || chunk.type === 'cancelled') {
+        // Close the turn so counters are logged; never add a trail on failure paths.
+        routeEventPolicy.finishTurn(routeTurnId, finalRouteProvider);
+      }
+      rawOnChunk(chunk);
+    };
 
     // ===== STEP 1: O(1) ENVIRONMENT STATE (before any tool planning) =====
     // Synchronous singleton read - no disk I/O, no PTY spawns.
@@ -736,6 +757,7 @@ export class AgentEngine {
           activeModel = providerSwitch.model || 'kilo-auto/free';
           runProvider = activeProvider;
           runModel = activeModel;
+          finalRouteProvider = activeProvider;
           console.log(`[AGENT] Provider (failover override): ${activeProvider}, Model: ${activeModel}`);
         } else {
           // Live active-config read: renderer selections (models:update-active-model-config)
@@ -779,8 +801,20 @@ export class AgentEngine {
               }
             }
           }
+          // Sticky health read at request time: a provider with a persisted
+          // invalid_key (or a live Retry-After TTL) is skipped without a request,
+          // so later turns route straight to a working tier with zero re-emission.
+          if (providerHealthStore.isDead(activeProvider)) {
+            const swapped = await pickNextAgentProvider(providerHealthStore.deadProviderSet(), activeModel);
+            if (swapped) {
+              routeEventPolicy.recordSkip(routeTurnId, activeProvider);
+              activeProvider = swapped.providerId;
+              activeModel = swapped.modelId;
+            }
+          }
           runProvider = activeProvider;
           runModel = activeModel;
+          finalRouteProvider = activeProvider;
           console.log(`[AGENT] Provider: ${activeProvider}, Model: ${activeModel}`);
         }
 
@@ -1456,7 +1490,10 @@ export class AgentEngine {
             }
           }
           const failedProviderNorm = (failedProvider || '').toLowerCase().trim().replace(/-free$/, '');
-          const next = await pickNextAgentProvider(new Set([...failedProviders, failedProviderNorm]), failedModel);
+          const next = await pickNextAgentProvider(
+            new Set([...failedProviders, failedProviderNorm, ...providerHealthStore.deadProviderSet()]),
+            failedModel
+          );
           if (next) {
             if (failedProviderNorm) failedProviders.add(failedProviderNorm);
             providerSwitch.provider = next.providerId;
@@ -1481,16 +1518,18 @@ export class AgentEngine {
               content: `[SYSTEM: Provider switched to ${next.providerId} (${next.modelId}) due to ${rateLimited ? 'rate limit' : 'provider outage'}. Continue the task.]${omniContextBlock ? `\n\n${omniContextBlock}` : ''}`
             });
 
-            onChunk({ type: 'status', content: `Provider switched to ${next.providerId}. Continuing the current task.` });
-            try {
-              params.onProviderHandoff?.({
-                fromProvider: failedProvider,
-                toProvider: next.providerId,
-                toModel: next.modelId
-              });
-            } catch {
-              // Notification callback must never break the failover chain
+            // Per-hop status chunk and per-hop handoff IPC removed: record into
+            // sticky health and the per-turn trail; the single consolidated
+            // [ROUTE] status chunk is emitted at `done`.
+            const failureStatus = Number(message.match(/\((\d{3})\)/)?.[1]) || (rateLimited ? 429 : 'err');
+            if (failureStatus === 401 || failureStatus === 403 || /KEY_MISSING_ERROR|key required|invalid api key/i.test(message)) {
+              providerHealthStore.markInvalidKey(failedProvider, Number(failureStatus) || 401);
+            } else if (failureStatus === 429) {
+              providerHealthStore.markRateLimited(failedProvider);
             }
+            routeEventPolicy.recordHop(routeTurnId, failedProvider, failureStatus);
+            routeEventPolicy.setLanding(routeTurnId, next.providerId);
+            finalRouteProvider = next.providerId;
             agentObservability.recordEvent({
               type: 'provider_failover',
               fromProvider: failedProvider,

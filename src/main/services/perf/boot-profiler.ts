@@ -13,6 +13,22 @@ import type {
   TransitionMetric
 } from '../../../shared/types/perf';
 
+export interface BootHistoryEntry {
+  /** Stable per-process id; persisting twice in one boot updates the same entry. */
+  bootId: string;
+  at: string;
+  target: 'portable' | 'installed' | 'dev';
+  version: string;
+  /**
+   * Time from this process's start to main_import. For portable builds the
+   * stub's temp-extraction wait happens in the parent stub BEFORE this process
+   * exists, so it can not be seen here: every timeline starts after extraction
+   * and portable vs installed deltas are therefore extraction-free by design.
+   */
+  preMainImportMs: number;
+  marks: Record<string, { atMs: number; deltaMs: number }>;
+}
+
 export class BootProfiler {
   private static instance: BootProfiler | null = null;
   private readonly processStartTime: number;
@@ -410,6 +426,76 @@ export class BootProfiler {
       totalBootMs,
       gapWarnings: this.findGaps(100)
     };
+  }
+
+  public hasMark(name: string): boolean {
+    return this.marks.some((m) => m.name === name);
+  }
+
+  /**
+   * portable: PORTABLE_EXECUTABLE_DIR is set by electron-builder's portable stub.
+   * dev: unpackaged. installed: packaged without the portable variable (NSIS).
+   */
+  public getDistributionTarget(): 'portable' | 'installed' | 'dev' {
+    if (process.env.PORTABLE_EXECUTABLE_DIR) return 'portable';
+    if (!app?.isPackaged) return 'dev';
+    return 'installed';
+  }
+
+  private historyPath(): string | null {
+    try {
+      return path.join(app.getPath('userData'), 'boot-history.json');
+    } catch {
+      return null;
+    }
+  }
+
+  public getBootHistory(): BootHistoryEntry[] {
+    const file = this.historyPath();
+    if (!file) return [];
+    try {
+      const parsed = JSON.parse(fs.readFileSync(file, 'utf-8')) as BootHistoryEntry[];
+      return Array.isArray(parsed) ? parsed.slice(-5) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Appends this boot to the local boot-history file (last 5 kept). Local-only:
+   * no network, no telemetry. Per-mark durations are deltas from the previous
+   * mark, so portable vs installed regressions compare directly (see
+   * BootHistoryEntry.preMainImportMs for what is and is not measurable).
+   */
+  public persistBootHistory(): void {
+    const file = this.historyPath();
+    if (!file) return;
+    try {
+      const wanted = ['main_import', 'app_ready', 'window_created', 'ready_to_show', 'renderer_first_paint', 'deferred_tasks_start', 'update_check_start'];
+      const byName = new Map(this.marks.map((m) => [m.name, m.timestamp]));
+      const marks: Record<string, { atMs: number; deltaMs: number }> = {};
+      let prev = byName.get('main_import') ?? 0;
+      for (const name of wanted) {
+        const at = byName.get(name);
+        if (at === undefined) continue;
+        marks[name] = { atMs: at, deltaMs: Math.round((at - prev) * 10) / 10 };
+        prev = at;
+      }
+      const mainImportAt = byName.get('main_import') ?? 0;
+      const target = this.getDistributionTarget();
+      const entry: BootHistoryEntry = {
+        bootId: String(this.processStartTime),
+        at: new Date().toISOString(),
+        target,
+        version: app?.getVersion ? app.getVersion() : 'unknown',
+        preMainImportMs: Math.round(mainImportAt * 10) / 10,
+        marks
+      };
+      const history = [...this.getBootHistory().filter((h) => h.bootId !== entry.bootId), entry].slice(-5);
+      fs.writeFileSync(file, JSON.stringify(history, null, 2), 'utf-8');
+    } catch (err) {
+      console.warn('[BootProfiler] Failed to persist boot history:', err);
+    }
   }
 
   /**

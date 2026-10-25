@@ -555,10 +555,14 @@ export const ModelSelector: React.FC = () => {
 
     try {
       if (window.electronAPI?.updateActiveProviderConfig) {
-        await window.electronAPI.updateActiveProviderConfig({
+        const syncRes = await window.electronAPI.updateActiveProviderConfig({
           providerId: targetProvider,
-          modelId: candidate.modelId
+          modelId: candidate.modelId,
+          origin: 'explicit'
         });
+        // Main's RouteEventPolicy dedupes (once per provider per session).
+        const notice = syncRes?.data?.notice;
+        if (notice?.severity === 'warning') toast.warning(notice.title, notice.message);
       }
     } catch {}
 

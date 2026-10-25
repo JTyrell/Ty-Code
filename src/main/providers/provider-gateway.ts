@@ -32,6 +32,8 @@ import { usageLedger as tokenAccountingLedger } from '../services/usage/usage-le
 import { countTokens, type LayerToken } from '../services/usage/token-accounting';
 import { fccSidecarManager } from '../services/fcc-sidecar-manager';
 import { modelRotationManager } from '../services/model-rotation-manager';
+import { providerHealthStore } from './provider-health-store';
+import { routeEventPolicy } from './route-event-policy';
 import { fccModelMapper } from '../services/fcc-model-mapper';
 
 const OPENCODE_FREE_PROTOCOL = 'opencode-cli://';
@@ -1427,15 +1429,18 @@ export async function sendChatRequest(
         const nextModel = pickHandoffCandidate(allModels, config?.providerId || providerId, requestedModel);
         if (nextModel) {
           console.log(`[GATEWAY] Handing off to ${nextModel.providerId} (${nextModel.modelId})`);
-          try {
-            onHandoff?.({
-              fromProvider: config.providerId || providerId,
-              toProvider: nextModel.providerId,
-              toModel: nextModel.modelId
-            });
-          } catch {
-            // Notification callback must never break the request chain
+          // Per-hop renderer notification removed (backend emission defect).
+          // Record into sticky health + the per-turn trail instead; the single
+          // consolidated [ROUTE] status chunk is emitted once at `done`.
+          const failedProviderId = config.providerId || providerId;
+          if (response.status === 401 || response.status === 403) {
+            providerHealthStore.markInvalidKey(failedProviderId, response.status);
+          } else if (response.status === 429) {
+            const retryAfter = Number(response.headers.get('retry-after'));
+            providerHealthStore.markRateLimited(failedProviderId, Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : undefined);
           }
+          routeEventPolicy.recordHop(currentTaskId, failedProviderId, response.status);
+          routeEventPolicy.setLanding(currentTaskId, nextModel.providerId);
           // Only carry the original key when the target is the same provider
           // family — never forward one provider's key to another provider.
           const nextApiKey = (nextModel.providerId || '') === (providerId || '') ? apiKey : undefined;
@@ -1849,15 +1854,9 @@ export async function sendChatRequest(
       const nextModel = pickHandoffCandidate(allModels, config?.providerId || providerId, requestedModel);
       if (nextModel) {
         console.log(`[GATEWAY] Handing off to ${nextModel.providerId} (${nextModel.modelId})`);
-        try {
-          onHandoff?.({
-            fromProvider: config.providerId || providerId,
-            toProvider: nextModel.providerId,
-            toModel: nextModel.modelId
-          });
-        } catch {
-          // Notification callback must never break the request chain
-        }
+        // Mid-stream failure: trail only, never a per-hop renderer event.
+        routeEventPolicy.recordHop(currentTaskId, config.providerId || providerId, 'err');
+        routeEventPolicy.setLanding(currentTaskId, nextModel.providerId);
         const nextApiKey = (nextModel.providerId || '') === (providerId || '') ? apiKey : undefined;
         // Recursively call sendChatRequest with the new provider and incremented handoffCount
         return await sendChatRequest(
@@ -1995,8 +1994,12 @@ export function pickHandoffCandidate(
   const isFreeCandidate = (m: VerifiedModelConfig) =>
     isFreeModel(m.modelId, m.providerId) || !m.requiresKey;
 
+  // Sticky health: providers with a persisted invalid_key (or a live
+  // Retry-After TTL) are never handoff targets, so dead providers are not re-walked.
+  const dead = providerHealthStore.deadProviderSet();
   const eligible = allModels.filter((m) => {
     if ((m.providerId || '').toLowerCase() === (currentProviderId || '').toLowerCase()) return false;
+    if (providerHealthStore.isDead(m.providerId) || dead.has((m.providerId || '').toLowerCase())) return false;
     return !m.requiresKey || providerHasOwnKey(m.providerId);
   });
   if (eligible.length === 0) return undefined;

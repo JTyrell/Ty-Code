@@ -35,6 +35,8 @@ import {
 } from './ipc/lsp-handlers';
 import { getCredentialStorageStatusResponse, getSettings, getSettingsLayer, getSecurityPolicy, saveSecurityPolicy, saveSettings, saveSettingsLayer, readOnboardingState, writeOnboardingState, mergeStoredApiKeys, classifySettingsError } from './ipc/settings-handlers';
 import { setActiveAgentConfig } from './agent/agent-config';
+import { providerHealthStore } from './providers/provider-health-store';
+import { routeEventPolicy } from './providers/route-event-policy';
 import { settingsManager } from './services/settings-manager';
 import { startAgentTask, stopAgentTask, respondAgentApproval, applyDiff, handleUserApproveDiff } from './ipc/agent-handlers';
 import { chatLatencyTracker } from './providers/provider-gateway';
@@ -231,6 +233,7 @@ import { registerPromptAssemblerHandlers } from './ipc/preferences-handlers';
  * arguments are forwarded to the primary instance's 'second-instance' handler,
  * and the secondary instance quits immediately.
  */
+bootProfiler.recordMark('main_import');
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
   process.stdout.write('[INSTANCE] Another Ty-Code instance is already running; focusing it instead of starting a second copy.\n');
@@ -1178,12 +1181,13 @@ function registerIpcHandlers(): void {
   // Renderer selection changes funnel here: validate -> active agent config ->
   // gateway override -> persist. Credentials never travel over this channel;
   // only masked key summaries (e.g. "sk-ant-••••1234") are returned.
-  ipcMain.handle('providers:update-active-config', async (event, config: { providerId?: string; modelId?: string }) => {
+  ipcMain.handle('providers:update-active-config', async (event, config: { providerId?: string; modelId?: string; origin?: 'explicit' | 'auto' }) => {
     if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
     try {
       const providerId = typeof config?.providerId === 'string' ? config.providerId : '';
       const modelId = typeof config?.modelId === 'string' ? config.modelId : '';
-      const summary = await setActiveAgentConfig(providerId, modelId);
+      const origin = config?.origin === 'explicit' ? 'explicit' : 'auto';
+      const summary = await setActiveAgentConfig(providerId, modelId, origin);
       if (summary.keyStatus === 'missing') {
         return {
           success: false,
@@ -2222,6 +2226,10 @@ function registerIpcHandlers(): void {
     try {
       const result = await saveOpenCodeApiKey(String(providerName || ''), String(apiKey || ''));
       const landed = result.vaultStored || result.configUpdated;
+      if (landed) {
+        providerHealthStore.clear(String(providerName || ''));
+        routeEventPolicy.onKeySaved(String(providerName || ''));
+      }
       return {
         success: landed,
         data: result,
@@ -3093,6 +3101,10 @@ function registerIpcHandlers(): void {
 }
 
 function registerPerfHandlers(): void {
+  ipcMain.handle('perf:get-boot-history', () => ({
+    success: true,
+    data: bootProfiler.getBootHistory()
+  }));
   ipcMain.handle('perf:get-boot-trace', () => ({
     success: true,
     data: bootProfiler.getTrace()
@@ -3935,6 +3947,9 @@ function registerFccHandlers(): void {
       await saveKey(provider, strKey);
       await credentialStore.saveCredential(provider, strKey, `${String(provider).toUpperCase()} Key`);
       await mergeStoredApiKeys({ [String(provider).toLowerCase().trim()]: strKey });
+      // A re-saved key lifts the sticky invalid_key state and re-arms the actionable warning.
+      providerHealthStore.clear(String(provider));
+      routeEventPolicy.onKeySaved(String(provider));
       return { success: true };
     } catch (err: unknown) {
       return { success: false, error: err instanceof Error ? err.message : String(err) };
@@ -4107,6 +4122,7 @@ function createWindow(): void {
   workspaceManager.setMainWindow(window);
   connectivityTracer.setMainWindow(window);
   bootProfiler.recordMark('window_created');
+  window.once('ready-to-show', () => bootProfiler.recordMark('ready_to_show'));
 
   // Dev-boot diagnostics: surface renderer-side failures in the main log so a
   // blank window is diagnosable without opening devtools.
@@ -4580,11 +4596,26 @@ app.whenReady().then(async () => {
     3,
     'update',
     () => {
-      try {
-        getUpdateManager().checkForUpdates();
-      } catch {
-        // Non-blocking
-      }
+      // No feed query at boot on ANY target. The first check waits for the
+      // renderer's first paint plus 15s idle; the About/Updates section can
+      // still trigger an immediate check through the `update:check` IPC.
+      const IDLE_AFTER_FIRST_PAINT_MS = 15_000;
+      const arm = (): void => {
+        if (!bootProfiler.hasMark('renderer_first_paint')) {
+          setTimeout(arm, 1_000);
+          return;
+        }
+        setTimeout(() => {
+          bootProfiler.recordMark('update_check_start');
+          bootProfiler.persistBootHistory();
+          try {
+            void getUpdateManager().checkForUpdates();
+          } catch {
+            // Non-blocking
+          }
+        }, IDLE_AFTER_FIRST_PAINT_MS);
+      };
+      arm();
     }
   );
 

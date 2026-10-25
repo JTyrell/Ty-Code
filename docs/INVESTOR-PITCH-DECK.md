@@ -180,6 +180,7 @@ The developer never sees a crash. They just see blistering-fast, uninterrupted c
 -->
 
 ---
+<!-- _class: compact -->
 
 # Dedicated Architecture: Failover Chain
 
@@ -262,31 +263,19 @@ A developer can download Ty-Code right now and immediately begin generating code
 -->
 
 ---
+<!-- _class: compact -->
 
 # Dedicated Architecture: 11-Harness FCC Routing Map
 
 ```mermaid
 graph TD
-    subgraph Client [Ty-Code Desktop Client]
-        IDE[Monaco Editor & Sidecar]
-        ROUTER[Multi-Harness Router]
+    subgraph Client [Ty-Code Desktop]
+        IDE[Monaco & Sidecar] --> ROUTER[Multi-Harness Router]
     end
-    subgraph Runtimes [11 Supported Runtime Harnesses]
-        H1[Claude Code]
-        H2[Codex]
-        H3[VS Code API]
-        H4[Pi & OpenCode]
-        H5[Cline & Aider]
-        H6[Hermes, DeepSeek, Grok, Mistral]
+    subgraph Supply [FCC Reverse Proxy - Port 8765]
+        PROXY[Loopback Supply Adapter] --> POOL[1.3B+ Free Token Pool]
     end
-    subgraph Supply [FCC Reverse Proxy Layer - Port 8765]
-        PROXY[Local Loopback Supply Adapter]
-        POOL[1.3B+ High-Throughput Free Token Pool]
-    end
-    IDE --> ROUTER
-    ROUTER --> H1 & H2 & H3 & H4 & H5 & H6
-    H1 & H2 & H3 & H4 & H5 & H6 --> PROXY
-    PROXY --> POOL
+    ROUTER --> RUNTIMES[11 Supported Runtimes: Claude Code, Codex, VS Code, Pi, Cline, Aider...] --> PROXY
 ```
 
 * **Unified Loopback Engine:** 11 harnesses multiplexed over a secure local port.

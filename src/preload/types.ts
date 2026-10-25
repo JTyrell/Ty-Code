@@ -267,6 +267,14 @@ export interface ActiveProviderConfigSummary {
   maskedKey?: string;
   degraded?: boolean;
   reason?: 'MISSING_KEY' | 'UNRESOLVED_COMMUNITY';
+  /** Set by main's RouteEventPolicy only when the user may be told something. */
+  notice?: {
+    class: 'SILENT' | 'LEDGER_PLUS_ONCE' | 'ACTIONABLE';
+    severity: 'info' | 'warning';
+    title: string;
+    message: string;
+    actionUrl?: string;
+  };
 }
 
 export interface FileNode {
@@ -981,7 +989,7 @@ export interface ElectronAPI {
   getSettings: () => Promise<IpcResponse<ProviderSettings>>;
   saveSettings: (settings: Partial<ProviderSettings>) => Promise<IpcResponse<void>>;
   /** Selection -> active agent config sync. Returns masked summaries only. */
-  updateActiveProviderConfig: (config: { providerId: string; modelId?: string }) => Promise<IpcResponse<ActiveProviderConfigSummary>>;
+  updateActiveProviderConfig: (config: { providerId: string; modelId?: string; origin?: 'explicit' | 'auto' }) => Promise<IpcResponse<ActiveProviderConfigSummary>>;
   getTelemetryPreview: () => Promise<IpcResponse<TelemetryPreview>>;
   deleteTelemetryEvent: (index: number, expected: TelemetryEvent) => Promise<IpcResponse<void>>;
   clearTelemetryData: () => Promise<IpcResponse<void>>;

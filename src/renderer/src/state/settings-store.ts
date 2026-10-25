@@ -46,6 +46,13 @@ function configSignature(providerId: string, modelId: string): string {
   return `${providerId}::${modelId}`;
 }
 
+/**
+ * Origin of the next main-process sync. Only the user-facing setters below
+ * flip this to 'explicit'; hydration, store mirrors and window mounts stay
+ * 'auto', which main treats as SILENT (no toast, ledger only).
+ */
+let nextSyncOrigin: 'explicit' | 'auto' = 'auto';
+
 export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
   activeProviderId: DEFAULTS.activeProviderId,
   activeModelId: DEFAULTS.activeModelId,
@@ -78,6 +85,7 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
   },
 
   setActiveProvider: (providerId, modelId) => {
+    nextSyncOrigin = 'explicit';
     const defaultModel = providerId === TY_CODE_FREE_PROVIDER ? TY_CODE_FREE_MODEL : undefined;
     set({
       activeProviderId: providerId || DEFAULTS.activeProviderId,
@@ -86,6 +94,7 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
   },
 
   setActiveModel: (modelId) => {
+    nextSyncOrigin = 'explicit';
     set({
       activeModelId: modelId,
       activeProviderId: get().activeProviderId || DEFAULTS.activeProviderId
@@ -125,7 +134,9 @@ async function syncActiveConfigToMain(providerId: string, modelId: string): Prom
   syncInFlight = true;
   useSettingsStore.setState({ syncing: true });
   try {
-    const response = await window.electronAPI.updateActiveProviderConfig({ providerId, modelId });
+    const origin = nextSyncOrigin;
+    nextSyncOrigin = 'auto';
+    const response = await window.electronAPI.updateActiveProviderConfig({ providerId, modelId, origin });
     if (!response.success) throw new Error(response.error || 'Active provider sync failed');
     const summary = (response.data || {}) as ActiveProviderConfigSummary;
 
@@ -140,11 +151,13 @@ async function syncActiveConfigToMain(providerId: string, modelId: string): Prom
       lastSyncedSignature = configSignature(providerId, modelId);
     }
 
-    if (summary.degraded && summary.reason === 'MISSING_KEY') {
-      toast.warning(
-        'Provider key missing',
-        `Switched to Ty-Code Free (${summary.providerId}) so chat keeps working. Add your ${providerId} key in Settings > API Keys.`
-      );
+    // Main's RouteEventPolicy owns emission. `degraded`/`reason` alone never
+    // toast; a notice exists only for ACTIONABLE (once per provider) or the
+    // once-per-session info hint. No notice means stay silent.
+    if (summary.notice) {
+      const { severity, title, message } = summary.notice;
+      if (severity === 'warning') toast.warning(title, message);
+      else toast.info(title, message);
     }
 
     // Persist to main settings layer
