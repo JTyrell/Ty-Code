@@ -9,6 +9,7 @@ import type { ArchProjectReport } from './debugger-engines/arch-engine';
 import { getOrScanWorkspaceProfile } from './context-engine/workspace-scanner';
 import type { WorkspaceProfile } from './context-engine/types';
 import { resolveWorkerRuntimeFile } from './debugger-engines/runtime-paths';
+import { memoryGovernor } from './memory-governor';
 import type { AnalysisResult, AnalysisRole, AnalysisSeverity } from '../windows/debugger-window';
 import type { VerifiedModelConfig } from './verified-models';
 import { onCorrectionAdded, computeWorkspaceHash, type CorrectionEvent, getCorrections } from './context-engine/correction-memory';
@@ -251,30 +252,46 @@ export async function runFullAnalysis(
   // Context Engine Integration: retrieve workspace profile for architectural drift & DB profiling
   const profile: WorkspaceProfile | null = await getOrScanWorkspaceProfile(projectRoot).catch(() => null);
 
+  // Step 5 (LITE mode): cap debugger workers to ONE alive at any moment.
+  // The gate serializes the engine passes; in FULL mode it is identity and
+  // the passes run concurrently exactly as before.
+  const liteMode = memoryGovernor.isLiteMode();
+  let liteGate: Promise<void> = Promise.resolve();
+  const withLiteGate = <T,>(task: () => Promise<T>): Promise<T> => {
+    if (!liteMode) return task();
+    const run = liteGate.then(task, task);
+    liteGate = run.then(() => undefined, () => undefined);
+    return run;
+  };
+
   const staticStep: Promise<WorkerOutcome<AnalysisResult[]> | WorkerFailure> = targetFile
-    ? runWorkerJob<AnalysisResult[]>(
-        'static-worker.js',
-        { kind: 'static', filePath: targetFile, model: staticModel.modelId, provider: staticModel.providerId },
-        STATIC_ENGINE_BUDGET_MS
+    ? withLiteGate(() =>
+        runWorkerJob<AnalysisResult[]>(
+          'static-worker.js',
+          { kind: 'static', filePath: targetFile, model: staticModel.modelId, provider: staticModel.providerId },
+          STATIC_ENGINE_BUDGET_MS
+        )
       )
     : Promise.resolve({ ok: true, result: [] as AnalysisResult[] });
 
   const dynamicStep: Promise<AnalysisResult[]> = targetFile
-    ? (async () => {
+    ? withLiteGate(async () => {
         const runtime = await runDynamicAnalysis(targetFile);
         const runtimeFindings = mapDynamicResultToFindings(runtime, targetFile);
         const dbFindings = await profileFileDatabaseQueries(targetFile, { profile, projectRoot });
         return [...runtimeFindings, ...dbFindings];
-      })()
+      })
     : Promise.resolve([]);
 
   const [staticOutcome, dynamicOutcome, archOutcome] = await Promise.allSettled([
     staticStep,
     dynamicStep,
-    runWorkerJob<ArchProjectReport>(
-      'arch-worker.js',
-      { kind: 'arch', projectRoot, profile, model: archModel.modelId, provider: archModel.providerId },
-      ARCH_ENGINE_BUDGET_MS
+    withLiteGate(() =>
+      runWorkerJob<ArchProjectReport>(
+        'arch-worker.js',
+        { kind: 'arch', projectRoot, profile, model: archModel.modelId, provider: archModel.providerId },
+        ARCH_ENGINE_BUDGET_MS
+      )
     )
   ]);
 

@@ -48,9 +48,9 @@ export default function SiteFooter() {
 
       <div className={styles.bottomBar}>
         <div className={styles.attributionText}>
-          <p className={styles.tagline}><strong>Ty-Code</strong> — Built on the shoulders of giants. Local-first sovereign AI development.</p>
+          <p className={styles.tagline}><strong>Ty-Code</strong>, Built on the shoulders of giants. Local-first sovereign AI development.</p>
           <p className={styles.fccLine}>
-            Free-model supply layer powered by free-claude-code (FCC) — AGPL-3.0 / MIT — <a href="https://github.com/Alishahryar1/free-claude-code" target="_blank" rel="noopener noreferrer">https://github.com/Alishahryar1/free-claude-code</a>
+            Free-model supply layer powered by free-claude-code (FCC), AGPL-3.0 / MIT, <a href="https://github.com/Alishahryar1/free-claude-code" target="_blank" rel="noopener noreferrer">https://github.com/Alishahryar1/free-claude-code</a>
           </p>
           <p className={styles.copyright}>© 2026 Ty-Code Project. Distributed under the MIT License. Data sovereignty guaranteed.</p>
         </div>

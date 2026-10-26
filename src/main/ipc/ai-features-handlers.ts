@@ -53,6 +53,10 @@ export function initAiFeatureServices(workspacePath: string): {
   };
 }
 
+export function getInlineService(): InlineCompletionService | null {
+  return inlineService;
+}
+
 export function updateAiServicesWorkspace(workspacePath: string): void {
   projectIndexer?.setWorkspace(workspacePath);
   memoryService?.setWorkspace(workspacePath);

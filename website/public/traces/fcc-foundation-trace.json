@@ -6,7 +6,7 @@
   "upstreamLicense": "AGPL-3.0 with MIT subcomponents",
   "copyleftContainment": "LOOPBACK_HTTP_MERE_AGGREGATION",
   "checksumAlgorithm": "SHA-256",
-  "attributionString": "Free-model supply layer powered by free-claude-code (FCC) — AGPL-3.0 / MIT — https://github.com/Alishahryar1/free-claude-code",
+  "attributionString": "Free-model supply layer powered by free-claude-code (FCC), AGPL-3.0 / MIT, https://github.com/Alishahryar1/free-claude-code",
   "attributionSurfacesCount": 5,
   "summary": {
     "totalTests": 20,

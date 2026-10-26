@@ -80,7 +80,7 @@ export async function buildAllDocx() {
     console.log(`[build-docx] Conversion Engine: PANDOC (found at "${pandocBin}")`);
     for (const item of CAMPAIGN_FILES) {
       const docxPath = path.join(DIST_CAMPAIGN, `${item.id}.docx`);
-      const args = [item.src, '-o', docxPath, '--toc'];
+      const args = [item.src, '-f', 'gfm', '-o', docxPath, '--toc'];
 
       const res = spawnSync(pandocBin, args, { cwd: ROOT, stdio: 'pipe', encoding: 'utf-8' });
       if (res.status !== 0) {

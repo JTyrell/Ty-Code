@@ -64,7 +64,7 @@ Check out the code and release notes: [https://github.com/JTyrell/Ty-Code](https
 ## 3. X (Twitter) Thread
 
 **Tweet 1/4:**  
-🚀 Exciting news! We just released **Ty-Code v1.0.0** — an open-source desktop AI coding assistant & Monaco IDE!  
+🚀 Exciting news! We just released **Ty-Code v1.0.0**, an open-source desktop AI coding assistant & Monaco IDE!  
 ✨ Monaco Editor engine  
 ✨ Multi-provider routing (OpenRouter, Groq, Ollama, DeepSeek)  
 ✨ 100% private offline inference  

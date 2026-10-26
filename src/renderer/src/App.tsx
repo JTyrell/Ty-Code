@@ -19,6 +19,11 @@ import { FirstRunOnboardingModal } from './components/FirstRunOnboardingModal';
 import { WorkspaceEditReview } from './components/WorkspaceEditReview';
 import { ToastContainer } from './components/ToastContainer';
 import { toast } from './state/toast-store';
+import {
+  useGovernorStore,
+  startGovernorSampling,
+  stopGovernorSampling
+} from './state/governor-store';
 import { ExtensionInputDialog } from './components/ExtensionInputDialog';
 import { AgentApprovalModal } from './components/AgentApprovalModal';
 import { ExtensionTracePanel } from './components/extensions/ExtensionTracePanel';
@@ -31,6 +36,8 @@ import { useDebuggerStore } from './state/debugger-store';
 import { useActiveModelSync } from './state/active-model-store';
 import { useThemeSync } from './hooks/useThemeSync';
 import { initDocumentProposedListener } from './state/document-review-store';
+import { initWorkspaceSessionSync } from './state/workspace-session-store';
+import { LazyModelManager } from './services/lazy-model-manager';
 
 import { Palette } from 'lucide-react';
 import { SketcherWindow } from './components/SketcherWindow';
@@ -154,6 +161,73 @@ const MainWorkbench: React.FC = () => {
   // Subscribe to document_proposed IPC stream events for Document Review Pane
   useEffect(() => {
     return initDocumentProposedListener();
+  }, []);
+
+  // Prompt 1 (Workspace Session Bus): hydrate + subscribe in every window
+  // (main App + canvas/debugger popout shells all mount App).
+  useEffect(() => {
+    return initWorkspaceSessionSync();
+  }, []);
+
+  // Memory Governor (Steps 1/3/4/5): renderer-side sampling, state hydration,
+  // crash/shed notices and the hidden-window rAF guard.
+  useEffect(() => {
+    if (!window.electronAPI) return;
+
+    startGovernorSampling();
+
+    void window.electronAPI.governorGetState()
+      .then((res) => {
+        if (res?.success && res.data) useGovernorStore.getState().setSnapshot(res.data);
+      })
+      .catch(() => {});
+
+    // Heartbeat the editor surface every 30s so it is never idle-terminated.
+    const heartbeatTimer = setInterval(() => {
+      try { window.electronAPI?.surfaceHeartbeat?.('editor'); } catch {}
+    }, 30_000);
+
+    const unsubState = window.electronAPI.onGovernorStateChanged?.((payload) => {
+      useGovernorStore.getState().setTier(payload.tier);
+      useGovernorStore.getState().setLiteMode(payload.mode === 'LITE');
+      // Step 4: renderer-side cache eviction as pressure rises.
+      if (payload.tier !== 'NOMINAL') {
+        LazyModelManager.getInstance().applyGovernorTier(payload.tier);
+      }
+    });
+
+    const unsubCrashed = window.electronAPI.onGovernorSurfaceCrashed?.(({ surfaceId, notice }) => {
+      toast.error(`${surfaceId} surface crashed`, notice || 'It reloaded automatically. Other surfaces are unaffected.');
+    });
+
+    const unsubShed = window.electronAPI.onGovernorSurfaceShed?.(({ surfaceId, notice }) => {
+      toast.info(`${surfaceId} surface unloaded`, notice || 'Unloaded to free memory. Reopen it from the activity bar.');
+    });
+
+    const unsubLite = window.electronAPI.onGovernorLiteMode?.(({ totalSystemRamGb, notice }) => {
+      useGovernorStore.getState().setLiteMode(true);
+      useGovernorStore.setState({ totalSystemRamGb });
+      toast.info('LITE mode enabled', notice || `Low-RAM device detected (${totalSystemRamGb.toFixed(1)} GB).`);
+    });
+
+    // Step 3.2: hidden windows pause rAF-driven work via the guard flag.
+    const onVisibility = (): void => {
+      useGovernorStore.getState().setDocumentHidden(document.hidden);
+      if (!document.hidden) {
+        try { window.electronAPI?.surfaceHeartbeat?.('editor'); } catch {}
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+
+    return () => {
+      stopGovernorSampling();
+      clearInterval(heartbeatTimer);
+      unsubState?.();
+      unsubCrashed?.();
+      unsubShed?.();
+      unsubLite?.();
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, []);
 
   // Listen for user interaction to notify boot scheduler and accelerate Tier 3

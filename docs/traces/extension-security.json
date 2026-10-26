@@ -1,13 +1,13 @@
 {
-  "timestamp": "2026-10-26T07:36:17.174Z",
-  "gitCommit": "e3fb0192e4ad05521ba337ab522990158d2e13d3",
+  "timestamp": "2026-10-26T23:32:16.206Z",
+  "gitCommit": "7b3f85a2dac0e85aa086ac586a1c6d0792bffc9b",
   "command": "npm run test:security",
-  "durationMs": 95,
+  "durationMs": 89,
   "environment": {
     "node": "v24.13.1",
     "platform": "win32",
     "arch": "x64",
-    "gitCommit": "e3fb0192e4ad05521ba337ab522990158d2e13d3"
+    "gitCommit": "7b3f85a2dac0e85aa086ac586a1c6d0792bffc9b"
   },
   "summary": {
     "totalTests": 5,
@@ -34,7 +34,7 @@
       "id": "test-2-out-of-workspace-protection",
       "name": "Out-of-Workspace Write Protection: User prompt for dangerous path",
       "status": "PASS",
-      "durationMs": 11,
+      "durationMs": 9,
       "assertions": [
         "[PASS] Inside-workspace write succeeds without containment violation",
         "[PASS] Relative escaping path correctly identified as outside workspace",
@@ -50,7 +50,7 @@
       "id": "test-3-webview-sandbox-nonce",
       "name": "Webview Sandbox & Nonce Handshake: allow-scripts only + handshake",
       "status": "PASS",
-      "durationMs": 3,
+      "durationMs": 2,
       "assertions": [
         "[PASS] Webview panel instantiated with unique ID",
         "[PASS] Webview sandbox strictly configured to \"allow-scripts\"",

@@ -477,7 +477,7 @@
       </div>
       <div class="cover-meta-item">
         <span class="meta-label">DATE</span>
-        <span class="meta-value">October 25, 2026</span>
+        <span class="meta-value">October 26, 2026</span>
       </div>
     </div>
     <div class="cover-footer-note">
@@ -517,7 +517,7 @@
 <li><strong>Vendor Lock-in and Supply Instability:</strong> Direct coupling to single-vendor model APIs subjects enterprise engineering workflows to unannounced upstream service outages, model deprecation schedules, and unannounced modifications to safety filters that halt automated build pipelines.</li>
 </ol>
 <h3 id="the-ty-code-paradigm-local-first-autonomous-engineering">The Ty-Code Paradigm: Local-First Autonomous Engineering</h3>
-<p>Ty-Code is engineered from first principles as an air-gap capable, local-first autonomous development environment. All semantic indexing, dynamic profiling, workspace mutation analysis, and credential containment execute strictly on the host operating system. Network egress is restricted exclusively to authenticated, policy-governed inference endpoints—whether self-hosted on-premises large language model (LLM) clusters (vLLM, Ollama, TensorRT-LLM), enterprise cloud VPC gateways (AWS Bedrock PrivateLink, Azure OpenAI Dedicated Gateways), or curated high-throughput providers.</p>
+<p>Ty-Code is engineered from first principles as an air-gap capable, local-first autonomous development environment. All semantic indexing, dynamic profiling, workspace mutation analysis, and credential containment execute strictly on the host operating system. Network egress is restricted exclusively to authenticated, policy-governed inference endpoints, whether self-hosted on-premises large language model (LLM) clusters (vLLM, Ollama, TensorRT-LLM), enterprise cloud VPC gateways (AWS Bedrock PrivateLink, Azure OpenAI Dedicated Gateways), or curated high-throughput providers.</p>
 <p>By decoupling the development environment, local context engine, and inference runtime, Ty-Code provides provable data sovereignty, mathematical boundary containment, and zero vendor lock-in, while maintaining compatibility with VS Code extensions, Language Server Protocols (LSP), and the global Model Context Protocol (MCP) ecosystem.</p>
 <hr>
 <h2 id="1-threat-model-security-architecture">1. Threat Model & Security Architecture</h2>
@@ -800,7 +800,7 @@ class OllamaNDJSONAdapter(IProviderWireAdapter):
 <h3 id="42-upstream-acknowledgment-and-architectural-attribution-free-claude-code-fcc">4.2 Upstream Acknowledgment and Architectural Attribution: free-claude-code (FCC)</h3>
 <p>Ty-Code explicitly acknowledges and credits the pioneering open-source engineering established by the <strong>free-claude-code (FCC)</strong> project:</p>
 <blockquote>
-<p><strong>Repository:</strong> <a href="https://github.com/Alishahryar1/free-claude-code.git">https://github.com/Alishahryar1/free-claude-code.git</a><br><strong>Permanent Licensing Attribution:</strong> <em>Free-model supply layer powered by free-claude-code (FCC) — AGPL-3.0 / MIT.</em></p>
+<p><strong>Repository:</strong> <a href="https://github.com/Alishahryar1/free-claude-code.git">https://github.com/Alishahryar1/free-claude-code.git</a><br><strong>Permanent Licensing Attribution:</strong> <em>Free-model supply layer powered by free-claude-code (FCC), AGPL-3.0 / MIT.</em></p>
 </blockquote>
 <p>Rather than treating open-source tooling as an unvetted dependency, Ty-Code’s engineering team performed an exhaustive architectural adaptation of FCC&#39;s methodologies to meet enterprise procurement standards:</p>
 <ol>

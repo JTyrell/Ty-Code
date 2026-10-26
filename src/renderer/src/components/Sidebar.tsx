@@ -1,17 +1,25 @@
-import React from 'react';
-import { RefreshCw, Plus, FolderPlus } from 'lucide-react';
+import React, { useEffect } from 'react';
+import { FolderPlus, Plus, RefreshCw } from 'lucide-react';
 import { useWorkspaceStore } from '../state/workspace-store';
+import { useWorkspaceSessionStore } from '../state/workspace-session-store';
 import { VirtualFileTree } from './VirtualFileTree';
 import { NoProjectEmptyState } from './NoProjectEmptyState';
 import { toast } from '../state/toast-store';
 
 import { useExtensionPromptStore } from '../state/extension-prompt-store';
+import { SessionPresenceStrip } from './common/SessionPresenceStrip';
 
 export const Sidebar: React.FC = () => {
   const fileTree = useWorkspaceStore((s) => s.fileTree);
   const flatTree = useWorkspaceStore((s) => s.flatTree);
   const refreshFileTree = useWorkspaceStore((s) => s.refreshFileTree);
   const workspacePath = useWorkspaceStore((s) => s.workspacePath);
+  const { attachSurface, detachSurface } = useWorkspaceSessionStore();
+
+  useEffect(() => {
+    attachSurface('editor');
+    return () => detachSurface('editor');
+  }, [attachSurface, detachSurface]);
 
   const handleCreateFile = async () => {
     if (!workspacePath) {
@@ -99,6 +107,11 @@ export const Sidebar: React.FC = () => {
             <RefreshCw size={13} />
           </button>
         </div>
+      </div>
+
+      {/* Workspace session presence strip (Prompt 1: session bus) */}
+      <div style={{ padding: '4px 6px', flexShrink: 0 }}>
+        <SessionPresenceStrip self="editor" />
       </div>
 
       {/* Directory Tree with Virtual Scrolling */}

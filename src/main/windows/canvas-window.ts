@@ -14,6 +14,7 @@
 import { app, BrowserWindow } from 'electron';
 import path from 'node:path';
 import { canvasSyncManager } from '../services/canvas-sync-manager';
+import { memoryGovernor } from '../services/memory-governor';
 
 let canvasWindow: BrowserWindow | null = null;
 
@@ -55,6 +56,10 @@ export function openCanvasWindow(): BrowserWindow {
   });
 
   canvasWindow = window;
+
+  // Step 3: register canvas surface with the governor (crash instrumentation
+  // + 5-minute idle termination).
+  memoryGovernor.registerSurface('canvas', 'canvas', window);
 
   window.on('maximize', () => {
     if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
@@ -109,6 +114,7 @@ export function openCanvasWindow(): BrowserWindow {
 
   window.on('closed', () => {
     if (canvasWindow === window) canvasWindow = null;
+    memoryGovernor.unregisterSurface('canvas');
   });
 
   return window;

@@ -9,7 +9,7 @@
 - Theme and CI configuration assertions are not WCAG audits. The guide's accessibility and smooth-scrolling statements must not be described as measured until the checks below pass.
 - Monaco is lazy-loaded. Record startup both before and after opening an editor/diff surface.
 
-## Gate 1 — Establish coverage measurement
+## Gate 1, Establish coverage measurement
 
 1. Add a maintained TypeScript-capable unit-test runner and V8 coverage provider (candidate: Vitest with `@vitest/coverage-v8`); migrate reusable service assertions from the existing scripts incrementally and retain integration tests that use real IPC/process behavior.
 2. Emit machine-readable and human-readable coverage reports in CI. Define the initial denominator explicitly: production TypeScript under `src/main/services`, `src/main/agent`, `src/main/providers`, `src/renderer/src/services`, and `src/renderer/src/state`.
@@ -18,7 +18,7 @@
 
 **Acceptance evidence:** CI coverage summary and HTML report with the exact denominator, line/branch percentages, and threshold result; baseline `npm test` and `npm run build` still pass.
 
-## Gate 2 — Measure app performance in Electron
+## Gate 2, Measure app performance in Electron
 
 Add a repeatable Electron E2E benchmark harness, using a fixed fixture and a packaged or production-equivalent build. Record OS, CPU, Electron/Node versions, commit SHA, raw samples, and summary in a CI artifact (for example `perf-results.json`). Use at least five cold starts for startup measurements; avoid turning noisy hosted-runner measurements into release blockers until a stable reference runner is designated.
 
@@ -34,7 +34,7 @@ Add a repeatable Electron E2E benchmark harness, using a fixed fixture and a pac
 
 **Acceptance evidence:** artifact includes raw samples, median/p95, fixture size, environment, and pass/fail thresholds. Any mock-provider TTFT report is labeled app overhead only, not external-provider latency.
 
-## Gate 3 — Accessibility and keyboard verification
+## Gate 3, Accessibility and keyboard verification
 
 1. Run an accessibility tree/axe audit against the real Electron renderer (or a controlled preload mock with the same screens) for Welcome, editor, diff review, Settings, Chat, Source Control, Terminal, Extensions, Command Palette, Quick Open, and onboarding.
 2. Cover dark, light, and high-contrast themes. Require zero **critical or serious** automated violations. Check text contrast >= 4.5:1 for normal text and >= 3:1 for large text and essential UI controls; report each theme separately.
@@ -44,7 +44,7 @@ Add a repeatable Electron E2E benchmark harness, using a fixed fixture and a pac
 
 **Acceptance evidence:** versioned axe report per theme/view, contrast report, keyboard checklist, manual AT results by OS/reader, and fixes for every critical/serious finding. Do not claim WCAG 2.1 AA from theme names or static CSS assertions alone.
 
-## Gate 4 — Signed release and update behavior
+## Gate 4, Signed release and update behavior
 
 1. With repository signing secrets configured, build Windows NSIS/portable, universal macOS DMG/ZIP, and Linux AppImage/DEB/RPM on their supported CI runners.
 2. Install or launch each format on its target OS; verify app icon, startup, workspace open, settings persistence, PTY open/close, and clean shutdown. Record macOS notarization status. Test Windows native PTY teardown in packaged Electron, not only standalone Node.

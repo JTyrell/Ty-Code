@@ -1,6 +1,6 @@
 {
   "phase": "FCC-5",
-  "title": "FCC-Style Reach — External Clients, Browser Seam, Tray Presence",
+  "title": "FCC-Style Reach, External Clients, Browser Seam, Tray Presence",
   "timestamp": "2026-10-17T06:34:50.254Z",
   "gitCommit": "bb0d31db5e37962045ecce162798077b40167a4c",
   "command": "node scripts/verify-fcc-reach.mjs",

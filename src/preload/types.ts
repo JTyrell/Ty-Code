@@ -428,6 +428,39 @@ export type AgentHarnessType =
 
 export type TelemetryFeature = 'agent_chat' | 'project_index' | 'history_export';
 
+// ---------------------------------------------------------------------------
+// Memory Pressure Governor (local-only, Zero-Telemetry)
+// ---------------------------------------------------------------------------
+export type GovernorTier = 'NOMINAL' | 'ELEVATED' | 'CRITICAL' | 'OVER';
+export type GovernorMode = 'FULL' | 'LITE';
+
+export interface MemorySample {
+  ts: number;
+  mainRssMb: number;
+  mainHeapTotalMb: number;
+  mainHeapUsedMb: number;
+  rendererRssMb?: number;
+  rendererHeapUsedMb?: number;
+}
+
+export interface SurfacePresence {
+  id: string;
+  type: string;
+  lastActive: number;
+  active: boolean;
+}
+
+export interface GovernorSnapshot {
+  tier: GovernorTier;
+  mode: GovernorMode;
+  totalSystemRamGb: number;
+  mainRssMb: number;
+  liteMode: boolean;
+  samples: MemorySample[];
+  latestSample: MemorySample | null;
+  surfaces: SurfacePresence[];
+}
+
 export type TelemetryEvent =
   | { event: 'app_started'; timestamp: string }
   | { event: 'feature_used'; feature: TelemetryFeature; timestamp: string };
@@ -1112,6 +1145,15 @@ export interface ElectronAPI {
   onAgentDone?: (callback: (payload: AgentDonePayload) => void) => () => void;
   onAgentError?: (callback: (payload: AgentErrorPayload) => void) => () => void;
   perfReportH5?: (data: { taskId: string; h5: number }) => void;
+
+  // Memory Pressure Governor (local-only, Zero-Telemetry)
+  governorGetState: () => Promise<IpcResponse<GovernorSnapshot>>;
+  governorSample: (sample: { rssMb?: number; heapUsedMb?: number; ts?: number }) => void;
+  surfaceHeartbeat: (surfaceId: string) => void;
+  onGovernorStateChanged: (callback: (payload: { tier: GovernorTier; mode: GovernorMode }) => void) => () => void;
+  onGovernorSurfaceCrashed: (callback: (payload: { surfaceId: string; notice: string; reload: boolean }) => void) => () => void;
+  onGovernorSurfaceShed: (callback: (payload: { surfaceId: string; notice: string }) => void) => () => void;
+  onGovernorLiteMode: (callback: (payload: { totalSystemRamGb: number; notice: string }) => void) => () => void;
   applyDiff: (diff: ProposedDiff) => Promise<IpcResponse<void>>;
   getAgentTodos: () => Promise<IpcResponse<AgentTodoItem[]>>;
   setAgentMode: (mode: 'plan' | 'execute' | 'hybrid') => Promise<IpcResponse<void>>;
@@ -1531,6 +1573,14 @@ export interface ElectronAPI {
 
 
   // Performance Profiler APIs (Perf 1)
+  perfGetBootHistory?: () => Promise<IpcResponse<Array<{
+    bootId: string;
+    at: string;
+    target: 'portable' | 'installed' | 'dev';
+    version: string;
+    preMainImportMs: number;
+    marks: Record<string, { atMs: number; deltaMs: number }>;
+  }>>>;
   perfGetBootTrace?: () => Promise<IpcResponse<BootTrace>>;
   perfRecordRendererMark?: (mark: PerfMark) => Promise<IpcResponse<void>>;
   perfRecordTransition?: (metric: TransitionMetric) => Promise<IpcResponse<void>>;

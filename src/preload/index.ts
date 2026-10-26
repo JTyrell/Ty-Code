@@ -266,6 +266,31 @@ const api: ElectronAPI = {
   perfReportH5: (data: { taskId: string; h5: number }) => {
     ipcRenderer.send('perf:report-h5', data);
   },
+
+  // Memory Pressure Governor (local-only, Zero-Telemetry)
+  governorGetState: () => ipcRenderer.invoke('governor:get-state'),
+  governorSample: (sample) => ipcRenderer.send('governor:sample', sample),
+  surfaceHeartbeat: (surfaceId) => ipcRenderer.send('surface:heartbeat', surfaceId),
+  onGovernorStateChanged: (callback) => {
+    const listener = (_event: unknown, payload: any) => callback(payload);
+    ipcRenderer.on('governor:state-changed', listener);
+    return () => ipcRenderer.removeListener('governor:state-changed', listener);
+  },
+  onGovernorSurfaceCrashed: (callback) => {
+    const listener = (_event: unknown, payload: any) => callback(payload);
+    ipcRenderer.on('governor:surface-crashed', listener);
+    return () => ipcRenderer.removeListener('governor:surface-crashed', listener);
+  },
+  onGovernorSurfaceShed: (callback) => {
+    const listener = (_event: unknown, payload: any) => callback(payload);
+    ipcRenderer.on('governor:surface-shed', listener);
+    return () => ipcRenderer.removeListener('governor:surface-shed', listener);
+  },
+  onGovernorLiteMode: (callback) => {
+    const listener = (_event: unknown, payload: any) => callback(payload);
+    ipcRenderer.on('governor:lite-mode', listener);
+    return () => ipcRenderer.removeListener('governor:lite-mode', listener);
+  },
   applyDiff: (diff: ProposedDiff) => ipcRenderer.invoke('agent:apply-diff', diff),
   resolvePtyApproval: (approvalId: string, approved: boolean) => ipcRenderer.invoke('pty:resolve-approval', { approvalId, approved }),
   onPtyApprovalRequired: (callback: (data: { approvalId: string; ptyId: string; command: string; reason: string }) => void) => {
@@ -773,6 +798,7 @@ const api: ElectronAPI = {
 
 
   // Performance Profiler APIs (Perf 1)
+  perfGetBootHistory: () => ipcRenderer.invoke('perf:get-boot-history'),
   perfGetBootTrace: () => ipcRenderer.invoke('perf:get-boot-trace'),
   perfRecordRendererMark: (mark: any) => ipcRenderer.invoke('perf:record-renderer-mark', mark),
   perfRecordTransition: (metric: any) => ipcRenderer.invoke('perf:record-transition', metric),

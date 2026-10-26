@@ -40,10 +40,12 @@ import {
   type AnalysisSeverity,
   type AnalysisEngine
 } from '../../state/debugger-store';
+import { useWorkspaceSessionStore } from '../../state/workspace-session-store';
 import { useEditorNavigationStore } from '../../state/editor-navigation-store';
 import { useChatStore } from '../../state/chat-store';
 import { DebuggerToolbar } from './DebuggerToolbar';
 import { WorkspaceGate } from '../common/WorkspaceGate';
+import { SessionPresenceStrip } from '../common/SessionPresenceStrip';
 import { useWorkspaceStore } from '../../state/workspace-store';
 import { BraveTestingView } from '../testing/BraveTestingView';
 import './OmniDebugger.css';
@@ -57,6 +59,14 @@ type ViewTab = 'findings' | 'engines' | 'metrics' | 'testing';
 export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false }) => {
   // Mount store listener for IPC synchronization
   useDebuggerStoreListener();
+
+  // Surface session attachment for workspace session bus
+  const { attachSurface, detachSurface } = useWorkspaceSessionStore();
+
+  useEffect(() => {
+    attachSurface('debugger');
+    return () => detachSurface('debugger');
+  }, [attachSurface, detachSurface]);
 
   const {
     activeFile,
@@ -391,8 +401,12 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
             >
               {isPopOutMode ? <Minimize2 size={14} /> : <ExternalLink size={14} />}
             </button>
-          </div>
         </div>
+      </div>
+      {/* Workspace session presence strip (Prompt 1: session bus) */}
+      <div style={{ padding: '3px 8px', borderBottom: '1px solid var(--border-subtle)' }}>
+        <SessionPresenceStrip self="debugger" />
+      </div>
       </header>
 
       {/* ===================================================================== */}

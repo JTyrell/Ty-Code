@@ -19,7 +19,7 @@
         "groq"
       ],
       "exhaustedErrorCode": "[FAILOVER_EXHAUSTED]",
-      "verbatimNoticePattern": "provider throttled — continued with <model>"
+      "verbatimNoticePattern": "provider throttled, continued with <model>"
     },
     "tokenOptimizationBenchmark": {
       "totalRequestsTested": 20,
@@ -104,7 +104,7 @@
     {
       "test": "Visible notice matches verbatim requirement",
       "passed": true,
-      "details": "\"provider throttled — continued with gemini-2.5-flash\""
+      "details": "\"provider throttled, continued with gemini-2.5-flash\""
     },
     {
       "test": "formatFailoverNotice strips path and formats verbatim notice",
@@ -149,7 +149,7 @@
     {
       "test": "Second notice matches verbatim format",
       "passed": true,
-      "details": "\"provider throttled — continued with llama-3.3-70b-versatile\""
+      "details": "\"provider throttled, continued with llama-3.3-70b-versatile\""
     },
     {
       "test": "canHandoff is false after 2 handoffs",

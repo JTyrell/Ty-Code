@@ -19,7 +19,7 @@ Ty-Code implements a single, unified provisioning system across 5 distinct tiers
 | **Tier 1b**| **One-Click OAuth** | Lowest-friction variant for supported providers | OpenRouter PKCE (`ty-code://` loopback redirect), Kilo OAuth | One-click browser authorization; no key copy/pasting | Provider personal free tier | Token lands strictly in local `safeStorage` |
 | **Tier 2** | **Local & Private** | 100% offline & enterprise air-gapped | Ollama auto-detect at `localhost:11434` (`qwen2.5-coder`, `llama3.2`) | Local install; auto-detected on boot | Unlimited local hardware capacity | No keys; zero network calls; zero telemetry |
 | **Tier 3** | **BYOK (Bring Your Own Key)**| Power users, paid API keys, custom endpoints | Anthropic Claude, OpenAI, DeepSeek, custom OpenAI-compatible endpoints (LM Studio, vLLM) | User provides custom API key or base URL | Determined by user's paid provider plan | Encrypted locally via OS `safeStorage` |
-| **Tier 4** | **Sponsored Pool (Future)** | *Document-only for v1.0.0 — Do NOT Build* | Ty-Code-hosted proxy key pool behind user accounts | User account login | Subsidized pool quota | Centralized server proxy |
+| **Tier 4** | **Sponsored Pool (Future)** | *Document-only for v1.0.0, Do NOT Build* | Ty-Code-hosted proxy key pool behind user accounts | User account login | Subsidized pool quota | Centralized server proxy |
 
 ---
 
@@ -52,7 +52,7 @@ It is critical to distinguish between legitimate client-side automation and proh
 
 ---
 
-## 3. Tier 4: Sponsored Key Pool — Economics & Trigger Conditions
+## 3. Tier 4: Sponsored Key Pool, Economics & Trigger Conditions
 
 > [!IMPORTANT]
 > Tier 4 is **DOCUMENT-ONLY for v1.0.0**. No server proxies, centralized key pools, or shared billing paths are implemented in this release. This section documents the operational mathematics and criteria for future implementation.
@@ -77,7 +77,7 @@ Operating a centralized key pool where Ty-Code subsidizes model token usage requ
 | **Efficient Coding** (DeepSeek V3 / Qwen 2.5 Coder) | 70% | $0.14 | $0.28 | $38.80 | $22.64 | $61.44 |
 | **High-Speed LPU** (Groq Llama 3.3 70B) | 20% | $0.59 | $0.79 | $46.73 | $18.25 | $64.98 |
 | **Reasoning Tier** (DeepSeek R1 / Claude 3.5 Haiku) | 10% | $0.80 | $2.40 | $31.68 | $27.72 | $59.40 |
-| **Total Model Consumption Cost** | **100%** | — | — | **$117.21** | **$68.61** | **$185.82** |
+| **Total Model Consumption Cost** | **100%** | - |, | **$117.21** | **$68.61** | **$185.82** |
 
 #### Operational Infrastructure Overhead (Per 1,000 Active Users)
 - **Cloudflare Workers / Reverse Proxy**: $15/mo (request routing, SSL termination).

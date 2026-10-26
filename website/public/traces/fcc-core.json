@@ -36,7 +36,7 @@
   "degradation": {
     "fallbackLatencyMs": 0.006100000000003547,
     "fallbackLatencyThresholdMs": 2000,
-    "fallbackStatusString": "FCC offline — native supply active",
+    "fallbackStatusString": "FCC offline, native supply active",
     "hierarchy": [
       "FCC Supply Layer (Primary, 1.35B+ tokens/mo)",
       "Native Provider Registry (Tier 1 BYOK / Direct Keys)",
@@ -125,7 +125,7 @@
       "details": "ToS status and warning tooltip confirmed"
     },
     {
-      "test": "Fallback status string \"FCC offline — native supply active\" is active",
+      "test": "Fallback status string \"FCC offline, native supply active\" is active",
       "passed": true,
       "details": "Status string confirmed in embedded-core"
     },

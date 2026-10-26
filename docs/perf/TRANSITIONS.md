@@ -1,6 +1,6 @@
 # Ty-Code UI Transition Optimization Report
 
-## Phase: Perf 3 — Sub-100ms Perceived Switches
+## Phase: Perf 3, Sub-100ms Perceived Switches
 
 **Date:** 2026-10-15  
 **Version:** Ty-Code 1.0.0  

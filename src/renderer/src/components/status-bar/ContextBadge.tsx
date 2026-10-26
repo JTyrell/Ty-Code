@@ -26,7 +26,9 @@ import {
   Lightbulb
 } from 'lucide-react';
 import { useWorkspaceStore } from '../../state/workspace-store';
+import { useWorkspaceSessionStore } from '../../state/workspace-session-store';
 import { useContextAuditStore } from '../../state/context-audit-store';
+import { SessionPresenceStrip } from '../common/SessionPresenceStrip';
 import styles from './ContextBadge.module.css';
 
 export interface ContextBadgeProps {
@@ -35,6 +37,13 @@ export interface ContextBadgeProps {
 
 export const ContextBadge: React.FC<ContextBadgeProps> = ({ className }) => {
   const workspacePath = useWorkspaceStore((s) => s.workspacePath);
+  const { attachSurface, detachSurface } = useWorkspaceSessionStore();
+
+  useEffect(() => {
+    attachSurface('context');
+    return () => detachSurface('context');
+  }, [attachSurface, detachSurface]);
+
   const {
     isOpen,
     scoreResult,
@@ -83,26 +92,24 @@ export const ContextBadge: React.FC<ContextBadgeProps> = ({ className }) => {
     };
   }, [isOpen, closeAuditPanel]);
 
-  const score = scoreResult ? scoreResult.score : 85;
-  const grade = scoreResult ? scoreResult.grade : 'B+';
-
-  // Dynamic theme colors based on Context Score
+  const hasWorkspace = Boolean(workspacePath);
   const getScoreColor = (sc: number): string => {
     if (sc >= 90) return '#34d399'; // Emerald
     if (sc >= 80) return '#38bdf8'; // Sky cyan
     if (sc >= 70) return '#fbbf24'; // Amber
     return '#f87171'; // Rose
   };
-
-  const scoreColor = getScoreColor(score);
+  const score = hasWorkspace && scoreResult ? scoreResult.score : null;
+  const grade = hasWorkspace && scoreResult ? scoreResult.grade : null;
+  const scoreColor = hasWorkspace && scoreResult && score !== null ? getScoreColor(score) : 'var(--text-muted)';
   const detectedStack = scoreResult?.detectedStack || {
-    primaryLanguage: profile?.primaryLanguage || 'TypeScript',
-    frameworks: profile?.frameworks || [],
-    databases: profile?.databases || [],
-    architecture: profile?.architecture || 'Modular Application',
-    keyDirectories: profile?.keyDirectories || {}
+    primaryLanguage: hasWorkspace ? (profile?.primaryLanguage || 'TypeScript') : '—',
+    frameworks: hasWorkspace ? (profile?.frameworks || []) : [],
+    databases: hasWorkspace ? (profile?.databases || []) : [],
+    architecture: hasWorkspace ? (profile?.architecture || 'Modular Application') : '—',
+    keyDirectories: hasWorkspace ? (profile?.keyDirectories || {}) : {}
   };
-  const missingWarnings = scoreResult?.missingContext || profile?.missingContext || [];
+  const missingWarnings = scoreResult?.missingContext ?? (hasWorkspace ? profile?.missingContext || [] : []);
 
   return (
     <>
@@ -112,12 +119,14 @@ export const ContextBadge: React.FC<ContextBadgeProps> = ({ className }) => {
         id="status-bar-context-badge-btn"
         className={`${styles.badgeBtn} ${isOpen ? styles.active : ''} ${className || ''}`}
         onClick={toggleAuditPanel}
-        title={`Context Audit Score: ${score}% (Grade ${grade}). Click to open Context Audit Panel.`}
-        aria-label={`Context Audit Score ${score} percent`}
-        aria-expanded={isOpen}
+        title={hasWorkspace
+          ? `Context Audit Score: ${score}% (Grade ${grade}). Click to open Context Audit Panel.`
+          : 'Context Audit — No workspace open. Click to enable.'}
+        aria-label={hasWorkspace ? `Context Audit Score ${score} percent` : 'Context Audit disabled without workspace'}
+        aria-expanded={isOpen && hasWorkspace}
       >
         <Brain size={12} color={scoreColor} />
-        <span>Context: {score}%</span>
+        <span>{hasWorkspace ? `Context: ${score}%` : 'Context: —'}</span>
         <span
           className={styles.scoreDot}
           style={{ backgroundColor: scoreColor }}
@@ -126,7 +135,59 @@ export const ContextBadge: React.FC<ContextBadgeProps> = ({ className }) => {
       </button>
 
       {/* 2. Floating Context Audit Panel Popover */}
-      {isOpen && (
+      {isOpen && !hasWorkspace && (
+        <>
+          <div className={styles.backdrop} aria-hidden="true" onClick={closeAuditPanel} />
+          <div
+            ref={panelRef}
+            className={styles.auditPanel}
+            role="dialog"
+            aria-label="Context Engine unavailable without workspace"
+          >
+            <div className={styles.panelHeader}>
+              <div className={styles.headerTitleGroup}>
+                <Brain size={15} color="var(--text-muted)" />
+                <h3 className={styles.headerTitle}>Context Engine — No Workspace Open</h3>
+                <button
+                  type="button"
+                  className={styles.closeBtn}
+                  onClick={closeAuditPanel}
+                  aria-label="Close Context Audit Panel"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            </div>
+            <div style={{ padding: '18px 16px', fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.55 }}>
+              The Context Engine grounds its audit in the shared workspace root. Delegating — the Explorer (Main
+              Editor) owns Open Folder; once the root is set on the workspace session bus, this panel auto-syncs.
+              <button
+                type="button"
+                onClick={() => void window.electronAPI?.openFolderDialog?.()}
+                title="Delegate workspace open to the Explorer entry"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  marginTop: 12,
+                  padding: '7px 14px',
+                  borderRadius: 6,
+                  border: 'none',
+                  background: 'var(--accent-primary, #6366f1)',
+                  color: '#fff',
+                  fontSize: 11.5,
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                Open Folder
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {isOpen && hasWorkspace && (
         <>
           <div className={styles.backdrop} aria-hidden="true" onClick={closeAuditPanel} />
           <div
@@ -160,6 +221,11 @@ export const ContextBadge: React.FC<ContextBadgeProps> = ({ className }) => {
               >
                 <X size={14} />
               </button>
+            </div>
+
+            {/* Workspace session presence strip (Prompt 1: session bus) */}
+            <div style={{ padding: '0 14px', flexShrink: 0 }}>
+              <SessionPresenceStrip self="context" />
             </div>
 
             {/* Scrollable Body */}

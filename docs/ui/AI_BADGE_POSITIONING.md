@@ -1,6 +1,6 @@
 # Ty-Code AI Badge Repositioning & Visual Polish Specification
 
-## Phase: UI-Polish 2 — Floating AI Badge Repositioning & Visual Polish
+## Phase: UI-Polish 2, Floating AI Badge Repositioning & Visual Polish
 
 **Date:** 2026-10-15  
 **Component:** `src/renderer/src/components/AIBadge.tsx`  

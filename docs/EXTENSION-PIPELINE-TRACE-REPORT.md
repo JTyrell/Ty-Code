@@ -29,10 +29,10 @@ The following table summarizes the live probe metrics captured in [`docs/traces/
 
 | Hop | Name | Status | Latency | Payload Size | Failure Taxonomy | Technical Finding |
 |---|---|:---:|:---:|:---:|:---:|---|
-| **E1** | User clicks 'Install' on card | **PASS** | 1ms | 65 B | — | Request successfully dispatched via UI action. |
-| **E2** | Marketplace fetches download URL | **PASS** | 926ms | 8.8 KB | — | Fetched Open VSX metadata (`https://open-vsx.org/api/ms-python/python`), resolved direct download URL. |
-| **E3** | VSIX downloaded to disk | **PASS** | 15,922ms | 6,826,731 B | — | 6.8MB downloaded over HTTPS; SHA-256 `232aeafb01f069824fdd92d3e628c1c442bbcfa1d3cc945ff97076340bb2b4a6` matched registry checksum. |
-| **E4** | VSIX extracted to directory | **PASS** | 84ms | 24,229,367 B | — | Unpacked 2,382 files into `~/.ty-code/extensions/ms-python.python-2026.4.0/` with Zip slip path traversal protection. |
+| **E1** | User clicks 'Install' on card | **PASS** | 1ms | 65 B | - | Request successfully dispatched via UI action. |
+| **E2** | Marketplace fetches download URL | **PASS** | 926ms | 8.8 KB | - | Fetched Open VSX metadata (`https://open-vsx.org/api/ms-python/python`), resolved direct download URL. |
+| **E3** | VSIX downloaded to disk | **PASS** | 15,922ms | 6,826,731 B | - | 6.8MB downloaded over HTTPS; SHA-256 `232aeafb01f069824fdd92d3e628c1c442bbcfa1d3cc945ff97076340bb2b4a6` matched registry checksum. |
+| **E4** | VSIX extracted to directory | **PASS** | 84ms | 24,229,367 B | - | Unpacked 2,382 files into `~/.ty-code/extensions/ms-python.python-2026.4.0/` with Zip slip path traversal protection. |
 | **E5** | Manifest parsed and validated | **FAIL** | 8ms | 114,834 B | `MANIFEST_INVALID` | `ExtensionManifestSchema` strictly rejects standard VS Code contributions (`shortTitle`, `scope`, `menus`, `debuggers`). |
 | **E6** | Extension registered with host | **BLOCKED** | 0ms | 0 B | `HOST_REGISTRATION_FAILED` | `ExtensionWorkerHost.activate()` explicitly silences non-built-in extensions (`!isBuiltIn`). |
 | **E7** | Extension activated | **SKIPPED** | 0ms | 0 B | `ACTIVATION_FAILED` | Prerequisite Hop E6 failed; no worker session allocated; 21 activation events suppressed. |

@@ -92,9 +92,9 @@ The Ty-Code Onboarding system balances immediate gratification with long-term de
 ### Screen 1: Welcome (`welcome`)
 - **Header**: `Welcome to Ty-Code`
 - **Subheader**: `Free AI models for coding, out of the box. Connect your own free accounts for the best limits, or start instantly with anonymous access.`
-- **Pillar 1**: `15+ Free Models` — `DeepSeek R1, Qwen 2.5 Coder, Llama 3.3, and Gemini 2.0 Flash at zero cost.`
-- **Pillar 2**: `Local safeStorage` — `Zero server storage. Credentials land strictly in your OS encrypted credential vault.`
-- **Pillar 3**: `Instant Fallback` — `Zero-config anonymous tier keeps you coding even if you have no keys.`
+- **Pillar 1**: `15+ Free Models`, `DeepSeek R1, Qwen 2.5 Coder, Llama 3.3, and Gemini 2.0 Flash at zero cost.`
+- **Pillar 2**: `Local safeStorage`, `Zero server storage. Credentials land strictly in your OS encrypted credential vault.`
+- **Pillar 3**: `Instant Fallback`, `Zero-config anonymous tier keeps you coding even if you have no keys.`
 - **Primary CTA**: `Let's Go`
 - **Secondary CTA**: `Skip (Use Anonymous)`
 
@@ -115,7 +115,7 @@ The Ty-Code Onboarding system balances immediate gratification with long-term de
   - Description: `Start coding immediately with 3 free models via OpenKilo gateway (~50 req/hour). No signups or credit cards needed.`
 
 ### Screen 3: Connect OpenRouter (`openrouter`)
-- **Title**: `Connect OpenRouter — Most Popular • 10+ free models`
+- **Title**: `Connect OpenRouter, Most Popular • 10+ free models`
 - **Tagline**: `Access 15+ top free models including DeepSeek R1 and Qwen 2.5 Coder`
 - **Instructions**:
   1. `Sign up at OpenRouter with Google or GitHub (takes ~30 seconds)`
@@ -130,7 +130,7 @@ The Ty-Code Onboarding system balances immediate gratification with long-term de
 - **Input Placeholder**: `sk-or-v1-... (50+ characters)`
 
 ### Screen 4: Connect Groq (`groq`)
-- **Title**: `Connect Groq — Ultra-Fast • 300+ tok/s`
+- **Title**: `Connect Groq, Ultra-Fast • 300+ tok/s`
 - **Tagline**: `Ultra-fast LPU inference (300+ tok/s) with generous daily free quota`
 - **Instructions**:
   1. `Sign up at Groq Console with email or Google`
@@ -140,7 +140,7 @@ The Ty-Code Onboarding system balances immediate gratification with long-term de
 - **Input Placeholder**: `gsk_... (40+ characters)`
 
 ### Screen 5: Connect Google AI Studio (`google-gemini`)
-- **Title**: `Connect Google AI Studio — Multimodal • Large Context`
+- **Title**: `Connect Google AI Studio, Multimodal • Large Context`
 - **Tagline**: `Gemini 2.0 Flash with multimodal reasoning and large free tiers`
 - **Instructions**:
   1. `Sign in with your Google account at Google AI Studio`
@@ -171,7 +171,7 @@ The Ty-Code Onboarding system balances immediate gratification with long-term de
 ### Rate-Limit Upsell (HTTP 429)
 When a user on Tier 0 Anonymous Access encounters rate limiting:
 - **Card Title**: `[RATE_LIMITED] Quota Exhausted / Rate Limited`
-- **Banner**: `Anonymous tier limit reached — connect your free OpenRouter account for 10x more requests`
+- **Banner**: `Anonymous tier limit reached, connect your free OpenRouter account for 10x more requests`
 - **Action**: One-click button `Connect Free Accounts Now →` opens the wizard directly at Step 3 (`openrouter`).
 
 ### Gentle Reminder Cadence for Skippers

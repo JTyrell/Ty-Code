@@ -19,7 +19,7 @@
   },
   "validationResults": {
     "copilotDeviceFlowCompleted": true,
-    "copilotBadgeVerified": "via your Copilot — no extra cost",
+    "copilotBadgeVerified": "via your Copilot, no extra cost",
     "externalRequestCompleted": true,
     "openaiCompletionsVerified": true,
     "streamingSSEVerified": true,
@@ -71,7 +71,7 @@
     {
       "test": "Exact verbatim attribution badge string verified",
       "passed": true,
-      "details": "Badge: \"via your Copilot — no extra cost\""
+      "details": "Badge: \"via your Copilot, no extra cost\""
     },
     {
       "test": "Copilot unlocks pro models (Claude 3.5 Sonnet, GPT-4o, o1-preview) at $0 extra cost",
@@ -79,7 +79,7 @@
       "details": "Verified successfully."
     },
     {
-      "test": "ModelSelector.tsx renders verbatim badge: \"via your Copilot — no extra cost\"",
+      "test": "ModelSelector.tsx renders verbatim badge: \"via your Copilot, no extra cost\"",
       "passed": true,
       "details": "Verified successfully."
     },

@@ -19,7 +19,7 @@ Three candidate integration modes were evaluated:
 1. **Mode (a) - Pinned Decoupled Loopback Sidecar (Selected)**:
    - *Architecture*: The FCC server runs as an independent OS-level sidecar process communicating strictly over local loopback TCP/HTTP (`http://127.0.0.1:8082`). Ty-Code interacts with it exclusively via standardized, vendor-neutral OpenAI-compatible REST endpoints (`/v1/models`, `/v1/chat/completions`).
    - *Legal Boundary*: Under AGPL-3.0 and standard copyright precedent (mere aggregation / arm's length inter-process communication), running an independent binary as a sidecar without dynamic or static code linking prevents copyleft taint on Ty-Code's core codebase. Ty-Code remains 100% MIT licensed.
-   - *Integrity*: The bundled or launched binary is cryptographically verified against pinned SHA-256 digests (`FCC_PINNED_MANIFEST`) at boot Tier 2 before execution. Checksum mismatches immediately disable the layer and yield explicit errors—never silent fallback or mock simulation.
+   - *Integrity*: The bundled or launched binary is cryptographically verified against pinned SHA-256 digests (`FCC_PINNED_MANIFEST`) at boot Tier 2 before execution. Checksum mismatches immediately disable the layer and yield explicit errors, never silent fallback or mock simulation.
 
 2. **Mode (b) - First-Run Consented Download**:
    - Evaluated as an alternative if distribution constraints required binary retrieval at user runtime. Since FCC permits redistribution under AGPL-3.0 provided source and notices are made available, bundling a checksum-verified executable was selected for zero-latency, zero-friction developer experience.
@@ -32,7 +32,7 @@ Three candidate integration modes were evaluated:
 In accordance with attribution obligations, the following notice is preserved verbatim across 5 primary surfaces in Ty-Code:
 
 ```
-Free-model supply layer powered by free-claude-code (FCC) — AGPL-3.0 / MIT — https://github.com/Alishahryar1/free-claude-code
+Free-model supply layer powered by free-claude-code (FCC), AGPL-3.0 / MIT, https://github.com/Alishahryar1/free-claude-code
 ```
 
 #### Monitored Attribution Surfaces:

@@ -248,6 +248,7 @@ export class BootScheduler {
     this.currentTier = 3;
     this.tierStatus[3] = 'running';
     bootProfiler.recordMark('tier_3:started', bootProfiler.now(), undefined, 'boot');
+    bootProfiler.recordMark('deferred_tasks_start', bootProfiler.now(), undefined, 'boot');
     this.notifyProgress();
 
     const tier3Tasks = Array.from(this.tasks.values()).filter(
@@ -265,6 +266,7 @@ export class BootScheduler {
     // Persist final warm cache & boot trace
     void this.persistWarmCache();
     void bootProfiler.persistBootTrace();
+    bootProfiler.persistBootHistory();
   }
 
   private async runTask(task: BootTask): Promise<void> {

@@ -108,13 +108,15 @@ export function checkSurfaceAttribution(surfaceId, content) {
     violations.push('Missing license notice (AGPL-3.0 / MIT)');
   }
 
-  // Check 4: Verbatim phrase
-  const normalizedContent = content.replace(/\s+/g, ' ');
-  const normalizedVerbatim = VERBATIM_CREDIT_STRING.replace(/\s+/g, ' ');
+  // Check 4: Verbatim phrase. Em dashes and the UK comma form are equivalent,
+  // so surfaces may use either punctuation style; wording, licence and repo URL must match.
+  const normalizeCredit = (s) => s.replace(/\s*\u2014\s*/g, ', ').replace(/\s+/g, ' ');
+  const normalizedContent = normalizeCredit(content);
+  const normalizedVerbatim = normalizeCredit(VERBATIM_CREDIT_STRING);
   // In JSX, links may be split across tags `<a href="...">...</a>`
   const hasVerbatimOrJsxSplit =
     normalizedContent.includes(normalizedVerbatim) ||
-    (normalizedContent.includes('Free-model supply layer powered by free-claude-code (FCC) — AGPL-3.0 / MIT') &&
+    (normalizedContent.includes('Free-model supply layer powered by free-claude-code (FCC), AGPL-3.0 / MIT') &&
       normalizedContent.includes('https://github.com/Alishahryar1/free-claude-code'));
 
   if (!hasVerbatimOrJsxSplit) {

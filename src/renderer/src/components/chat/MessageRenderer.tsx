@@ -80,6 +80,30 @@ export function applyUkPunctuation(markdown: string): string {
   return normalisePunctuation(markdown);
 }
 
+// Shared worker singletons (Step 2: eliminate freeze causes)
+// MessageRenderer is instantiated once per chat message — creating workers
+// per instance multiplied highlight.js grammar sets across dozens of V8
+// isolates (~1MB+ each). One shared worker per type serves all instances;
+// responses are already multiplexed by request id in the message handlers.
+let sharedMarkdownWorker: Worker | null = null;
+let sharedHighlightWorker: Worker | null = null;
+
+function getSharedMarkdownWorker(): Worker {
+  if (!sharedMarkdownWorker) {
+    sharedMarkdownWorker = new MarkdownParserWorker();
+    sharedMarkdownWorker.addEventListener('error', () => { sharedMarkdownWorker = null; });
+  }
+  return sharedMarkdownWorker;
+}
+
+function getSharedHighlightWorker(): Worker {
+  if (!sharedHighlightWorker) {
+    sharedHighlightWorker = new HighlightWorker();
+    sharedHighlightWorker.addEventListener('error', () => { sharedHighlightWorker = null; });
+  }
+  return sharedHighlightWorker;
+}
+
 const MessageRendererImpl: React.FC<MessageRendererProps> = ({ content, isStreaming = false }) => {
   const [renderedHtml, setRenderedHtml] = useState<string | null>(null);
   const currentReqIdRef = useRef<string>('');
@@ -112,17 +136,10 @@ const MessageRendererImpl: React.FC<MessageRendererProps> = ({ content, isStream
     [content, ukPunctuationEnabled]
   );
 
-  // 1. Initialize workers using useMemo to prevent recreation across re-renders
-  const markdownWorker = useMemo(() => new MarkdownParserWorker(), []);
-  const highlightWorker = useMemo(() => new HighlightWorker(), []);
-
-  // Worker lifecycle cleanup
-  useEffect(() => {
-    return () => {
-      markdownWorker.terminate();
-      highlightWorker.terminate();
-    };
-  }, [markdownWorker, highlightWorker]);
+  // 1. Workers are shared singletons — never terminated per component
+  // (the shared instance lives for the whole renderer lifetime).
+  const markdownWorker = useMemo(() => getSharedMarkdownWorker(), []);
+  const highlightWorker = useMemo(() => getSharedHighlightWorker(), []);
 
   // Main thread event delegation for copy buttons and external links embedded
   // in worker-generated HTML
@@ -173,6 +190,9 @@ const MessageRendererImpl: React.FC<MessageRendererProps> = ({ content, isStream
     // 3. When stream finishes ([DONE]), send full markdown to Markdown Worker
     const reqId = crypto.randomUUID();
     currentReqIdRef.current = reqId;
+    // Shared worker outlives this component: keep the highlight detach hook in
+    // effect scope so a late response cannot touch an unmounted component.
+    let detachHighlightListener: (() => void) | null = null;
 
     const onMarkdownMessage = (e: MessageEvent<MarkdownWorkerResponse>) => {
       const data = e.data;
@@ -223,6 +243,9 @@ const MessageRendererImpl: React.FC<MessageRendererProps> = ({ content, isStream
         language: val.language
       }));
 
+      // Shared worker outlives this component: the highlight listener must be
+      // reachable from the effect cleanup so a late response cannot touch an
+      // unmounted component.
       const onHighlightMessage = (hEvent: MessageEvent<HighlightWorkerResponse>) => {
         const hData = hEvent.data;
         if (hData.id !== currentReqIdRef.current) return;
@@ -251,6 +274,9 @@ const MessageRendererImpl: React.FC<MessageRendererProps> = ({ content, isStream
 
       highlightWorker.addEventListener('message', onHighlightMessage);
       highlightWorker.postMessage({ id: reqId, blocks: blocksToSend });
+      detachHighlightListener = () => {
+        highlightWorker.removeEventListener('message', onHighlightMessage);
+      };
     };
 
     markdownWorker.addEventListener('message', onMarkdownMessage);
@@ -258,6 +284,7 @@ const MessageRendererImpl: React.FC<MessageRendererProps> = ({ content, isStream
 
     return () => {
       markdownWorker.removeEventListener('message', onMarkdownMessage);
+      detachHighlightListener?.();
     };
   }, [normalizedContent, isStreaming, markdownWorker, highlightWorker]);
 

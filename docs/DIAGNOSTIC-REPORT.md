@@ -1,4 +1,4 @@
-# Ty-Code Remediation Report — Plain-Language "What Is Needed"
+# Ty-Code Remediation Report, Plain-Language "What Is Needed"
 **Generated**: 2026-10-25T06:04:28.169Z
 **Status**: ACTION REQUIRED
 

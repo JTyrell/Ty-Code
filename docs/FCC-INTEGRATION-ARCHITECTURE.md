@@ -135,7 +135,7 @@ When the primary FCC supply layer is stopped, disabled, or fails an integrity ch
 
 ### Fallback Status Indicator
 When falling back from FCC, the application UI presents the official status string:
-`FCC offline — native supply active`
+`FCC offline, native supply active`
 ensuring the developer is always informed of the current model supply route.
 
 ---

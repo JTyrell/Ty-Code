@@ -7,7 +7,7 @@ footer: 'Ty-Code: The Sovereign AI IDE • https://github.com/JTyrell/Ty-Code'
 ---
 
 <!-- _class: lead -->
-<div class="badge">Seed Financing Round — Q4 2026</div>
+<div class="badge">Seed Financing Round, Q4 2026</div>
 
 # Ty-Code: The Sovereign AI Coding Environment
 
@@ -26,14 +26,14 @@ Tone: Visionary, market-aware, confident, and relentlessly focused on the techni
 Core Thesis: AI coding is experiencing a massive architectural paradigm shift from centralized, cloud-locked, rate-limited SaaS tools to sovereign, local-first, multi-harness autonomous IDEs. Ty-Code owns this transition.
 
 [Visual Description]
-Deep Obsidian Cyber canvas (#0b0d10) illuminated by a pulsating emerald-green Decode-Frontier horizon line. Crisp, modern typography centered on screen with the Ty-Code cryptographic shield icon and glowing status indicator. Sub-text in high-contrast cyan: "Seed Financing Round — Q4 2026".
+Deep Obsidian Cyber canvas (#0b0d10) illuminated by a pulsating emerald-green Decode-Frontier horizon line. Crisp, modern typography centered on screen with the Ty-Code cryptographic shield icon and glowing status indicator. Sub-text in high-contrast cyan: "Seed Financing Round, Q4 2026".
 
 [Speaker Notes (Verbatim Script)]
-"Good morning, everyone. Over the last two years, we've watched generative AI fundamentally transform how software gets written. But the first generation of AI coding tools—tools like Cursor, GitHub Copilot, and Windsurf—were built on an architectural premise that is already breaking down.
+"Good morning, everyone. Over the last two years, we've watched generative AI fundamentally transform how software gets written. But the first generation of AI coding tools, tools like Cursor, GitHub Copilot, and Windsurf, were built on an architectural premise that is already breaking down.
 
 That premise was simple: send all the developer's source code, ASTs, and terminal sessions up to a centralized cloud, run inference behind a walled garden, and charge a $20-a-month seat tax.
 
-Today, we're introducing Ty-Code. Ty-Code is the world's first true local-first, zero-telemetry agentic AI desktop IDE. We didn't build another thin API wrapper. We re-architected the entire development environment from the metal up so that your code, your context, and your credentials never leave your machine—while unlocking over 1.3 billion free monthly tokens across 11 autonomous runtime harnesses.
+Today, we're introducing Ty-Code. Ty-Code is the world's first true local-first, zero-telemetry agentic AI desktop IDE. We didn't build another thin API wrapper. We re-architected the entire development environment from the metal up so that your code, your context, and your credentials never leave your machine, while unlocking over 1.3 billion free monthly tokens across 11 autonomous runtime harnesses.
 
 We're here today to show you how Ty-Code is transforming AI coding from an expensive security liability into an enterprise-grade sovereign superpower."
 -->
@@ -59,7 +59,7 @@ A 3-column split comparison diagram highlighting the acute pain points of status
 [Speaker Notes (Verbatim Script)]
 "Let's be direct about the problem with today's market leaders. Every time a developer presses Tab in Cursor or Copilot, their proprietary IP is packaged into an AST payload and transmitted across the open web to a third-party server.
 
-For solo hobbyists building toy apps, that might feel acceptable. But for the Fortune 500—for banks, hospitals, defense contractors, and security-conscious tech startups—that is an absolute non-starter. CISOs across the globe are issuing outright bans on cloud AI IDEs because they cannot risk HIPAA violations, SOC2 breaches, or source code leaks.
+For solo hobbyists building toy apps, that might feel acceptable. But for the Fortune 500, for banks, hospitals, defense contractors, and security-conscious tech startups, that is an absolute non-starter. CISOs across the globe are issuing outright bans on cloud AI IDEs because they cannot risk HIPAA violations, SOC2 breaches, or source code leaks.
 
 On top of the security nightmare, developers are getting squeezed by what we call the '$20-a-month seat tax.' Users are paying monthly subscriptions for tools that artificially throttle them the minute they hit a complex refactor, while marking up underlying API costs by 300%.
 
@@ -86,7 +86,7 @@ A sleek architectural contrast graphic. On the left: a crossed-out cloud icon wi
 
 In Ty-Code, all indexing, file tree parsing, and agentic workflows happen entirely within the local process space. We don't have telemetry servers. We don't store your prompts. In fact, Ty-Code is architecturally incapable of exfiltrating your code.
 
-When an engineer enters their API keys, those keys aren't saved in plaintext or dumped into browser cookies. They are cryptographically sealed inside the operating system's native hardware vault using safeStorage—DPAPI on Windows, Keychain on Mac, Secret Service on Linux.
+When an engineer enters their API keys, those keys aren't saved in plaintext or dumped into browser cookies. They are cryptographically sealed inside the operating system's native hardware vault using safeStorage, DPAPI on Windows, Keychain on Mac, Secret Service on Linux.
 
 Developers can bring their own keys at wholesale provider rates, connect private VPC gateways, or unplug their internet connection entirely and run state-of-the-art models like DeepSeek and Llama 3 locally via Ollama.
 
@@ -115,11 +115,11 @@ A dual-circle TAM/SAM/SOM market expansion graph with accelerating growth vector
 [Speaker Notes (Verbatim Script)]
 "The market tailwinds behind this shift are staggering. Over 30 million software engineers are actively integrating AI into their daily workflows, driving the developer tooling market toward $28.5 billion over the next three years.
 
-But here is the critical market insight that our competitors are missing: the highest-value segment of this market—the enterprise tier with the largest budgets—is currently locked out.
+But here is the critical market insight that our competitors are missing: the highest-value segment of this market, the enterprise tier with the largest budgets, is currently locked out.
 
 When a hospital network with 2,000 engineers wants to give their developers AI coding tools, they can't sign an enterprise Cursor contract without violating HIPAA. When a defense contractor wants autonomous agentic refactoring, they can't upload classified avionics code to a multitenant cloud.
 
-By solving data sovereignty and compliance at the architectural root, Ty-Code doesn't just compete for individual devs on Twitter—we unlock the massive, unserved enterprise market that has been forced to sit on the sidelines."
+By solving data sovereignty and compliance at the architectural root, Ty-Code doesn't just compete for individual devs on Twitter, we unlock the massive, unserved enterprise market that has been forced to sit on the sidelines."
 -->
 
 ---
@@ -142,13 +142,13 @@ An annotated, high-definition UI screenshot of Ty-Code in action:
 - Bottom Panel: Sandboxed terminal executing verified PTY commands with active secret scrubbing.
 
 [Speaker Notes (Verbatim Script)]
-"When developers open Ty-Code, there is zero friction and zero cognitive overhead. It's built on Monaco—the exact same editor core powering VS Code—so every keybinding, theme, language server, and extension works intuitively on Day 1.
+"When developers open Ty-Code, there is zero friction and zero cognitive overhead. It's built on Monaco, the exact same editor core powering VS Code, so every keybinding, theme, language server, and extension works intuitively on Day 1.
 
 Notice what's happening on screen right now. We engineered a proprietary Decode-Frontier engine for LLM streaming. Instead of sluggish UI layout re-renders or choppy markdown jumps, code arrives via a deterministic 140-character-per-second decode sweep that keeps the UI silky smooth at 60 frames per second.
 
 To the right, you see our M3E Canvas. Developers can visually tweak components, inspect design tokens, and watch production-ready Tailwind and React code update live in the editor.
 
-And when the AI executes terminal commands—running tests, building bundles, installing dependencies—it does so inside our isolated three-tier PTY sandbox that scrubs environment variables and blocks dangerous commands before they ever execute."
+And when the AI executes terminal commands, running tests, building bundles, installing dependencies, it does so inside our isolated three-tier PTY sandbox that scrubs environment variables and blocks dangerous commands before they ever execute."
 -->
 
 ---
@@ -174,7 +174,7 @@ If you've used standard AI tools, you know the frustration of having your agent 
 
 We solved this with our Omni-Orchestrator and Unified ProviderGateway. We normalized over 60 different AI providers into one unified, ultra-low-latency reactive stream.
 
-Our orchestrator continuously pings providers, tracks latency, and forecasts token burn rates. If an upstream model experiences packet loss or throttling, Ty-Code automatically fails over to an equivalent high-speed provider—like Groq or OpenRouter—in under 50 milliseconds, preserving the entire conversational state and agentic tool-call history.
+Our orchestrator continuously pings providers, tracks latency, and forecasts token burn rates. If an upstream model experiences packet loss or throttling, Ty-Code automatically fails over to an equivalent high-speed provider, like Groq or OpenRouter, in under 50 milliseconds, preserving the entire conversational state and agentic tool-call history.
 
 The developer never sees a crash. They just see blistering-fast, uninterrupted code generation."
 -->
@@ -202,7 +202,7 @@ graph TD
 [Speaker Notes]
 "This diagram illustrates our proprietary failover chain in action. When a query is initiated, the Unified ProviderGateway evaluates active latency and quota telemetry across all available endpoints.
 
-If a primary endpoint reports elevated latency or begins throwing HTTP 429 warnings, the 48ms Zero-Drop Failover Bus instantly migrates the streaming turn to an available secondary provider—such as Groq or local Ollama—without losing conversational turn tokens, tool invocation payloads, or editor focus."
+If a primary endpoint reports elevated latency or begins throwing HTTP 429 warnings, the 48ms Zero-Drop Failover Bus instantly migrates the streaming turn to an available secondary provider, such as Groq or local Ollama, without losing conversational turn tokens, tool invocation payloads, or editor focus."
 -->
 
 ---
@@ -227,7 +227,7 @@ A synaptic memory graph visual. A central local SQLite Write-Ahead-Logged databa
 [Speaker Notes (Verbatim Script)]
 "Here is our second major moat: memory and context.
 
-Every developer has had the experience of correcting an AI model—telling it, 'Don't use var, use const,' or 'Always use our internal Result monad for error handling'—only for the model to make the exact same mistake ten minutes later in a new chat.
+Every developer has had the experience of correcting an AI model, telling it, 'Don't use var, use const,' or 'Always use our internal Result monad for error handling', only for the model to make the exact same mistake ten minutes later in a new chat.
 
 Ty-Code features a persistent Universal Correction Memory powered by a zero-overhead local SQLite database with write-ahead logging.
 
@@ -253,7 +253,7 @@ A centerpiece architecture diagram showcasing Ty-Code's multi-harness loopback e
 A central dispatch router connects to 11 distinct runtime harnesses (Claude Code, Codex, VS Code Extension APIs, Pi, OpenCode, Cline, Aider, Hermes, DeepSeek, Grok, Mistral). A local loopback supply adapter connects into the free-claude-code (FCC) reverse proxy layer, unlocking a visible badge: "1.3B+ Free Tokens / Month".
 
 [Speaker Notes (Verbatim Script)]
-"This brings us to our secret weapon—our growth engine that makes Ty-Code virtually impossible for competitors to displace.
+"This brings us to our secret weapon, our growth engine that makes Ty-Code virtually impossible for competitors to displace.
 
 One of the hardest hurdles in developer tooling is the onboarding friction of API keys and credit cards. If a developer has to pull out their corporate credit card or configure billing just to test your IDE, you lose 80% of your funnel.
 
@@ -297,7 +297,7 @@ All traffic is channeled locally into our reverse proxy layer running on port 87
 * **Pioneering Supply Methodology:** Architected upon the reverse-proxy foundations established by **free-claude-code (FCC)**.
 * **Upstream Project Repository:** https://github.com/Alishahryar1/free-claude-code.git
 * **Strategic Integration Advantage:** We didn't build a wrapper; we integrated the best open-source routing available.
-* **Permanent Licensing Attribution:** *Free-model supply layer powered by free-claude-code (FCC) — AGPL-3.0 / MIT*.
+* **Permanent Licensing Attribution:** *Free-model supply layer powered by free-claude-code (FCC), AGPL-3.0 / MIT*.
 * **Enterprise Hardening:** Adapted FCC's mock-free binary loopback into a sandboxed, ToS-compliant desktop supply engine.
 
 <!--
@@ -320,7 +320,7 @@ This gives our users an unbeatable wedge against paid competitors charging $20 a
 * **Community Tier ($0):** Free multi-harness compute + unlimited local Ollama. Zero user acquisition cost.
 * **Developer Pro (BYOK):** Power-user orchestration, multi-agent swarms, encrypted cross-device workspace sync.
 * **Enterprise Sovereign ($45/seat/month):** Centralized MDM governance, VPC gateway enforcement, HIPAA/SOC2 audit packages, priority SLA.
-* **Superior Unit Economics:** 0% token COGS subsidy—users bring their own keys or leverage open-source free pools, yielding 90%+ SaaS gross margins.
+* **Superior Unit Economics:** 0% token COGS subsidy, users bring their own keys or leverage open-source free pools, yielding 90%+ SaaS gross margins.
 
 <!--
 [Visual Description]
@@ -415,7 +415,7 @@ A forward-looking milestone roadmap spanning the next 18 months alongside a clea
 [Speaker Notes (Verbatim Script)]
 "To accelerate our growth and capitalize on this massive market window, we are raising a $3.5 million Seed round.
 
-We will deploy 50% of this capital directly into our core systems engineering team—expanding our multi-agent orchestration capabilities and deepening our local model optimizations. 30% will fund enterprise sales and compliance certifications, including SOC2 Type II audits and automated MDM connectors. The remaining 20% will support third-party security audits and global developer community initiatives.
+We will deploy 50% of this capital directly into our core systems engineering team, expanding our multi-agent orchestration capabilities and deepening our local model optimizations. 30% will fund enterprise sales and compliance certifications, including SOC2 Type II audits and automated MDM connectors. The remaining 20% will support third-party security audits and global developer community initiatives.
 
 Over the next 18 months, this capital will take us to 250,000 active developers, over 50 regulated enterprise deployments, and $4.2 million in high-margin Annual Recurring Revenue.
 

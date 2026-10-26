@@ -118,7 +118,7 @@ Design components visually on an interactive canvas and watch bidirectional code
 ### Powered by Open Source: The 1.3B+ Token Free Tier.
 
 Great software should be accessible to every engineer on earth, not hidden behind an upfront paywall.  
-Ty-Code integrates multi-harness routing across 11 distinct development runtimes—including **Claude Code, Codex, VS Code Extension APIs, Pi, OpenCode, Cline, and Aider**.  
+Ty-Code integrates multi-harness routing across 11 distinct development runtimes, including **Claude Code, Codex, VS Code Extension APIs, Pi, OpenCode, Cline, and Aider**.  
 This unlocks direct, zero-friction access to over **1.3 billion combined monthly tokens** across high-throughput open-weights supply pools.
 
 ```
@@ -139,7 +139,7 @@ This unlocks direct, zero-friction access to over **1.3 billion combined monthly
 ### 🌟 Open-Source Credit & Acknowledgement
 Ty-Code's multi-harness routing capability was deeply inspired by and architected upon the pioneering methodologies established by the **free-claude-code (FCC)** project:
 > **Repository:** [https://github.com/Alishahryar1/free-claude-code.git](https://github.com/Alishahryar1/free-claude-code.git)  
-> **Permanent Licensing Attribution:** *Free-model supply layer powered by free-claude-code (FCC) — AGPL-3.0 / MIT — https://github.com/Alishahryar1/free-claude-code*
+> **Permanent Licensing Attribution:** *Free-model supply layer powered by free-claude-code (FCC), AGPL-3.0 / MIT, https://github.com/Alishahryar1/free-claude-code*
 
 By adapting FCC's mock-free binary loopback architecture into Ty-Code’s hardened enterprise sandbox, we engineered a 100% Terms-of-Service-compliant, voice-supported, and session-aware supply layer.  
 This open-source breakthrough allows developers to build, test, and iterate without spending a single dollar on initial token budgets.  
@@ -218,5 +218,5 @@ Install in seconds. No credit card required.
 
 ### Bottom Bar & Standing Attribution
 > **Built on the shoulders of giants.**  
-> *Free-model supply layer powered by free-claude-code (FCC) — AGPL-3.0 / MIT — [https://github.com/Alishahryar1/free-claude-code](https://github.com/Alishahryar1/free-claude-code).*  
+> *Free-model supply layer powered by free-claude-code (FCC), AGPL-3.0 / MIT, [https://github.com/Alishahryar1/free-claude-code](https://github.com/Alishahryar1/free-claude-code).*  
 > © 2026 Ty-Code Project. Distributed under the MIT License. Data sovereignty guaranteed.

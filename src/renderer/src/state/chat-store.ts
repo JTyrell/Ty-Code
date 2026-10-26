@@ -841,6 +841,22 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const elapsed = performance.now() - lastFlushTime;
       const waitTime = Math.max(0, FLUSH_INTERVAL_MS - elapsed);
 
+      // Step 3.2: hidden windows cannot run rAF callbacks (Chrome throttles
+      // them to 0), which would strand isFlushing=true and let the token
+      // buffer grow unbounded. While hidden, flush directly — the 100ms
+      // FLUSH_INTERVAL_MS cadence itself is untouched.
+      if (typeof document !== 'undefined' && document.hidden) {
+        if (waitTime === 0) {
+          flushTokenBuffer();
+        } else {
+          flushTimer = setTimeout(() => {
+            flushTimer = null;
+            flushTokenBuffer();
+          }, waitTime);
+        }
+        return;
+      }
+
       if (waitTime === 0) {
         flushRaf = requestAnimationFrame(() => {
           flushRaf = null;
@@ -905,6 +921,20 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       const elapsed = performance.now() - lastReasoningFlushTime;
       const waitTime = Math.max(0, FLUSH_INTERVAL_MS - elapsed);
+
+      // Step 3.2: same hidden-window rAF guard as scheduleTokenFlush —
+      // while hidden, flush directly instead of waiting on a throttled rAF.
+      if (typeof document !== 'undefined' && document.hidden) {
+        if (waitTime === 0) {
+          flushReasoningBuffer();
+        } else {
+          reasoningTimer = setTimeout(() => {
+            reasoningTimer = null;
+            flushReasoningBuffer();
+          }, waitTime);
+        }
+        return;
+      }
 
       if (waitTime === 0) {
         reasoningRaf = requestAnimationFrame(() => {

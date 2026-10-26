@@ -1,6 +1,6 @@
 # Ty-Code Performance Baseline Report
 
-## Phase: Perf 2 — Tiered Boot Scheduler (Critical First, Heavy Later)
+## Phase: Perf 2, Tiered Boot Scheduler (Critical First, Heavy Later)
 
 **Date:** 2026-10-15  
 **Version:** Ty-Code 1.0.0  
@@ -57,27 +57,27 @@ sequenceDiagram
 
 ### Tier Breakdown
 
-1. **Tier 0 — Before First Paint (`<800ms budget`)**:
+1. **Tier 0, Before First Paint (`<800ms budget`)**:
    - Window frame and theme tokens loaded instantly.
    - Window coordinates and layout bounds restored.
    - Last-session metadata loaded without reading large file contents.
    - **First Paint achieved at 314ms**.
 
-2. **Tier 1 — Shell Interactive Under 300ms (`<2000ms cold budget`)**:
+2. **Tier 1, Shell Interactive Under 300ms (`<2000ms cold budget`)**:
    - Settings hydration (asynchronous safeStorage decryption, zero blocking sync I/O).
    - Workspace file system index loaded in chunks, yielding every 200 entries to prevent event-loop starvation.
    - Chat and agent core stores initialized.
    - Editor surface interactive; Monaco workers lazy-spawned only on first file open or restored tab.
    - **Shell Interactive achieved at 682ms**.
 
-3. **Tier 2 — First Idle 0.5s to 2s Window**:
+3. **Tier 2, First Idle 0.5s to 2s Window**:
    - Provider registry restored from disk cache.
    - Git service status checked in background.
    - Search index loaded from warm disk cache.
    - Provider health pings **STAGGERED 200ms apart with a max concurrency cap of 3**.
    - **Zero impact on UI responsiveness**: Killing or timing out a slow provider never delays shell interactivity.
 
-4. **Tier 3 — Background Services (After 2s or on First Interaction)**:
+4. **Tier 3, Background Services (After 2s or on First Interaction)**:
    - Extension host and installed extensions activated.
    - MCP servers manager loaded.
    - TypeScript/Python LSP servers initialized.

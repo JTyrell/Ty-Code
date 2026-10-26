@@ -241,9 +241,9 @@ Ty-Code stands on the shoulders of the global open-source community. We express 
 We formally acknowledge and credit the groundbreaking engineering established by the **free-claude-code (FCC)** project:
 
 > **Repository:** [https://github.com/Alishahryar1/free-claude-code](https://github.com/Alishahryar1/free-claude-code)  
-> **Upstream Attribution String:** *Free-model supply layer powered by free-claude-code (FCC) — AGPL-3.0 / MIT — https://github.com/Alishahryar1/free-claude-code*
+> **Upstream Attribution String:** *Free-model supply layer powered by free-claude-code (FCC), AGPL-3.0 / MIT, https://github.com/Alishahryar1/free-claude-code*
 
-Ty-Code's **Multi-Harness Routing Architecture**—which unlocks access to over **1.3 billion monthly free tokens** across 11 distinct development environments (including Claude Code, Codex, VS Code Extension APIs, Pi, OpenCode, Cline, Aider, Hermes, DeepSeek, Grok-Build, and Mistral)—was deeply inspired by and architected upon the methodologies pioneered by the FCC repository.
+Ty-Code's **Multi-Harness Routing Architecture**, which unlocks access to over **1.3 billion monthly free tokens** across 11 distinct development environments (including Claude Code, Codex, VS Code Extension APIs, Pi, OpenCode, Cline, Aider, Hermes, DeepSeek, Grok-Build, and Mistral), was deeply inspired by and architected upon the methodologies pioneered by the FCC repository.
 
 By adapting FCC's mock-free binary loopback patterns, ToS safety compliance categorizations, and subscription OAuth device flows into Ty-Code's hardened desktop sandbox, we have bridged community-driven open-source innovation with enterprise-grade security. This integration stands as a shining testament to how collaborative open-source engineering drives modern developer tools forward.
 

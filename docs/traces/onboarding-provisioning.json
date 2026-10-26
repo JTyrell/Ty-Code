@@ -150,7 +150,7 @@
           "retryAfterSec": 45
         },
         "matchesUpsell": true,
-        "copy": "Anonymous tier limit reached — connect your free OpenRouter account for 10x more requests"
+        "copy": "Anonymous tier limit reached, connect your free OpenRouter account for 10x more requests"
       }
     },
     {

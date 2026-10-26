@@ -18,7 +18,7 @@ Modern software engineering organizations face an acute trilemma when evaluating
 3. **Vendor Lock-in and Supply Instability:** Direct coupling to single-vendor model APIs subjects enterprise engineering workflows to unannounced upstream service outages, model deprecation schedules, and unannounced modifications to safety filters that halt automated build pipelines.
 
 ### The Ty-Code Paradigm: Local-First Autonomous Engineering
-Ty-Code is engineered from first principles as an air-gap capable, local-first autonomous development environment. All semantic indexing, dynamic profiling, workspace mutation analysis, and credential containment execute strictly on the host operating system. Network egress is restricted exclusively to authenticated, policy-governed inference endpoints—whether self-hosted on-premises large language model (LLM) clusters (vLLM, Ollama, TensorRT-LLM), enterprise cloud VPC gateways (AWS Bedrock PrivateLink, Azure OpenAI Dedicated Gateways), or curated high-throughput providers.
+Ty-Code is engineered from first principles as an air-gap capable, local-first autonomous development environment. All semantic indexing, dynamic profiling, workspace mutation analysis, and credential containment execute strictly on the host operating system. Network egress is restricted exclusively to authenticated, policy-governed inference endpoints, whether self-hosted on-premises large language model (LLM) clusters (vLLM, Ollama, TensorRT-LLM), enterprise cloud VPC gateways (AWS Bedrock PrivateLink, Azure OpenAI Dedicated Gateways), or curated high-throughput providers.
 
 By decoupling the development environment, local context engine, and inference runtime, Ty-Code provides provable data sovereignty, mathematical boundary containment, and zero vendor lock-in, while maintaining compatibility with VS Code extensions, Language Server Protocols (LSP), and the global Model Context Protocol (MCP) ecosystem.
 
@@ -300,7 +300,7 @@ Ty-Code unifies these disparate runtimes under a single **Multi-Harness Supply L
 ### 4.2 Upstream Acknowledgment and Architectural Attribution: free-claude-code (FCC)
 Ty-Code explicitly acknowledges and credits the pioneering open-source engineering established by the **free-claude-code (FCC)** project:
 > **Repository:** [https://github.com/Alishahryar1/free-claude-code.git](https://github.com/Alishahryar1/free-claude-code.git)  
-> **Permanent Licensing Attribution:** *Free-model supply layer powered by free-claude-code (FCC) — AGPL-3.0 / MIT.*
+> **Permanent Licensing Attribution:** *Free-model supply layer powered by free-claude-code (FCC), AGPL-3.0 / MIT.*
 
 Rather than treating open-source tooling as an unvetted dependency, Ty-Code’s engineering team performed an exhaustive architectural adaptation of FCC's methodologies to meet enterprise procurement standards:
 1. **Mock-Free Reverse Proxy Architecture:** Legacy local supply stubs relied on synthetic fixtures and mock token strings. Ty-Code and FCC eliminated all mock generators in favor of a genuine binary proxy (`sidecar-server.mjs`, verified by `scripts/no-mock-agent-path.mjs`). Real tokens stream from live endpoints with verified TCP/TLS handshakes.

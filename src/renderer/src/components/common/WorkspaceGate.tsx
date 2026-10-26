@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Loader2, FolderSearch, FolderOpen } from 'lucide-react';
 import { useWorkspaceStore } from '../../state/workspace-store';
+import type { WorkspaceSessionEvent } from '../../../../preload/types';
 
 export interface WorkspaceGateProps {
   children: React.ReactNode;
@@ -28,6 +29,35 @@ export const WorkspaceGate: React.FC<WorkspaceGateProps> = ({
   const workspaceRoot = useWorkspaceStore((state) => state.workspaceRoot || state.workspacePath || null);
   const [isOpening, setIsOpening] = useState(false);
 
+  // Prompt 1 (Workspace Session Bus): secondary surfaces never adopt a root
+  // themselves. Root changes originate from the main process (editor Open
+  // Folder / fs:set-workspace / CLI) and replay here via the session bus.
+  useEffect(() => {
+    let disposed = false;
+    let unsubscribe: (() => void) | undefined;
+    try {
+      unsubscribe = window.electronAPI?.onWorkspaceSession?.((event: WorkspaceSessionEvent) => {
+        if (disposed || !event || event.channel === 'workspace:closed') return;
+        const root = event.session?.rootPath;
+        if (root && useWorkspaceStore.getState().workspacePath !== root) {
+          useWorkspaceStore.getState().setWorkspacePath(root);
+          void useWorkspaceStore.getState().refreshFileTree();
+        }
+      });
+    } catch (err) {
+      console.error('[WorkspaceGate] Failed to subscribe to workspace session:', err);
+    }
+    return () => {
+      if (disposed) return;
+      disposed = true;
+      try {
+        unsubscribe?.();
+      } catch {
+        /* tolerated */
+      }
+    };
+  }, []);
+
   // Derive feature name from prop or message (e.g. "Omni-Debugger", "M3E Canvas", "Git")
   const resolvedFeatureName = featureName || (
     message?.includes('Indexing Workspace for ')
@@ -49,19 +79,13 @@ export const WorkspaceGate: React.FC<WorkspaceGateProps> = ({
     if (isOpening) return;
     setIsOpening(true);
     try {
-      if (window.electronAPI?.openFolderDialog) {
-        const res = await window.electronAPI.openFolderDialog();
-        if (res?.success && res.data) {
-          useWorkspaceStore.getState().setWorkspacePath(res.data);
-          await useWorkspaceStore.getState().refreshFileTree();
-        }
-      } else if (window.electronAPI?.selectWorkspaceFolder) {
-        const res = await window.electronAPI.selectWorkspaceFolder();
-        if (res?.success && res.data) {
-          useWorkspaceStore.getState().setWorkspacePath(res.data);
-          await useWorkspaceStore.getState().refreshFileTree();
-        }
-      }
+      // Delegation contract: the main process owns the dialog, workspace open,
+      // tree scan, cache eviction and session broadcast. Renderer-side local
+      // workspace-store writes are forbidden outside the Explorer surface.
+      const openFolder =
+        window.electronAPI?.openFolderDialog ?? window.electronAPI?.selectWorkspaceFolder;
+      if (!openFolder) return;
+      await openFolder.call(window.electronAPI);
     } catch (err) {
       console.error('[WorkspaceGate] Error opening folder dialog:', err);
     } finally {

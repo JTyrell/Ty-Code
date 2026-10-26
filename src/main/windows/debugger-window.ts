@@ -15,6 +15,7 @@ import path from 'node:path';
 import { z } from 'zod';
 import { runFullAnalysis } from '../services/debugger-orchestrator';
 import { debuggerModelRouter, type DebuggerModelPreferences } from '../services/debugger-engines/debugger-model-router';
+import { memoryGovernor } from '../services/memory-governor';
 
 export type AnalysisSeverity = 'critical' | 'high' | 'medium' | 'low' | 'info';
 export type AnalysisEngine = 'static' | 'dynamic' | 'arch' | 'ai';
@@ -352,6 +353,7 @@ export function getDebuggerWindow(): BrowserWindow | null {
 
 export function closeDebuggerWindow(): void {
   if (debuggerWindow && !debuggerWindow.isDestroyed()) {
+    memoryGovernor.unregisterSurface('debugger');
     debuggerWindow.close();
     debuggerWindow = null;
   }
@@ -402,6 +404,10 @@ export function openDebuggerWindow(): BrowserWindow {
 
   debuggerWindow = window;
   debuggerSyncManager.setPopOutMode(true);
+
+  // Step 3: register debugger surface with the governor (crash instrumentation
+  // + 5-minute idle termination).
+  memoryGovernor.registerSurface('debugger', 'debugger', window);
 
   window.on('maximize', () => {
     if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
@@ -462,6 +468,7 @@ export function openDebuggerWindow(): BrowserWindow {
       debuggerWindow = null;
     }
     debuggerSyncManager.setPopOutMode(false);
+    memoryGovernor.unregisterSurface('debugger');
   });
 
   return window;

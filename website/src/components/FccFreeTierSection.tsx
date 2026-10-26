@@ -19,7 +19,7 @@ export default function FccFreeTierSection() {
         </h2>
 
         <p className={styles.introCopy}>
-          Great software should be accessible to every engineer on earth, not hidden behind an upfront paywall. Ty-Code integrates multi-harness routing across 11 distinct development runtimes—including <strong>Claude Code</strong>, <strong>Codex</strong>, <strong>VS Code Extension APIs</strong>, <strong>Pi</strong>, <strong>OpenCode</strong>, <strong>Cline</strong>, and <strong>Aider</strong>. This unlocks direct, zero-friction access to over 1.3 billion combined monthly tokens across high-throughput open-weights supply pools.
+          Great software should be accessible to every engineer on earth, not hidden behind an upfront paywall. Ty-Code integrates multi-harness routing across 11 distinct development runtimes, including <strong>Claude Code</strong>, <strong>Codex</strong>, <strong>VS Code Extension APIs</strong>, <strong>Pi</strong>, <strong>OpenCode</strong>, <strong>Cline</strong>, and <strong>Aider</strong>. This unlocks direct, zero-friction access to over 1.3 billion combined monthly tokens across high-throughput open-weights supply pools.
         </p>
 
         <div className={styles.diagramBox}>
@@ -63,7 +63,7 @@ export default function FccFreeTierSection() {
             </a>
           </div>
           <blockquote className={styles.attributionQuote}>
-            Free-model supply layer powered by free-claude-code (FCC) — AGPL-3.0 / MIT —{' '}
+            Free-model supply layer powered by free-claude-code (FCC), AGPL-3.0 / MIT, {' '}
             <a href="https://github.com/Alishahryar1/free-claude-code" target="_blank" rel="noopener noreferrer">
               https://github.com/Alishahryar1/free-claude-code
             </a>

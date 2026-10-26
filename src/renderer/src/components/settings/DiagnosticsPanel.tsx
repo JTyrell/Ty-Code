@@ -70,6 +70,7 @@ import type {
 import { SMOKE_TEST_STEPS, SMOKE_TEST_FAILURE_PROTOCOL } from '../../../../shared/types/diagnostics';
 import { toast } from '../../state/toast-store';
 import { useChatStore } from '../../state/chat-store';
+import { GovernorPanel } from './GovernorPanel';
 import './DiagnosticsPanel.css';
 
 const STEP_LABELS: Record<DiagnosticStep, string> = {
@@ -577,6 +578,9 @@ export const DiagnosticsPanel: React.FC = () => {
 
   return (
     <div className="diag-container">
+      {/* Step 4: Memory Governor tier + RSS sparkline (local-only) */}
+      <GovernorPanel />
+
       {/* ---------------------------------------------------------------------
           At-a-Glance Live Status Strip (HUD)
           --------------------------------------------------------------------- */}

@@ -1,4 +1,4 @@
-# Ty-Code Desktop IDE — Extensions Menu QA Test Suite & Report
+# Ty-Code Desktop IDE, Extensions Menu QA Test Suite & Report
 
 This document records the comprehensive manual and automated Quality Assurance (QA) verification for the Ty-Code Desktop Extensions system, covering registry connectivity (Open VSX), pixel-correct layout rendering, responsive container breakpoints, and the complete install/toggle/uninstall lifecycle.
 
@@ -65,7 +65,7 @@ Follow the 6 steps below to perform manual verification across target operating 
 ### Step 5: Network Cut & Offline Resilience
 - **Action**: Disconnect internet connectivity (or disable Wi-Fi/Ethernet). Type a previously queried keyword (e.g. `"python"`) and then a new uncached keyword.
 - **Expected Outcome**:
-  - Cached search displays results instantly with a yellow **"offline — cached results"** banner and a **Retry** button.
+  - Cached search displays results instantly with a yellow **"offline, cached results"** banner and a **Retry** button.
   - Uncached query displays a graceful user-friendly error notice with a **Retry** button.
   - No uncaught JavaScript exceptions, white screens, or application crashes.
 - **Observed Result**: 24h disk cache serves results in <2ms with the offline warning banner; uncached query presents retryable failure state.

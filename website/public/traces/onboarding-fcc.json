@@ -39,7 +39,7 @@
     "reRunnableFromSettings": true
   },
   "attribution": {
-    "verbatimCreditString": "Free-model supply layer powered by free-claude-code (FCC) — AGPL-3.0 / MIT — https://github.com/Alishahryar1/free-claude-code",
+    "verbatimCreditString": "Free-model supply layer powered by free-claude-code (FCC), AGPL-3.0 / MIT, https://github.com/Alishahryar1/free-claude-code",
     "visibleInSplash": true,
     "visibleInSummary": true,
     "licenseAttribution": "AGPL-3.0 / MIT"

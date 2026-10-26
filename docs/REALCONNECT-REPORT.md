@@ -92,11 +92,11 @@ Enable instant in-chat recovery when an API key is missing, and establish five a
    - Features: Password-masked key input, clipboard paste button, pre-save connection verification, one-click provider signup link opener, and quick-switch buttons for free local alternatives (Ollama, Groq Free).
    - On save: Persists to `credential-store.ts` and automatically re-executes the original user prompt.
 2. **The 5 Automated Live Verification Proofs**:
-   - **Test 1 — Nonce Echo**: [`tests/live-e2e/nonce-echo.test.ts`](file:///c:/Users/JT/Documents/Ty-Code/tests/live-e2e/nonce-echo.test.ts) asserts `response.includes('7Q4X9') === true`.
-   - **Test 2 — Distinctness**: [`tests/live-e2e/distinctness.test.ts`](file:///c:/Users/JT/Documents/Ty-Code/tests/live-e2e/distinctness.test.ts) submits 3 prompts (`"Hi"`, `"Explain hashes"`, `"What is 17*23?"`) and asserts complete divergence (`r1 !== r2 && r2 !== r3 && r1 !== r3`).
-   - **Test 3 — Streaming Truth**: [`tests/live-e2e/streaming-truth.test.ts`](file:///c:/Users/JT/Documents/Ty-Code/tests/live-e2e/streaming-truth.test.ts) asserts progressive delivery with `streamEventCount >= 5` (actual: 25 captured).
-   - **Test 4 — Agentic Disk Tool Execution**: [`tests/live-e2e/agentic-file.test.ts`](file:///c:/Users/JT/Documents/Ty-Code/tests/live-e2e/agentic-file.test.ts) prompts agent to create `live-check.md`; verifies `fs.existsSync` and exact content `"verified"`.
-   - **Test 5 — Offline Taxonomy Classification**: [`tests/live-e2e/offline-error.test.ts`](file:///c:/Users/JT/Documents/Ty-Code/tests/live-e2e/offline-error.test.ts) points to unreachable port; verifies clean return of `NETWORK_BLOCKED` in **8ms** (<10s limit) with actionable remedy.
+   - **Test 1, Nonce Echo**: [`tests/live-e2e/nonce-echo.test.ts`](file:///c:/Users/JT/Documents/Ty-Code/tests/live-e2e/nonce-echo.test.ts) asserts `response.includes('7Q4X9') === true`.
+   - **Test 2, Distinctness**: [`tests/live-e2e/distinctness.test.ts`](file:///c:/Users/JT/Documents/Ty-Code/tests/live-e2e/distinctness.test.ts) submits 3 prompts (`"Hi"`, `"Explain hashes"`, `"What is 17*23?"`) and asserts complete divergence (`r1 !== r2 && r2 !== r3 && r1 !== r3`).
+   - **Test 3, Streaming Truth**: [`tests/live-e2e/streaming-truth.test.ts`](file:///c:/Users/JT/Documents/Ty-Code/tests/live-e2e/streaming-truth.test.ts) asserts progressive delivery with `streamEventCount >= 5` (actual: 25 captured).
+   - **Test 4, Agentic Disk Tool Execution**: [`tests/live-e2e/agentic-file.test.ts`](file:///c:/Users/JT/Documents/Ty-Code/tests/live-e2e/agentic-file.test.ts) prompts agent to create `live-check.md`; verifies `fs.existsSync` and exact content `"verified"`.
+   - **Test 5, Offline Taxonomy Classification**: [`tests/live-e2e/offline-error.test.ts`](file:///c:/Users/JT/Documents/Ty-Code/tests/live-e2e/offline-error.test.ts) points to unreachable port; verifies clean return of `NETWORK_BLOCKED` in **8ms** (<10s limit) with actionable remedy.
 
 #### Evidence Artifacts & Validation
 - **[`docs/traces/live-verification.json`](file:///c:/Users/JT/Documents/Ty-Code/docs/traces/live-verification.json)**: Machine-readable audit record confirming **5/5 live proofs passed**.

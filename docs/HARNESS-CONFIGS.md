@@ -192,4 +192,4 @@ For VS Code Language Model API redirects, configure in VS Code settings:
 
 - **Default Binding**: `127.0.0.1` (localhost only). Non-loopback requests are rejected with `403 Forbidden`.
 - **LAN Exposure (`0.0.0.0`)**: If you wish to serve mobile devices or LAN build machines, enable the LAN toggle in **Settings > Integrations**. You must explicitly accept the security warning acknowledgement.
-- **Attribution**: Free-model supply layer powered by free-claude-code (FCC) — AGPL-3.0 / MIT — https://github.com/Alishahryar1/free-claude-code
+- **Attribution**: Free-model supply layer powered by free-claude-code (FCC), AGPL-3.0 / MIT, https://github.com/Alishahryar1/free-claude-code

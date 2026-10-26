@@ -12,6 +12,7 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useWorkspaceSessionStore } from '../../state/workspace-session-store';
 import {
   Box,
   Braces,
@@ -50,6 +51,7 @@ import type { CanvasNode, CanvasPlatform, CanvasPropValue } from '../../state/ca
 import { extractImageCss } from '../../utils/image-to-css';
 import type { ImageCssResult } from '../../utils/image-to-css';
 import { WorkspaceGate } from '../common/WorkspaceGate';
+import { SessionPresenceStrip } from '../common/SessionPresenceStrip';
 import { useWorkspaceStore } from '../../state/workspace-store';
 import { useWorkspaceEditStore } from '../../state/workspace-edit-store';
 import { toast } from '../../state/toast-store';
@@ -1180,6 +1182,12 @@ export const M3ECanvas: React.FC = () => {
   const selectedNodeId = useCanvasStore((state) => state.selectedNodeId);
   const hydrated = useCanvasStore((state) => state.hydrated);
   const { addNode, updateNodeProps, removeNode, setPlatform, clearCanvas, selectNode } = useCanvasStore.getState();
+  const { attachSurface, detachSurface } = useWorkspaceSessionStore();
+
+  useEffect(() => {
+    attachSurface('canvas');
+    return () => detachSurface('canvas');
+  }, [attachSurface, detachSurface]);
 
   const [dragState, setDragState] = useState<{
     kind: 'drag' | 'resize';
@@ -1453,6 +1461,11 @@ export const M3ECanvas: React.FC = () => {
         overflow: 'hidden'
       }}
     >
+      {/* Workspace session presence strip (Prompt 1: session bus) */}
+      <div style={{ padding: '4px 10px', flexShrink: 0, borderBottom: '1px solid var(--bg-tertiary)' }}>
+        <SessionPresenceStrip self="canvas" />
+      </div>
+
       {/* Toolbar: platform selector + counts + actions */}
       <div
         style={{

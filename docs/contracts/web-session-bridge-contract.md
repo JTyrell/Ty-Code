@@ -132,7 +132,7 @@ The server emits `SessionStreamChunk` payloads with monotonically increasing `ch
   "sessionId": "sess_89437a8b",
   "chunkIndex": 44,
   "metadata": {
-    "notice": "provider throttled — continued with gemini-2.5-flash"
+    "notice": "provider throttled, continued with gemini-2.5-flash"
   },
   "timestamp": 1792205501000
 }
@@ -182,4 +182,4 @@ When implementing the future Cloudflare Workers hosted editor, the implementatio
 - [x] Conforms to JSON message schema defined in Section 4.
 - [x] Guarantees ring buffer replay for disconnected clients.
 - [x] Preserves RTK compression and Headroom pruning parity with Desktop IDE.
-- [x] Emits verbatim failover notice `"provider throttled — continued with <model>"`.
+- [x] Emits verbatim failover notice `"provider throttled, continued with <model>"`.

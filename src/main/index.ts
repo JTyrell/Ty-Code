@@ -93,7 +93,8 @@ import { loadDocument, persistDocument, parseMarkdownSections, listDocuments, ty
 import type { CommandExecutionOptions, ProposedDiff, PtySpawnOptions, ReplaceInFilesOptions, SearchInFilesOptions, TelemetryEvent, WorkspaceEditOrigin } from '../preload/types';
 import { fileURLToPath } from 'url';
 
-import { initAiFeatureServices, updateAiServicesWorkspace, registerAiFeatureHandlers } from './ipc/ai-features-handlers';
+import { initAiFeatureServices, updateAiServicesWorkspace, registerAiFeatureHandlers, getInlineService } from './ipc/ai-features-handlers';
+import { requestCache } from './services/orchestration/request-cache';
 import { fccManager } from './services/orchestration/fcc-manager';
 import { fccSidecarManager } from './services/fcc-sidecar-manager';
 import { checkFCCHealth } from './services/fcc-manager';
@@ -141,6 +142,7 @@ import { opencodeFreeDetector } from './services/providers/opencode-free-detecto
 import { opencodeInstaller } from './opencode-integration/opencode-installer';
 import { saveOpenCodeApiKey, getOpenCodeKeyStatus, discoverOpenCodeFreeModels } from './services/opencode-config-manager';
 import { opencodeBridge, buildBridgePromptFromMessages } from './services/opencode-bridge';
+import { memoryGovernor, MemoryGovernor, type GovernorMode, type GovernorTier } from './services/memory-governor';
 
 /** Active chat bridge run (Prompt 3): only one opencode child at a time. */
 let opencodeChatAbort: AbortController | null = null;
@@ -278,7 +280,9 @@ app.on('open-file', (event, filePath) => {
     const resolved = path.resolve(filePath);
     if (fsSync.existsSync(resolved) && fsSync.statSync(resolved).isDirectory()) {
       if (mainWindow && !mainWindow.isDestroyed()) {
-        void workspaceManager.openWorkspace(resolved);
+        void workspaceManager.openWorkspace(resolved).then((r) => {
+          if (r.success) getWorkspaceSessionManager().setActiveWorkspace(resolved);
+        });
       } else {
         pendingMacOpenPath = resolved;
       }
@@ -312,6 +316,8 @@ let mainWindow: BrowserWindow | null = null;
 let currentWorkspacePath = getInitialWorkspacePath();
 setWorkspaceEditPreviewWorkspace(currentWorkspacePath);
 let ipcRegistered = false;
+let governorMode: GovernorMode = 'FULL';
+let liteNoticeSent = false;
 let diagnosticsManager: ReturnType<typeof getLspManager> | null = null;
 let diagnosticsUnsubscribe: (() => void) | null = null;
 let telemetryManager: TelemetryManager | null = null;
@@ -614,6 +620,8 @@ function registerIpcHandlers(): void {
     };
   });
 
+  registerWorkspaceSessionHandlers();
+
   ipcMain.handle('fs:select-workspace', async () => {
     const targetWin = BrowserWindow.getFocusedWindow() || mainWindow;
     const response = await workspaceManager.openFolderDialog(targetWin);
@@ -621,6 +629,7 @@ function registerIpcHandlers(): void {
       currentWorkspacePath = response.data;
       setWorkspaceEditPreviewWorkspace(response.data);
       debuggerSyncManager.pushStateUpdate({ workspacePath: response.data });
+      getWorkspaceSessionManager().setActiveWorkspace(response.data);
     }
     return response;
   });
@@ -631,6 +640,7 @@ function registerIpcHandlers(): void {
       currentWorkspacePath = response.data;
       setWorkspaceEditPreviewWorkspace(response.data);
       debuggerSyncManager.pushStateUpdate({ workspacePath: response.data });
+      getWorkspaceSessionManager().setActiveWorkspace(response.data);
     }
     return response;
   });
@@ -641,6 +651,7 @@ function registerIpcHandlers(): void {
       currentWorkspacePath = workspaceManager.currentWorkspacePath;
       setWorkspaceEditPreviewWorkspace(workspaceManager.currentWorkspacePath);
       debuggerSyncManager.pushStateUpdate({ workspacePath: workspaceManager.currentWorkspacePath });
+      getWorkspaceSessionManager().setActiveWorkspace(workspaceManager.currentWorkspacePath);
     }
     return result;
   });
@@ -795,6 +806,7 @@ function registerIpcHandlers(): void {
     currentWorkspacePath = folderPath;
     setWorkspaceEditPreviewWorkspace(folderPath);
     debuggerSyncManager.pushStateUpdate({ workspacePath: folderPath });
+    getWorkspaceSessionManager().setActiveWorkspace(folderPath);
     return getWorkspaceTree(folderPath);
   });
   ipcMain.handle('fs:get-tree', async () => {
@@ -3116,6 +3128,57 @@ function registerIpcHandlers(): void {
   initAiFeatureServices(currentWorkspacePath);
   registerAiFeatureHandlers(() => { void getTelemetryManager().recordFeatureUsed('project_index'); });
 
+  // -------------------------------------------------------------
+  // Step 4: Memory Pressure Governor IPC (local-only, Zero-Telemetry)
+  // -------------------------------------------------------------
+  ipcMain.handle('governor:get-state', async () => {
+    try {
+      return { success: true, data: memoryGovernor.getSnapshot() };
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+  ipcMain.on('governor:sample', (_event, sample: { rssMb?: number; heapUsedMb?: number; ts?: number }) => {
+    try {
+      const wc = _event.sender;
+      memoryGovernor.recordRendererSample(wc ? wc.id : -1, sample);
+    } catch {
+      // Non-blocking
+    }
+  });
+  ipcMain.on('surface:heartbeat', (_event, surfaceId?: string) => {
+    try {
+      if (typeof surfaceId === 'string') memoryGovernor.heartbeat(surfaceId);
+    } catch {
+      // Non-blocking
+    }
+  });
+
+  // Broadcast governor tier changes to all surfaces so the Diagnostics tab
+  // and any reactive UI stay in sync (local-only).
+  memoryGovernor.subscribeTierChange((tier: GovernorTier) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
+        try { win.webContents.send('governor:state-changed', { tier, mode: governorMode }); } catch {}
+      }
+    }
+  });
+
+  // Step 4: main-process eviction callbacks (tier -> local cache shedding).
+  memoryGovernor.registerEviction(async (tier) => {
+    try {
+      if (tier === 'ELEVATED') {
+        getInlineService()?.trimCache(50);
+        requestCache.clear();
+      } else if (tier === 'CRITICAL' || tier === 'OVER') {
+        getInlineService()?.trimCache(0);
+        requestCache.clear();
+      }
+    } catch (err) {
+      console.warn('[GOVERNOR] main eviction failed:', err);
+    }
+  });
+
   // Phase 5.2: FCC Server Integration (Layer 3)
   registerFccHandlers();
 
@@ -4145,8 +4208,16 @@ function createWindow(): void {
     }
   });
    mainWindow = window;
+  MemoryGovernor.setMainWindow(window);
   workspaceManager.setMainWindow(window);
   connectivityTracer.setMainWindow(window);
+
+  // Surface lifecycle + crash instrumentation (Step 1 & 3): the main editor
+  // window is the anchor 'editor' surface. It is registered with the governor
+  // so renderer crashes, hangs and child-process deaths are captured per
+  // surface and never bring down the whole app.
+  memoryGovernor.registerSurface('editor', 'editor', window);
+
   bootProfiler.recordMark('window_created');
   window.once('ready-to-show', () => bootProfiler.recordMark('ready_to_show'));
 
@@ -4219,6 +4290,17 @@ function createWindow(): void {
       pendingMacOpenPath = null;
       void workspaceManager.openWorkspace(targetFolder);
     }
+    // Step 5: ONE info notice for LITE mode, never a toast storm.
+    if (governorMode === 'LITE' && !liteNoticeSent) {
+      liteNoticeSent = true;
+      try {
+        const totalSystemRamGb = os.totalmem() / (1024 * 1024 * 1024);
+        window.webContents.send('governor:lite-mode', {
+          totalSystemRamGb,
+          notice: 'Low-RAM device detected: running in LITE mode (1 debugger worker, deferred LSP, manual Canvas preview).'
+        });
+      } catch {}
+    }
   });
 
   window.on('close', (event) => {
@@ -4234,6 +4316,7 @@ function createWindow(): void {
       mainWindow = null;
       workspaceManager.setMainWindow(null);
     }
+    memoryGovernor.unregisterSurface('editor');
   });
 
   // Initialize tray presence
@@ -4249,6 +4332,16 @@ function openSketcherWindow(): BrowserWindow {
 
 app.whenReady().then(async () => {
   bootProfiler.recordMark('app_ready');
+
+  // -------------------------------------------------------------
+  // Step 5: Startup RAM Policy
+  // Read total system RAM once at boot. < 3GB -> LITE mode (one info notice,
+  // never a toast storm). >= 3GB -> FULL mode with governor as safety net.
+  // -------------------------------------------------------------
+  const totalSystemRamGb = os.totalmem() / (1024 * 1024 * 1024);
+  governorMode = MemoryGovernor.detectMode(totalSystemRamGb);
+  memoryGovernor.start(governorMode, totalSystemRamGb);
+
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
     // Voice dictation lives in the chat composer of the main IDE window; the
     // bundled faster-whisper sidecar transcribes locally after capture.
@@ -4261,6 +4354,36 @@ app.whenReady().then(async () => {
 
   bootScheduler.registerIpcHandlers();
   registerIpcHandlers();
+
+  // -------------------------------------------------------------
+  // Step 1: Restore persistent workspace session from ~/.tycode/session.json
+  // -------------------------------------------------------------
+  try {
+    const sessionManager = getWorkspaceSessionManager();
+    const session = sessionManager.getSession();
+    if (!currentWorkspacePath && session.rootPath) {
+      // No CLI root given — adopt the persisted session root and actually
+      // re-open it so the file tree / context engine serve the restored root
+      // (mirrors the workspace:open-folder IPC handler).
+      void workspaceManager
+        .openWorkspace(session.rootPath)
+        .then((r) => {
+          if (!r.success) return;
+          currentWorkspacePath = workspaceManager.currentWorkspacePath;
+          setWorkspaceEditPreviewWorkspace(currentWorkspacePath);
+          debuggerSyncManager.pushStateUpdate({ workspacePath: currentWorkspacePath });
+          sessionManager.setActiveWorkspace(currentWorkspacePath);
+        })
+        .catch(() => {
+          // Non-fatal: begin with whatever workspace state exists.
+        });
+    } else if (currentWorkspacePath && session.rootPath && currentWorkspacePath !== session.rootPath) {
+      // CLI root differs from persisted session — adopt CLI root.
+      sessionManager.setActiveWorkspace(currentWorkspacePath);
+    }
+  } catch {
+    // Non-fatal: begin with whatever workspace state exists.
+  }
 
   try {
     if (app && typeof app.setAsDefaultProtocolClient === 'function') {

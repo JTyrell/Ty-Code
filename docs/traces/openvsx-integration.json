@@ -1,7 +1,7 @@
 {
   "version": 1,
   "phase": "ExtensionsFix 2",
-  "title": "Real Open VSX Integration — Registry API + VSIX Download",
+  "title": "Real Open VSX Integration, Registry API + VSIX Download",
   "timestamp": "2026-10-16T23:36:44.809Z",
   "gitCommit": "1cd5158a3e1f6ccf79d3f8d8115ef245f11eef19",
   "command": "node scripts/run-openvsx-integration.mjs",

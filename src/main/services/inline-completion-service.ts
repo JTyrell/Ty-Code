@@ -22,6 +22,14 @@ export class InlineCompletionService {
     this.projectIndexer = indexer;
   }
 
+  /** Step 4: governor eviction hook — trim the completion cache. */
+  public trimCache(maxEntries: number): void {
+    if (this.cache.size <= maxEntries) return;
+    const keys = Array.from(this.cache.keys());
+    const excess = keys.slice(0, Math.max(0, keys.length - maxEntries));
+    for (const key of excess) this.cache.delete(key);
+  }
+
   private getCacheKey(req: InlineCompletionRequest): string {
     const lastLines = req.prefix.split('\n').slice(-5).join('\n');
     return `${req.filePath}:${req.language}:${lastLines.trimEnd()}`;

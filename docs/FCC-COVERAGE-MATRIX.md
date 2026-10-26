@@ -14,7 +14,7 @@ Ty-Code integrates with upstream [`free-claude-code`](https://github.com/Alishah
 
 ### Canonical Credit String
 ```text
-Free-model supply layer powered by free-claude-code (FCC) — AGPL-3.0 / MIT — https://github.com/Alishahryar1/free-claude-code
+Free-model supply layer powered by free-claude-code (FCC), AGPL-3.0 / MIT, https://github.com/Alishahryar1/free-claude-code
 ```
 
 ### Guarded User Surfaces
@@ -74,12 +74,12 @@ The entire user journey was executed and verified end-to-end:
 ### Step 2: Connect Copilot → Pro-Class Model Answers
 - **User Action**: Open Settings → Supply / Integrations → GitHub Copilot Connect.
 - **Observed Behavior**: RFC 8628 device flow initiates. A one-time user code (`AUTHENTICATED` / `XXXX-XXXX`) and verification URI are displayed.
-- **Live Output**: Token is encrypted in OS safeStorage. Pro-class models (`Claude 3.5 Sonnet`, `GPT-4o`, `o1-preview`) appear in the Model Selector with badge `"via your Copilot — no extra cost"`. Model answers real coding queries.
+- **Live Output**: Token is encrypted in OS safeStorage. Pro-class models (`Claude 3.5 Sonnet`, `GPT-4o`, `o1-preview`) appear in the Model Selector with badge `"via your Copilot, no extra cost"`. Model answers real coding queries.
 - **Evidence**: [`docs/traces/fcc-interop.json`](traces/fcc-interop.json).
 
 ### Step 3: Kill a Provider Mid-Stream → Same Turn Continues
 - **User Action**: Simulate a 429 rate limit or drop connection on the active provider mid-generation.
-- **Observed Behavior**: The orchestration layer snapshots generated tokens, flags the provider with a cooldown penalty, displays notice: `"provider throttled — continued with <fallback-model>"`.
+- **Observed Behavior**: The orchestration layer snapshots generated tokens, flags the provider with a cooldown penalty, displays notice: `"provider throttled, continued with <fallback-model>"`.
 - **Live Output**: Secondary provider seamlessly continues the output from the exact last token. Handoff counter increments (`1/2`). Strict ceiling prevents more than 2 handoffs per turn.
 - **Evidence**: [`docs/traces/fcc-resilience.json`](traces/fcc-resilience.json).
 
@@ -98,14 +98,14 @@ The entire user journey was executed and verified end-to-end:
 ### Step 6: About + Website Show FCC Credit
 - **User Action**: Inspect TitleBar About dialog, Settings modal, README, and public website footer.
 - **Observed Behavior**: All 4 user-facing surfaces prominently display the verbatim attribution string:
-  `Free-model supply layer powered by free-claude-code (FCC) — AGPL-3.0 / MIT — https://github.com/Alishahryar1/free-claude-code`.
+  `Free-model supply layer powered by free-claude-code (FCC), AGPL-3.0 / MIT, https://github.com/Alishahryar1/free-claude-code`.
 - **Live Output**: Clickable link opens upstream GitHub repository.
 - **Evidence**: Verified by `scripts/verify-attribution.mjs`.
 
 ### Step 7: Disable FCC Layer → IDE Fully Functional on Native Supply
 - **User Action**: Toggle FCC Managed Supply OFF in Settings → Supply.
 - **Observed Behavior**: Ty-Code immediately transitions to native model registry (`openrouter`, `groq`, `ollama` with user keys).
-- **Live Output**: Status indicator updates to `"FCC offline — native supply active"`. Chat, tool execution, editor completions, and workspace commands remain 100% operational without error or crash.
+- **Live Output**: Status indicator updates to `"FCC offline, native supply active"`. Chat, tool execution, editor completions, and workspace commands remain 100% operational without error or crash.
 - **Evidence**: Verified in fallback degradation tests (`scripts/verify-fcc-core.mjs`).
 
 ---
