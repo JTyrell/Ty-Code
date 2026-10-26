@@ -8,7 +8,7 @@ export interface Attachment {
   mimeType?: string;
 }
 
-export const MAX_ATTACHMENTS = 4;
+export const MAX_ATTACHMENTS = 7;
 
 interface ChatInputState {
   attachments: Attachment[];

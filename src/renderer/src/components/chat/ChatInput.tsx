@@ -160,11 +160,15 @@ export function ChatInput({ input, inputRef, onInputChange, onKeyDown, onSubmit,
 
   // Workspace files go through chat:read-file-for-context (base64 images, 200-line text);
   // files from outside the workspace fall back to direct File reads.
-  const attachNativeFile = useCallback(async (file: File) => {
+  const attachNativeFile = useCallback(async (file: File, source: 'file-drop' | 'clipboard' = 'file-drop') => {
     try {
-      const absolutePath = window.electronAPI.getFilePathForDroppedFile(file);
-      await attachWorkspacePath(absolutePath, 'file');
-      return;
+      if (source === 'file-drop') {
+        const absolutePath = window.electronAPI.getFilePathForDroppedFile(file);
+        if (absolutePath) {
+          await attachWorkspacePath(absolutePath, 'file');
+          return;
+        }
+      }
     } catch {
       // Path resolution failed: fall back to direct File reads below.
     }
@@ -206,7 +210,7 @@ export function ChatInput({ input, inputRef, onInputChange, onKeyDown, onSubmit,
     void (async () => {
       for (const file of files) {
         if (useChatInputStore.getState().attachments.length >= MAX_ATTACHMENTS) {
-          toast.warning('Attachment limit', 'Up to 4 attachments per message.');
+          toast.warning('Attachment limit', 'Up to 7 attachments per message.');
           break;
         }
         await attachNativeFile(file);
@@ -267,7 +271,7 @@ export function ChatInput({ input, inputRef, onInputChange, onKeyDown, onSubmit,
       void (async () => {
         for (const file of files) {
           if (useChatInputStore.getState().attachments.length >= MAX_ATTACHMENTS) {
-            toast.warning('Attachment limit', 'Up to 4 attachments per message.');
+            toast.warning('Attachment limit', 'Up to 7 attachments per message.');
             break;
           }
           await attachNativeFile(file);
@@ -567,17 +571,24 @@ export function ChatInput({ input, inputRef, onInputChange, onKeyDown, onSubmit,
               const imageItems = items.filter((item) => item.type.startsWith('image/'));
               if (imageItems.length === 0) return;
               event.preventDefault();
-              const spaceLeft = MAX_ATTACHMENTS - useChatInputStore.getState().attachments.length;
-              if (spaceLeft <= 0) {
-                toast.warning('Attachment limit', 'Up to 4 attachments per message.');
-                return;
-              }
-              for (const item of imageItems.slice(0, spaceLeft)) {
-                const file = item.getAsFile();
-                if (!file) continue;
-                if (file.size > FALLBACK_IMAGE_BYTES) continue;
-                void attachNativeFile(file);
-              }
+              void (async () => {
+                let pastedSoFar = 0;
+                for (const item of imageItems) {
+                  const spaceLeft = MAX_ATTACHMENTS - useChatInputStore.getState().attachments.length;
+                  if (spaceLeft <= 0) {
+                    toast.warning('Attachment limit', 'Up to 7 attachments per message.');
+                    return;
+                  }
+                  const file = item.getAsFile();
+                  if (!file) continue;
+                  pastedSoFar += 1;
+                  const pasteName = imageItems.length > 1 ? `pasted-image-${pastedSoFar}.${file.type.split('/')[1] || 'png'}` : file.name;
+                  await attachNativeFile(new File([file], pasteName, { type: file.type }), 'clipboard');
+                }
+                if (pastedSoFar === 0) {
+                  toast.error('Cannot read pasted image', 'The clipboard image could not be attached.');
+                }
+              })();
             }}
             placeholder="Ask Ty-Code… (Enter to send)"
             aria-label="Message Ty-Code"

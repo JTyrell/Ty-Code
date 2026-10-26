@@ -106,17 +106,6 @@ export function spawnPtySession(mainWindow: BrowserWindow, options: PtySpawnOpti
     }
 
     const processHandle = pty.spawn(selectedShell.path, [], { name: 'xterm-256color', cols, rows, cwd, env: ptyEnv });
-    if (options.autoRunCommand) {
-      const autoRun = options.autoRunCommand;
-      const autoRunTimer = setTimeout(() => {
-        try {
-          processHandle.write(`${autoRun}\r`);
-        } catch {
-          // Session may have already exited
-        }
-      }, 400);
-      if (typeof autoRunTimer.unref === 'function') autoRunTimer.unref();
-    }
     const session: ActivePty = { process: processHandle, shellPath: selectedShell.path, window: mainWindow, outputBuffer: '', attached: false, subscriptions: [] };
     activePtys.set(ptyId, session);
     session.subscriptions.push(processHandle.onData((data) => {
@@ -133,6 +122,23 @@ export function spawnPtySession(mainWindow: BrowserWindow, options: PtySpawnOpti
         activePtys.delete(ptyId);
       }
     }));
+    if (options.autoRunCommand) {
+      const autoRun = options.autoRunCommand;
+      let autoRunWritten = false;
+      const writeAutoRun = () => {
+        if (autoRunWritten) return;
+        autoRunWritten = true;
+        try {
+          processHandle.write(`${autoRun}\r`);
+        } catch {
+          // Session may have already exited
+          return;
+        }
+      };
+      const autoRunTimer = setTimeout(writeAutoRun, 1500);
+      if (typeof autoRunTimer.unref === 'function') autoRunTimer.unref();
+      session.subscriptions.push(processHandle.onData(() => writeAutoRun()));
+    }
     return { success: true, data: { ptyId, shellId: selectedShell.id, shellName: selectedShell.name } };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);

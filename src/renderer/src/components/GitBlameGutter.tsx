@@ -28,7 +28,7 @@ export const GitBlameGutter: React.FC<GitBlameProps> = ({ filePath, currentLine 
     void (async () => {
       try {
         setIsLoading(true);
-        const res = await window.electronAPI.gitGetBlame(filePath);
+        const res = await window.electronAPI.gitGetBlame({ filePath });
         const nextHunks = res.success ? res.data || [] : [];
         if (isMounted) {
           setBlameHunks(nextHunks);

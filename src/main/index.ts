@@ -79,7 +79,9 @@ import {
   handleGitDiscardChanges, handleGitCommit, handleGitGetBranches,
   handleGitCreateBranch, handleGitSwitchBranch, handleGitDeleteBranch,
   handleGitFetch, handleGitPull, handleGitPush, handleGitGetLog,
-  handleGitGetBlame, handleGitStash, handleGitGetRemotes
+  handleGitGetBlame, handleGitStash, handleGitGetRemotes,
+  resolveGitRepositoryPath, handleGitListRepositories, handleGitGetGraph,
+  handleGitSuggestCommitMessage
 } from './ipc/git-handlers';
 import { WindowStateManager } from './services/window-state';
 import { getUpdateManager, type UpdateChannel } from './services/update-manager';
@@ -225,6 +227,8 @@ import { openCanvasWindow } from './windows/canvas-window';
 import { debuggerSyncManager, openDebuggerWindow, closeDebuggerWindow } from './windows/debugger-window';
 import { opencodeServiceManager } from './opencode-integration';
 import { workspaceManager, isAppOrSystemDir } from './services/workspace-manager';
+import { getWorkspaceSessionManager } from './services/workspace-session-manager';
+import { registerWorkspaceSessionHandlers } from './ipc/workspace-session-handlers';
 import { registerPromptAssemblerHandlers } from './ipc/preferences-handlers';
 
 /**
@@ -2909,61 +2913,83 @@ function registerIpcHandlers(): void {
   ipcMain.handle('brave:start-testing', (_event, payload: unknown) => handleBraveStartTesting(payload));
   ipcMain.handle('brave:stop-testing', () => handleBraveStopTesting());
 
-  // Git operations always target the active workspace selected in the main process.
-  // Renderer-supplied workspace paths are intentionally ignored.
-  ipcMain.handle('git:is-repo', () => handleGitIsRepo(currentWorkspacePath));
-  ipcMain.handle('git:init', () => handleGitInit(currentWorkspacePath));
-  ipcMain.handle('git:status', () => handleGitGetStatus(currentWorkspacePath));
-  ipcMain.handle('git:diff', (_event, payload?: { filePath?: string; staged?: boolean }) =>
-    handleGitGetDiff(currentWorkspacePath, payload?.filePath, payload?.staged)
+  // Git operations target the loaded workspace by default; the renderer may
+  // address any repository discovered inside it via `repoPath` (validated in
+  // resolveGitRepositoryPath against the workspace repository allowlist).
+  ipcMain.handle('git:is-repo', async (_event, payload?: { repoPath?: string }) => handleGitIsRepo(await resolveGitRepositoryPath(payload?.repoPath, currentWorkspacePath)));
+  ipcMain.handle('git:init', async (_event, payload?: { repoPath?: string }) => handleGitInit(await resolveGitRepositoryPath(payload?.repoPath, currentWorkspacePath)));
+  ipcMain.handle('git:status', async (_event, payload?: { repoPath?: string }) => handleGitGetStatus(await resolveGitRepositoryPath(payload?.repoPath, currentWorkspacePath)));
+  ipcMain.handle('git:diff', async (_event, payload?: { filePath?: string; staged?: boolean; repoPath?: string }) =>
+    handleGitGetDiff(await resolveGitRepositoryPath(payload?.repoPath, currentWorkspacePath), payload?.filePath, payload?.staged)
   );
-  ipcMain.handle('git:original-content', (_event, payload: { filePath: string; staged?: boolean }) =>
-    handleGitGetOriginalContent(currentWorkspacePath, payload.filePath, payload.staged)
+  ipcMain.handle('git:original-content', async (_event, payload: { filePath: string; staged?: boolean; repoPath?: string }) =>
+    handleGitGetOriginalContent(await resolveGitRepositoryPath(payload?.repoPath, currentWorkspacePath), payload.filePath, payload.staged)
   );
-  ipcMain.handle('git:file-diff', (_event, payload: { filePath: string; staged?: boolean }) =>
-    handleGitGetFileDiff(currentWorkspacePath, payload.filePath, payload.staged)
+  ipcMain.handle('git:file-diff', async (_event, payload: { filePath: string; staged?: boolean; repoPath?: string }) =>
+    handleGitGetFileDiff(await resolveGitRepositoryPath(payload?.repoPath, currentWorkspacePath), payload.filePath, payload.staged)
   );
-  ipcMain.handle('git:stage', (_event, payload: { filePaths: string | string[] }) => handleGitStage(currentWorkspacePath, payload.filePaths));
-  ipcMain.handle('git:unstage', (_event, payload: { filePaths: string | string[] }) => handleGitUnstage(currentWorkspacePath, payload.filePaths));
-  ipcMain.handle('git:discard', (_event, payload: { filePath: string; isUntracked?: boolean }) =>
-    handleGitDiscardChanges(currentWorkspacePath, payload.filePath, payload.isUntracked)
+  ipcMain.handle('git:stage', async (_event, payload: { filePaths: string | string[]; repoPath?: string }) => handleGitStage(await resolveGitRepositoryPath(payload?.repoPath, currentWorkspacePath), payload.filePaths));
+  ipcMain.handle('git:unstage', async (_event, payload: { filePaths: string | string[]; repoPath?: string }) => handleGitUnstage(await resolveGitRepositoryPath(payload?.repoPath, currentWorkspacePath), payload.filePaths));
+  ipcMain.handle('git:discard', async (_event, payload: { filePath: string; isUntracked?: boolean; repoPath?: string }) =>
+    handleGitDiscardChanges(await resolveGitRepositoryPath(payload?.repoPath, currentWorkspacePath), payload.filePath, payload.isUntracked)
   );
-  ipcMain.handle('git:commit', (_event, payload: { message: string; options?: { amend?: boolean } }) =>
-    handleGitCommit(currentWorkspacePath, payload.message, payload.options)
+  ipcMain.handle('git:commit', async (_event, payload: { message: string; options?: { amend?: boolean }; repoPath?: string }) =>
+    handleGitCommit(await resolveGitRepositoryPath(payload?.repoPath, currentWorkspacePath), payload.message, payload.options)
   );
-  ipcMain.handle('git:branches', () => handleGitGetBranches(currentWorkspacePath));
-  ipcMain.handle('git:switch-branch', (_event, payload: { branchName: string }) => handleGitSwitchBranch(currentWorkspacePath, payload.branchName));
-  ipcMain.handle('git:create-branch', (_event, payload: { branchName: string }) => handleGitCreateBranch(currentWorkspacePath, payload.branchName));
-  ipcMain.handle('git:delete-branch', (_event, payload: { branchName: string; force?: boolean }) =>
-    handleGitDeleteBranch(currentWorkspacePath, payload.branchName, payload.force)
+  ipcMain.handle('git:branches', async (_event, payload?: { repoPath?: string }) => handleGitGetBranches(await resolveGitRepositoryPath(payload?.repoPath, currentWorkspacePath)));
+  ipcMain.handle('git:switch-branch', async (_event, payload: { branchName: string; repoPath?: string }) => handleGitSwitchBranch(await resolveGitRepositoryPath(payload?.repoPath, currentWorkspacePath), payload.branchName));
+  ipcMain.handle('git:create-branch', async (_event, payload: { branchName: string; repoPath?: string }) => handleGitCreateBranch(await resolveGitRepositoryPath(payload?.repoPath, currentWorkspacePath), payload.branchName));
+  ipcMain.handle('git:delete-branch', async (_event, payload: { branchName: string; force?: boolean; repoPath?: string }) =>
+    handleGitDeleteBranch(await resolveGitRepositoryPath(payload?.repoPath, currentWorkspacePath), payload.branchName, payload.force)
   );
-  ipcMain.handle('git:fetch', () => handleGitFetch(currentWorkspacePath));
-  ipcMain.handle('git:pull', () => handleGitPull(currentWorkspacePath));
-  ipcMain.handle('git:push', (_event, payload?: { remote?: string; branch?: string }) =>
-    handleGitPush(currentWorkspacePath, payload?.remote, payload?.branch)
+  ipcMain.handle('git:fetch', async (_event, payload?: { repoPath?: string }) => handleGitFetch(await resolveGitRepositoryPath(payload?.repoPath, currentWorkspacePath)));
+  ipcMain.handle('git:pull', async (_event, payload?: { repoPath?: string }) => handleGitPull(await resolveGitRepositoryPath(payload?.repoPath, currentWorkspacePath)));
+  ipcMain.handle('git:push', async (_event, payload?: { remote?: string; branch?: string; repoPath?: string }) =>
+    handleGitPush(await resolveGitRepositoryPath(payload?.repoPath, currentWorkspacePath), payload?.remote, payload?.branch)
   );
-  ipcMain.handle('git:log', (_event, payload?: { maxCount?: number; search?: string }) =>
-    handleGitGetLog(currentWorkspacePath, payload?.maxCount, payload?.search)
+  ipcMain.handle('git:log', async (_event, payload?: { maxCount?: number; search?: string; repoPath?: string }) =>
+    handleGitGetLog(await resolveGitRepositoryPath(payload?.repoPath, currentWorkspacePath), payload?.maxCount, payload?.search)
   );
-  ipcMain.handle('git:commit-detail', (_event, hash: string) => handleGitGetCommitDetail(currentWorkspacePath, hash));
-  ipcMain.handle('git:blame', (_event, payload: { filePath: string }) => handleGitGetBlame(currentWorkspacePath, payload.filePath));
-  ipcMain.handle('git:stash', (_event, payload: { action: 'list' | 'save' | 'pop' | 'drop'; message?: string; index?: number }) =>
-    handleGitStash(currentWorkspacePath, payload.action, payload.message, payload.index)
+  ipcMain.handle('git:commit-detail', async (_event, payload: { hash: string; repoPath?: string }) =>
+    handleGitGetCommitDetail(await resolveGitRepositoryPath(payload?.repoPath, currentWorkspacePath), payload.hash)
   );
-  ipcMain.handle('git:remotes', () => handleGitGetRemotes(currentWorkspacePath));
-  ipcMain.handle('git:tags', () => handleGitGetTags(currentWorkspacePath));
-  ipcMain.handle('git:create-tag', (_event, payload: { name: string; message?: string }) => handleGitCreateTag(currentWorkspacePath, payload.name, payload.message));
-  ipcMain.handle('git:delete-tag', (_event, name: string) => handleGitDeleteTag(currentWorkspacePath, name));
-  ipcMain.handle('git:conflict-content', (_event, filePath: string) => handleGitGetConflictContent(currentWorkspacePath, filePath));
-  ipcMain.handle('git:resolve-conflict', (_event, payload: { filePath: string; action: 'ours' | 'theirs' | 'mark-resolved' }) =>
-    handleGitResolveConflict(currentWorkspacePath, payload.filePath, payload.action)
+  ipcMain.handle('git:blame', async (_event, payload: { filePath: string; repoPath?: string }) =>
+    handleGitGetBlame(await resolveGitRepositoryPath(payload?.repoPath, currentWorkspacePath), payload.filePath)
   );
-  ipcMain.handle('git:abort-merge', () => handleGitAbortMerge(currentWorkspacePath));
-  ipcMain.handle('git:hunks', (_event, payload: { filePath: string; staged?: boolean }) => handleGitGetHunks(currentWorkspacePath, payload.filePath, payload.staged));
-  ipcMain.handle('git:apply-hunk', (_event, payload: { filePath: string; hunkId: string; operation: 'stage' | 'unstage' | 'revert' }) =>
-    handleGitApplyHunk(currentWorkspacePath, payload.filePath, payload.hunkId, payload.operation)
+  ipcMain.handle('git:stash', async (_event, payload: { action: 'list' | 'save' | 'pop' | 'drop'; message?: string; index?: number; repoPath?: string }) =>
+    handleGitStash(await resolveGitRepositoryPath(payload?.repoPath, currentWorkspacePath), payload.action, payload.message, payload.index)
   );
-  ipcMain.handle('git:merge', (_event, branchName: string) => handleGitMerge(currentWorkspacePath, branchName));
+  ipcMain.handle('git:remotes', async (_event, payload?: { repoPath?: string }) => handleGitGetRemotes(await resolveGitRepositoryPath(payload?.repoPath, currentWorkspacePath)));
+  ipcMain.handle('git:tags', async (_event, payload?: { repoPath?: string }) => handleGitGetTags(await resolveGitRepositoryPath(payload?.repoPath, currentWorkspacePath)));
+  ipcMain.handle('git:create-tag', async (_event, payload: { name: string; message?: string; repoPath?: string }) =>
+    handleGitCreateTag(await resolveGitRepositoryPath(payload?.repoPath, currentWorkspacePath), payload.name, payload.message)
+  );
+  ipcMain.handle('git:delete-tag', async (_event, payload: { name: string; repoPath?: string }) =>
+    handleGitDeleteTag(await resolveGitRepositoryPath(payload?.repoPath, currentWorkspacePath), payload.name)
+  );
+  ipcMain.handle('git:conflict-content', async (_event, payload: { filePath: string; repoPath?: string }) =>
+    handleGitGetConflictContent(await resolveGitRepositoryPath(payload?.repoPath, currentWorkspacePath), payload.filePath)
+  );
+  ipcMain.handle('git:resolve-conflict', async (_event, payload: { filePath: string; action: 'ours' | 'theirs' | 'mark-resolved'; repoPath?: string }) =>
+    handleGitResolveConflict(await resolveGitRepositoryPath(payload?.repoPath, currentWorkspacePath), payload.filePath, payload.action)
+  );
+  ipcMain.handle('git:abort-merge', async (_event, payload?: { repoPath?: string }) => handleGitAbortMerge(await resolveGitRepositoryPath(payload?.repoPath, currentWorkspacePath)));
+  ipcMain.handle('git:hunks', async (_event, payload: { filePath: string; staged?: boolean; repoPath?: string }) =>
+    handleGitGetHunks(await resolveGitRepositoryPath(payload?.repoPath, currentWorkspacePath), payload.filePath, payload.staged)
+  );
+  ipcMain.handle('git:apply-hunk', async (_event, payload: { filePath: string; hunkId: string; operation: 'stage' | 'unstage' | 'revert'; repoPath?: string }) =>
+    handleGitApplyHunk(await resolveGitRepositoryPath(payload?.repoPath, currentWorkspacePath), payload.filePath, payload.hunkId, payload.operation)
+  );
+  ipcMain.handle('git:merge', async (_event, payload: { branchName: string; repoPath?: string }) =>
+    handleGitMerge(await resolveGitRepositoryPath(payload?.repoPath, currentWorkspacePath), payload.branchName)
+  );
+  ipcMain.handle('git:list-repositories', () => handleGitListRepositories(currentWorkspacePath));
+  ipcMain.handle('git:graph', async (_event, payload?: { maxCount?: number; repoPath?: string }) =>
+    handleGitGetGraph(await resolveGitRepositoryPath(payload?.repoPath, currentWorkspacePath), payload?.maxCount)
+  );
+  ipcMain.handle('git:suggest-commit-message', async (_event, payload?: { repoPath?: string }) =>
+    handleGitSuggestCommitMessage(await resolveGitRepositoryPath(payload?.repoPath, currentWorkspacePath))
+  );
 
   // Language Server Protocol (LSP) IPC Handlers
   ipcMain.handle('lsp:get-servers', async () => {

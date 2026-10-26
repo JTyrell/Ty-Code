@@ -10,6 +10,12 @@ import { sessionStore } from '../agent/session-store';
 import { OpenCodeAgentManager } from '../services/orchestration/agent-manager';
 import { classifyDiagnosticError } from '../services/diagnostics/error-taxonomy';
 import { AgentDonePayloadSchema, zDocumentProposed } from '../../shared/types/agent-events';
+import {
+  analyzeImageContext,
+  buildImageContextPrefix,
+  doesModelSupportVision,
+  listVisionCandidates
+} from '../services/orchestration/vision-pipeline';
 
 interface ActiveTask {
   controller: AbortController;
@@ -135,6 +141,7 @@ export async function startAgentTask(
   // and the agent engine read for routing). No credentials cross this call.
   seedActiveConfig(effectiveSettings.activeProvider as string, effectiveSettings.activeModel || '');
 
+  let routingSettings: ProviderSettings = effectiveSettings;
   const useOpenCode = effectiveSettings.activeHarness === 'opencode';
   let tokenCount = 0;
   let batchBuffer: AgentStreamChunk[] = [];
@@ -281,6 +288,40 @@ export async function startAgentTask(
 
   void (async () => {
     try {
+      const imageInputs = Array.isArray(params.images) ? params.images.filter(Boolean) : [];
+      const hasPromptText = Boolean(params.prompt && params.prompt.trim());
+      if (imageInputs.length > 0) {
+        const emitStatus = (message: string) => emit({ type: 'status', content: message });
+        emitStatus(`Analyzing ${imageInputs.length} image${imageInputs.length === 1 ? '' : 's'}…`);
+        const analysis = await analyzeImageContext(imageInputs, routingSettings, abortController.signal, emitStatus);
+        const selectedModelVisionCapable = doesModelSupportVision(routingSettings.activeProvider as string, routingSettings.activeModel || '');
+        if (hasPromptText) {
+          if (analysis.usedAnalysis) {
+            params.prompt = `${buildImageContextPrefix(analysis.contextText, analysis.providerId, analysis.modelId)}\n\n${params.prompt}`;
+            if (!selectedModelVisionCapable) params.images = undefined;
+            emitStatus(analysis.modelId ? `Image context attached (${analysis.modelId}).` : 'Image context attached.');
+          } else if (analysis.tried.length === 0) {
+            emitStatus('No vision-capable model available; sending images directly.');
+          } else if (!selectedModelVisionCapable) {
+            emitStatus('Image analysis failed; images still attached for direct handling.');
+          }
+        } else {
+          const best = (await listVisionCandidates(routingSettings, 1))[0];
+          if (best) {
+            params.providerOverride = best.providerId;
+            params.modelOverride = best.modelId;
+            routingSettings = {
+              ...routingSettings,
+              activeProvider: best.providerId as any,
+              activeModel: best.modelId
+            };
+            seedActiveConfig(best.providerId, best.modelId);
+            emitStatus(`Handling the image concern in ${best.providerId}/${best.modelId}.`);
+          } else if (!selectedModelVisionCapable) {
+            emitStatus('No vision-capable model available for image input.');
+          }
+        }
+      }
       if (useOpenCode) {
         const opencode = new OpenCodeAgentManager(params.workspacePath);
         await opencode.run({
@@ -288,7 +329,7 @@ export async function startAgentTask(
           images: params.images,
           workspacePath: params.workspacePath,
           history: params.history,
-          settings: effectiveSettings,
+          settings: routingSettings,
           agentMode: params.agentMode || 'build',
           sessionId: params.sessionId,
           activeFilePath: params.activeFilePath,
@@ -305,7 +346,7 @@ export async function startAgentTask(
           images: params.images,
           workspacePath: params.workspacePath,
           history: params.history,
-          settings: effectiveSettings,
+          settings: routingSettings,
           activeFilePath: params.activeFilePath,
           activeFileContent: params.activeFileContent,
           openFilePaths: params.openFilePaths,

@@ -10,16 +10,25 @@ import type {
   GitConflictContent,
   GitFileChange,
   GitFileDiff,
+  GitGraphCommit,
+  GitGraphResult,
+  GitGraphRefs,
   GitHunk,
   GitRemoteInfo,
+  GitRepositoryInfo,
   GitStashInfo,
   GitStatusResult,
+  GitSuggestedCommitMessage,
   GitTagInfo
 } from '../../preload/types';
 
 const MAX_DIFF_CHARS = 200_000;
 const MAX_GIT_OUTPUT_CHARS = 300_000;
 const NETWORK_TIMEOUT_MS = 120_000;
+const GRAPH_MAX_COMMITS = 400;
+const MAX_SUGGEST_PATCH_CHARS = 1_500;
+const MAX_SUGGEST_FILES = 20;
+const MAX_BODY_BULLETS = 10;
 
 export class GitService {
   private getGit(workspacePath: string): SimpleGit {
@@ -747,6 +756,241 @@ export class GitService {
       throw err;
     }
   }
+
+  /** A `.git` marker can be a directory or a file (worktrees/submodules). */
+  private async hasGitMarker(candidate: string): Promise<boolean> {
+    if (!candidate) return false;
+    try {
+      await fs.stat(path.join(candidate, '.git'));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Source-control repositories for a loaded workspace, like VS Code's
+   * Repositories section: the workspace folder itself, repos that contain it
+   * (one level of nesting), and direct child repos. Bounded fs-only scan.
+   */
+  async listRepositories(workspacePath: string): Promise<GitRepositoryInfo[]> {
+    const raw = (workspacePath || '').trim();
+    if (!raw) return [];
+    const base = path.resolve(raw);
+    const seen = new Map<string, GitRepositoryInfo>();
+    const add = (root: string, kind: GitRepositoryInfo['kind']): void => {
+      const resolved = path.resolve(root);
+      const key = resolved.toLowerCase();
+      if (!seen.has(key)) seen.set(key, { root: resolved, name: path.basename(resolved) || resolved, kind });
+    };
+    if (await this.hasGitMarker(base)) add(base, 'workspace');
+    let parent = path.dirname(base);
+    for (let level = 0; level < 2 && parent !== path.parse(parent).root; level += 1) {
+      if (await this.hasGitMarker(parent)) add(parent, 'parent');
+      parent = path.dirname(parent);
+    }
+    let children: string[] = [];
+    try {
+      children = (await fs.readdir(base, { withFileTypes: true }))
+        .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.') && entry.name !== 'node_modules')
+        .map((entry) => path.join(base, entry.name));
+    } catch {
+      children = [];
+    }
+    for (const child of children) {
+      if (await this.hasGitMarker(child)) add(child, 'child');
+    }
+    const order: Record<GitRepositoryInfo['kind'], number> = { workspace: 0, parent: 1, child: 2 };
+    return [...seen.values()].sort((a, b) => order[a.kind] - order[b.kind] || a.root.localeCompare(b.root));
+  }
+
+  /**
+   * Commit graph data for the Source Control Graph view: DAG edges plus
+   * branch/remote/tag decorations per commit, across the whole repository
+   * (restricted to the workspace subtree when the opened folder is nested).
+   */
+  async getGraph(workspacePath: string, maxCount = 100): Promise<GitGraphResult> {
+    const { git, root } = await this.getRepoGit(workspacePath);
+    const count = Math.max(1, Math.min(GRAPH_MAX_COMMITS, Math.floor(maxCount) || 100));
+    const args = ['log', String(count), '--all', '--date-order', '--pretty=format:%H%x00%P%x00%an%x00%at%x00%s%x00%D'];
+    const workspaceOffset = this.getWorkspaceOffset(path.resolve(workspacePath), root).split(path.sep).join('/');
+    if (workspaceOffset) args.push('--', this.literalPathspec(workspaceOffset));
+    const raw = await git.raw(args).catch((err: unknown) => {
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.includes('does not have any commits yet') || message.includes('bad default revision')) return '';
+      throw err;
+    });
+    const { commits, head } = parseGraphRaw(raw);
+    let currentBranch: string | undefined;
+    try {
+      currentBranch = (await git.revparse(['--abbrev-ref', 'HEAD'])).trim() || undefined;
+    } catch {
+      currentBranch = undefined;
+    }
+    return { commits, head, currentBranch, isRepo: true };
+  }
+
+  /**
+   * Offline, deterministic commit message proposal derived from the working
+   * tree (no network, no LLM): conventional-commit type/scope plus a subject
+   * and per-file body bullets computed from paths, statuses and patch text.
+   */
+  async suggestCommitMessage(workspacePath: string): Promise<GitSuggestedCommitMessage> {
+    const status = await this.getStatus(workspacePath);
+    const changes = status.stagedFiles.length
+      ? status.stagedFiles
+      : [...status.unstagedFiles, ...status.untrackedFiles];
+    if (!changes.length) throw new Error('There are no working-tree changes to generate a commit message from.');
+    const selected = changes.slice(0, MAX_SUGGEST_FILES);
+    const patches: string[] = [];
+    for (const change of selected) {
+      try {
+        const patch = await this.getDiff(workspacePath, change.path, false);
+        patches.push(patch.slice(0, MAX_SUGGEST_PATCH_CHARS));
+      } catch {
+        patches.push('');
+      }
+    }
+    return buildCommitMessage(selected, patches);
+  }
+}
+
+/**
+ * Pure parser for the `getGraph` raw log format:
+ *   hash%00parents%00author%00epoch%00subject%00refs
+ * Refs decode: `HEAD -> name`, `tag: name`, and bare names where any name
+ * containing a slash is treated as a remote branch.
+ */
+export function parseGraphRaw(raw: string): { commits: GitGraphCommit[]; head?: string } {
+  const commits: GitGraphCommit[] = [];
+  let head: string | undefined;
+  for (const line of raw.split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    const fields = line.split('\x00');
+    if (fields.length < 6) continue;
+    const [hash = '', parentList = '', authorName = '', epoch = '', message = '', refsBlob = ''] = fields;
+    const refs: GitGraphRefs = { branches: [], remoteBranches: [], tags: [], isHead: false };
+    for (const token of refsBlob.split(',').map((item) => item.trim()).filter(Boolean)) {
+      if (token.startsWith('HEAD -> ')) {
+        refs.isHead = true;
+        const branch = token.slice(8).trim();
+        if (branch && !refs.branches.includes(branch)) refs.branches.push(branch);
+        if (branch) head = branch;
+        continue;
+      }
+      if (token.startsWith('tag: ')) {
+        const tag = token.slice(5).trim();
+        if (tag && !refs.tags.includes(tag)) refs.tags.push(tag);
+        continue;
+      }
+      if (token.startsWith('HEAD')) {
+        refs.isHead = true;
+        continue;
+      }
+      if (token.includes('/')) {
+        if (!refs.remoteBranches.includes(token)) refs.remoteBranches.push(token);
+      } else if (token && !refs.branches.includes(token)) {
+        refs.branches.push(token);
+      }
+    }
+    commits.push({
+      hash,
+      parents: parentList ? parentList.split(' ').filter(Boolean) : [],
+      message,
+      authorName,
+      timestamp: Number.parseInt(epoch, 10) || 0,
+      refs
+    });
+  }
+  return { commits, head };
+}
+
+const COMMIT_LETTER: Record<string, string> = { A: 'add', M: 'update', D: 'remove', U: 'add', C: 'fix', R: 'rename' };
+
+function shareOf(paths: string[], predicate: (candidate: string) => boolean): number {
+  if (!paths.length) return 0;
+  let matching = 0;
+  for (const candidate of paths) if (predicate(candidate)) matching += 1;
+  return matching / paths.length;
+}
+
+function dominantTopDir(paths: string[]): string | undefined {
+  const counts = new Map<string, number>();
+  for (const candidate of paths) {
+    const segment = candidate.replace(/\\/g, '/').split('/')[0];
+    if (!segment || segment.includes('.')) continue;
+    counts.set(segment, (counts.get(segment) || 0) + 1);
+  }
+  let best: string | undefined;
+  let bestCount = 0;
+  for (const [segment, count] of counts) {
+    if (count > bestCount) {
+      best = segment;
+      bestCount = count;
+    }
+  }
+  return best && best.length <= 20 ? best : undefined;
+}
+
+function subjectObject(paths: string[]): string {
+  const stems = paths.map((candidate) => {
+    const file = candidate.replace(/\\/g, '/').split('/').pop() || candidate;
+    return file.replace(/\.[^.]+$/, '');
+  });
+  const counts = new Map<string, number>();
+  for (const stem of stems) counts.set(stem, (counts.get(stem) || 0) + 1);
+  let best = 'changes';
+  let bestCount = -1;
+  for (const [stem, count] of counts) {
+    if (count > bestCount) {
+      best = stem;
+      bestCount = count;
+    }
+  }
+  return best.replace(/[^a-z0-9-]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'changes';
+}
+
+/**
+ * Pure, deterministic commit-message builder (offline heuristic, like the
+ * natural-language service's synthesizers — no network, no LLM).
+ */
+export function buildCommitMessage(changes: Array<{ path: string; status: string }>, patches: string[]): GitSuggestedCommitMessage {
+  const paths = changes.map((change) => change.path);
+  let added = 0;
+  let deleted = 0;
+  let modified = 0;
+  for (const change of changes) {
+    if (change.status === 'A' || change.status === '?' || change.status === 'U') added += 1;
+    else if (change.status === 'D') deleted += 1;
+    else modified += 1;
+  }
+  const newText = [paths.join('\n'), ...patches].join('\n').toLowerCase();
+  const slash = (needle: string): ((candidate: string) => boolean) => (candidate) => candidate.replace(/\\/g, '/').toLowerCase().includes(needle);
+  const normalized = paths.map((candidate) => candidate.replace(/\\/g, '/').toLowerCase());
+  const isDoc = (candidate: string): boolean => candidate.endsWith('.md') || candidate.split('/').slice(0, -1).some((segment) => segment === 'docs' || segment === 'doc');
+  const isConfig = (candidate: string): boolean => [
+    'package.json', 'package-lock.json', 'pnpm-lock.yaml', 'yarn.lock', 'tsconfig.json',
+    '.editorconfig', '.gitignore', '.gitattributes', 'vite.config.ts', 'webpack.config.js'
+  ].some((needle) => candidate.endsWith(needle)) || /(^|\/)(\.github|\.vscode|\.ty-code)\//.test(candidate);
+  const isTest = (candidate: string): boolean => /\.(test|spec)\.[a-z]+$/.test(candidate) || /(^|\/)(tests?|__tests__)\//.test(candidate);
+  const docShare = shareOf(normalized, isDoc);
+  const configShare = shareOf(normalized, isConfig);
+  const testShare = shareOf(normalized, isTest);
+  const type = docShare === 1 ? 'docs'
+    : configShare === 1 ? 'chore'
+      : testShare === 1 ? 'test'
+        : /\b(fix|bug|crash|regression|leak|race|null check|out of bounds|type error)\b/.test(newText) ? 'fix'
+          : added >= modified && added >= deleted ? 'feat'
+            : deleted > modified && deleted > added ? 'chore'
+              : 'refactor';
+  const scope = dominantTopDir(paths);
+  const verb = added > deleted && added >= modified ? 'add'
+    : deleted > added && deleted >= modified ? 'remove'
+      : 'update';
+  const subject = `${type}${scope ? `(${scope})` : ''}: ${verb} ${subjectObject(paths)}`.slice(0, 72);
+  const bullets = changes.slice(0, MAX_BODY_BULLETS).map((change) => `- ${COMMIT_LETTER[change.status] || 'update'} ${change.path}`);
+  if (changes.length > MAX_BODY_BULLETS) bullets.push(`- and ${changes.length - MAX_BODY_BULLETS} more file${changes.length - MAX_BODY_BULLETS === 1 ? '' : 's'}`);
+  return { type, scope, subject, body: bullets.join('\n') };
 }
 
 export const gitService = new GitService();

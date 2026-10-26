@@ -211,6 +211,25 @@ export interface IpcResponse<T = unknown> {
   errorDetail?: StructuredSettingsError;
 }
 
+// Workspace Session Bus (single source of truth for all surfaces)
+export type WorkspaceSurfaceId = 'editor' | 'context' | 'debugger' | 'canvas';
+
+export interface WorkspaceSurfacePresence {
+  attached: boolean;
+  lastActive: number;
+}
+
+export interface WorkspaceSessionSnapshot {
+  rootPath: string | null;
+  openedAt: number | null;
+  surfaces: Record<WorkspaceSurfaceId, WorkspaceSurfacePresence>;
+}
+
+export type WorkspaceSessionEvent = {
+  channel: 'workspace:opened' | 'workspace:changed' | 'workspace:closed' | 'workspace:session-updated';
+  session: WorkspaceSessionSnapshot;
+};
+
 // ---------------------------------------------------------------------------
 // Model availability (Provider Series Prompt 1)
 // ---------------------------------------------------------------------------
@@ -951,6 +970,44 @@ export interface GitHunk {
   newStart: number;
 }
 
+export interface GitRepositoryInfo {
+  root: string;
+  name: string;
+  /** workspace = the opened folder itself, parent = repo containing it, child = nested repo inside it. */
+  kind: 'workspace' | 'parent' | 'child';
+}
+
+export interface GitGraphRefs {
+  branches: string[];
+  remoteBranches: string[];
+  tags: string[];
+  isHead: boolean;
+}
+
+export interface GitGraphCommit {
+  hash: string;
+  parents: string[];
+  message: string;
+  authorName: string;
+  /** Unix seconds (from %at). */
+  timestamp: number;
+  refs: GitGraphRefs;
+}
+
+export interface GitGraphResult {
+  commits: GitGraphCommit[];
+  head?: string;
+  currentBranch?: string;
+  isRepo: boolean;
+}
+
+export interface GitSuggestedCommitMessage {
+  type: string;
+  scope?: string;
+  subject: string;
+  body: string;
+}
+
 export interface ElectronAPI {
   minimizeWindow: () => void;
   maximizeWindow: () => void;
@@ -973,6 +1030,12 @@ export interface ElectronAPI {
   onWorkspaceReady?: (callback: (data: { path: string }) => void) => () => void;
   onOpenFolder?: (callback: (data: { folderPath: string }) => void) => () => void;
   onWorkspaceRequestOpen?: (callback: (data: unknown) => void) => () => void;
+  getWorkspaceSession?: () => Promise<IpcResponse<WorkspaceSessionSnapshot>>;
+  setActiveSessionWorkspace?: (rootPath: string) => Promise<IpcResponse<WorkspaceSessionSnapshot>>;
+  attachSessionSurface?: (id: WorkspaceSurfaceId) => Promise<IpcResponse<WorkspaceSessionSnapshot>>;
+  detachSessionSurface?: (id: WorkspaceSurfaceId) => Promise<IpcResponse<WorkspaceSessionSnapshot>>;
+  closeSessionWorkspace?: () => Promise<IpcResponse<WorkspaceSessionSnapshot>>;
+  onWorkspaceSession?: (callback: (event: { channel: 'workspace:opened' | 'workspace:changed' | 'workspace:closed' | 'workspace:session-updated'; session: WorkspaceSessionSnapshot }) => void) => () => void;
   getFilePathForDroppedFile: (file: File) => string;
   getWorkspaceTree: (rootPath: string) => Promise<IpcResponse<FileNode>>;
   getWorkspaceTreeChunked?: (rootPath: string) => Promise<IpcResponse<{ flatTree: FlatFileNodeEntry[]; fromCache: boolean; cacheKey?: string }>>;
@@ -1110,37 +1173,40 @@ export interface ElectronAPI {
   extensionProvideCompletions: (query: { language: string; filePath: string; line: number; character: number }) => Promise<IpcResponse<any[]>>;
 
   // Git Source Control APIs
-  gitIsRepo: () => Promise<IpcResponse<boolean>>;
-  gitInit: () => Promise<IpcResponse<void>>;
-  gitGetStatus: () => Promise<IpcResponse<GitStatusResult>>;
-  gitGetDiff: (filePath?: string, staged?: boolean) => Promise<IpcResponse<string>>;
-  gitGetOriginalContent: (filePath: string, staged?: boolean) => Promise<IpcResponse<string>>;
-  gitStage: (filePaths: string | string[]) => Promise<IpcResponse<void>>;
-  gitUnstage: (filePaths: string | string[]) => Promise<IpcResponse<void>>;
-  gitDiscardChanges: (filePath: string, isUntracked?: boolean) => Promise<IpcResponse<void>>;
-  gitCommit: (message: string, options?: { amend?: boolean }) => Promise<IpcResponse<string>>;
-  gitGetBranches: () => Promise<IpcResponse<GitBranchInfo>>;
-  gitSwitchBranch: (branchName: string) => Promise<IpcResponse<void>>;
-  gitCreateBranch: (branchName: string) => Promise<IpcResponse<void>>;
-  gitDeleteBranch: (branchName: string, force?: boolean) => Promise<IpcResponse<void>>;
-  gitFetch: () => Promise<IpcResponse<void>>;
-  gitPull: () => Promise<IpcResponse<string>>;
-  gitPush: (remote?: string, branch?: string) => Promise<IpcResponse<string>>;
-  gitGetLog: (maxCount?: number, search?: string) => Promise<IpcResponse<GitCommitInfo[]>>;
-  gitGetBlame: (filePath: string) => Promise<IpcResponse<GitBlameHunk[]>>;
-  gitStash: (action: 'list' | 'save' | 'pop' | 'drop', message?: string, index?: number) => Promise<IpcResponse<GitStashInfo[] | string>>;
-  gitGetRemotes: () => Promise<IpcResponse<GitRemoteInfo[]>>;
-  gitGetFileDiff: (filePath: string, staged?: boolean) => Promise<IpcResponse<GitFileDiff>>;
-  gitGetCommitDetail: (hash: string) => Promise<IpcResponse<GitCommitDetail>>;
-  gitGetTags: () => Promise<IpcResponse<GitTagInfo[]>>;
-  gitCreateTag: (name: string, message?: string) => Promise<IpcResponse<void>>;
-  gitDeleteTag: (name: string) => Promise<IpcResponse<void>>;
-  gitGetConflictContent: (filePath: string) => Promise<IpcResponse<GitConflictContent>>;
-  gitResolveConflict: (filePath: string, action: 'ours' | 'theirs' | 'mark-resolved') => Promise<IpcResponse<void>>;
-  gitAbortMerge: () => Promise<IpcResponse<void>>;
-  gitGetHunks: (filePath: string, staged?: boolean) => Promise<IpcResponse<GitHunk[]>>;
-  gitApplyHunk: (filePath: string, hunkId: string, operation: 'stage' | 'unstage' | 'revert') => Promise<IpcResponse<void>>;
-  gitMerge: (branchName: string) => Promise<IpcResponse<{ success: boolean; conflicts?: string[]; message?: string }>>;
+  gitIsRepo: (payload?: { repoPath?: string }) => Promise<IpcResponse<boolean>>;
+  gitInit: (payload?: { repoPath?: string }) => Promise<IpcResponse<void>>;
+  gitGetStatus: (payload?: { repoPath?: string }) => Promise<IpcResponse<GitStatusResult>>;
+  gitGetDiff: (payload?: { filePath?: string; staged?: boolean; repoPath?: string }) => Promise<IpcResponse<string>>;
+  gitGetOriginalContent: (payload: { filePath: string; staged?: boolean; repoPath?: string }) => Promise<IpcResponse<string>>;
+  gitStage: (payload: { filePaths: string | string[]; repoPath?: string }) => Promise<IpcResponse<void>>;
+  gitUnstage: (payload: { filePaths: string | string[]; repoPath?: string }) => Promise<IpcResponse<void>>;
+  gitDiscardChanges: (payload: { filePath: string; isUntracked?: boolean; repoPath?: string }) => Promise<IpcResponse<void>>;
+  gitCommit: (payload: { message: string; options?: { amend?: boolean }; repoPath?: string }) => Promise<IpcResponse<string>>;
+  gitGetBranches: (payload?: { repoPath?: string }) => Promise<IpcResponse<GitBranchInfo>>;
+  gitSwitchBranch: (payload: { branchName: string; repoPath?: string }) => Promise<IpcResponse<void>>;
+  gitCreateBranch: (payload: { branchName: string; repoPath?: string }) => Promise<IpcResponse<void>>;
+  gitDeleteBranch: (payload: { branchName: string; force?: boolean; repoPath?: string }) => Promise<IpcResponse<void>>;
+  gitFetch: (payload?: { repoPath?: string }) => Promise<IpcResponse<void>>;
+  gitPull: (payload?: { repoPath?: string }) => Promise<IpcResponse<string>>;
+  gitPush: (payload?: { remote?: string; branch?: string; repoPath?: string }) => Promise<IpcResponse<string>>;
+  gitGetLog: (payload?: { maxCount?: number; search?: string; repoPath?: string }) => Promise<IpcResponse<GitCommitInfo[]>>;
+  gitGetBlame: (payload: { filePath: string; repoPath?: string }) => Promise<IpcResponse<GitBlameHunk[]>>;
+  gitStash: (payload: { action: 'list' | 'save' | 'pop' | 'drop'; message?: string; index?: number; repoPath?: string }) => Promise<IpcResponse<GitStashInfo[] | string>>;
+  gitGetRemotes: (payload?: { repoPath?: string }) => Promise<IpcResponse<GitRemoteInfo[]>>;
+  gitGetFileDiff: (payload: { filePath: string; staged?: boolean; repoPath?: string }) => Promise<IpcResponse<GitFileDiff>>;
+  gitGetCommitDetail: (payload: { hash: string; repoPath?: string }) => Promise<IpcResponse<GitCommitDetail>>;
+  gitGetTags: (payload?: { repoPath?: string }) => Promise<IpcResponse<GitTagInfo[]>>;
+  gitCreateTag: (payload: { name: string; message?: string; repoPath?: string }) => Promise<IpcResponse<void>>;
+  gitDeleteTag: (payload: { name: string; repoPath?: string }) => Promise<IpcResponse<void>>;
+  gitGetConflictContent: (payload: { filePath: string; repoPath?: string }) => Promise<IpcResponse<GitConflictContent>>;
+  gitResolveConflict: (payload: { filePath: string; action: 'ours' | 'theirs' | 'mark-resolved'; repoPath?: string }) => Promise<IpcResponse<void>>;
+  gitAbortMerge: (payload?: { repoPath?: string }) => Promise<IpcResponse<void>>;
+  gitGetHunks: (payload: { filePath: string; staged?: boolean; repoPath?: string }) => Promise<IpcResponse<GitHunk[]>>;
+  gitApplyHunk: (payload: { filePath: string; hunkId: string; operation: 'stage' | 'unstage' | 'revert'; repoPath?: string }) => Promise<IpcResponse<void>>;
+  gitMerge: (payload: { branchName: string; repoPath?: string }) => Promise<IpcResponse<{ success: boolean; conflicts?: string[]; message?: string }>>;
+  gitListRepositories: (payload?: { workspacePath?: string }) => Promise<IpcResponse<GitRepositoryInfo[]>>;
+  gitGraph: (payload?: { maxCount?: number; repoPath?: string }) => Promise<IpcResponse<GitGraphResult>>;
+  gitSuggestCommitMessage: (payload?: { repoPath?: string }) => Promise<IpcResponse<GitSuggestedCommitMessage>>;
 
   // Search & Replace APIs
   searchInFiles: (options: SearchInFilesOptions) => Promise<IpcResponse<FileSearchResult[]>>;

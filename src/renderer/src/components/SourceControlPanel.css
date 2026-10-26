@@ -286,3 +286,229 @@ body.theme-group-light .source-control-count.is-conflict { color: #be185d; backg
 body.theme-light .source-control-status-letter.is-C,
 body.theme-group-light .source-control-status-letter.is-C { color: #be185d; }
 
+/* ── Workspace-scope panel (Repositories · Graph · NPM) ─────────────── */
+
+.source-control-headline { margin-bottom: 2px; }
+.source-control-section-bar {
+  width: 100%;
+  min-height: 28px;
+  padding: 3px 9px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .05em;
+  text-align: left;
+}
+.source-control-section-bar:hover { color: var(--text-primary); background: var(--bg-hover); }
+.source-control-repo { border-top: 1px solid var(--border-subtle); margin-bottom: 4px; }
+.source-control-repo:first-of-type { border-top: 0; }
+.source-control-repo-row {
+  min-height: 28px;
+  padding: 2px 7px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.source-control-repo-row:hover { background: var(--bg-hover); }
+.source-control-repo-toggle {
+  min-width: 0;
+  flex: 1;
+  justify-content: flex-start;
+  gap: 6px;
+  padding: 2px 0;
+  color: var(--text-primary);
+  font-size: 11px;
+  text-align: left;
+}
+.source-control-repo-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.source-control-repo-badge {
+  min-width: 17px;
+  padding: 0 5px;
+  border-radius: 8px;
+  color: #fff;
+  background: var(--accent-primary);
+  text-align: center;
+  font-size: 9px;
+  font-weight: 700;
+}
+.source-control-inline-counts { display: inline-flex; align-items: center; gap: 4px; }
+.source-control-inline-counts .source-control-count { display: inline-flex; align-items: center; gap: 2px; }
+.source-control-repo-body { display: flex; flex-direction: column; }
+.source-control-toolstrip {
+  min-height: 30px;
+  padding: 2px 7px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.source-control-toolstrip-spacer { flex: 1 1 auto; }
+.source-control-branch-trigger.is-compact {
+  max-width: 150px;
+  min-height: 24px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 6px;
+  font-size: 10px;
+}
+.source-control-branch-trigger.is-compact span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.source-control-commit-box { padding: 0 9px 9px; }
+.source-control-commit-box textarea { min-height: 46px; }
+.source-control-commit-actions { display: flex; align-items: center; gap: 4px; }
+.source-control-commit-actions .source-control-subtle-button { display: inline-flex; align-items: center; gap: 4px; }
+.source-control-commit-actions .source-control-commit-button {
+  width: auto;
+  min-width: 86px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.source-control-commit-caret {
+  width: 24px;
+  height: 29px;
+  margin-left: 1px;
+  color: #fff;
+  background: var(--accent-primary);
+  border-radius: 4px;
+}
+.source-control-commit-caret:hover:not(:disabled) { background: var(--accent-primary-hover); color: #fff; }
+.source-control-commit-caret:disabled { color: var(--text-muted); background: var(--bg-tertiary); }
+.source-control-status-letter.is-R { color: var(--accent-amber); }
+
+/* Floating menus / branch panel / commit detail */
+.source-control-menu-floating {
+  position: fixed;
+  z-index: 90;
+  min-width: 210px;
+  max-height: min(380px, 70vh);
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--bg-tertiary);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, .45);
+}
+.source-control-menu { width: auto; }
+.source-control-menu button {
+  width: 100%;
+  justify-content: flex-start;
+  padding: 5px 8px;
+  color: var(--text-primary);
+  font-size: 11px;
+  text-align: left;
+}
+.source-control-menu button:hover { background: var(--bg-hover); }
+.source-control-menu button.is-danger { color: var(--accent-red); }
+.source-control-menu button.is-danger:hover { background: rgba(239, 68, 68, .12); }
+.source-control-commit-detail { top: 46px; right: 12px; width: min(430px, calc(100vw - 24px)); max-height: 72vh; }
+.source-control-commit-detail p { margin-bottom: 6px; color: var(--text-muted); font-size: 9px; }
+.source-control-commit-detail strong { display: block; margin: 8px 0 4px; color: var(--text-muted); font-size: 9px; letter-spacing: .06em; }
+.source-control-commit-detail-files { max-height: 160px; overflow-y: auto; border: 1px solid var(--border-subtle); border-radius: 4px; }
+.source-control-commit-detail pre {
+  max-height: 220px;
+  overflow: auto;
+  margin: 8px 0 0;
+  padding: 8px;
+  color: var(--text-secondary);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  font: 9px/1.5 var(--font-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+/* Commit graph */
+.source-control-graph { display: flex; flex-direction: column; }
+.source-control-graph-toolbar {
+  min-height: 30px;
+  padding: 2px 7px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.source-control-fetch-mode {
+  padding: 3px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+.source-control-fetch-mode.is-auto { color: var(--accent-green); border-color: rgba(34, 197, 94, .4); background: rgba(34, 197, 94, .08); }
+.source-control-fetch-mode:hover { color: var(--text-primary); }
+.source-control-graph-actions { display: flex; gap: 2px; }
+.source-control-graph-body { display: flex; align-items: flex-start; overflow-y: auto; border-bottom: 1px solid var(--border-subtle); }
+.source-control-graph-canvas { flex: 0 0 auto; }
+.source-control-graph-rows { flex: 1 1 auto; min-width: 0; }
+.source-control-graph-row {
+  width: 100%;
+  min-height: 26px;
+  padding-right: 9px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-secondary);
+  font-size: 10px;
+  text-align: left;
+}
+.source-control-graph-row:hover { background: var(--bg-hover); color: var(--text-primary); }
+.source-control-graph-row.is-selected { background: var(--bg-active); color: var(--text-primary); }
+.source-control-graph-message {
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+  font-weight: 550;
+}
+.source-control-graph-meta { margin-left: auto; flex: 0 0 auto; color: var(--text-muted); font-size: 9px; white-space: nowrap; }
+.source-control-branch-badge, .source-control-remote-badge, .source-control-tag-badge {
+  flex: 0 0 auto;
+  max-width: 110px;
+  padding: 1px 6px;
+  border-radius: 9px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 9px;
+  font-weight: 650;
+}
+.source-control-branch-badge { color: #bfdbfe; background: rgba(59, 130, 246, .22); }
+.source-control-remote-badge { color: var(--text-muted); background: var(--bg-tertiary); border: 1px solid var(--border-subtle); }
+.source-control-tag-badge { color: #fcd34d; background: rgba(245, 158, 11, .16); }
+.source-control-graph-line { stroke: var(--border-strong); stroke-width: 1.5; fill: none; }
+.source-control-graph-dot { fill: var(--text-muted); }
+.source-control-graph-dot.is-head { fill: var(--accent-green); }
+
+/* NPM scripts */
+.source-control-npm { padding-bottom: 6px; border-bottom: 1px solid var(--border-subtle); }
+.source-control-npm-row { min-height: 27px; padding: 2px 8px; display: flex; align-items: center; gap: 7px; }
+.source-control-npm-row:hover { background: var(--bg-hover); }
+.source-control-npm-name { flex: 0 0 auto; min-width: 96px; color: var(--text-primary); font-size: 11px; font-weight: 550; }
+.source-control-npm-command {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.theme-light .source-control-branch-badge,
+body.theme-group-light .source-control-branch-badge { color: #1d4ed8; background: rgba(59, 130, 246, .14); }
+body.theme-light .source-control-tag-badge,
+body.theme-group-light .source-control-tag-badge { color: #b45309; background: rgba(245, 158, 11, .14); }
+body.theme-light .source-control-graph-line,
+body.theme-group-light .source-control-graph-line { stroke: rgba(100, 116, 139, .55); }
+

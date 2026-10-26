@@ -1,13 +1,13 @@
 {
-  "timestamp": "2026-10-26T00:52:56.489Z",
-  "gitCommit": "e2e34cc633aad3229f5740334b2561f03085a40a",
+  "timestamp": "2026-10-26T07:36:17.174Z",
+  "gitCommit": "e3fb0192e4ad05521ba337ab522990158d2e13d3",
   "command": "npm run test:security",
-  "durationMs": 149,
+  "durationMs": 95,
   "environment": {
     "node": "v24.13.1",
     "platform": "win32",
     "arch": "x64",
-    "gitCommit": "e2e34cc633aad3229f5740334b2561f03085a40a"
+    "gitCommit": "e3fb0192e4ad05521ba337ab522990158d2e13d3"
   },
   "summary": {
     "totalTests": 5,
@@ -20,7 +20,7 @@
       "id": "test-1-capability-permissions",
       "name": "Capability-Based Permissions: Undeclared API calls rejected",
       "status": "PASS",
-      "durationMs": 2,
+      "durationMs": 1,
       "assertions": [
         "[PASS] Extension successfully registered with scoped capabilities",
         "[PASS] Blocked write capability with error: PERMISSION_DENIED: Extension \"test.read-only\" attempted to access capability \"workspace.fs.writeFile\" (requires \"workspace.fs.write\"), but manifest only declared [workspace.fs.read].",
@@ -34,7 +34,7 @@
       "id": "test-2-out-of-workspace-protection",
       "name": "Out-of-Workspace Write Protection: User prompt for dangerous path",
       "status": "PASS",
-      "durationMs": 25,
+      "durationMs": 11,
       "assertions": [
         "[PASS] Inside-workspace write succeeds without containment violation",
         "[PASS] Relative escaping path correctly identified as outside workspace",

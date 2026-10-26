@@ -233,6 +233,17 @@ export const TerminalDrawer: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ autoRunCommand?: string; cwd?: string }>).detail || {};
+      if (!detail.autoRunCommand) return;
+      if (!isTerminalOpenRef.current) toggleTerminalRef.current();
+      void spawnRef.current({ autoRunCommand: detail.autoRunCommand, cwd: detail.cwd });
+    };
+    window.addEventListener('tycode:run-terminal-command', handler);
+    return () => window.removeEventListener('tycode:run-terminal-command', handler);
+  }, []);
+
+  useEffect(() => {
     if (!isTerminalOpen || availableShells.length === 0 || restoredRef.current) return;
     restoredRef.current = true;
     try {

@@ -1,7 +1,8 @@
 import { gitService } from '../services/git-service';
 import type {
   GitBlameHunk, GitBranchInfo, GitCommitDetail, GitCommitInfo, GitConflictContent,
-  GitFileDiff, GitHunk, GitRemoteInfo, GitStashInfo, GitStatusResult, GitTagInfo, IpcResponse
+  GitFileDiff, GitGraphResult, GitHunk, GitRemoteInfo, GitRepositoryInfo, GitStashInfo,
+  GitStatusResult, GitSuggestedCommitMessage, GitTagInfo, IpcResponse
 } from '../../preload/types';
 
 export async function handleGitIsRepo(workspacePath: string): Promise<IpcResponse<boolean>> {
@@ -324,4 +325,58 @@ export async function handleGitApplyHunk(workspacePath: string, filePath: string
 export async function handleGitMerge(workspacePath: string, branchName: string): Promise<IpcResponse<{ success: boolean; conflicts?: string[]; message?: string }>> {
   try { return { success: true, data: await gitService.merge(workspacePath, branchName) }; }
   catch (err: unknown) { return { success: false, error: err instanceof Error ? err.message : String(err) }; }
+}
+
+/**
+ * Renderer-supplied repo paths are accepted only when they belong to the
+ * loaded workspace's discovered repositories (same containment posture as
+ * the rest of the app). Falls back to the active workspace path.
+ */
+let repositoryAllowlist: { roots: string[]; resolvedAt: number } = { roots: [], resolvedAt: 0 };
+const REPOSITORY_ALLOWLIST_TTL_MS = 10_000;
+
+export async function resolveGitRepositoryPath(requested?: unknown, fallback = ''): Promise<string> {
+  if (requested === undefined || requested === null || String(requested).trim() === '') return fallback;
+  const requestedPath = String(requested).trim();
+  const now = Date.now();
+  if (now - repositoryAllowlist.resolvedAt > REPOSITORY_ALLOWLIST_TTL_MS) {
+    try {
+      const discovered = await gitService.listRepositories(fallback);
+      repositoryAllowlist = { roots: discovered.map((repo) => repo.root.toLowerCase()), resolvedAt: now };
+    } catch {
+      repositoryAllowlist = { roots: fallback ? [fallback.toLowerCase()] : [], resolvedAt: now };
+    }
+  }
+  if (repositoryAllowlist.roots.includes(requestedPath.toLowerCase())) return requestedPath;
+  throw new Error('The requested Git repository is not part of the loaded workspace.');
+}
+
+export async function handleGitListRepositories(workspacePath: string): Promise<IpcResponse<GitRepositoryInfo[]>> {
+  try {
+    if (!workspacePath) return { success: true, data: [] };
+    const repositories = await gitService.listRepositories(workspacePath);
+    // Explicit discovery refreshes the security allowlist used by resolveGitRepositoryPath.
+    repositoryAllowlist = { roots: repositories.map((repo) => repo.root.toLowerCase()), resolvedAt: Date.now() };
+    return { success: true, data: repositories };
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+export async function handleGitGetGraph(repoPath: string, maxCount?: number): Promise<IpcResponse<GitGraphResult>> {
+  try {
+    if (!repoPath) return { success: true, data: { commits: [], isRepo: false } };
+    return { success: true, data: await gitService.getGraph(repoPath, maxCount) };
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+export async function handleGitSuggestCommitMessage(repoPath: string): Promise<IpcResponse<GitSuggestedCommitMessage>> {
+  try {
+    if (!repoPath) return { success: false, error: 'No workspace folder is open.' };
+    return { success: true, data: await gitService.suggestCommitMessage(repoPath) };
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
 }

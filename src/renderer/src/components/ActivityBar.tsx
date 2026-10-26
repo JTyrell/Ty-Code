@@ -30,7 +30,7 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({ activeTab, onTabChange
   const toggleSettings = useChatStore((s) => s.toggleSettings);
   const toggleTerminal = useChatStore((s) => s.toggleTerminal);
   const isTerminalOpen = useChatStore((s) => s.isTerminalOpen);
-  const status = useGitStore((s) => s.status);
+  const repoStates = useGitStore((s) => s.repoStates);
   const isDebuggerPoppedOut = useDebuggerStore((s) => s.isPopOutMode);
 
   // Prefetch on intent: hover/focus for 150ms triggers dynamic import during idle
@@ -79,11 +79,11 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({ activeTab, onTabChange
     }
   }, []);
 
-  const totalChanges =
-    (status?.stagedFiles.length || 0) +
-    (status?.unstagedFiles.length || 0) +
-    (status?.untrackedFiles.length || 0) +
-    (status?.conflictedFiles.length || 0);
+  const totalChanges = Object.values(repoStates).reduce(
+    (sum, state) =>
+      sum + (state.status?.stagedFiles.length || 0) + (state.status?.unstagedFiles.length || 0) + (state.status?.untrackedFiles.length || 0) + (state.status?.conflictedFiles.length || 0),
+    0
+  );
 
   const navItems: Array<{ id: ActivityTab; label: string; icon: React.ReactNode; badge?: number }> = [
     { id: 'explorer', label: 'File Explorer (Ctrl+Shift+E)', icon: <Files size={18} /> },
