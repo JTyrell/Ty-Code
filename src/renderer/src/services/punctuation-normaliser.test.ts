@@ -36,6 +36,16 @@ describe('punctuation-normaliser', () => {
       const input = 'First clause —   second clause.\nNew line —   continues.';
       expect(transformProse(input)).toBe('First clause, second clause.\nNew line, continues.');
     });
+
+    it('strips a leading em dash marker without adding a comma artifact', () => {
+      const input = '— A brief aside about performance.';
+      expect(transformProse(input)).toBe('A brief aside about performance.');
+    });
+
+    it('preserves markdown trailing hard-break double spaces', () => {
+      const input = 'First line — intro  \nSecond line — conclusion.';
+      expect(transformProse(input)).toBe('First line, intro  \nSecond line, conclusion.');
+    });
   });
 
   describe('segmentMarkdown', () => {
@@ -106,6 +116,15 @@ describe('punctuation-normaliser', () => {
 
     it('returns empty string for empty input', () => {
       expect(normalisePunctuation('')).toBe('');
+    });
+
+    it('normalises by default when no options are provided', () => {
+      expect(normalisePunctuation('A — B.')).toBe('A, B.');
+    });
+
+    it('leaves prose without AI punctuation byte-for-byte identical', () => {
+      const input = 'Plain prose stays exactly as written.\nSecond paragraph remains unchanged.';
+      expect(normalisePunctuation(input)).toBe(input);
     });
 
     it('preserves pipe tables byte-identical so markdown table syntax is never corrupted', () => {

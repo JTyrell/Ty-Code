@@ -236,6 +236,16 @@ class RouteEventPolicy {
     return this.ring.slice(-limit);
   }
 
+  /** Test-only: reset all session state so tests start from a clean slate. */
+  __resetForTest(): void {
+    this.onceUnlockEmitted = false;
+    this.armed = false;
+    this.activeTurn = undefined;
+    this.actionableEmitted.clear();
+    this.turns.clear();
+    this.ring = [];
+  }
+
   // ---------- Internals ----------
 
   private ensure(turnId: string): TurnTrail {

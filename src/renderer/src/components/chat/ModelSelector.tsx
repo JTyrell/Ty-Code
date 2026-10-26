@@ -527,12 +527,10 @@ export const ModelSelector: React.FC = () => {
     const stripped = candidate.providerId.replace(/-free$/, '');
     const targetProvider = ((stripped === 'opencode-built-in' ? 'opencode' : stripped) || 'openkilo') as ProviderType;
 
-    if (candidate.provenance === 'your key' && !isProviderConnected(candidate.providerId)) {
-      toast.warning(
-        'Connect required',
-        `${candidate.providerName} needs its own API key — add it in Settings → Providers. The model stays selected for when the key is active.`
-      );
-    }
+    // NOTE: unconnected "your key" candidates no longer toast here. Main's
+    // RouteEventPolicy is the single emission source for ACTIONABLE warnings
+    // (once per provider per session, with the settings deep-link); this
+    // component surfaces the policy notice below when the sync resolves.
 
     await saveSettings({
       activeModel: candidate.modelId,

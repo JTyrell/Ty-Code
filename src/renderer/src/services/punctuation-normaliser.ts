@@ -78,20 +78,24 @@ export function transformProseLine(line: string): string {
   // 1. Replace ellipsis '…' with '...'
   let res = line.replace(/…/g, '...');
 
-  // 2. Protect unspaced en dashes inside numeric ranges (e.g. 1999–2005, 10–20, 2024–2026)
+  // 2. Guard: a line-LEADING em/en dash is a decorative marker, not sentence
+  //    punctuation; strip it instead of producing a leading comma artifact.
+  res = res.replace(/^[—–]\s*/, '');
+
+  // 3. Protect unspaced en dashes inside numeric ranges (e.g. 1999–2005, 10–20, 2024–2026)
   res = res.replace(/(\d+)–(\d+)/g, (_, start, end) => `${start}@@TYCODE_NUM_RANGE@@${end}`);
 
-  // 3. Replace spaced em dash ' — ' with ', '
+  // 4. Replace spaced em dash ' — ' with ', '
   // Also replace unspaced em dash '—' (as sentence punctuation or parenthetical aside) with ', '
   res = res.replace(/\s*—\s*/g, ', ');
 
-  // 4. Replace spaced en dash ' – ' with ', '
+  // 5. Replace spaced en dash ' – ' with ', '
   res = res.replace(/\s+–\s+/g, ', ');
 
-  // 5. Restore protected numeric ranges
+  // 6. Restore protected numeric ranges
   res = res.replace(/@@TYCODE_NUM_RANGE@@/g, '–');
 
-  // 6. Clean up spacing and punctuation artifacts:
+  // 7. Clean up spacing and punctuation artifacts:
   // Remove whitespace preceding commas (e.g. 'word ,' -> 'word,')
   res = res.replace(/\s+,/g, ',');
   // Collapse duplicate commas (e.g. ',,' or ', ,' -> ', ')
@@ -100,8 +104,10 @@ export function transformProseLine(line: string): string {
   res = res.replace(/,\s*\./g, '.');
   res = res.replace(/,\s*;/g, ';');
   res = res.replace(/,\s*:/g, ':');
-  // Collapse double horizontal spaces while strictly preserving linebreaks (\n)
-  res = res.replace(/[^\S\r\n]{2,}/g, ' ');
+  // Collapse double horizontal spaces between two visible characters only.
+  // This preserves markdown trailing hard-breaks (two trailing spaces) and
+  // leading indentation while removing replacement artifacts.
+  res = res.replace(/([\S])[^\S\r\n]{2,}(?=\S)/g, '$1 ');
 
   return res;
 }

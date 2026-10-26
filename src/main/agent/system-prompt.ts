@@ -146,6 +146,8 @@ Analyze the user's request and generate a "Ty-Code Task Scoping Report" using th
 
 CRITICAL RULE: Do not begin executing the task. Output the report and use the \`request_approval\` tool to wait for my explicit "APPROVED" command. If I do not approve, you must refine the plan.`;
 
+export const UK_STYLE_RULES = `STYLE RULES: Write in standard UK English. Use UK spellings (colour, organise, analyse, realise, favour). Never use em dashes or spaced en dashes as sentence punctuation; use commas, semicolons, colons, or parentheses instead. Use hyphens only for compound words and numeric ranges. Prefer short, direct clauses over parenthetical asides.`;
+
 export function buildSystemPrompt(
   workspacePath: string,
   activeFilePath?: string,
@@ -233,8 +235,6 @@ CRITICAL INSTRUCTIONS & PRINCIPLES:
 
   return prompt;
 }
-
-export const UK_STYLE_RULES = `STYLE RULES: Write in standard UK English. Use UK spellings (colour, organise, analyse, realise, favour). Never use em dashes or spaced en dashes as sentence punctuation; use commas, semicolons, colons, or parentheses instead. Use hyphens only for compound words and numeric ranges. Prefer short, direct clauses over parenthetical asides.`;
 
 export const AGENT_TOOLS_DEFINITIONS = [
   {

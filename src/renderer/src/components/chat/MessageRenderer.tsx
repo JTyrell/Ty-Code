@@ -8,8 +8,10 @@
  * - Container CSS variables (--chat-font-family / --chat-font-size /
  *   --chat-line-height) are read from the closest chat message container so
  *   typography changes never re-enter the worker pipeline.
- * - Optional UK punctuation normaliser rewrites em dashes to spaced en dashes
- *   on the displayed markdown (fenced code blocks are left untouched).
+ * - Optional UK punctuation normaliser rewrites prose "AI punctuation"
+ *   (em/en dashes, ellipses) at presentation time; fenced code blocks,
+ *   inline code spans and numeric-range en dashes stay byte-for-byte
+ *   identical and the stored transcript is never mutated.
  * - Optional Matrix decode animation: streaming text resolves from glyphs;
  *   on completion a scanline sweep plays once before final markdown reveal.
  *

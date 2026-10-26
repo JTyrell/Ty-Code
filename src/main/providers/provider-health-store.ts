@@ -28,11 +28,19 @@ export function normaliseHealthId(providerId: string): string {
   return (providerId || '').toLowerCase().trim().replace(/-free$/, '');
 }
 
-class ProviderHealthStore {
+export class ProviderHealthStore {
   private invalid = new Map<string, PersistedEntry>();
   private rateLimited = new Map<string, number>();
   private loaded = false;
   private filePath: string | null = null;
+
+  /** Test-only: point the store at a custom file and reset in-memory state. */
+  __forTest(filePath: string | null, opts?: { loaded?: boolean }): void {
+    this.invalid.clear();
+    this.rateLimited.clear();
+    this.loaded = opts?.loaded ?? true;
+    this.filePath = filePath;
+  }
 
   private resolveFile(): string | null {
     if (this.filePath) return this.filePath;
