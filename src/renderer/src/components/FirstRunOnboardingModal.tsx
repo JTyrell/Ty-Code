@@ -330,7 +330,7 @@ export const FirstRunOnboardingModal: React.FC = () => {
         inset: 0,
         backgroundColor: 'rgba(7, 11, 22, 0.88)',
         backdropFilter: 'blur(12px)',
-        zIndex: 10001,
+        zIndex: 'var(--layer-modal)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',

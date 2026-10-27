@@ -1,4 +1,5 @@
 @import '@xterm/xterm/css/xterm.css';
+@import './styles/layers.css';
 
 :root, body.theme-dark {
   --bg-primary: #121316;
@@ -575,7 +576,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent-primary);
 .extension-runtime-toggle { display: flex; align-items: center; gap: 8px; margin-top: 14px; color: var(--text-primary); font-size: 12px; }
 .extension-runtime-toggle input { accent-color: var(--accent-primary); }
 .extension-runtime-settings .settings-hint { margin: 8px 0 0; line-height: 1.5; }
-.extension-input-backdrop { position: fixed; inset: 0; z-index: 99990; display: grid; place-items: center; padding: 16px; background: rgba(0, 0, 0, .65); }
+.extension-input-backdrop { position: fixed; inset: 0; z-index: var(--layer-modal); display: grid; place-items: center; padding: 16px; background: rgba(0, 0, 0, .65); }
 .extension-input-dialog { width: min(460px, 100%); display: flex; flex-direction: column; gap: 10px; padding: 16px; color: var(--text-primary); background: var(--bg-secondary); border: 1px solid var(--border-subtle); border-radius: 8px; box-shadow: 0 16px 40px rgba(0, 0, 0, .45); }
 .extension-input-dialog h2 { margin: 0; font-size: 14px; }
 .extension-input-dialog label { color: var(--text-secondary); font-size: 12px; }
@@ -685,7 +686,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent-primary);
 }
 .terminal-profile-menu {
   position: fixed;
-  z-index: 100000;
+  z-index: var(--layer-menu);
   min-width: 230px;
   max-width: 340px;
   padding: 6px;
@@ -824,7 +825,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent-primary);
 }
 .terminal-context-menu {
   position: fixed;
-  z-index: 100000;
+  z-index: var(--layer-menu);
   min-width: 165px;
   padding: 5px;
   border: 1px solid var(--border-strong);
@@ -897,7 +898,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent-primary);
 .settings-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 9999;
+  z-index: var(--layer-modal);
   display: flex;
   align-items: center;
   justify-content: center;

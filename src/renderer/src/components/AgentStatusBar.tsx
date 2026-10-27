@@ -119,7 +119,7 @@ export const AgentStatusBar: React.FC = () => {
               borderRadius: '6px',
               boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
               padding: '6px',
-              zIndex: 100,
+              zIndex: 'var(--layer-menu)',
               display: 'flex',
               flexDirection: 'column',
               gap: '4px'

@@ -513,7 +513,7 @@ export const TitleBar: React.FC = () => {
                       padding: '4px 0',
                       minWidth: '220px',
                       boxShadow: '0 10px 28px rgba(0, 0, 0, 0.55)',
-                      zIndex: 9999,
+                      zIndex: 'var(--layer-menu)',
                       backdropFilter: 'blur(16px)'
                     }}
                   >
@@ -768,7 +768,7 @@ export const TitleBar: React.FC = () => {
                 padding: '6px 0',
                 minWidth: '200px',
                 boxShadow: '0 10px 28px rgba(0, 0, 0, 0.55)',
-                zIndex: 9999,
+                zIndex: 'var(--layer-menu)',
                 backdropFilter: 'blur(16px)'
               }}
             >
@@ -918,7 +918,7 @@ export const TitleBar: React.FC = () => {
             inset: 0,
             backgroundColor: 'rgba(0, 0, 0, 0.75)',
             backdropFilter: 'blur(8px)',
-            zIndex: 10005,
+            zIndex: 'var(--layer-modal)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',

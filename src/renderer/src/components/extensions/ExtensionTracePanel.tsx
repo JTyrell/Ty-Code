@@ -102,7 +102,7 @@ export const ExtensionTracePanel: React.FC<ExtensionTracePanelProps> = ({
         inset: 0,
         backgroundColor: 'rgba(0, 0, 0, 0.75)',
         backdropFilter: 'blur(4px)',
-        zIndex: 9999,
+        zIndex: 'var(--layer-modal)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',

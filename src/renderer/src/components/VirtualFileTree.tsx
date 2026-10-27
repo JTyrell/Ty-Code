@@ -454,7 +454,7 @@ export const VirtualFileTree: React.FC<VirtualFileTreeProps> = ({ rootNode, flat
             position: 'fixed',
             top: contextMenu.y,
             left: contextMenu.x,
-            zIndex: 99999,
+            zIndex: 'var(--layer-menu)',
             backgroundColor: 'var(--bg-tertiary)',
             border: '1px solid var(--border-strong)',
             borderRadius: '6px',

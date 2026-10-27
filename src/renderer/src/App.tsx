@@ -17,6 +17,7 @@ import { CommandPalette } from './components/CommandPalette';
 import { OnboardingWizard } from './components/OnboardingWizard';
 import { FirstRunOnboardingModal } from './components/FirstRunOnboardingModal';
 import { WorkspaceEditReview } from './components/WorkspaceEditReview';
+import { ContextEngineDrawer } from './components/status-bar/ContextEngineDrawer';
 import { ToastContainer } from './components/ToastContainer';
 import { toast } from './state/toast-store';
 import {
@@ -37,6 +38,7 @@ import { useActiveModelSync } from './state/active-model-store';
 import { useThemeSync } from './hooks/useThemeSync';
 import { initDocumentProposedListener } from './state/document-review-store';
 import { initWorkspaceSessionSync } from './state/workspace-session-store';
+import { initContextAuditSync } from './state/context-audit-store';
 import { LazyModelManager } from './services/lazy-model-manager';
 
 import { Palette } from 'lucide-react';
@@ -165,8 +167,15 @@ const MainWorkbench: React.FC = () => {
 
   // Prompt 1 (Workspace Session Bus): hydrate + subscribe in every window
   // (main App + canvas/debugger popout shells all mount App).
+  // Prompt 3 (Workspace Unification): the Context Engine audit is driven by
+  // the same session bus — one root, one score, no divergent state.
   useEffect(() => {
-    return initWorkspaceSessionSync();
+    const disposeAuditSync = initContextAuditSync();
+    const disposeSessionSync = initWorkspaceSessionSync();
+    return () => {
+      disposeAuditSync();
+      disposeSessionSync();
+    };
   }, []);
 
   // Memory Governor (Steps 1/3/4/5): renderer-side sampling, state hydration,
@@ -540,6 +549,8 @@ const MainWorkbench: React.FC = () => {
             </React.Suspense>
             <WorkspaceEditReview />
           </div>
+          {/* Context Engine drawer: dockable, in-flow participant of the center column split */}
+          <ContextEngineDrawer />
           {/* Integrated Terminal docked and locked within editor width bounds */}
           <React.Suspense fallback={null}>
             <TerminalDrawer />

@@ -145,7 +145,7 @@ export const AgentApprovalModal: React.FC<AgentApprovalModalProps> = ({
       style={{
         position: 'fixed',
         inset: 0,
-        zIndex: 9999,
+        zIndex: 'var(--layer-modal)',
         backgroundColor: 'rgba(0, 0, 0, 0.75)',
         backdropFilter: 'blur(5px)',
         display: 'flex',

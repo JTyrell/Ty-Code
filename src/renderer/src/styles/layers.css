@@ -1,0 +1,25 @@
+/*
+ * Ty-Code app-wide stacking layer scale (Prompt 3).
+ *
+ * One source of truth for z-index. Every layered surface consumes a token;
+ * new code MUST use these tokens instead of raw numbers.
+ *
+ *   editor content      10   -- center column root (Monaco/diff/terminal column)
+ *   context dock        30   -- context engine drawer + primary dock panels
+ *   sidecar             40   -- AI assistant sidecar column
+ *   editor zen takeover 90   -- full-screen editor takeover (below modals)
+ *   menus               95   -- fixed context/dropdown menus (below modals)
+ *   modals              100  -- full-screen modal-class overlays
+ *   tour                105  -- onboarding tour (above modals)
+ *   toasts              120  -- notifications (topmost)
+ */
+:root {
+  --layer-editor: 10;
+  --layer-context-dock: 30;
+  --layer-sidecar: 40;
+  --layer-editor-zen: 90;
+  --layer-menu: 95;
+  --layer-modal: 100;
+  --layer-tour: 105;
+  --layer-toast: 120;
+}

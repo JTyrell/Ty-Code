@@ -87,7 +87,7 @@ export const QuickOpenModal: React.FC<QuickOpenModalProps> = ({ isOpen, onClose 
         alignItems: 'flex-start',
         justifyContent: 'center',
         paddingTop: '80px',
-        zIndex: 10000
+        zIndex: 'var(--layer-modal)'
       }}
       onClick={onClose}
     >

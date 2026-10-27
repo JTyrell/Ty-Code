@@ -208,7 +208,7 @@ export const OnboardingWizard: React.FC = () => {
         inset: 0,
         backgroundColor: 'rgba(7, 11, 22, 0.88)',
         backdropFilter: 'blur(14px)',
-        zIndex: 10002,
+        zIndex: 'var(--layer-modal)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',

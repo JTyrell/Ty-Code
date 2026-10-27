@@ -345,7 +345,7 @@ export const DebuggerToolbar: React.FC<DebuggerToolbarProps> = ({ className, sty
               border: '1px solid var(--border-default)',
               borderRadius: '8px',
               boxShadow: '0 16px 36px rgba(0, 0, 0, 0.25)',
-              zIndex: 3000,
+              zIndex: 'var(--layer-menu)',
               padding: '10px',
               display: 'flex',
               flexDirection: 'column',

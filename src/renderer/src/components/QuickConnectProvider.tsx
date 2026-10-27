@@ -148,7 +148,7 @@ export const QuickConnectProvider: React.FC<QuickConnectProviderProps> = ({
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        zIndex: 99999,
+        zIndex: 'var(--layer-modal)',
         padding: '16px'
       }}
       onClick={(e) => {

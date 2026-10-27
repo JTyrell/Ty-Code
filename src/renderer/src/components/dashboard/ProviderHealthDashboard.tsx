@@ -945,7 +945,7 @@ export const ProviderHealthDashboard: React.FC = () => {
             inset: 0,
             backgroundColor: 'rgba(0, 0, 0, 0.75)',
             backdropFilter: 'blur(8px)',
-            zIndex: 10005,
+            zIndex: 'var(--layer-modal)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',

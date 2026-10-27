@@ -200,7 +200,7 @@ export const QuickOpen: React.FC<QuickOpenProps> = ({
         alignItems: 'flex-start',
         justifyContent: 'center',
         paddingTop: '70px',
-        zIndex: 11000
+        zIndex: 'var(--layer-modal)'
       }}
       onClick={onClose}
     >

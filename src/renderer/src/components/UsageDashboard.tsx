@@ -147,7 +147,7 @@ export const UsageDashboard: React.FC = () => {
         inset: 0,
         backgroundColor: 'rgba(0, 0, 0, 0.65)',
         backdropFilter: 'blur(8px)',
-        zIndex: 9999,
+        zIndex: 'var(--layer-modal)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',

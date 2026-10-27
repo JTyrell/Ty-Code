@@ -511,7 +511,7 @@ export const EditorArea: React.FC = () => {
         overflow: 'hidden',
         position: isZenMode ? 'fixed' : 'relative',
         inset: isZenMode ? 0 : undefined,
-        zIndex: isZenMode ? 9000 : 1
+        zIndex: isZenMode ? 'var(--layer-editor-zen)' : 1
       }}
     >
       {/* Diff Review Bar if Diff Active */}
@@ -961,7 +961,7 @@ export const EditorArea: React.FC = () => {
             position: 'fixed',
             top: tabContextMenu.y,
             left: tabContextMenu.x,
-            zIndex: 999999,
+            zIndex: 'var(--layer-menu)',
             backgroundColor: 'var(--bg-tertiary)',
             border: '1px solid var(--border-strong)',
             borderRadius: '6px',

@@ -110,7 +110,7 @@ const InfoTip: React.FC<InfoTipProps> = ({ text, children, style }) => {
               overflowWrap: 'anywhere',
               wordBreak: 'break-word',
               overflow: 'hidden',
-              zIndex: 100000,
+              zIndex: 'var(--layer-menu)',
               animation: 'perfTipIn 120ms ease-out',
               pointerEvents: 'none'
             }}

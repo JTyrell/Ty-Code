@@ -116,7 +116,7 @@ export const OnboardingTour: React.FC<OnboardingTourProps> = ({ isOpen, onClose 
         inset: 0,
         backgroundColor: 'rgba(0, 0, 0, 0.75)',
         backdropFilter: 'blur(4px)',
-        zIndex: 999999,
+        zIndex: 'var(--layer-tour)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
