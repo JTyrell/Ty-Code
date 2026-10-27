@@ -1,13 +1,13 @@
 {
-  "timestamp": "2026-10-26T23:32:16.206Z",
-  "gitCommit": "7b3f85a2dac0e85aa086ac586a1c6d0792bffc9b",
+  "timestamp": "2026-10-27T01:45:55.802Z",
+  "gitCommit": "1c63ae43a0a47b3658346c6a51d22e5198fd83bc",
   "command": "npm run test:security",
-  "durationMs": 89,
+  "durationMs": 332,
   "environment": {
     "node": "v24.13.1",
     "platform": "win32",
     "arch": "x64",
-    "gitCommit": "7b3f85a2dac0e85aa086ac586a1c6d0792bffc9b"
+    "gitCommit": "1c63ae43a0a47b3658346c6a51d22e5198fd83bc"
   },
   "summary": {
     "totalTests": 5,
@@ -20,7 +20,7 @@
       "id": "test-1-capability-permissions",
       "name": "Capability-Based Permissions: Undeclared API calls rejected",
       "status": "PASS",
-      "durationMs": 1,
+      "durationMs": 4,
       "assertions": [
         "[PASS] Extension successfully registered with scoped capabilities",
         "[PASS] Blocked write capability with error: PERMISSION_DENIED: Extension \"test.read-only\" attempted to access capability \"workspace.fs.writeFile\" (requires \"workspace.fs.write\"), but manifest only declared [workspace.fs.read].",
@@ -34,7 +34,7 @@
       "id": "test-2-out-of-workspace-protection",
       "name": "Out-of-Workspace Write Protection: User prompt for dangerous path",
       "status": "PASS",
-      "durationMs": 9,
+      "durationMs": 30,
       "assertions": [
         "[PASS] Inside-workspace write succeeds without containment violation",
         "[PASS] Relative escaping path correctly identified as outside workspace",
@@ -50,7 +50,7 @@
       "id": "test-3-webview-sandbox-nonce",
       "name": "Webview Sandbox & Nonce Handshake: allow-scripts only + handshake",
       "status": "PASS",
-      "durationMs": 2,
+      "durationMs": 7,
       "assertions": [
         "[PASS] Webview panel instantiated with unique ID",
         "[PASS] Webview sandbox strictly configured to \"allow-scripts\"",
@@ -64,7 +64,7 @@
       "id": "test-4-security-code-scanner",
       "name": "Static Security Scanner: Dangerous pattern detection",
       "status": "PASS",
-      "durationMs": 1,
+      "durationMs": 3,
       "assertions": [
         "[PASS] Scanner detected 4 security warnings (expected >= 4)",
         "[PASS] Flagged dynamic eval() call",

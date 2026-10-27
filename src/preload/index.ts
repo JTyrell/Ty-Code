@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { IpcRendererEvent } from 'electron';
-import type { AgentStreamChunk, CanvasAgentEventPayloadData, CanvasMessageData, CanvasSnapshotData, CanvasUpdateNotificationData, CommandExecutionOptions, ElectronAPI, ExtensionMetadata, ProposedDiff, PtySpawnOptions } from './types';
+import type { AgentStreamChunk, CanvasAgentEventPayloadData, CanvasEditAppliedPayload, CanvasEditIntent, CanvasMessageData, CanvasPreviewProposedPayload, CanvasPreviewStatusPayload, CanvasSnapshotData, CanvasStructuralIntentPayload, CanvasUpdateNotificationData, CommandExecutionOptions, ElectronAPI, ExtensionMetadata, ProposedDiff, PtySpawnOptions } from './types';
 import { AgentDonePayloadSchema } from '../shared/types/agent-events';
 
 const api: ElectronAPI = {
@@ -637,6 +637,35 @@ const api: ElectronAPI = {
     ipcRenderer.on('canvas:main-chat-update', listener);
     return () => {
       ipcRenderer.removeListener('canvas:main-chat-update', listener);
+    };
+  },
+
+  // M3E Canvas Live Project Editor (Prompt 4)
+  canvasPreviewStart: () => ipcRenderer.invoke('canvas:preview:start'),
+  canvasPreviewStatus: () => ipcRenderer.invoke('canvas:preview:status'),
+  canvasPreviewStop: () => ipcRenderer.invoke('canvas:preview:stop'),
+  canvasPreviewDisposeAll: () => ipcRenderer.invoke('canvas:preview:dispose-all'),
+  applyCanvasEdits: (payload: { intents: CanvasEditIntent[] }) => ipcRenderer.invoke('canvas:edit:apply', payload),
+  dispatchCanvasStructural: (payload: CanvasStructuralIntentPayload) => ipcRenderer.invoke('canvas:structural:dispatch', payload),
+  onCanvasPreviewStatus: (callback: (payload: CanvasPreviewStatusPayload) => void) => {
+    const listener = (_event: unknown, payload: CanvasPreviewStatusPayload) => callback(payload);
+    ipcRenderer.on('canvas:preview:status', listener);
+    return () => {
+      ipcRenderer.removeListener('canvas:preview:status', listener);
+    };
+  },
+  onCanvasEditApplied: (callback: (payload: CanvasEditAppliedPayload) => void) => {
+    const listener = (_event: unknown, payload: CanvasEditAppliedPayload) => callback(payload);
+    ipcRenderer.on('canvas-edit:applied', listener);
+    return () => {
+      ipcRenderer.removeListener('canvas-edit:applied', listener);
+    };
+  },
+  onCanvasEditPreviewProposed: (callback: (payload: CanvasPreviewProposedPayload) => void) => {
+    const listener = (_event: unknown, payload: CanvasPreviewProposedPayload) => callback(payload);
+    ipcRenderer.on('workspace-edit:preview-proposed', listener);
+    return () => {
+      ipcRenderer.removeListener('workspace-edit:preview-proposed', listener);
     };
   },
 

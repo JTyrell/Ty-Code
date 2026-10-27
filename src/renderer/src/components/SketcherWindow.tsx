@@ -1,13 +1,16 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Palette,
   RotateCcw,
   ExternalLink,
   Sparkles,
+  Globe,
   CheckCircle2
 } from 'lucide-react';
 import { M3ECanvas } from './canvas/M3ECanvas';
 import { CanvasChatSidecar } from './canvas/CanvasChatSidecar';
+import { CanvasPreviewHost } from './canvas/preview/CanvasPreviewHost';
+import { useCanvasPreviewStore, initCanvasPreviewSync } from '../state/canvas-preview-store';
 
 const appRegion = (region: 'drag' | 'no-drag'): React.CSSProperties =>
   ({ WebkitAppRegion: region } as React.CSSProperties);
@@ -135,6 +138,17 @@ export const SketcherWindow: React.FC = () => {
   const [editorKey, setEditorKey] = useState(0);
 
   const isMac = typeof navigator !== 'undefined' && /macintosh|mac os x/i.test(navigator.userAgent);
+  const mode = useCanvasPreviewStore((s) => s.mode);
+  const setMode = useCanvasPreviewStore((s) => s.setMode);
+
+  // Canvas window listener wiring (status broadcasts + applied-edit reloads).
+  useEffect(() => {
+    return initCanvasPreviewSync();
+  }, []);
+
+  const handleModeToggle = () => {
+    setMode(mode === 'sketcher' ? 'live' : 'sketcher');
+  };
 
   // Listen to window maximize changes
   useEffect(() => {
@@ -225,8 +239,45 @@ export const SketcherWindow: React.FC = () => {
             }}
           >
             <Palette size={10} color="#c084fc" />
-            UI Sketcher • M3E Canvas
+            {mode === 'live' ? 'Live Project Editor' : 'UI Sketcher • M3E Canvas'}
           </span>
+
+          {/* Sketcher / Live preview mode toggle (Prompt 4) */}
+          <div
+            style={{
+              marginLeft: 6,
+              display: 'flex',
+              borderRadius: 6,
+              overflow: 'hidden',
+              border: '1px solid var(--border-subtle, #272a34)'
+            }}
+          >
+            {([
+              { key: 'sketcher', label: 'Sketcher' },
+              { key: 'live', label: 'Live Preview' }
+            ] as const).map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={handleModeToggle}
+                title={key === 'live' ? 'Edit the workspace project UI live' : 'Generate UI with M3E Canvas'}
+                style={{
+                  border: 'none',
+                  padding: '3px 10px',
+                  fontSize: '10px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  background: mode === key ? 'rgba(139, 92, 246, 0.2)' : 'transparent',
+                  color: mode === key ? '#c084fc' : 'var(--text-secondary, #94a3b8)'
+                }}
+              >
+                {key === 'live' && <Globe size={10} />}
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Center: Window Title */}
@@ -374,9 +425,13 @@ export const SketcherWindow: React.FC = () => {
         </div>
       )}
 
-      {/* Body: Visual Editor (3-pane M3E Canvas) + Shared Chat Rail */}
+      {/* Body: Visual Editor (3-pane M3E Canvas) or Live Project Host + Shared Chat Rail */}
       <div style={{ flex: 1, width: '100%', display: 'flex', overflow: 'hidden', minHeight: 0 }}>
-        <M3ECanvas key={editorKey} />
+        {mode === 'live' ? (
+          <CanvasPreviewHost />
+        ) : (
+          <M3ECanvas key={editorKey} />
+        )}
 
         <CanvasChatSidecar />
       </div>

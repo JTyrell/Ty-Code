@@ -231,6 +231,7 @@ import { opencodeServiceManager } from './opencode-integration';
 import { workspaceManager, isAppOrSystemDir } from './services/workspace-manager';
 import { getWorkspaceSessionManager } from './services/workspace-session-manager';
 import { registerWorkspaceSessionHandlers } from './ipc/workspace-session-handlers';
+import { registerCanvasPreviewHandlers } from './ipc/canvas-preview-handlers';
 import { registerPromptAssemblerHandlers } from './ipc/preferences-handlers';
 
 /**
@@ -621,6 +622,7 @@ function registerIpcHandlers(): void {
   });
 
   registerWorkspaceSessionHandlers();
+  registerCanvasPreviewHandlers();
 
   ipcMain.handle('fs:select-workspace', async () => {
     const targetWin = BrowserWindow.getFocusedWindow() || mainWindow;

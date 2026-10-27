@@ -1448,6 +1448,17 @@ export interface ElectronAPI {
   onCanvasAgentEvent?: (callback: (event: CanvasAgentEventPayloadData) => void) => () => void;
   onCanvasUpdate?: (callback: (update: CanvasUpdateNotificationData) => void) => () => void;
 
+  // M3E Canvas Live Project Editor (Prompt 4)
+  canvasPreviewStart?: () => Promise<IpcResponse<CanvasPreviewStatusPayload>>;
+  canvasPreviewStatus?: () => Promise<IpcResponse<CanvasPreviewStatusPayload>>;
+  canvasPreviewStop?: () => Promise<IpcResponse<CanvasPreviewStatusPayload>>;
+  canvasPreviewDisposeAll?: () => Promise<IpcResponse<void>>;
+  applyCanvasEdits?: (payload: { intents: CanvasEditIntent[] }) => Promise<IpcResponse<CanvasEditApplyResultData>>;
+  dispatchCanvasStructural?: (payload: CanvasStructuralIntentPayload) => Promise<IpcResponse<void>>;
+  onCanvasPreviewStatus?: (callback: (payload: CanvasPreviewStatusPayload) => void) => () => void;
+  onCanvasEditApplied?: (callback: (payload: CanvasEditAppliedPayload) => void) => () => void;
+  onCanvasEditPreviewProposed?: (callback: (payload: CanvasPreviewProposedPayload) => void) => () => void;
+
   // Phase 3.6: Open SEO & GEO MCP Skills
   mcpGetSeoConfig?: (workspacePath?: string) => Promise<IpcResponse<McpSeoConfigStatus>>;
   mcpSaveSeoConfig?: (options: McpSaveSeoOptions) => Promise<IpcResponse<{ success: boolean; message: string }>>;
@@ -1799,6 +1810,68 @@ export interface CanvasSnapshotData {
   canvasComponents: CanvasComponentNodeData[];
   sharedConversationHistory: CanvasMessageData[];
   updatedAt: number;
+}
+
+// ---------------------------------------------------------------------------
+// M3E Canvas Live Project Editor (Prompt 4)
+// ---------------------------------------------------------------------------
+
+/** One visual edit produced by the canvas interaction surface. */
+export interface CanvasEditIntent {
+  intentId: string;
+  kind: 'style' | 'text' | 'structural';
+  /** CSS property (style), replacement text (text) or operation value (structural). */
+  property: string;
+  value: string;
+  /** Raw CSS selector path from the preview host interaction layer. */
+  targetSelector: string;
+  componentName?: string;
+  sourceFileHint?: string;
+  /** Text content captured by the inspector for text-loop patching. */
+  originalInnerText?: string;
+}
+
+/** Result payload for a batch of canvas intents (canvas:edit:apply). */
+export interface CanvasEditApplyResultData {
+  autoApplied: boolean;
+  files: string[];
+}
+
+/** Status payload for a live preview boot attempt. */
+export interface CanvasPreviewStatusPayload {
+  status: {
+    mode: 'dev' | 'static' | 'none';
+    state: 'idle' | 'booting' | 'ready' | 'error' | 'stopped' | 'unavailable';
+    url: string | null;
+    error: string | null;
+    adapter: string;
+  };
+  workspacePath: string;
+}
+
+/** Broadcast after a canvas edit is applied to disk (canvas-edit:applied). */
+export interface CanvasEditAppliedPayload {
+  files: string[];
+  at: number;
+}
+
+/** Main-window notification that a canvas edit needs review in the Monaco gate. */
+export interface CanvasPreviewProposedPayload {
+  canvas: {
+    selector: string;
+    component: string | null;
+    property: string;
+  };
+  preview: WorkspaceEditPreview;
+}
+
+/** Structural request routed to the canvas agent engine's DesignProfile fence. */
+export interface CanvasStructuralIntentPayload {
+  operation: 'add' | 'move' | 'delete';
+  componentName?: string;
+  targetSelector: string;
+  value?: string;
+  details?: string;
 }
 
 export interface HistoryExportResult {

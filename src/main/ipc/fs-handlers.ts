@@ -37,7 +37,26 @@ async function writeTreeDiskCache(cacheKey: string, entries: FlatFileNodeEntry[]
   try {
     await fs.mkdir(TREE_CACHE_DIR, { recursive: true });
     const cacheFile = path.join(TREE_CACHE_DIR, `${cacheKey}.json`);
-    await fs.writeFile(cacheFile, JSON.stringify(entries), 'utf-8');
+    // Chunked serialize+stream: a single JSON.stringify of a 10k-entry tree
+    // plus one 2MB write blocked the main thread ~70ms and broke the
+    // open-perf <50ms event-loop budget. Yield between 500-entry chunks
+    // (~100KB of JSON each) instead of one monolithic serialize+write.
+    const cacheStream = fsSync.createWriteStream(cacheFile, { encoding: 'utf-8' });
+    cacheStream.write('[');
+    const CACHE_SERIALIZE_CHUNK = 500;
+    for (let start = 0; start < entries.length; start += CACHE_SERIALIZE_CHUNK) {
+      const slice = entries.slice(start, start + CACHE_SERIALIZE_CHUNK);
+      const parts = slice.map((entry) => JSON.stringify(entry));
+      cacheStream.write(parts.join(','));
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+    cacheStream.write(']');
+    await new Promise<void>((resolve, reject) => {
+      cacheStream.end((error?: Error | null) => {
+        if (error) reject(error);
+        else resolve();
+      });
+    });
   } catch (err) {
     console.warn('[FS Cache] Failed to write tree cache:', err);
   }

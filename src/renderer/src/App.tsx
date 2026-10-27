@@ -38,6 +38,7 @@ import { useActiveModelSync } from './state/active-model-store';
 import { useThemeSync } from './hooks/useThemeSync';
 import { initDocumentProposedListener } from './state/document-review-store';
 import { initWorkspaceSessionSync } from './state/workspace-session-store';
+import { initCanvasPreviewSync } from './state/canvas-preview-store';
 import { initContextAuditSync } from './state/context-audit-store';
 import { LazyModelManager } from './services/lazy-model-manager';
 
@@ -169,12 +170,16 @@ const MainWorkbench: React.FC = () => {
   // (main App + canvas/debugger popout shells all mount App).
   // Prompt 3 (Workspace Unification): the Context Engine audit is driven by
   // the same session bus — one root, one score, no divergent state.
+  // Prompt 4 (M3E Live Editor): the Safe Edit Review Gate preview proposals
+  // fired from the canvas surface surface here in the Main Editor.
   useEffect(() => {
     const disposeAuditSync = initContextAuditSync();
     const disposeSessionSync = initWorkspaceSessionSync();
+    const disposeCanvasPreviewSync = initCanvasPreviewSync();
     return () => {
       disposeAuditSync();
       disposeSessionSync();
+      disposeCanvasPreviewSync();
     };
   }, []);
 

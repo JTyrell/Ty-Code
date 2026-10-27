@@ -15,6 +15,7 @@ import { app, BrowserWindow } from 'electron';
 import path from 'node:path';
 import { canvasSyncManager } from '../services/canvas-sync-manager';
 import { memoryGovernor } from '../services/memory-governor';
+import { getCanvasPreviewManager } from '../ipc/canvas-preview-handlers';
 
 let canvasWindow: BrowserWindow | null = null;
 
@@ -51,7 +52,11 @@ export function openCanvasWindow(): BrowserWindow {
       nodeIntegration: false,
       sandbox: true,
       webSecurity: true,
-      allowRunningInsecureContent: false
+      allowRunningInsecureContent: false,
+      // Prompt 4: the canvas hosts the user's own project UI inside a
+      // sandboxed <webview> (persist:tycode-preview partition; inspector
+      // bridge is injected via executeJavaScript, guest preload is not used).
+      webviewTag: true
     }
   });
 
@@ -115,6 +120,9 @@ export function openCanvasWindow(): BrowserWindow {
   window.on('closed', () => {
     if (canvasWindow === window) canvasWindow = null;
     memoryGovernor.unregisterSurface('canvas');
+    // Prompt 2/Prompt 4 lifecycle: preview sessions terminate with the
+    // canvas surface — no orphaned dev servers keep running.
+    void getCanvasPreviewManager().stopAll();
   });
 
   return window;
