@@ -10,14 +10,33 @@ function getCredentialsFilePath(): string {
 }
 
 /**
- * True only when running inside the Electron main process with safeStorage.
- * Outside Electron (e.g. bundled E2E harnesses in plain Node) the vault has no
- * secure OS storage, so read paths degrade to an empty keyring instead of
- * crashing the caller.
+ * True only when running inside the Electron main process with safeStorage
+ * AND the app is ready (Prompt 4: readiness gate — safeStorage is never
+ * touched before app.whenReady()). Outside Electron (e.g. bundled E2E
+ * harnesses in plain Node) the vault has no secure OS storage, so read paths
+ * degrade to an empty keyring instead of crashing the caller.
  */
 function isVaultAvailable(): boolean {
   try {
     if (typeof (app as { getPath?: unknown } | undefined)?.getPath !== 'function') return false;
+    return Boolean(safeStorage?.isEncryptionAvailable?.());
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Readiness gate (Prompt 4 Step 3.4): the vault only touches safeStorage
+ * once the Electron app is ready AND the OS encryption backend reports
+ * available. Before readiness (or outside Electron) reads return an empty
+ * keyring WITHOUT marking a permanent failure — the app simply is not in a
+ * state where decryption is meaningful yet.
+ */
+function isVaultReady(): boolean {
+  try {
+    const appLike = app as unknown as { isReady?: () => boolean; getPath?: unknown } | undefined;
+    if (!appLike || typeof appLike.getPath !== 'function' || typeof appLike.isReady !== 'function') return false;
+    if (!appLike.isReady()) return false;
     return Boolean(safeStorage?.isEncryptionAvailable?.());
   } catch {
     return false;
@@ -30,6 +49,66 @@ function isVaultAvailable(): boolean {
  */
 const decryptedKeyCache = new Map<string, string>();
 
+/**
+ * Session-wide memo of the decrypted keyring (Prompt 4 Step 3: the whole
+ * credentials blob decrypts AT MOST ONCE per session; every later read —
+ * including concurrent getKey callers — is served from memory).
+ */
+let decryptedFileSnapshot: Record<string, string> | null = null;
+
+/**
+ * Single-flight: concurrent getKey callers share ONE in-flight load instead
+ * of issuing parallel safeStorage decryptions.
+ */
+let vaultLoadInFlight: Promise<Record<string, string>> | null = null;
+
+/**
+ * "[VAULT] Decrypting key" is logged at most once per key per session
+ * (cache-miss only).
+ */
+const decryptLogOnce = new Set<string>();
+
+/**
+ * Permanent decrypt failure for this session (Prompt 4 Step 3.4): a foreign
+ * DPAPI context (portable build moved between Windows users) or an
+ * unavailable OS encryption backend. Once set, the vault returns null
+ * immediately and NEVER retries — no retry storm, ever.
+ */
+let vaultDecryptFailed = false;
+let vaultFailureEmitted = false;
+
+const VAULT_DECRYPT_WARNING = 'Stored keys could not be decrypted on this machine; re-save them in Settings.';
+
+/** Emit exactly ONE warning event per session, to every live window. */
+function emitVaultDecryptWarning(): void {
+  if (vaultFailureEmitted) return;
+  vaultFailureEmitted = true;
+  console.warn(`[VAULT] ${VAULT_DECRYPT_WARNING}`);
+  try {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
+        win.webContents.send('vault:keys-undecryptable', { message: VAULT_DECRYPT_WARNING });
+      }
+    }
+  } catch {
+    // Non-blocking in headless/test environments.
+  }
+}
+
+/** Test hook: resets the session-wide decrypt memoization/failure state. */
+export function resetVaultSessionStateForTests(): void {
+  decryptedFileSnapshot = null;
+  vaultLoadInFlight = null;
+  decryptLogOnce.clear();
+  vaultDecryptFailed = false;
+  vaultFailureEmitted = false;
+}
+
+/** True when the vault is in the permanent no-retry failure state. */
+export function isVaultDecryptFailed(): boolean {
+  return vaultDecryptFailed;
+}
+
 export function clearKeyCache(providerId?: string): void {
   if (providerId) {
     decryptedKeyCache.delete(providerId.toLowerCase().trim());
@@ -38,8 +117,17 @@ export function clearKeyCache(providerId?: string): void {
   }
 }
 
+/**
+ * Synchronous keyring read with session memoization. The safeStorage
+ * decrypt happens AT MOST ONCE per session: the first successful (or
+ * permanently failed) attempt fixes the snapshot; all later calls are RAM
+ * reads. A not-yet-ready app returns an empty keyring WITHOUT consuming the
+ * one-shot decrypt, so the gate simply defers to a later call.
+ */
 function loadAllKeys(): Record<string, string> {
-  if (!isVaultAvailable()) return {};
+  if (vaultDecryptFailed) return {};
+  if (decryptedFileSnapshot) return decryptedFileSnapshot;
+  if (!isVaultReady()) return {};
   let filePath: string;
   try {
     filePath = getCredentialsFilePath();
@@ -51,30 +139,52 @@ function loadAllKeys(): Record<string, string> {
   }
   try {
     const fileBuffer = fs.readFileSync(filePath);
-    if (safeStorage.isEncryptionAvailable()) {
-      try {
-        const decryptedStr = safeStorage.decryptString(fileBuffer);
-        const parsed = JSON.parse(decryptedStr) as Record<string, string>;
-        if (parsed && typeof parsed === 'object') {
-          for (const [k, v] of Object.entries(parsed)) {
-            if (typeof v === 'string') {
-              decryptedKeyCache.set(k.toLowerCase().trim(), v);
-            }
-          }
+    try {
+      const decryptedStr = safeStorage.decryptString(fileBuffer);
+      const parsed = JSON.parse(decryptedStr) as Record<string, string>;
+      const snapshot = parsed && typeof parsed === 'object' ? parsed : {};
+      for (const [k, v] of Object.entries(snapshot)) {
+        if (typeof v === 'string') {
+          decryptedKeyCache.set(k.toLowerCase().trim(), v);
         }
-        return parsed || {};
-      } catch (err) {
-        // ZeroFriction diagnosis (Prompt 2): surface safeStorage decrypt failures
-        console.warn(`[VAULT] safeStorage decryption FAILED: ${err instanceof Error ? err.message : String(err)}`);
-        return {};
       }
-    } else {
-      console.warn('[VAULT] safeStorage is not available on this platform/configuration.');
+      decryptedFileSnapshot = snapshot;
+      return snapshot;
+    } catch (err) {
+      // Prompt 4 Step 3.4: decrypt throw (e.g. DPAPI context mismatch from a
+      // portable build moved between Windows users) — ONE warning, no retry,
+      // ever. The failure is permanent for this session.
+      vaultDecryptFailed = true;
+      console.warn(`[VAULT] safeStorage decryption FAILED: ${err instanceof Error ? err.message : String(err)}`);
+      emitVaultDecryptWarning();
+      decryptedFileSnapshot = {};
       return {};
     }
   } catch (err) {
     console.error('[VAULT] Failed reading credentials:', err);
     return {};
+  }
+}
+
+/**
+ * Single-flight wrapper around the synchronous loadAllKeys(): concurrent
+ * callers share one in-flight load; the decrypt log line is emitted at most
+ * once per triggering key per session and only when a decrypt will actually
+ * happen.
+ */
+async function loadAllKeysSingleFlight(triggerProviderId?: string): Promise<Record<string, string>> {
+  if (decryptedFileSnapshot) return decryptedFileSnapshot;
+  if (vaultDecryptFailed) return {};
+  if (vaultLoadInFlight) return vaultLoadInFlight;
+  if (triggerProviderId && !decryptLogOnce.has(triggerProviderId) && isVaultReady()) {
+    decryptLogOnce.add(triggerProviderId);
+    console.log(`[VAULT] Decrypting key from safeStorage (provider: ${triggerProviderId})...`);
+  }
+  vaultLoadInFlight = Promise.resolve().then(() => loadAllKeys());
+  try {
+    return await vaultLoadInFlight;
+  } finally {
+    vaultLoadInFlight = null;
   }
 }
 
@@ -84,7 +194,7 @@ export function getAllVaultKeys(): Record<string, string> {
 
 export async function saveKey(providerId: string, key: string): Promise<void> {
   console.log('[VAULT] Encrypting key with safeStorage...');
-  if (!isVaultAvailable()) {
+  if (!isVaultReady()) {
     throw new Error('safeStorage encryption is not available');
   }
 
@@ -94,6 +204,11 @@ export async function saveKey(providerId: string, key: string): Promise<void> {
 
   // In-Memory Key Cache update: keep RAM in sync with written key
   decryptedKeyCache.set(normProvider, key.trim());
+  // Keep the session keyring snapshot coherent with the write (a later
+  // vault miss must see the saved key without re-decrypting).
+  if (decryptedFileSnapshot) {
+    decryptedFileSnapshot[normProvider] = key.trim();
+  }
 
   const filePath = getCredentialsFilePath();
   const dir = path.dirname(filePath);
@@ -160,9 +275,14 @@ export async function getKey(providerId: string): Promise<string | null> {
     }
   }
 
-  // 2. Not in cache: call safeStorage.decryptString(encryptedBuffer)
-  console.log('[VAULT] Decrypting key from safeStorage...');
-  const keys = loadAllKeys();
+  // 2. Not in cache: decrypt via the single-flight keyring loader.
+  //    Prompt 4 Step 3.4: a permanent decrypt failure (foreign DPAPI
+  //    context, unavailable OS encryption) fails FAST here — null, one
+  //    warning event already emitted, no fallback probing, no retry storm.
+  if (vaultDecryptFailed) {
+    return null;
+  }
+  const keys = await loadAllKeysSingleFlight(normProvider);
   if (keys[normProvider]) {
     const keyVal = keys[normProvider];
     decryptedKeyCache.set(normProvider, keyVal);

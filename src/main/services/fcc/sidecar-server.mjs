@@ -34,6 +34,8 @@ if (process.env.PORT && !args.includes('--port')) {
 const TOTAL_FREE_QUOTA = 1_350_000_000; // 1.35B+ tokens/month
 let usedFreeQuota = 0;
 const startTime = Date.now();
+// Vault keys delivered via the single keys.handshake (memory only, local-only).
+let vaultKeys = {};
 
 const SUPPORTED_HARNESSES = [
   'claude-code',
@@ -392,6 +394,28 @@ rl.on('line', (line) => {
         result: { models: FCC_MODELS }
       };
       process.stdout.write(JSON.stringify(reply) + '\n');
+      return;
+    }
+
+    // Vault key handshake (Prompt 4): the sidecar receives its keys via a
+    // SINGLE handshake from the manager. No retry protocol: if this fails,
+    // the sidecar simply continues in keyless/anonymous mode. Keys live in
+    // this process's memory only — local-only, zero telemetry.
+    if (method === 'keys.handshake') {
+      const incoming = params && typeof params.keys === 'object' && params.keys !== null ? params.keys : {};
+      const received = Object.keys(incoming).length;
+      vaultKeys = incoming;
+      const reply = {
+        jsonrpc: '2.0',
+        id,
+        result: {
+          status: 'ok',
+          received,
+          mode: received > 0 ? 'keyed' : 'keyless'
+        }
+      };
+      process.stdout.write(JSON.stringify(reply) + '\n');
+      console.log(`[FCC-SIDECAR] Key handshake complete: ${received} keys, mode=${received > 0 ? 'keyed' : 'keyless'}.`);
       return;
     }
 

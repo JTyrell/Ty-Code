@@ -4776,6 +4776,11 @@ app.whenReady().then(async () => {
     3,
     'custom',
     async () => {
+      // Prompt 4 (Boot Ordering): the sidecar spawn stays deferred (Tier 3,
+      // after first paint/idle), never blocks boot, and never runs before
+      // vault hydration (community key bootstrap is Tier 2 above). The
+      // sidecar's vault key handshake coordinates with the vault's
+      // single-flight loader, so an in-flight hydration is shared, not raced.
       void fccManager.start();
       void fccSidecarManager.start();
     }

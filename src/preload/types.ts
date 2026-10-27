@@ -1061,6 +1061,7 @@ export interface ElectronAPI {
   getDesignProfile: (workspacePath?: string) => Promise<IpcResponse<DesignProfile>>;
   onCorrectionAdded?: (callback: (entry: CorrectionEntry) => void) => () => void;
   onWorkspaceReady?: (callback: (data: { path: string }) => void) => () => void;
+  onVaultKeysUndecryptable?: (callback: (payload: { message: string }) => void) => () => void;
   onOpenFolder?: (callback: (data: { folderPath: string }) => void) => () => void;
   onWorkspaceRequestOpen?: (callback: (data: unknown) => void) => () => void;
   getWorkspaceSession?: () => Promise<IpcResponse<WorkspaceSessionSnapshot>>;

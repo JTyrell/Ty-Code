@@ -43,6 +43,11 @@ const api: ElectronAPI = {
     ipcRenderer.on('workspace:ready', handler);
     return () => ipcRenderer.removeListener('workspace:ready', handler);
   },
+  onVaultKeysUndecryptable: (callback: (payload: { message: string }) => void) => {
+    const handler = (_: IpcRendererEvent, payload: { message: string }) => callback(payload);
+    ipcRenderer.on('vault:keys-undecryptable', handler);
+    return () => ipcRenderer.removeListener('vault:keys-undecryptable', handler);
+  },
   onOpenFolder: (callback: (data: { folderPath: string }) => void) => {
     const handler = (_: IpcRendererEvent, data: { folderPath: string }) => callback(data);
     ipcRenderer.on('window:open-folder', handler);

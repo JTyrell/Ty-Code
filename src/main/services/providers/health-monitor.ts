@@ -334,6 +334,37 @@ export class ProviderHealthMonitor {
     status.lastError = undefined;
     this.consecutiveFailures.set(providerId, 0);
   }
+
+  /**
+   * Marks a provider DOWN on the health board (e.g. the FCC sidecar after
+   * exhausting its restart budget). The gateway/router consults this board
+   * and routes around the provider until it is marked up again.
+   */
+  public markProviderDown(providerId: string, reason: string): void {
+    const status = this.getProviderHealth(providerId);
+    status.isHealthy = false;
+    status.autoDisabled = true;
+    status.lastChecked = Date.now();
+    status.lastError = reason;
+  }
+
+  /**
+   * Marks a provider UP again (e.g. the FCC sidecar after a successful
+   * start/adoption). Clears the auto-disable and failure counters.
+   */
+  public markProviderUp(providerId: string, latencyMs = 0): void {
+    const status = this.getProviderHealth(providerId);
+    status.isHealthy = true;
+    status.autoDisabled = false;
+    status.isRateLimited = false;
+    status.cooldownUntil = undefined;
+    status.lastChecked = Date.now();
+    status.lastError = undefined;
+    if (status.latencyMs === 0 && latencyMs > 0) {
+      status.latencyMs = latencyMs;
+    }
+    this.consecutiveFailures.set(providerId, 0);
+  }
 }
 
 export const providerHealthMonitor = ProviderHealthMonitor.getInstance();

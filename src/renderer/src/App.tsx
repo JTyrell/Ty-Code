@@ -224,6 +224,12 @@ const MainWorkbench: React.FC = () => {
       toast.info('LITE mode enabled', notice || `Low-RAM device detected (${totalSystemRamGb.toFixed(1)} GB).`);
     });
 
+    // Prompt 4 (Vault hardening): ONE warning per session when stored keys
+    // cannot be decrypted on this machine (e.g. DPAPI context mismatch).
+    const unsubVault = window.electronAPI.onVaultKeysUndecryptable?.(({ message }) => {
+      toast.warning('Stored keys could not be decrypted', message);
+    });
+
     // Step 3.2: hidden windows pause rAF-driven work via the guard flag.
     const onVisibility = (): void => {
       useGovernorStore.getState().setDocumentHidden(document.hidden);
@@ -240,6 +246,7 @@ const MainWorkbench: React.FC = () => {
       unsubCrashed?.();
       unsubShed?.();
       unsubLite?.();
+      unsubVault?.();
       document.removeEventListener('visibilitychange', onVisibility);
     };
   }, []);
