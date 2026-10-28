@@ -309,7 +309,20 @@ export class SettingsManager {
     await this.saveLayer('global', nonSecret);
   }
 
-  public async refresh(): Promise<void> {
+  private refreshInFlight: Promise<void> | null = null;
+  private writeChain: Promise<unknown> = Promise.resolve();
+
+  public refresh(): Promise<void> {
+    // Coalesce concurrent refreshes so parallel callers don't race on a file being rewritten.
+    if (!this.refreshInFlight) {
+      this.refreshInFlight = this.refreshInner().finally(() => { this.refreshInFlight = null; });
+    }
+    return this.refreshInFlight;
+  }
+
+  private async refreshInner(): Promise<void> {
+    // Wait for pending writes so we never read a half-written file.
+    await this.writeChain.catch(() => undefined);
     if (this.watchFiles) await this.configureGlobalWatcher();
     const before = JSON.stringify([this.globalSettings, this.workspaceSettings]);
     try {
@@ -419,9 +432,15 @@ export class SettingsManager {
     }
   }
 
-  private async writeFile(filePath: string, value: Record<string, unknown> | SettingsData | WorkspaceSettingsPatch): Promise<void> {
+  private writeFile(filePath: string, value: Record<string, unknown> | SettingsData | WorkspaceSettingsPatch): Promise<void> {
+    const run = this.writeChain.catch(() => undefined).then(() => this.writeFileUnsafe(filePath, value));
+    this.writeChain = run;
+    return run;
+  }
+
+  private async writeFileUnsafe(filePath: string, value: Record<string, unknown> | SettingsData | WorkspaceSettingsPatch): Promise<void> {
     await fs.mkdir(path.dirname(filePath), { recursive: true });
-    const tempPath = path.join(path.dirname(filePath), `${path.basename(filePath)}.tmp`);
+    const tempPath = path.join(path.dirname(filePath), `${path.basename(filePath)}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`);
     const { apiKeys: _apiKeys, ...withoutSecrets } = value as Record<string, unknown>;
     const serialized = safeSerializeSettings({
       ...withoutSecrets,
