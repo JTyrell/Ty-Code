@@ -1,13 +1,13 @@
 {
-  "timestamp": "2026-10-28T02:47:34.580Z",
-  "gitCommit": "ac711e5f70c6f207a327bd76fd9a283d50684fa8",
+  "timestamp": "2026-10-28T03:01:55.866Z",
+  "gitCommit": "057d095866e97953a657ff16368ba2ba02ebe85d",
   "command": "npm run test:security",
-  "durationMs": 265,
+  "durationMs": 137,
   "environment": {
     "node": "v24.13.1",
     "platform": "win32",
     "arch": "x64",
-    "gitCommit": "ac711e5f70c6f207a327bd76fd9a283d50684fa8"
+    "gitCommit": "057d095866e97953a657ff16368ba2ba02ebe85d"
   },
   "summary": {
     "totalTests": 5,
@@ -34,7 +34,7 @@
       "id": "test-2-out-of-workspace-protection",
       "name": "Out-of-Workspace Write Protection: User prompt for dangerous path",
       "status": "PASS",
-      "durationMs": 19,
+      "durationMs": 12,
       "assertions": [
         "[PASS] Inside-workspace write succeeds without containment violation",
         "[PASS] Relative escaping path correctly identified as outside workspace",
@@ -50,7 +50,7 @@
       "id": "test-3-webview-sandbox-nonce",
       "name": "Webview Sandbox & Nonce Handshake: allow-scripts only + handshake",
       "status": "PASS",
-      "durationMs": 5,
+      "durationMs": 3,
       "assertions": [
         "[PASS] Webview panel instantiated with unique ID",
         "[PASS] Webview sandbox strictly configured to \"allow-scripts\"",
@@ -64,7 +64,7 @@
       "id": "test-4-security-code-scanner",
       "name": "Static Security Scanner: Dangerous pattern detection",
       "status": "PASS",
-      "durationMs": 2,
+      "durationMs": 1,
       "assertions": [
         "[PASS] Scanner detected 4 security warnings (expected >= 4)",
         "[PASS] Flagged dynamic eval() call",

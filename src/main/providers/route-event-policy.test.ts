@@ -162,6 +162,23 @@ describe('RouteEventPolicy consolidated trail', () => {
     expect(line).toBe('[ROUTE] google(skip) -> groq(skip) -> groq(500) -> ty-code-free(ok)');
   });
 
+  it('emits nothing on a later turn when sticky health skips dead providers (direct route)', () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    // Later turn: dead providers (burned during the first turn's hop records)
+    // are skipped up-front via sticky health, so there are no failed hops and
+    // nothing reaches the renderer — the trail only shows skips + the landing.
+    routeEventPolicy.beginTurn('t-second-turn');
+    routeEventPolicy.recordSkip('t-second-turn', 'openrouter');
+    routeEventPolicy.recordSkip('t-second-turn', 'google');
+    routeEventPolicy.recordHop('t-second-turn', 'ty-code-free', 'ok');
+    routeEventPolicy.setLanding('t-second-turn', 'ty-code-free');
+    expect(routeEventPolicy.finishTurn('t-second-turn', 'ty-code-free')).toBeNull();
+    const counter = logSpy.mock.calls
+      .map((call) => String(call[0]))
+      .find((text) => text.startsWith('[ROUTE-EVENTS] turn=t-second-turn'));
+    expect(counter).toBe('[ROUTE-EVENTS] turn=t-second-turn emitted=0 classes={silent:3, once:0, actionable:0}');
+  });
+
   it('returns null (no emission) for a direct route yet logs the counter', () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
     routeEventPolicy.beginTurn('t-direct');
@@ -184,9 +201,9 @@ describe('RouteEventPolicy consolidated trail', () => {
     const counter = logSpy.mock.calls
       .map((call) => String(call[0]))
       .find((text) => text.startsWith('[ROUTE-EVENTS] turn=t-counter'));
-    expect(counter).toContain('emitted=');
-    expect(counter).toContain('classes={');
-    parseClassTally(counter);
+    // Exact checklist semantics: the once-per-session hint (once=1) plus the
+    // single consolidated trail at done (emitted increments again) exactly once.
+    expect(counter).toBe('[ROUTE-EVENTS] turn=t-counter emitted=2 classes={silent:1, once:1, actionable:0}');
   });
 
   it('cleans up turn state after finish (double finish and unknown turns are no-ops)', () => {

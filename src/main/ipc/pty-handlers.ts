@@ -6,6 +6,7 @@ import * as pty from 'node-pty';
 import type { CommandExecutionOptions, CommandResult, IpcResponse, PtySessionInfo, PtySpawnOptions, ShellInfo } from '../../preload/types';
 import { SecurityPolicyEngine, buildSanitizedPtyEnv } from '../services/security-policy';
 import { settingsManager } from '../services/settings-manager';
+import { terminalDispatchLedger } from '../services/terminal-dispatch-ledger';
 import { buildFccTerminalEnv } from '../fcc-integration';
 
 interface ActivePty {
@@ -16,6 +17,11 @@ interface ActivePty {
   attached: boolean;
   exited?: number;
   subscriptions: Array<{ dispose: () => void }>;
+  /** Resolved when the spawn has fired AND the renderer XTerm acked attach. */
+  whenReady: Promise<void>;
+  resolveReady: () => void;
+  /** Commands dispatched before readiness; flushed (not dropped) on attach. */
+  queue: Array<{ cmd: string; execute: boolean; flushed?: boolean }>;
 }
 
 const activePtys = new Map<string, ActivePty>();
@@ -106,7 +112,13 @@ export function spawnPtySession(mainWindow: BrowserWindow, options: PtySpawnOpti
     }
 
     const processHandle = pty.spawn(selectedShell.path, [], { name: 'xterm-256color', cols, rows, cwd, env: ptyEnv });
-    const session: ActivePty = { process: processHandle, shellPath: selectedShell.path, window: mainWindow, outputBuffer: '', attached: false, subscriptions: [] };
+    let resolveReady: () => void = () => undefined;
+    const whenReady = new Promise<void>((resolve) => { resolveReady = resolve; });
+    const session: ActivePty = {
+      process: processHandle, shellPath: selectedShell.path, window: mainWindow,
+      outputBuffer: '', attached: false, subscriptions: [],
+      whenReady, resolveReady, queue: []
+    };
     activePtys.set(ptyId, session);
     session.subscriptions.push(processHandle.onData((data) => {
       if (session.attached) {
@@ -117,6 +129,7 @@ export function spawnPtySession(mainWindow: BrowserWindow, options: PtySpawnOpti
     }));
     session.subscriptions.push(processHandle.onExit(({ exitCode }) => {
       session.exited = exitCode;
+      clearReportedActiveIfGone(ptyId);
       if (session.attached) {
         if (!session.window.isDestroyed() && !session.window.webContents.isDestroyed()) session.window.webContents.send(`pty:exit:${ptyId}`, exitCode);
         activePtys.delete(ptyId);
@@ -160,8 +173,155 @@ export function attachPty(ptyId: string): IpcResponse<void> {
   if (session.exited !== undefined) {
     if (!session.window.isDestroyed() && !session.window.webContents.isDestroyed()) session.window.webContents.send(`pty:exit:${ptyId}`, session.exited);
     activePtys.delete(ptyId);
+    return { success: true };
   }
+  // Prompt (Terminal Command Dispatch Fix): the renderer XTerm instance has
+  // attached — the readiness barrier lifts and queued commands are flushed,
+  // never dropped. Flush happens BEFORE resolving whenReady so awaiting
+  // dispatchers observe the write as already delivered.
+  const queued = session.queue.splice(0);
+  for (const item of queued) {
+    item.flushed = true;
+    try { session.process.write(item.execute ? `${item.cmd}\r` : item.cmd); } catch { /* Process exited. */ }
+  }
+  session.resolveReady();
   return { success: true };
+}
+
+// ---------------------------------------------------------------------------
+// Readiness-aware command dispatch (Prompt: Terminal Command Dispatch Fix)
+// ---------------------------------------------------------------------------
+
+/** The PTY the renderer last reported as the ACTIVE visible terminal tab. */
+let lastReportedActivePtyId: string | null = null;
+
+export function reportActivePty(ptyId: string): void {
+  if (activePtys.has(ptyId)) lastReportedActivePtyId = ptyId;
+}
+
+/** Forget a reported active terminal when its PTY leaves the registry. */
+function clearReportedActiveIfGone(ptyId: string): void {
+  if (lastReportedActivePtyId === ptyId) lastReportedActivePtyId = null;
+}
+
+export interface RunInTerminalOptions {
+  terminalId?: string;
+  execute?: boolean;
+  createIfMissing?: boolean;
+}
+
+export interface RunInTerminalResult {
+  dispatched: boolean;
+  terminalId?: string;
+  reason?: string;
+}
+
+const READY_WAIT_TIMEOUT_MS = 5_000;
+
+function sendToWindow(window: BrowserWindow | undefined, channel: string, payload: unknown): void {
+  try {
+    if (window && !window.isDestroyed() && !window.webContents.isDestroyed()) window.webContents.send(channel, payload);
+  } catch {
+    /* Window raced shutdown; the ledger still records the outcome. */
+  }
+}
+
+/**
+ * Readiness-aware dispatch of a command into a live, visible PTY.
+ *
+ * Resolution order: explicit terminalId → the ACTIVE terminal reported by the
+ * renderer → create a fresh terminal when `createIfMissing`. Commands that
+ * arrive before the PTY is ready are QUEUED and flushed on attach — nothing is
+ * silently dropped; every failure emits `terminal:dispatch-failed` so the
+ * renderer can surface a retryable toast. Execution writes use `\r`
+ * (carriage return), paste-only writes omit it.
+ */
+export async function dispatchRunCommand(
+  cmd: string,
+  opts: RunInTerminalOptions,
+  mainWindow: BrowserWindow | null,
+  cwd?: string
+): Promise<IpcResponse<RunInTerminalResult>> {
+  const execute = opts.execute !== false;
+  const startedAt = Date.now();
+  const failVisible = (reason: string): IpcResponse<RunInTerminalResult> => {
+    terminalDispatchLedger.record({ terminalId: opts.terminalId || lastReportedActivePtyId || '(none)', cmd, readyWaitMs: Date.now() - startedAt, outcome: 'failed', detail: reason });
+    sendToWindow(mainWindow || undefined, 'terminal:dispatch-failed', { cmd, opts, reason });
+    return { success: false, error: reason };
+  };
+
+  let ptyId: string | undefined;
+  let session: ActivePty | undefined;
+
+  if (opts.terminalId) {
+    session = activePtys.get(opts.terminalId);
+    if (!session) return failVisible(`Terminal '${opts.terminalId}' does not exist or has exited.`);
+    ptyId = opts.terminalId;
+  } else if (lastReportedActivePtyId) {
+    session = activePtys.get(lastReportedActivePtyId);
+    if (!session) {
+      clearReportedActiveIfGone(lastReportedActivePtyId);
+      lastReportedActivePtyId = null;
+    } else {
+      ptyId = lastReportedActivePtyId;
+    }
+  }
+
+  if (!session && opts.createIfMissing) {
+    if (!mainWindow) return failVisible('No main window is available to host a new terminal.');
+    const spawnResponse = spawnPtySession(mainWindow, { cwd: cwd || process.cwd() });
+    if (!spawnResponse.success || !spawnResponse.data) return failVisible(spawnResponse.error || 'Terminal creation failed.');
+    ptyId = spawnResponse.data.ptyId;
+    session = activePtys.get(ptyId);
+    if (!session) return failVisible('Terminal creation failed.');
+    terminalDispatchLedger.record({ terminalId: ptyId, cmd, readyWaitMs: 0, outcome: 'created', detail: `New ${spawnResponse.data.shellName} terminal` });
+    sendToWindow(mainWindow, 'pty:session-created', { ptyId, shellId: spawnResponse.data.shellId, shellName: spawnResponse.data.shellName, cwd: cwd || process.cwd() });
+  }
+
+  if (!session || !ptyId) {
+    return failVisible('No active terminal to receive the command.');
+  }
+
+  const writeNow = (): boolean => {
+    // node-pty lifecycle safety: never write to a disposed/exited PTY.
+    if (session.exited !== undefined || activePtys.get(ptyId) !== session) return false;
+    try {
+      session.process.write(execute ? `${cmd}\r` : cmd);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  let readyWaitMs = 0;
+  if (session.attached) {
+    if (!writeNow()) return failVisible('Terminal exited before the command could be written.');
+  } else {
+    const queued = { cmd, execute, flushed: false };
+    session.queue.push(queued);
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; }, READY_WAIT_TIMEOUT_MS);
+    if (typeof timer.unref === 'function') timer.unref();
+    try {
+      await session.whenReady;
+    } catch {
+      /* whenReady never rejects today; guard anyway. */
+    }
+    clearTimeout(timer);
+    if (timedOut && !queued.flushed) {
+      session.queue = session.queue.filter((item) => item !== queued);
+      const reason = `Terminal did not become ready within ${READY_WAIT_TIMEOUT_MS / 1000}s. The command was not dropped silently — press Retry.`;
+      terminalDispatchLedger.record({ terminalId: ptyId, cmd, readyWaitMs: Date.now() - startedAt, outcome: 'timeout', detail: reason });
+      sendToWindow(session.window, 'terminal:dispatch-failed', { cmd, opts, reason, terminalId: ptyId });
+      return { success: false, error: reason };
+    }
+    readyWaitMs = Date.now() - startedAt;
+    if (!queued.flushed && !writeNow()) return failVisible('Terminal exited before the command could be written.');
+  }
+
+  terminalDispatchLedger.record({ terminalId: ptyId, cmd, readyWaitMs, outcome: 'executed' });
+  sendToWindow(session.window, 'terminal:command-dispatched', { terminalId: ptyId, cmd, execute });
+  return { success: true, data: { dispatched: true, terminalId: ptyId } };
 }
 
 interface PendingPtyApproval {
@@ -293,6 +453,7 @@ export function resizePty(ptyId: string, cols: number, rows: number): void {
 export function killPty(ptyId: string): IpcResponse<void> {
   const session = activePtys.get(ptyId);
   if (!session) return { success: false, error: 'PTY session not found' };
+  clearReportedActiveIfGone(ptyId);
   try { session.process.kill(); } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     return { success: false, error: message };
@@ -304,6 +465,7 @@ export function killPty(ptyId: string): IpcResponse<void> {
 }
 
 export function cleanupAllPtys(): void {
+  lastReportedActivePtyId = null;
   for (const session of activePtys.values()) {
     session.subscriptions.forEach((subscription) => subscription.dispose());
     try { session.process.kill(); } catch { /* Process already exited. */ }

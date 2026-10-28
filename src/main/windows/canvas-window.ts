@@ -78,6 +78,20 @@ export function openCanvasWindow(): BrowserWindow {
   });
 
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  // Prompt 5 (Isolated Preview Host): every webview inside the canvas window
+  // is the sandboxed preview guest — strip any guest-injected preload, keep
+  // node integration off, and pin the dedicated preview partition.
+  window.webContents.on('will-attach-webview', (attachEvent, webPreferences, params) => {
+    delete webPreferences.preload;
+    webPreferences.nodeIntegration = false;
+    webPreferences.contextIsolation = true;
+    if (typeof params.partition === 'string' && params.partition !== 'persist:tycode-preview') {
+      // A guest trying to escape the preview partition is stopped before load.
+      attachEvent.preventDefault();
+      return;
+    }
+    params.partition = params.partition || 'persist:tycode-preview';
+  });
   window.webContents.on('will-navigate', (event, targetUrl) => {
     const devServerUrl = process.env.VITE_DEV_SERVER_URL;
     try {

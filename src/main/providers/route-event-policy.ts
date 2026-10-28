@@ -194,6 +194,7 @@ class RouteEventPolicy {
     const id = (providerId || '').toLowerCase();
     if (!trail.skipped.includes(id)) {
       trail.skipped.push(id);
+      this.count(turnId, 'SILENT');
       this.record({ at: Date.now(), kind: 'skip', turnId, providerId: id, detail: 'sticky health: skipped without a request', class: 'SILENT' });
     }
   }

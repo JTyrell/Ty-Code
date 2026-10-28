@@ -196,8 +196,11 @@ export const SourceControlPanel: React.FC = () => {
 
   const runNpmScript = useCallback((name: string) => {
     if (!workspacePath) return;
-    window.dispatchEvent(new CustomEvent('tycode:run-terminal-command', { detail: { autoRunCommand: `npm run ${name}`, cwd: workspacePath } }));
-    toast.info('NPM script', `npm run ${name} started in the terminal.`);
+    // Prompt (Terminal Command Dispatch Fix): dispatch through the terminal
+    // manager — readiness-aware, queues until the PTY is ready, targets the
+    // ACTIVE terminal and creates one when none is open. Never silently dropped.
+    void window.electronAPI?.terminalRunCommand?.(`npm run ${name}`, { execute: true, createIfMissing: true });
+    toast.info('NPM script', `npm run ${name} dispatched to the terminal.`);
   }, [workspacePath]);
 
   const openDiff = useCallback((root: string, file: GitFileChange, staged: boolean) => {

@@ -790,6 +790,32 @@ export interface PtySessionInfo {
   shellName: string;
 }
 
+/** Options for the readiness-aware terminal command dispatch (Prompt: Terminal Command Dispatch Fix). */
+export interface TerminalRunCommandOptions {
+  /** Target a specific PTY instead of the ACTIVE visible terminal. */
+  terminalId?: string;
+  /** true (default): write the command followed by \r so it executes; false: paste-only at the prompt. */
+  execute?: boolean;
+  /** Create a fresh terminal when no explicit/active terminal can receive the command. */
+  createIfMissing?: boolean;
+}
+
+export interface TerminalDispatchResult {
+  dispatched: boolean;
+  terminalId?: string;
+  reason?: string;
+}
+
+export interface TerminalDispatchLedgerEntry {
+  id: number;
+  terminalId: string;
+  cmd: string;
+  readyWaitMs: number;
+  outcome: 'executed' | 'created' | 'queued' | 'timeout' | 'failed';
+  detail?: string;
+  ts: number;
+}
+
 export type ExtensionManifest = z.infer<typeof ExtensionManifestSchema>;
 export type ExtensionCapability = z.infer<typeof ExtensionCapabilitySchema>;
 export type ExtensionExecutionState = 'built-in' | 'metadata-only' | 'installed';
@@ -1188,6 +1214,13 @@ export interface ElectronAPI {
   killPty: (ptyId: string) => Promise<IpcResponse<void>>;
   onPtyData: (ptyId: string, callback: (data: string) => void) => () => void;
   onPtyExit: (ptyId: string, callback: (exitCode: number) => void) => () => void;
+  terminalRunCommand: (cmd: string, opts?: TerminalRunCommandOptions) => Promise<IpcResponse<TerminalDispatchResult>>;
+  reportActiveTerminal: (ptyId: string) => void;
+  ackTerminalAttached: (ptyId: string) => void;
+  getTerminalDispatchLedger: (limit?: number) => Promise<IpcResponse<TerminalDispatchLedgerEntry[]>>;
+  onTerminalCommandDispatched: (callback: (data: { terminalId: string; cmd: string; execute: boolean }) => void) => () => void;
+  onTerminalDispatchFailed: (callback: (data: { cmd: string; reason: string; opts?: TerminalRunCommandOptions; terminalId?: string }) => void) => () => void;
+  onPtySessionCreated: (callback: (data: PtySessionInfo & { cwd?: string }) => void) => () => void;
   searchExtensions: (query: string) => Promise<IpcResponse<ExtensionMetadata[]>>;
   getExtensionDetails: (namespace: string, name: string) => Promise<IpcResponse<Record<string, unknown>>>;
   getAvailableSkills: (workspacePath: string) => Promise<IpcResponse<SkillDefinition[]>>;

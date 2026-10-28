@@ -659,6 +659,12 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent-primary);
 .terminal-tab:hover { background: var(--bg-hover); color: var(--text-primary); }
 .terminal-tab.is-active { background: var(--bg-primary); color: var(--text-primary); border-top-color: var(--accent-primary); }
 .terminal-tab.is-active > svg { color: var(--accent-primary); }
+/* Prompt (Terminal Command Dispatch Fix): flash the tab that received a command. */
+@keyframes terminal-tab-flash {
+  0%, 60% { background: rgba(139, 92, 246, 0.35); color: var(--text-primary); }
+  100% { background: transparent; }
+}
+.terminal-tab.is-flashed { animation: terminal-tab-flash 1.4s ease-out; }
 .terminal-tab-label { overflow: hidden; text-overflow: ellipsis; }
 .terminal-tab-close { padding: 3px; color: var(--text-muted); }
 .terminal-tab-close:hover { color: var(--accent-red); background: rgba(239, 68, 68, 0.12); }

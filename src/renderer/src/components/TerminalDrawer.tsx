@@ -70,6 +70,22 @@ export const TerminalDrawer: React.FC = () => {
   terminalHeightRef.current = terminalHeight;
   splitRatioRef.current = splitRatio;
 
+  // Prompt (Terminal Command Dispatch Fix): tab flash when a command is
+  // dispatched into this terminal so the user can see where it landed.
+  const [flashedTabIds, setFlashedTabIds] = useState<string[]>([]);
+  const flashTimersRef = useRef<Map<string, number>>(new Map());
+  const flashTab = useCallback((tabId: string) => {
+    setFlashedTabIds((current) => (current.includes(tabId) ? current : [...current, tabId]));
+    const timers = flashTimersRef.current;
+    const existing = timers.get(tabId);
+    if (existing !== undefined) window.clearTimeout(existing);
+    timers.set(tabId, window.setTimeout(() => {
+      timers.delete(tabId);
+      setFlashedTabIds((current) => current.filter((id) => id !== tabId));
+    }, 1400));
+  }, []);
+  useEffect(() => () => { for (const timer of flashTimersRef.current.values()) window.clearTimeout(timer); }, []);
+
   // Keep-alive terminal optimization: pause/blur when hidden, defer fit() to rAF on visible
   useEffect(() => {
     if (isTerminalOpen) {
@@ -225,7 +241,13 @@ export const TerminalDrawer: React.FC = () => {
           toast.info('FCC engine not installed — connect a provider or install free-claude-code in Settings → Ty-Code AI Settings.');
         }
         if (!isTerminalOpenRef.current) toggleTerminalRef.current();
-        void spawnRef.current({ autoRunCommand });
+        if (autoRunCommand) {
+          // Dispatch through the manager: readiness-aware, queues until the PTY
+          // and XTerm attach are ready, creates a terminal when none is open.
+          void window.electronAPI?.terminalRunCommand?.(autoRunCommand, { execute: true, createIfMissing: true });
+          return;
+        }
+        void spawnRef.current({});
       })();
     };
     window.addEventListener('tycode:fcc-agent-terminal', handler);
@@ -236,12 +258,52 @@ export const TerminalDrawer: React.FC = () => {
     const handler = (event: Event) => {
       const detail = (event as CustomEvent<{ autoRunCommand?: string; cwd?: string }>).detail || {};
       if (!detail.autoRunCommand) return;
-      if (!isTerminalOpenRef.current) toggleTerminalRef.current();
-      void spawnRef.current({ autoRunCommand: detail.autoRunCommand, cwd: detail.cwd });
+      // Prompt (Terminal Command Dispatch Fix): route through the manager —
+      // readiness-aware, queues until the PTY is ready, never silently dropped.
+      void window.electronAPI?.terminalRunCommand?.(detail.autoRunCommand, { execute: true, createIfMissing: true });
     };
     window.addEventListener('tycode:run-terminal-command', handler);
     return () => window.removeEventListener('tycode:run-terminal-command', handler);
   }, []);
+
+  // Terminals created by the main-process dispatcher (createIfMissing) are
+  // adopted here as real tabs so the queued command flushes once XTerm attaches.
+  useEffect(() => {
+    const unsubscribe = window.electronAPI?.onPtySessionCreated?.((data) => {
+      if (tabsRef.current.some((tab) => tab.ptyId === data.ptyId)) return;
+      const tab: TerminalTab = {
+        id: createId('terminal'), ptyId: data.ptyId, shellId: data.shellId,
+        shellName: data.shellName, cwd: data.cwd || workspacePath
+      };
+      updateTabs((current) => [...current, tab]);
+      activeTabRef.current = tab.id;
+      setActiveTabId(tab.id);
+      if (!isTerminalOpenRef.current) toggleTerminalRef.current();
+      queuePersist();
+    });
+    return () => unsubscribe?.();
+  }, [queuePersist, updateTabs, workspacePath]);
+
+  // Flash + focus the receiving terminal tab; auto-open the drawer if hidden.
+  useEffect(() => {
+    const unsubscribe = window.electronAPI?.onTerminalCommandDispatched?.(({ terminalId }) => {
+      const tab = tabsRef.current.find((item) => item.ptyId === terminalId);
+      if (!tab) return;
+      if (!isTerminalOpenRef.current) toggleTerminalRef.current();
+      activeTabRef.current = tab.id;
+      setActiveTabId(tab.id);
+      flashTab(tab.id);
+      window.requestAnimationFrame(() => terminalRefs.current.get(tab.id)?.term.focus());
+    });
+    return () => unsubscribe?.();
+  }, [flashTab]);
+
+  // Report the ACTIVE visible terminal so dispatched commands land in the tab
+  // the user is looking at, without requiring them to click into it first.
+  useEffect(() => {
+    const tab = tabs.find((item) => item.id === activeTabId);
+    if (tab) window.electronAPI?.reportActiveTerminal?.(tab.ptyId);
+  }, [activeTabId, tabs]);
 
   useEffect(() => {
     if (!isTerminalOpen || availableShells.length === 0 || restoredRef.current) return;
@@ -500,7 +562,10 @@ export const TerminalDrawer: React.FC = () => {
       queuePersist(tab.id);
     }));
     if (tab.serializedHistory) term.write(tab.serializedHistory);
-    void window.electronAPI.attachPty(tab.ptyId).then((response) => { if (!response.success) setTerminalError(response.error || 'Could not attach terminal output.'); });
+    void window.electronAPI.attachPty(tab.ptyId).then((response) => {
+      if (!response.success) setTerminalError(response.error || 'Could not attach terminal output.');
+      else window.electronAPI?.ackTerminalAttached?.(tab.ptyId);
+    });
     window.requestAnimationFrame(() => {
       try { fit.fit(); window.electronAPI.resizePty(tab.ptyId, term.cols, term.rows); if (activeTabRef.current === tab.id) term.focus(); }
       catch { /* Pane may be hidden while xterm initializes. */ }
@@ -523,7 +588,7 @@ export const TerminalDrawer: React.FC = () => {
     <header className="terminal-toolbar">
       <div className="terminal-tabs-section">
         <div className="terminal-tab-strip" role="tablist" aria-label="Terminal sessions">
-          {tabs.map((tab, index) => <div key={tab.id} className={`terminal-tab${tab.id === activeTabId ? ' is-active' : ''}`} role="tab" aria-selected={tab.id === activeTabId} tabIndex={tab.id === activeTabId ? 0 : -1}
+          {tabs.map((tab, index) => <div key={tab.id} className={`terminal-tab${tab.id === activeTabId ? ' is-active' : ''}${flashedTabIds.includes(tab.id) ? ' is-flashed' : ''}`} role="tab" aria-selected={tab.id === activeTabId} tabIndex={tab.id === activeTabId ? 0 : -1}
             onClick={() => { setActiveTabId(tab.id); activeTabRef.current = tab.id; terminalRefs.current.get(tab.id)?.term.focus(); }}
             onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setActiveTabId(tab.id); } }}
             onContextMenu={(event) => { event.preventDefault(); setContextMenu({ x: event.clientX, y: event.clientY, tabId: tab.id }); }} title={`${tab.shellName} · ${tab.cwd}`}>

@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { IpcRendererEvent } from 'electron';
-import type { AgentStreamChunk, CanvasAgentEventPayloadData, CanvasEditAppliedPayload, CanvasEditIntent, CanvasMessageData, CanvasPreviewProposedPayload, CanvasPreviewStatusPayload, CanvasSnapshotData, CanvasStructuralIntentPayload, CanvasUpdateNotificationData, CommandExecutionOptions, ElectronAPI, ExtensionMetadata, ProposedDiff, PtySpawnOptions } from './types';
+import type { AgentStreamChunk, CanvasAgentEventPayloadData, CanvasEditAppliedPayload, CanvasEditIntent, CanvasMessageData, CanvasPreviewProposedPayload, CanvasPreviewStatusPayload, CanvasSnapshotData, CanvasStructuralIntentPayload, CanvasUpdateNotificationData, CommandExecutionOptions, ElectronAPI, ExtensionMetadata, ProposedDiff, PtySessionInfo, PtySpawnOptions, TerminalRunCommandOptions } from './types';
 import { AgentDonePayloadSchema } from '../shared/types/agent-events';
 
 const api: ElectronAPI = {
@@ -327,6 +327,26 @@ const api: ElectronAPI = {
     const listener = (_event: IpcRendererEvent, exitCode: number) => callback(exitCode);
     ipcRenderer.on(channel, listener);
     return () => ipcRenderer.removeListener(channel, listener);
+  },
+  // Prompt (Terminal Command Dispatch Fix): readiness-aware dispatch surface.
+  terminalRunCommand: (cmd: string, opts?: TerminalRunCommandOptions) => ipcRenderer.invoke('terminal:run-command', { cmd, opts }),
+  reportActiveTerminal: (ptyId: string) => ipcRenderer.send('terminal:report-active', { ptyId }),
+  ackTerminalAttached: (ptyId: string) => ipcRenderer.send('terminal:attached', { id: ptyId }),
+  getTerminalDispatchLedger: (limit?: number) => ipcRenderer.invoke('terminal-dispatch-ledger:get', { limit }),
+  onTerminalCommandDispatched: (callback: (data: { terminalId: string; cmd: string; execute: boolean }) => void) => {
+    const listener = (_event: IpcRendererEvent, data: { terminalId: string; cmd: string; execute: boolean }) => callback(data);
+    ipcRenderer.on('terminal:command-dispatched', listener);
+    return () => ipcRenderer.removeListener('terminal:command-dispatched', listener);
+  },
+  onTerminalDispatchFailed: (callback: (data: { cmd: string; reason: string; opts?: TerminalRunCommandOptions; terminalId?: string }) => void) => {
+    const listener = (_event: IpcRendererEvent, data: { cmd: string; reason: string; opts?: TerminalRunCommandOptions; terminalId?: string }) => callback(data);
+    ipcRenderer.on('terminal:dispatch-failed', listener);
+    return () => ipcRenderer.removeListener('terminal:dispatch-failed', listener);
+  },
+  onPtySessionCreated: (callback: (data: PtySessionInfo & { cwd?: string }) => void) => {
+    const listener = (_event: IpcRendererEvent, data: PtySessionInfo & { cwd?: string }) => callback(data);
+    ipcRenderer.on('pty:session-created', listener);
+    return () => ipcRenderer.removeListener('pty:session-created', listener);
   },
   searchExtensions: (query: string) => ipcRenderer.invoke('extensions:search', query),
   getExtensionDetails: (namespace: string, name: string) => ipcRenderer.invoke('extensions:details', { namespace, name }),

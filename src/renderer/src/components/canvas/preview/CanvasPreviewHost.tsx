@@ -1,4 +1,4 @@
-﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Globe,
   Square,
@@ -56,9 +56,24 @@ function debounceFrameText(value: number): string {
   return `${Math.round(value)}px`;
 }
 
-function guestFrame(webview: Electron.WebviewTag | null): Window | null {
-  if (!webview) return null;
-  return guestFrame(webview) as unknown as Window | null;
+/**
+ * Host → guest control transport. The sandboxed <webview> exposes no
+ * contentWindow to the host renderer, so commands are delivered by executing
+ * a window.postMessage inside the guest context (the inspector script above
+ * listens on the 'tycode-canvas-host' channel).
+ */
+function sendGuestCommand(
+  webview: Electron.WebviewTag | null,
+  command: 'pause' | 'resume' | 'inspect-on' | 'inspect-off' | 'select-by-selector',
+  selector?: string
+): void {
+  if (!webview) return;
+  try {
+    const payload = JSON.stringify({ channel: 'tycode-canvas-host', command, ...(selector ? { selector } : {}) });
+    void webview.executeJavaScript(`window.postMessage(${payload}, '*');`, false).catch(() => undefined);
+  } catch {
+    /* webview torn down mid-send */
+  }
 }
 
 interface OverlayBox {
@@ -172,6 +187,26 @@ export const CanvasPreviewHost: React.FC = () => {
   const setInspectMode = useCanvasPreviewStore((s) => s.setInspectMode);
   const setBridgeActive = useCanvasPreviewStore((s) => s.setBridgeActive);
 
+  // Prompt 5 Step 3.2: colors are constrained to the extracted DesignProfile
+  // palette — the swatch strip below is sourced from the workspace extractor.
+  const [palette, setPalette] = useState<Array<{ name: string; value: string }>>([]);
+  useEffect(() => {
+    let cancelled = false;
+    if (!sessionRoot) {
+      setPalette([]);
+      return;
+    }
+    void window.electronAPI?.getDesignProfile?.(sessionRoot).then((response) => {
+      if (cancelled || !response?.success || !response.data) return;
+      setPalette(
+        Object.entries(response.data.colors || {})
+          .slice(0, 24)
+          .map(([name, value]) => ({ name, value: String(value) }))
+      );
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [sessionRoot]);
+
   const expectedOrigin = useMemo(() => {
     try {
       return previewUrl ? new URL(previewUrl).origin : null;
@@ -183,7 +218,7 @@ export const CanvasPreviewHost: React.FC = () => {
   useEffect(() => {
     inspectModeRef.current = inspectMode;
     if (webviewReady && webviewRef.current) {
-      CanvasInspectorBridge.command(guestFrame(webviewRef.current), inspectMode ? 'inspect-on' : 'inspect-off');
+      sendGuestCommand(webviewRef.current, inspectMode ? 'inspect-on' : 'inspect-off');
     }
   }, [inspectMode, webviewReady]);
 
@@ -285,20 +320,25 @@ export const CanvasPreviewHost: React.FC = () => {
   useEffect(() => {
     const handler = (): void => {
       const bridge = bridgeRef.current;
-      if (!bridge || !webviewReady) return;
+      if (!bridge) return;
       if (document.hidden) {
         bridge.pause();
         pausedRef.current = true;
-        CanvasInspectorBridge.command(guestFrame(webviewRef.current), 'pause');
+        bridge.clear();
+        sendGuestCommand(webviewRef.current, 'pause');
+        if (rafRef.current !== null) {
+          cancelAnimationFrame(rafRef.current);
+          rafRef.current = null;
+        }
       } else {
         bridge.resume();
         pausedRef.current = false;
-        CanvasInspectorBridge.command(guestFrame(webviewRef.current), 'resume');
+        sendGuestCommand(webviewRef.current, 'resume');
       }
     };
     document.addEventListener('visibilitychange', handler);
     return () => document.removeEventListener('visibilitychange', handler);
-  }, [webviewReady]);
+  }, []);
 
   // --- intent plumbing ------------------------------------------------------
   const makeIntent = useCallback((record: InspectorRecord, property: string, value: string, kind: 'style' | 'text' = 'style'): CanvasEditIntent => ({
@@ -367,6 +407,52 @@ export const CanvasPreviewHost: React.FC = () => {
   }, [dispatchIntents, makeIntent]);
   commitDragRef.current = commitDrag;
 
+  // --- resize handles (Prompt 5 Step 3.1) -----------------------------------
+  type ResizeHandle = 'e' | 's' | 'se';
+  const resizeStateRef = useRef<{ handle: ResizeHandle; startX: number; startY: number; baseW: number; baseH: number } | null>(null);
+  const [resizing, setResizing] = useState(false);
+
+  const beginResize = useCallback((handle: ResizeHandle, event: React.PointerEvent): void => {
+    const selected = selectionRef.current;
+    if (!selected) return;
+    event.preventDefault();
+    event.stopPropagation();
+    resizeStateRef.current = { handle, startX: event.clientX, startY: event.clientY, baseW: selected.bbox.w, baseH: selected.bbox.h };
+    setResizing(true);
+    const onMove = (moveEvent: PointerEvent): void => {
+      const state = resizeStateRef.current;
+      if (!state) return;
+      const dx = moveEvent.clientX - state.startX;
+      const dy = moveEvent.clientY - state.startY;
+      setSelectionOverlay((prev) => {
+        if (!prev || prev.selector !== selected.selector) return prev;
+        const w = state.handle === 's' ? prev.w : Math.max(8, state.baseW + dx);
+        const h = state.handle === 'e' ? prev.h : Math.max(8, state.baseH + dy);
+        return { ...prev, w, h };
+      });
+    };
+    const onUp = (upEvent: PointerEvent): void => {
+      window.removeEventListener('pointermove', onMove);
+      const state = resizeStateRef.current;
+      resizeStateRef.current = null;
+      setResizing(false);
+      const target = selectionRef.current;
+      if (!state || !target) return;
+      const dx = upEvent.clientX - state.startX;
+      const dy = upEvent.clientY - state.startY;
+      const intents: CanvasEditIntent[] = [];
+      if (state.handle !== 's' && Math.abs(dx) >= 2) {
+        intents.push(makeIntent(target, 'width', `${Math.max(8, Math.round(state.baseW + dx))}px`));
+      }
+      if (state.handle !== 'e' && Math.abs(dy) >= 2) {
+        intents.push(makeIntent(target, 'height', `${Math.max(8, Math.round(state.baseH + dy))}px`));
+      }
+      if (intents.length > 0) void dispatchIntents(intents);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp, { once: true });
+  }, [dispatchIntents, makeIntent]);
+
   const applyProperty = useCallback((property: string, value: string): void => {
     const selected = selectionRef.current;
     if (!selected) return;
@@ -385,8 +471,7 @@ export const CanvasPreviewHost: React.FC = () => {
   }, [dispatchIntents, makeIntent]);
 
   const selectFromTree = useCallback((node: InspectorTreeNode): void => {
-    if (!webviewRef.current) return;
-    CanvasInspectorBridge.command(guestFrame(webviewRef.current), 'select-by-selector', node.selector);
+    sendGuestCommand(webviewRef.current, 'select-by-selector', node.selector);
   }, []);
 
   // --- boot lifecycle -------------------------------------------------------
@@ -456,7 +541,7 @@ export const CanvasPreviewHost: React.FC = () => {
     try {
       void webview.executeJavaScript(CANVAS_INSPECTOR_SOURCE, false);
       webview.setAudioMuted(true);
-      CanvasInspectorBridge.command(guestFrame(webview), inspectModeRef.current ? 'inspect-on' : 'inspect-off');
+      sendGuestCommand(webview, inspectModeRef.current ? 'inspect-on' : 'inspect-off');
     } catch {
       /* inspector is best-effort; preview still renders */
     }
@@ -697,13 +782,14 @@ export const CanvasPreviewHost: React.FC = () => {
             </div>
           )}
 
-          {/* Hover highlight (teal dashed) */}
+          {/* Hover highlight (teal dashed) — transform-only positioning */}
           {hoverOverlay && !dragging && hoverOverlay.selector !== selectionOverlay?.selector && (
             <div
               style={{
                 position: 'absolute',
-                left: hoverOverlay.x,
-                top: hoverOverlay.y,
+                left: 0,
+                top: 0,
+                transform: `translate(${hoverOverlay.x}px, ${hoverOverlay.y}px)`,
                 width: hoverOverlay.w,
                 height: hoverOverlay.h,
                 border: '1px dashed #14b8a6',
@@ -714,13 +800,14 @@ export const CanvasPreviewHost: React.FC = () => {
             />
           )}
 
-          {/* Selection overlay (violet) */}
+          {/* Selection overlay (violet, transform-only) with resize handles */}
           {selectionOverlay && (
             <div
               style={{
                 position: 'absolute',
-                left: selectionOverlay.x,
-                top: selectionOverlay.y,
+                left: 0,
+                top: 0,
+                transform: `translate(${selectionOverlay.x}px, ${selectionOverlay.y}px)`,
                 width: selectionOverlay.w,
                 height: selectionOverlay.h,
                 border: `1.5px solid ${selectionOverlay.accent}`,
@@ -741,6 +828,25 @@ export const CanvasPreviewHost: React.FC = () => {
                 >
                   {selectionOverlay.label}
                 </span>
+              )}
+              {!dragging && !resizing && (
+                <>
+                  <div
+                    onPointerDown={(event) => beginResize('e', event)}
+                    style={{ position: 'absolute', right: -5, top: '20%', bottom: '20%', width: 9, cursor: 'ew-resize', pointerEvents: 'auto' }}
+                    title="Drag to resize width"
+                  />
+                  <div
+                    onPointerDown={(event) => beginResize('s', event)}
+                    style={{ position: 'absolute', left: '20%', right: '20%', bottom: -5, height: 9, cursor: 'ns-resize', pointerEvents: 'auto' }}
+                    title="Drag to resize height"
+                  />
+                  <div
+                    onPointerDown={(event) => beginResize('se', event)}
+                    style={{ position: 'absolute', right: -4, bottom: -4, width: 9, height: 9, background: '#8b5cf6', border: '1px solid #c4b5fd', borderRadius: 2, cursor: 'nwse-resize', pointerEvents: 'auto' }}
+                    title="Drag to resize"
+                  />
+                </>
               )}
             </div>
           )}
@@ -807,6 +913,36 @@ export const CanvasPreviewHost: React.FC = () => {
 
                 <EditProperty label="Color" value={selection.styles['color'] ?? ''} type="color" commit={propertySetter('color')} />
                 <EditProperty label="Background" value={selection.styles['background-color'] ?? ''} type="color" commit={propertySetter('background-color')} />
+
+                {palette.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <span style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: 0.5, color: 'var(--text-muted, #6b7280)' }}>DESIGN PROFILE PALETTE</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 9, color: 'var(--text-muted, #6b7280)', width: 16 }}>text</span>
+                      {palette.map((entry) => (
+                        <button
+                          key={`fg_${entry.name}_${entry.value}`}
+                          type="button"
+                          title={`${entry.name}: ${entry.value} — apply as text color`}
+                          onClick={() => applyProperty('color', entry.value)}
+                          style={{ width: 16, height: 16, padding: 0, background: entry.value, border: '1px solid rgba(255,255,255,0.18)', borderRadius: 3, cursor: 'pointer' }}
+                        />
+                      ))}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 9, color: 'var(--text-muted, #6b7280)', width: 16 }}>bg</span>
+                      {palette.map((entry) => (
+                        <button
+                          key={`bg_${entry.name}_${entry.value}`}
+                          type="button"
+                          title={`${entry.name}: ${entry.value} — apply as background`}
+                          onClick={() => applyProperty('background-color', entry.value)}
+                          style={{ width: 16, height: 16, padding: 0, background: entry.value, border: '1px solid rgba(255,255,255,0.18)', borderRadius: 3, cursor: 'pointer' }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <EditProperty label="Font size" value={selection.styles['font-size'] ?? ''} commit={propertySetter('font-size')} />
                 <EditProperty label="Font weight" value={selection.styles['font-weight'] ?? ''} commit={propertySetter('font-weight')} />
                 <EditProperty label="Radius" value={selection.styles['border-radius'] ?? ''} commit={propertySetter('border-radius')} />

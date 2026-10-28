@@ -42,8 +42,10 @@ import { startAgentTask, stopAgentTask, respondAgentApproval, applyDiff, handleU
 import { chatLatencyTracker } from './providers/provider-gateway';
 import {
   runCommand, getAvailableShells, spawnPtySession, attachPty, writePty,
-  resizePty, syncPtyCwd, killPty, cleanupAllPtys, resolvePtyApproval, executePtyCommand
+  resizePty, syncPtyCwd, killPty, cleanupAllPtys, resolvePtyApproval, executePtyCommand,
+  dispatchRunCommand, reportActivePty
 } from './ipc/pty-handlers';
+import { terminalDispatchLedger } from './services/terminal-dispatch-ledger';
 import {
   searchOpenVsxExtensions, getOpenVsxExtensionDetails, handleGetInstalledExtensions,
   handleInstallExtension, handleUninstallExtension, handleToggleExtension,
@@ -197,11 +199,31 @@ const PtySyncCwdPayloadSchema = z.object({
   shellId: z.string()
 });
 
+// Prompt (Terminal Command Dispatch Fix): every declared PtySpawnOptions key
+// must be accepted here — default Zod object behavior silently STRIPS unknown
+// keys, which is exactly how `autoRunCommand` (and cols/rows) used to vanish
+// between the renderer and spawnPtySession so the command never reached the PTY.
 const PtySpawnOptionsSchema = z.object({
   shellId: z.string().optional(),
   cwd: z.string().optional(),
-  profileId: z.string().optional()
+  profileId: z.string().optional(),
+  cols: z.number().int().positive().optional(),
+  rows: z.number().int().positive().optional(),
+  autoRunCommand: z.string().max(4000).optional()
 });
+
+const TerminalRunCommandPayloadSchema = z.object({
+  cmd: z.string().min(1).max(4000),
+  opts: z.object({
+    terminalId: z.string().min(1).optional(),
+    execute: z.boolean().optional(),
+    createIfMissing: z.boolean().optional()
+  }).optional()
+});
+
+const TerminalAttachedPayloadSchema = z.object({ id: z.string().min(1) });
+const TerminalReportActivePayloadSchema = z.object({ ptyId: z.string().min(1) });
+const TerminalDispatchLedgerQuerySchema = z.object({ limit: z.number().int().positive().max(250).optional() });
 
 const AgentApplyDiffPayloadSchema = z.object({
   id: z.string().optional(),
@@ -2851,6 +2873,36 @@ function registerIpcHandlers(): void {
     return killPty(ptyId);
   });
 
+  // -------------------------------------------------------------------------
+  // Prompt: Terminal Command Dispatch Fix — readiness-aware dispatch pipeline
+  // -------------------------------------------------------------------------
+  // Renderer acks a freshly attached XTerm instance (idempotent with pty:attach).
+  ipcMain.on('terminal:attached', (_event, payload: unknown) => {
+    const parsed = TerminalAttachedPayloadSchema.safeParse(payload);
+    if (parsed.success) attachPty(parsed.data.id);
+  });
+  // The renderer reports which terminal tab is ACTIVE/visible so dispatch can
+  // target it without the user clicking into the terminal first.
+  ipcMain.on('terminal:report-active', (_event, payload: unknown) => {
+    const parsed = TerminalReportActivePayloadSchema.safeParse(payload);
+    if (parsed.success) reportActivePty(parsed.data.ptyId);
+  });
+  // The single sanctioned dispatch entry point (npm scripts, canvas dev boot,
+  // "Run in terminal" affordances). Commands queue until the PTY is ready.
+  ipcMain.handle('terminal:run-command', async (_event, payload: unknown) => {
+    const parsed = TerminalRunCommandPayloadSchema.safeParse(payload);
+    if (!parsed.success) {
+      return { success: false, error: `Invalid terminal run-command payload: ${parsed.error.message}` };
+    }
+    return dispatchRunCommand(parsed.data.cmd, parsed.data.opts || {}, mainWindow, currentWorkspacePath);
+  });
+  // Local diagnostics ledger read (Diagnostics panel / debugging).
+  ipcMain.handle('terminal-dispatch-ledger:get', (_event, payload: unknown) => {
+    const parsed = TerminalDispatchLedgerQuerySchema.safeParse(payload || {});
+    if (!parsed.success) return { success: false, error: `Invalid ledger query: ${parsed.error.message}` };
+    return { success: true, data: terminalDispatchLedger.recent(parsed.data.limit ?? 80) };
+  });
+
   // Marketplace Connection Layer IPC (Open VSX)
   ipcMain.handle('marketplace:search', (event, options: unknown) => isTrustedExtensionFrame(event)
     ? handleMarketplaceSearch(options as any)
@@ -4036,7 +4088,15 @@ function registerFccHandlers(): void {
   ipcMain.handle('test-provider-key', async (_event, arg1: any, arg2?: string) => {
     const provider = typeof arg1 === 'object' && arg1 !== null ? arg1.provider : arg1;
     const key = typeof arg1 === 'object' && arg1 !== null ? arg1.key : arg2;
-    return await testKey(provider, key || '');
+    const result = await testKey(provider, key || '');
+    // Sticky-health lifetime (Route Event Policy): invalid_key entries are
+    // sticky until the key is re-saved OR re-tested successfully. A passing
+    // re-test lifts the persisted dead state and re-arms the provider.
+    if (result?.success && provider) {
+      providerHealthStore.clear(String(provider));
+      routeEventPolicy.onKeySaved(String(provider));
+    }
+    return result;
   });
 
   ipcMain.handle('save-provider-key', async (_event, arg1: any, arg2?: string) => {

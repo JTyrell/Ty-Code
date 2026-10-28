@@ -230,6 +230,16 @@ const MainWorkbench: React.FC = () => {
       toast.warning('Stored keys could not be decrypted', message);
     });
 
+    // Prompt (Terminal Command Dispatch Fix): every dispatch failure is a
+    // visible, retryable event — silent drops are forbidden.
+    const unsubDispatchFailed = window.electronAPI.onTerminalDispatchFailed?.(({ cmd, opts, reason }) => {
+      const attempt = { cmd, opts };
+      toast.error('Could not reach terminal', reason, {
+        label: 'Retry',
+        onClick: () => { void window.electronAPI?.terminalRunCommand?.(attempt.cmd, attempt.opts); }
+      });
+    });
+
     // Step 3.2: hidden windows pause rAF-driven work via the guard flag.
     const onVisibility = (): void => {
       useGovernorStore.getState().setDocumentHidden(document.hidden);
@@ -247,6 +257,7 @@ const MainWorkbench: React.FC = () => {
       unsubShed?.();
       unsubLite?.();
       unsubVault?.();
+      unsubDispatchFailed?.();
       document.removeEventListener('visibilitychange', onVisibility);
     };
   }, []);
