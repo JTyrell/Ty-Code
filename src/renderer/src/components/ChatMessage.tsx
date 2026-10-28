@@ -48,6 +48,7 @@ import { toast } from '../state/toast-store';
 import { useChatStore } from '../state/chat-store';
 import { useWorkspaceStore } from '../state/workspace-store';
 import { useDocumentReviewStore } from '../state/document-review-store';
+import { useSettingsStore } from '../state/settings-store';
 
 // ---------------------------------------------------------------------------
 // Syntax Highlighting setup
@@ -895,6 +896,24 @@ const ChatMessageItemComponent: React.FC<ChatMessageProps> = ({
     [chatFontFamily, chatFontSize]
   );
 
+  // Route badge: while streaming the badge reads LIVE from the unified route
+  // store (settings-store activeProviderId/activeModelId — always the current
+  // route incl. mid-failover flips); on done it finalizes to the metadata
+  // stamped on the message. "default" and empty are never rendered: they
+  // fall through to "routing…" until a real route exists.
+  const liveProviderId = useSettingsStore((s) => s.activeProviderId);
+  const liveModelId = useSettingsStore((s) => s.activeModelId);
+  const stampedProviderId = message.metadata?.providerId || '';
+  const stampedModelId = message.metadata?.modelId || '';
+  const routeIsLive = isMessageStreaming;
+  const liveProvider = liveProviderId && liveProviderId !== 'default' ? liveProviderId : '';
+  const liveModel = liveModelId && liveModelId !== 'default' ? liveModelId : '';
+  const stampedProvider = stampedProviderId && stampedProviderId !== 'default' ? stampedProviderId : '';
+  const stampedModel = stampedModelId && stampedModelId !== 'default' ? stampedModelId : '';
+  const badgeProviderId = routeIsLive ? (liveProvider || stampedProvider) : (stampedProvider || liveProvider);
+  const badgeModelId = routeIsLive ? (liveModel || stampedModel) : (stampedModel || liveModel);
+  const badgeModelLabel = badgeModelId || 'routing…';
+
   const proposedDoc = message.proposedDocument || (
     activeDocument && (
       message.taskId === activeDocument.id ||
@@ -935,9 +954,8 @@ const ChatMessageItemComponent: React.FC<ChatMessageProps> = ({
 
   const isThinking =
     isAssistant &&
-    isLastAssistant &&
-    isRunning &&
-    !hasTextContent;
+    !hasTextContent &&
+    (Boolean(message.streaming) || Boolean(message.isStreaming) || (isLastAssistant && isRunning));
 
   const thinkingLabel = useMemo(() => {
     if (message.statusText) return message.statusText;
@@ -1319,9 +1337,9 @@ const ChatMessageItemComponent: React.FC<ChatMessageProps> = ({
               <Sparkles size={11} />
             </div>
             <span style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '12px' }}>Ty-Code Assistant</span>
-            {message.metadata?.modelId && (
+            {(routeIsLive || badgeModelId) && (
               <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                • {message.metadata.modelId}
+                • {badgeModelLabel}
               </span>
             )}
           </div>
@@ -1540,7 +1558,7 @@ const ChatMessageItemComponent: React.FC<ChatMessageProps> = ({
                     } else if (window.electronAPI?.sendApprovalResponse) {
                       try {
                         await window.electronAPI.sendApprovalResponse(`plan_${proposedDoc.id}`, 'APPROVED');
-                      } catch {}
+                      } catch { }
                     }
                     setAgentMode('build' as any);
                     if (window.electronAPI?.setAgentMode) {
@@ -1571,10 +1589,6 @@ const ChatMessageItemComponent: React.FC<ChatMessageProps> = ({
           </div>
         ) : message.content ? (
           <MessageRenderer content={message.content} isStreaming={isStreaming} />
-        ) : !isThinking && !message.errorCard && (!message.proposedDiffs || message.proposedDiffs.length === 0) && (!message.toolExecutions || message.toolExecutions.length === 0) && !message.scopeRejectionCard ? (
-          <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontStyle: 'italic', padding: '4px 0' }}>
-            I am ready to help. Please provide your task or prompt.
-          </div>
         ) : null}
 
         {/* 4b. SCOPE REJECTION CARD */}
@@ -1729,9 +1743,12 @@ const ChatMessageItemComponent: React.FC<ChatMessageProps> = ({
                   Message Telemetry
                 </div>
                 {[
-                  ['Provider', String(message.metadata?.providerId || 'default')],
-                  ['Model', String(message.metadata?.modelId || 'default')],
+                  ['Provider', String(badgeProviderId || 'routing…')],
+                  ['Model', String(badgeModelLabel)],
                   ['Stream Events', String(message.metadata?.streamEventCount ?? 0)],
+                  ...(message.metadata?.firstTokenAt
+                    ? [['Time to First Token', `${Math.max(0, message.metadata.firstTokenAt - message.timestamp)}ms`]]
+                    : []),
                   ...(message.content ? [['Est. Response Tokens', `~${Math.round(message.content.length / 4)}`]] : []),
                   ...(toolList.length > 0 ? [['Tools Executed', String(toolList.length)]] : [])
                 ].map(([label, value]) => (

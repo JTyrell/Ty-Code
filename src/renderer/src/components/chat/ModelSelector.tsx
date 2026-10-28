@@ -36,6 +36,7 @@ import { useChatStore } from '../../state/chat-store';
 import { useSettingsStore } from '../../state/settings-store';
 import { useActiveModelStore } from '../../state/active-model-store';
 import { toast } from '../../state/toast-store';
+import type { ReliabilityRouteHealth } from '../../../../shared/types/agent-events';
 import type {
   ModelTier,
   RankedModelCandidate,
@@ -309,6 +310,38 @@ export const ModelSelector: React.FC = () => {
     return () => unsubscribe?.();
   }, []);
 
+  // Live reliability health (Autonomous Reliability, Prompt 2):
+  // the ModelSelector is a READ-ONLY consumer of the Reliability Sentinel
+  // snapshot. It never probes anything itself; display-only dots/countdowns.
+  const [reliabilityHealth, setReliabilityHealth] = useState<{ routes: ReliabilityRouteHealth[]; updatedAt: number } | null>(null);
+  const [nowSec, setNowSec] = useState(() => Math.floor(Date.now() / 1000));
+
+  // Per-second clock (dropdown-open only) so cooldown countdowns tick without
+  // waiting for the next sentinel broadcast.
+  useEffect(() => {
+    if (!isOpen) return;
+    const t = setInterval(() => setNowSec(Math.floor(Date.now() / 1000)), 1000);
+    return () => clearInterval(t);
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    let disposed = false;
+    void window.electronAPI?.getReliabilityHealth?.().then((res) => {
+      if (!disposed && res?.success && res.data) {
+        setReliabilityHealth({ routes: res.data.routes, updatedAt: res.data.updatedAt });
+      }
+    });
+    const offHealth = window.electronAPI?.onReliabilityHealth?.((snapshot) => {
+      if (disposed) return;
+      setReliabilityHealth({ routes: snapshot.routes, updatedAt: snapshot.updatedAt });
+    });
+    return () => {
+      disposed = true;
+      offHealth?.();
+    };
+  }, [isOpen]);
+
   const handleOpencodeCliInstall = async (): Promise<void> => {
     const api = window.electronAPI;
     if (cliInstall.active) return;
@@ -523,6 +556,15 @@ export const ModelSelector: React.FC = () => {
     setSelectedCandidate(candidate);
     setRoutingMode('manual');
 
+    // Prompt 2: annotate (never block) selections on cooling routes.
+    const routeHealth = healthInfoFor(candidate.providerId, candidate.modelId);
+    if (routeHealth && (routeHealth.status === 'cooling' || liveCooldownRemaining(routeHealth) > 0)) {
+      toast.info(
+        'Route is cooling',
+        `${candidate.modelName} has been flaky. Ty-Code will silently auto-rotate to the next healthy route if it fails.`
+      );
+    }
+
     // Preserve conversation context: DO NOT clear messages, simply switch active model in settings
     const stripped = candidate.providerId.replace(/-free$/, '');
     const targetProvider = ((stripped === 'opencode-built-in' ? 'opencode' : stripped) || 'openkilo') as ProviderType;
@@ -632,6 +674,29 @@ export const ModelSelector: React.FC = () => {
     return /https?:\/\/(127\.0\.0\.1|localhost|\[?::1\]?)/i.test(r.url) ||
       /ollama|vllm|localai|jan-|jan_|llama-cpp|ooba|text-gen|kobold|open-webui|tabbyml|cortex|llamafile|local-model/i.test(r.providerId);
   }, []);
+
+  // Sentinel snapshot entry for a candidate (exact model first, then any
+  // route on the same provider, e.g. the FCC sidecar health).
+  const healthInfoFor = useCallback(
+    (providerId: string, modelId: string): ReliabilityRouteHealth | null => {
+      if (!reliabilityHealth || reliabilityHealth.routes.length === 0) return null;
+      const p = (providerId || '').toLowerCase().trim();
+      const norm = (id: string): string => (id || '').toLowerCase().trim().replace(/-free$/, '');
+      const exact = reliabilityHealth.routes.find((h) => h.providerId.toLowerCase() === p && h.modelId === modelId);
+      if (exact) return exact;
+      return reliabilityHealth.routes.find((h) => norm(h.providerId) === norm(p)) || null;
+    },
+    [reliabilityHealth]
+  );
+
+  const liveCooldownRemaining = useCallback(
+    (health: ReliabilityRouteHealth | null): number => {
+      if (!health || !reliabilityHealth) return 0;
+      const elapsedSec = Math.max(0, Math.floor((nowSec * 1000 - reliabilityHealth.updatedAt) / 1000));
+      return Math.max(0, health.cooldownRemainingSec - elapsedSec);
+    },
+    [reliabilityHealth, nowSec]
+  );
 
   // Filter models based on query and availability groups
   const { fccRows, availableRows, lockedRows, localRows } = useMemo(() => {
@@ -830,6 +895,24 @@ export const ModelSelector: React.FC = () => {
                 {r.availabilityStatus === 'key_required' ? 'Key Needed' : 'Unavailable'}
               </span>
             )}
+            {!isLocked && (() => {
+              const health = healthInfoFor(r.providerId, r.modelId);
+              if (!health || health.status === 'unknown') return null;
+              const remaining = liveCooldownRemaining(health);
+              const cooling = health.status === 'cooling' || remaining > 0;
+              const dotColor = cooling ? '#fbbf24' : health.status === 'degraded' ? '#fb923c' : '#34d399';
+              const dotTitle = cooling
+                ? `Route cooling${remaining > 0 ? ` — retry in ~${remaining}s` : ''}. Ty-Code will auto-rotate if needed.`
+                : `Reliability: ${health.status} · success ${Math.round(health.successRate * 100)}%${health.cachedTtftMs ? ` · TTFT ${health.cachedTtftMs}ms` : ''}`;
+              return (
+                <span title={dotTitle} style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', flexShrink: 0 }}>
+                  <span style={{ width: '7px', height: '7px', borderRadius: '50%', backgroundColor: dotColor, flexShrink: 0 }} />
+                  {cooling && remaining > 0 && (
+                    <span style={{ fontSize: '9px', fontWeight: 600, color: '#fbbf24' }}>{remaining}s</span>
+                  )}
+                </span>
+              );
+            })()}
             {isSelected && <Check size={13} color="var(--accent-primary, #38bdf8)" style={{ flexShrink: 0 }} />}
           </div>
         </button>

@@ -129,3 +129,70 @@ export const zDocumentProposed = z.object({
   document: zDocument
 });
 export type DocumentProposedPayload = z.infer<typeof zDocumentProposed>;
+
+// ===== Autonomous Free-Tier Reliability (Prompts 1-3) =====
+// SILENT-class infrastructure: health snapshots and advisor events ride
+// dedicated reliability channels only. No other code path may emit these.
+
+export const ReliabilityLadderStepSchema = z.object({
+  step: z.string(),
+  outcome: z.string(),
+  detail: z.string().optional()
+});
+export type ReliabilityLadderStep = z.infer<typeof ReliabilityLadderStepSchema>;
+
+export const ReliabilityRouteHealthSchema = z.object({
+  providerId: z.string(),
+  modelId: z.string(),
+  status: z.enum(['ok', 'degraded', 'cooling', 'unknown']),
+  successRate: z.number(),
+  cachedTtftMs: z.number().nullable(),
+  p95TtftMs: z.number().nullable(),
+  cooldownRemainingSec: z.number().int().nonnegative(),
+  lastError: z.string().nullable(),
+  lastProbeTs: z.number().nullable()
+});
+export type ReliabilityRouteHealth = z.infer<typeof ReliabilityRouteHealthSchema>;
+
+export const ReliabilityHealthSnapshotSchema = z.object({
+  version: z.number().int(),
+  updatedAt: z.number(),
+  routes: z.array(ReliabilityRouteHealthSchema)
+});
+export type ReliabilityHealthSnapshot = z.infer<typeof ReliabilityHealthSnapshotSchema>;
+
+export const ReliabilityAdvisorPayloadSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('card'),
+    rootCauseHash: z.string(),
+    taskId: z.string().optional(),
+    taxonomyCode: z.string(),
+    message: z.string(),
+    remedy: z.string(),
+    actionLabel: z.string().optional(),
+    actionUrl: z.string().optional(),
+    suggestedFallback: z.string().optional(),
+    providerId: z.string().optional(),
+    modelId: z.string().optional(),
+    stepsTaken: z.array(ReliabilityLadderStepSchema),
+    ts: z.number()
+  }),
+  z.object({
+    kind: z.literal('recovered'),
+    rootCauseHash: z.string().optional(),
+    providerId: z.string(),
+    message: z.string(),
+    ts: z.number()
+  })
+]);
+export type ReliabilityAdvisorPayload = z.infer<typeof ReliabilityAdvisorPayloadSchema>;
+
+export const DevChaosFaultSchema = z.enum(['timeout', 'refused', 'auth_401', 'rate_429']);
+export const DevChaosRequestSchema = z.object({
+  providerId: z.string().optional(),
+  modelId: z.string().optional(),
+  fault: DevChaosFaultSchema,
+  durationMs: z.number().int().positive().max(60_000).optional()
+});
+export type DevChaosFault = z.infer<typeof DevChaosFaultSchema>;
+export type DevChaosRequest = z.infer<typeof DevChaosRequestSchema>;

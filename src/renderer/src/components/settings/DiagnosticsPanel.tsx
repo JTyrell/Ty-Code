@@ -73,6 +73,8 @@ import { SMOKE_TEST_STEPS, SMOKE_TEST_FAILURE_PROTOCOL } from '../../../../share
 import { toast } from '../../state/toast-store';
 import { useChatStore } from '../../state/chat-store';
 import { GovernorPanel } from './GovernorPanel';
+import { ReliabilityHealthPanel } from './ReliabilityHealthPanel';
+import { trackRenders } from '../../dev/render-storm';
 import './DiagnosticsPanel.css';
 
 const STEP_LABELS: Record<DiagnosticStep, string> = {
@@ -114,6 +116,7 @@ const copyToClipboard = async (text: string): Promise<boolean> => {
 };
 
 export const DiagnosticsPanel: React.FC = () => {
+  trackRenders('settings:DiagnosticsPanel');
   const [subTab, setSubTab] = useState<'connection' | 'capabilities' | 'remediation' | 'trace' | 'ledger'>('connection');
 
   // Connection diagnostics state (Phase Diagnostics 1)
@@ -599,6 +602,9 @@ export const DiagnosticsPanel: React.FC = () => {
     <div className="diag-container">
       {/* Step 4: Memory Governor tier + RSS sparkline (local-only) */}
       <GovernorPanel />
+
+      {/* Autonomous Free-Tier Reliability (Prompt 3): sentinel routes + ledger */}
+      <ReliabilityHealthPanel />
 
       {/* ---------------------------------------------------------------------
           At-a-Glance Live Status Strip (HUD)

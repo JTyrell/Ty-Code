@@ -74,12 +74,6 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({ onNavigateToLocation }
     });
   }, [replacementSourceKey]);
 
-  useEffect(() => {
-    const onWorkspaceMutated = () => { void handleSearch(); };
-    window.addEventListener('workspace-files-mutated', onWorkspaceMutated);
-    return () => window.removeEventListener('workspace-files-mutated', onWorkspaceMutated);
-  });
-
   const handleSearch = async (searchTerm?: string) => {
     const term = searchTerm !== undefined ? searchTerm : query;
     if (!term.trim()) {
@@ -129,6 +123,18 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({ onNavigateToLocation }
       setIsSearching(false);
     }
   };
+
+  // Latest-ref pattern: the workspace-mutation listener below subscribes ONCE
+  // (empty deps) and always dispatches the freshest handleSearch closure
+  // without tearing down/re-adding the listener every render.
+  const handleSearchRef = useRef(handleSearch);
+  handleSearchRef.current = handleSearch;
+
+  useEffect(() => {
+    const onWorkspaceMutated = () => { void handleSearchRef.current(); };
+    window.addEventListener('workspace-files-mutated', onWorkspaceMutated);
+    return () => window.removeEventListener('workspace-files-mutated', onWorkspaceMutated);
+  }, []);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {

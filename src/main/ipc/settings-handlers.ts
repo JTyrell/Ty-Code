@@ -130,7 +130,7 @@ export async function readStoredCredentials(): Promise<{
     console.warn(`[settings-handlers] Corrupt credentials document detected at ${sourcePath}. Backing up to ${corruptBackupPath}:`, parseErr);
     try {
       await fs.writeFile(corruptBackupPath, raw, 'utf8');
-    } catch {}
+    } catch { }
     return { parsed: {}, keys: {}, encryptedKeys: {} };
   }
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Legacy settings document must be a JSON object.');
@@ -226,7 +226,7 @@ export async function mergeStoredApiKeys(
       for (const provider of revokeProviders) {
         await credentialStore.revokeCredential(provider).catch(() => undefined);
       }
-    } catch {}
+    } catch { }
   }
 
   const resolvedKeys: Record<string, string> = { ...keys };
@@ -286,7 +286,7 @@ async function readEffectiveSettings(): Promise<ProviderSettings> {
   let vaultKeys: Record<string, string> = {};
   try {
     vaultKeys = getAllVaultKeys();
-  } catch {}
+  } catch { }
   const mergedApiKeys: Record<string, string> = { ...vaultKeys, ...storeKeys, ...keys };
 
   // Expand aliases so any consumer looking up 'gemini', 'anthropic', etc. finds the key
@@ -428,7 +428,16 @@ export async function saveSecurityPolicy(policy: Partial<SecurityPolicySettings>
   }
 }
 
-export async function saveSettings(updates: Record<string, unknown> | Partial<ProviderSettings>): Promise<IpcResponse<void>> {
+/**
+ * Echo suppression (Prompt: Break the Model-Sync Echo Loop): the broadcast
+ * carries the webContents id of the window that CAUSED the change so each
+ * renderer can ignore its own echo. `undefined` = main-originated (no window
+ * caused it) and every renderer applies it, subject to its equality guard.
+ */
+export async function saveSettings(
+  updates: Record<string, unknown> | Partial<ProviderSettings>,
+  originWebContentsId?: number
+): Promise<IpcResponse<void>> {
   try {
     const parsedPatch = SettingsPatchSchema.safeParse(updates);
     if (!parsedPatch.success) {
@@ -459,31 +468,69 @@ export async function saveSettings(updates: Record<string, unknown> | Partial<Pr
     await settingsManager.saveLayer('global', globalUpdates);
 
     if (apiKeys !== undefined) {
-      await mergeStoredApiKeys(apiKeys as Record<string, string>);
+      // Prompt 2 (self-healing keys): sanitize paste mistakes BEFORE any
+      // persistence so quotes, "Bearer " prefixes, whitespace and trailing
+      // punctuation never reach a live request path.
+      const sanitizedKeys: Record<string, string> = {};
+      const { sanitizeApiKey } = await import('../../shared/types/api-key-hints');
+      for (const [providerId, rawKey] of Object.entries(apiKeys as Record<string, string>)) {
+        if (typeof rawKey !== 'string') continue;
+        const cleaned = sanitizeApiKey(rawKey);
+        if (cleaned.changed) {
+          console.log(`[saveSettings] sanitized pasted key for ${providerId} (${cleaned.finding})`);
+        }
+        if (cleaned.key) sanitizedKeys[providerId] = cleaned.key;
+      }
+      await mergeStoredApiKeys(sanitizedKeys);
       // Synchronize with hardware-backed credentialStore and vault
       try {
         const { credentialStore } = await import('../services/auth/credential-store');
-        const { saveKey } = await import('../services/credential-vault');
-        for (const [providerId, rawKey] of Object.entries(apiKeys as Record<string, string>)) {
-          if (typeof rawKey === 'string' && rawKey.trim()) {
-            await credentialStore.saveCredential(providerId, rawKey.trim(), `${providerId.toUpperCase()} Key`);
-            await saveKey(providerId, rawKey.trim()).catch(() => undefined);
-          }
+        const { saveKey, probeSavedKey } = await import('../services/credential-vault');
+        const { providerHealthStore } = await import('../providers/provider-health-store');
+        const { routeEventPolicy } = await import('../providers/route-event-policy');
+        const { reliabilityLedger } = await import('../services/reliability/reliability-ledger');
+        for (const [providerId, cleanedKey] of Object.entries(sanitizedKeys)) {
+          await credentialStore.saveCredential(providerId, cleanedKey, `${providerId.toUpperCase()} Key`);
+          await saveKey(providerId, cleanedKey).catch(() => undefined);
+          // A (re)save instantly re-opens the provider: clears ANY sticky
+          // invalid-key/rate-limit state and re-arms the policy emitter.
+          routeEventPolicy.onKeySaved(providerId);
+          providerHealthStore.clear(providerId);
+          // Silent 5s save-probe: no blocking, no toast. Only an auth-shaped
+          // rejection (401/403) flips the sticky invalid_key flag; transient
+          // failures land in the reliability ledger without punishing the key.
+          void probeSavedKey(providerId, 5000)
+            .then((res) => {
+              if (res.valid) return;
+              if (res.status === 401 || res.status === 403) {
+                providerHealthStore.markInvalidKey(providerId, res.status);
+              }
+              reliabilityLedger.record({
+                at: Date.now(),
+                kind: 'probe',
+                route: providerId,
+                outcome: 'failed',
+                detail: `save-probe rejected key for ${providerId} (${res.message})`
+              });
+            })
+            .catch(() => undefined);
         }
       } catch (err) {
         console.warn('[saveSettings] Failed syncing credentials to vault/store:', err);
       }
     }
 
-    // Broadcast settings:changed to all renderer windows so UI stays in sync
+    // Broadcast settings:changed to all renderer windows so UI stays in sync.
+    // The payload carries the originating webContents id (null = main) so
+    // renderers can suppress their own echo.
     try {
       const { BrowserWindow } = await import('electron');
       for (const win of BrowserWindow.getAllWindows()) {
         if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
-          win.webContents.send('settings:changed');
+          win.webContents.send('settings:changed', { originWebContentsId: originWebContentsId ?? null });
         }
       }
-    } catch {}
+    } catch { }
 
     return { success: true };
   } catch (error: unknown) {

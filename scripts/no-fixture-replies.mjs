@@ -2,8 +2,13 @@
 /**
  * CI Truth Guard: No Fixture Replies in Production Code
  *
- * Verifies that zero mock fixture strings or canned response stubs
- * from tests/fixtures.json appear in any file under src/.
+ * 1. Verifies that zero mock fixture strings or canned response stubs
+ *    from tests/fixtures.json appear in any file under src/.
+ * 2. Bans ASSISTANT-SHAPED SKELETON REPLIES from the renderer message
+ *    content render path (ChatMessage.tsx, chat/* message components,
+ *    chat-store.ts). A zero-token assistant bubble must render the Thinking
+ *    shimmer / status chunks — never a canned sentence that resembles a
+ *    reply. Any reintroduction fails the build.
  *
  * Brand: Ty-Code
  */
@@ -18,6 +23,30 @@ const projectRoot = path.resolve(__dirname, '..');
 
 const FIXTURES_FILE = path.join(projectRoot, 'tests', 'fixtures.json');
 const SRC_DIR = path.join(projectRoot, 'src');
+
+/**
+ * Assistant-shaped placeholder constants forbidden in the message content
+ * render path. These read like assistant replies; empty states must render
+ * shimmer/status chunks instead (see Prompt 2, no-fixture-reply policy).
+ */
+const ASSISTANT_PLACEHOLDER_PATTERNS = [
+  'I am ready to help',
+  'Please provide your task or prompt',
+  'Please provide your prompt',
+  'Please provide your task',
+  'How can I assist you',
+  'standing by for your task',
+  'awaiting your instructions'
+];
+
+/** Files that constitute the renderer message content render path. */
+const MESSAGE_RENDER_PATH_FILES = [
+  'src/renderer/src/components/ChatMessage.tsx',
+  'src/renderer/src/state/chat-store.ts'
+];
+
+/** Never render the literal "default" as a route/badge fallback. */
+const DEFAULT_BADGE_PATTERN = /metadata\?\.(providerId|modelId)\s*\|\|\s*['"]default['"]/;
 
 async function collectFiles(dir) {
   const results = [];
@@ -94,8 +123,52 @@ async function run() {
     process.exit(1);
   }
 
+  // ---------------------------------------------------------------------------
+  // Phase 2: assistant-shaped placeholder replies in the message content path
+  // ---------------------------------------------------------------------------
+  let messagePathViolations = 0;
+
+  for (const relFile of MESSAGE_RENDER_PATH_FILES) {
+    const absFile = path.join(projectRoot, relFile);
+    let content;
+    try {
+      content = await fs.readFile(absFile, 'utf-8');
+    } catch {
+      continue; // File may be renamed; Phase 1 global scan still applies.
+    }
+    const lines = content.split('\n');
+
+    lines.forEach((line, i) => {
+      const lower = line.toLowerCase();
+      for (const placeholder of ASSISTANT_PLACEHOLDER_PATTERNS) {
+        if (lower.includes(placeholder.toLowerCase())) {
+          console.error(`✗ VIOLATION: Assistant-shaped placeholder reply in message render path!`);
+          console.error(`  File: ${relFile}:${i + 1}`);
+          console.error(`  Phrase: "${placeholder}"`);
+          console.error(`  Line: ${line.trim()}`);
+          console.error(`  Policy: an empty assistant bubble must render the Thinking shimmer/status chunks (Routing/Thinking), never a canned reply.\n`);
+          messagePathViolations++;
+        }
+      }
+      if (DEFAULT_BADGE_PATTERN.test(line)) {
+        console.error(`✗ VIOLATION: Route badge renders the literal "default" fallback!`);
+        console.error(`  File: ${relFile}:${i + 1}`);
+        console.error(`  Line: ${line.trim()}`);
+        console.error(`  Policy: an unknown live route must render "routing…" — never "default".\n`);
+        messagePathViolations++;
+      }
+    });
+  }
+
+  if (messagePathViolations > 0) {
+    console.error(`\n❌ FAILED: ${messagePathViolations} canned-reply violation(s) in the renderer message path.`);
+    console.error('Zero canned assistant text may exist in renderer message components.');
+    process.exit(1);
+  }
+
   console.log(`✓ Truth Guard Passed: Verified ${srcFiles.length} source files in src/.`);
-  console.log(`  Zero forbidden fixture strings detected. All responses must originate from real providers.\n`);
+  console.log(`  Zero forbidden fixture strings detected. All responses must originate from real providers.`);
+  console.log(`  Message content path clean: no assistant-shaped placeholder replies, no "default" badge fallback.\n`);
   process.exit(0);
 }
 

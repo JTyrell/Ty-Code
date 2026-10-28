@@ -34,6 +34,9 @@ import { fccSidecarManager } from '../services/fcc-sidecar-manager';
 import { modelRotationManager } from '../services/model-rotation-manager';
 import { providerHealthStore } from './provider-health-store';
 import { routeEventPolicy } from './route-event-policy';
+// === Autonomous Free-Tier Reliability (Prompt: sentinel + silent ladder) ===
+import { reliabilityLadder } from '../services/reliability/remediation-ladder';
+import { reliabilitySentinel } from '../services/reliability/reliability-sentinel';
 import { fccModelMapper } from '../services/fcc-model-mapper';
 import { sidecarLogLedger } from '../services/fcc/sidecar-log-ledger';
 import { isHarnessLogContent, FAILOVER_RESUME_INSTRUCTION } from '../services/fcc/sidecar-line-classifier';
@@ -47,7 +50,7 @@ const UndiciAgentClass: any = (() => {
   try {
     return (require as any)('undici').Agent;
   } catch {
-    return class {};
+    return class { };
   }
 })();
 import { BrowserWindow } from 'electron';
@@ -380,7 +383,7 @@ export class KeyMissingError extends Error {
   constructor(providerId: string, message?: string) {
     super(
       message ||
-        `KEY_MISSING_ERROR: No API key found for provider "${providerId}". Please add your API key in Settings -> Providers.`
+      `KEY_MISSING_ERROR: No API key found for provider "${providerId}". Please add your API key in Settings -> Providers.`
     );
     this.name = 'KeyMissingError';
     this.providerId = providerId;
@@ -391,14 +394,18 @@ export class KeyMissingError extends Error {
  * Global active model selection (Prompt 2: Fix Routing Across All Features).
  * Controls whether routing is locked to a specific provider/model or dynamically
  * evaluated via the adaptive router.
+ *
+ * Echo-loop hardening (Prompt: Break the Model-Sync Echo Loop): the lock
+ * state, the permanent [SYNC-LOOP] storm tripwire and the idempotent
+ * re-lock guard live in ./active-model-lock (dependency-free, unit-tested).
+ * This file only wires logging + the fire-and-forget preferences write onto
+ * genuine transitions. Routing/failover logic is untouched.
  */
-let currentActiveModel: { providerId: string; modelId: string; isAutoMode: boolean } = {
-  providerId: TY_CODE_FREE_PROVIDER,
-  modelId: TY_CODE_FREE_MODEL,
-  isAutoMode: true
-};
-
-let gatewayActiveOverride: { providerId: string; modelId: string } | null = null;
+import {
+  lockActiveModel,
+  getActiveModel as readActiveModelLock,
+  getGatewayActiveOverride as readGatewayActiveOverride
+} from './active-model-lock';
 
 const endpointOverrides: Partial<Record<string, string>> = {};
 
@@ -413,44 +420,42 @@ export function setEndpointOverride(providerId: string, url?: string): void {
 }
 
 export function setActiveModel(config: { providerId: string; modelId: string; isAutoMode: boolean }): void {
-  const p = (config?.providerId || TY_CODE_FREE_PROVIDER).trim();
-  const m = (config?.modelId || TY_CODE_FREE_MODEL).trim();
-  const isAuto = Boolean(config?.isAutoMode || p === 'auto');
+  // Tripwire + idempotent re-lock guard live in active-model-lock. An
+  // identical re-lock returns changed:false and this function emits NOTHING
+  // (no log, no preferences write, no vault access) — this is what breaks
+  // the renderer<->main echo loop at the gateway boundary.
+  const { changed, triple } = lockActiveModel(config, TY_CODE_FREE_PROVIDER, TY_CODE_FREE_MODEL);
+  if (!changed) return;
 
-  currentActiveModel = {
-    providerId: isAuto ? 'auto' : p,
-    modelId: isAuto ? '' : m,
-    isAutoMode: isAuto
-  };
-
-  gatewayActiveOverride = {
-    providerId: currentActiveModel.providerId,
-    modelId: currentActiveModel.modelId
-  };
+  // Log synchronously on genuine transitions only (was previously inside the
+  // async preferences callback, which multiplied log lines per echo cycle).
+  if (triple.isAutoMode) {
+    console.log('[GATEWAY] Active model set to Auto (adaptive routing enabled)');
+  } else {
+    console.log(`[GATEWAY] Active model locked to: provider=${triple.providerId}, model=${triple.modelId}`);
+  }
 
   try {
     import('../services/orchestration/user-preferences').then(({ userPreferences }) => {
-      if (isAuto) {
+      if (triple.isAutoMode) {
         void userPreferences.updatePreferences({
           mode: 'auto',
           manualProviderId: undefined,
           manualModelId: undefined
         });
-        console.log('[GATEWAY] Active model set to Auto (adaptive routing enabled)');
       } else {
         void userPreferences.updatePreferences({
           mode: 'manual',
-          manualProviderId: p,
-          manualModelId: m
+          manualProviderId: triple.providerId,
+          manualModelId: triple.modelId
         });
-        console.log(`[GATEWAY] Active model locked to: provider=${p}, model=${m}`);
       }
-    }).catch(() => {});
-  } catch {}
+    }).catch(() => { });
+  } catch { }
 }
 
 export function getActiveModel(): { providerId: string; modelId: string; isAutoMode: boolean } {
-  return { ...currentActiveModel };
+  return readActiveModelLock();
 }
 
 export function setGatewayActiveConfig(providerId: string, modelId: string): { providerId: string; modelId: string } {
@@ -459,11 +464,12 @@ export function setGatewayActiveConfig(providerId: string, modelId: string): { p
     modelId,
     isAutoMode: providerId === 'auto' || !providerId
   });
-  return { providerId: currentActiveModel.providerId, modelId: currentActiveModel.modelId };
+  const locked = readGatewayActiveOverride();
+  return { providerId: locked?.providerId || '', modelId: locked?.modelId || '' };
 }
 
 export function getGatewayActiveOverride(): { providerId: string; modelId: string } | null {
-  return { providerId: currentActiveModel.providerId, modelId: currentActiveModel.modelId };
+  return readGatewayActiveOverride();
 }
 
 // ZeroFriction-2 One-Key Premium: premium direct providers transparently
@@ -647,8 +653,8 @@ export async function sendChatRequest(
       const promptText = typeof userMessage?.content === 'string'
         ? userMessage.content
         : Array.isArray(userMessage?.content)
-        ? (userMessage.content.map((c: any) => c.text || '').join(' ') || '')
-        : '';
+          ? (userMessage.content.map((c: any) => c.text || '').join(' ') || '')
+          : '';
       const decision = await modelRouter.selectModel(promptText || 'help with code');
       if (decision?.selectedModel) {
         effectiveProvider = decision.selectedModel.providerId;
@@ -730,6 +736,21 @@ export async function sendChatRequest(
     throw new Error(`[POLICY BLOCKED] ${providerPolicyCheck.reason || 'Provider dispatch denied by enterprise policy'}`);
   }
 
+  // Autonomous Free-Tier Reliability (dev-only chaos): a fault queued via the
+  // dev chaos IPC is consumed here and thrown so NATIVE failover + ladder
+  // paths run exactly as they would on a real outage. Packaged builds never
+  // queue faults (double-guarded with the CI `chaos-hook-guard` script).
+  const chaosFault = reliabilitySentinel.takeChaosFault(providerId, modelId);
+  if (chaosFault) {
+    const msg =
+      chaosFault.fault === 'timeout'
+        ? 'fetch failed (timeout fault)'
+        : chaosFault.fault === 'refused'
+        ? 'fetch failed (ECONNREFUSED fault)'
+        : '429 rate limited (fault)';
+    throw new Error(`[GATEWAY] ${providerId} ${msg}`);
+  }
+
   const isFreeTierRequest = isTyCodeFree || isFcc || isFccProxy || norm === 'openkilo' || norm === 'kilo' || (providerId || '').toLowerCase().includes('free');
   if (isFreeTierRequest) {
     const freeRoutingCheck = policyEngine.assertAllowed({
@@ -764,21 +785,21 @@ export async function sendChatRequest(
   }
 
   // Gracefully fallback to standard endpoints if model is not directly listed
-    if (!config) {
-      if (isFccProxy) {
-        const overrideKey = (providerId || '').toLowerCase().trim();
-        const overrideUrl = endpointOverrides[overrideKey] || endpointOverrides[norm] || endpointOverrides['fcc-proxy'];
-        if (overrideUrl) {
-          console.log(`[FCC][AUTO] Tier 0 — endpoint override for ${providerId} -> ${overrideUrl}`);
-          const base = overrideUrl.replace(/\/+$/, '');
-          config = {
-            modelId,
-            name: `${providerId} (endpoint override)`,
-            url: /chat\/completions$/.test(base) ? base : `${base}/chat/completions`,
-            requiresKey: false,
-            providerId: 'fcc-proxy'
-          };
-        } else {
+  if (!config) {
+    if (isFccProxy) {
+      const overrideKey = (providerId || '').toLowerCase().trim();
+      const overrideUrl = endpointOverrides[overrideKey] || endpointOverrides[norm] || endpointOverrides['fcc-proxy'];
+      if (overrideUrl) {
+        console.log(`[FCC][AUTO] Tier 0 — endpoint override for ${providerId} -> ${overrideUrl}`);
+        const base = overrideUrl.replace(/\/+$/, '');
+        config = {
+          modelId,
+          name: `${providerId} (endpoint override)`,
+          url: /chat\/completions$/.test(base) ? base : `${base}/chat/completions`,
+          requiresKey: false,
+          providerId: 'fcc-proxy'
+        };
+      } else {
         // FCC Auto routing. Tier 0: a live entry from the dynamic FCC catalog
         // (sidecar, supply facade, or connected subscription) while a genuine
         // free-claude-code binary can serve completions. Tier 1: the FCC
@@ -792,7 +813,7 @@ export async function sendChatRequest(
             return false;
           }
         })();
-          console.log(`[FCC][AUTO] provider=${providerId} model=${modelId} genuineBinary=${canServe ? 'up' : 'down'}`);
+        console.log(`[FCC][AUTO] provider=${providerId} model=${modelId} genuineBinary=${canServe ? 'up' : 'down'}`);
         if (canServe || fccSidecarManager.isActive()) {
           let fccEntry: VerifiedModelConfig | undefined;
           try {
@@ -822,18 +843,18 @@ export async function sendChatRequest(
             config = { modelId, name: modelId, url: KILO_URL, requiresKey: false, providerId: 'openkilo' };
           }
         }
-        }
-      } else if (norm === 'openrouter') {
-        config = { modelId, name: modelId, url: 'https://openrouter.ai/api/v1/chat/completions', requiresKey: true, providerId: 'openrouter' };
-      } else if (norm === 'ty-code-free') {
-        config = { modelId, name: modelId, url: 'https://openrouter.ai/api/v1/chat/completions', requiresKey: true, providerId: 'ty-code-free' };
-      } else if (norm === 'groq') {
-        config = { modelId, name: modelId, url: 'https://api.groq.com/openai/v1/chat/completions', requiresKey: true, providerId: 'groq' };
-      } else if (norm === 'anthropic' || norm === 'claude') {
-        config = { modelId, name: modelId, url: 'https://api.anthropic.com/v1/messages', requiresKey: true, providerId: 'anthropic' };
-      } else if (isGoogleProviderId(providerId)) {
-        config = { modelId, name: modelId, url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', requiresKey: true, providerId: 'google-ai-studio' };
-      } else if (isKilo) {
+      }
+    } else if (norm === 'openrouter') {
+      config = { modelId, name: modelId, url: 'https://openrouter.ai/api/v1/chat/completions', requiresKey: true, providerId: 'openrouter' };
+    } else if (norm === 'ty-code-free') {
+      config = { modelId, name: modelId, url: 'https://openrouter.ai/api/v1/chat/completions', requiresKey: true, providerId: 'ty-code-free' };
+    } else if (norm === 'groq') {
+      config = { modelId, name: modelId, url: 'https://api.groq.com/openai/v1/chat/completions', requiresKey: true, providerId: 'groq' };
+    } else if (norm === 'anthropic' || norm === 'claude') {
+      config = { modelId, name: modelId, url: 'https://api.anthropic.com/v1/messages', requiresKey: true, providerId: 'anthropic' };
+    } else if (isGoogleProviderId(providerId)) {
+      config = { modelId, name: modelId, url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', requiresKey: true, providerId: 'google-ai-studio' };
+    } else if (isKilo) {
       config = { modelId, name: modelId, url: 'https://api.kilo.ai/api/gateway/chat/completions', requiresKey: false, providerId: 'openkilo' };
     } else if (isCopilot) {
       config = { modelId, name: modelId, url: 'https://api.githubcopilot.com/chat/completions', requiresKey: true, providerId: 'copilot' };
@@ -843,9 +864,9 @@ export async function sendChatRequest(
       config = { modelId, name: modelId, url: 'https://api.deepseek.com/chat/completions', requiresKey: true, providerId: 'deepseek' };
     } else if (norm === 'qwen' || norm === 'alibaba') {
       config = { modelId, name: modelId, url: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions', requiresKey: true, providerId: 'alibaba' };
-  } else {
-    throw new Error('Unverified model or provider requested');
-  }
+    } else {
+      throw new Error('Unverified model or provider requested');
+    }
   }
 
   // CLI-bridge safety net: whatever path resolved the config, an entry with
@@ -1142,8 +1163,8 @@ export async function sendChatRequest(
   const billingType: 'free-tier' | 'local' | 'metered' = isFreeTierRequest
     ? 'free-tier'
     : (norm === 'local' || norm === 'ollama' || norm === 'vllm')
-    ? 'local'
-    : 'metered';
+      ? 'local'
+      : 'metered';
 
   tokenAccountingLedger.record({
     sessionId: currentTaskId,
@@ -1392,14 +1413,14 @@ export async function sendChatRequest(
   try {
     // 4. Make the fetch request with the key in the headers
     const requestStartMs = Date.now();
-    
+
     // Create a 120s timeout signal for large file operations and long streaming responses
     const timeoutSignal = AbortSignal.timeout(120_000);
     // Combine with any existing abortSignal
-    const combinedSignal = abortSignal 
+    const combinedSignal = abortSignal
       ? AbortSignal.any([abortSignal, timeoutSignal])
       : timeoutSignal;
-    
+
     // Record H3 (Gateway Adapter): right before fetch() is called to the LLM provider
     chatLatencyTracker.recordH3(currentTaskId);
 
@@ -1425,6 +1446,42 @@ export async function sendChatRequest(
       invalidateCommunityKey();
     }
     if (shouldHandoff) {
+      // Autonomous Free-Tier Reliability: a 429 waits out its cooldown at most
+      // ONCE per (task, route) — header Retry-After or the learned window,
+      // capped at 20s — then retries the SAME route silently before a handoff
+      // hop is spent. SILENT class: ledger only.
+      if (response.status === 429) {
+        const retryAfterHeader = Number(response.headers.get('retry-after'));
+        const waited = await reliabilityLadder.acquireCooldownRetry({
+          taskId: currentTaskId,
+          providerId: config.providerId || providerId,
+          modelId: requestModel || modelId,
+          retryAfterSec: Number.isFinite(retryAfterHeader) && retryAfterHeader > 0 ? retryAfterHeader : undefined
+        });
+        if (waited) {
+          console.log('[GATEWAY] 429: honored cooldown; retrying same route silently.');
+          providerHealthStore.markRateLimited(config.providerId || providerId, Number.isFinite(retryAfterHeader) && retryAfterHeader > 0 ? retryAfterHeader : undefined);
+          return await sendChatRequest(
+            providerId,
+            modelId,
+            messages,
+            stream,
+            apiKey,
+            onToken,
+            handoffCount,
+            abortSignal,
+            onHandoff,
+            onReasoning,
+            tools,
+            onToolCalls,
+            currentTaskId,
+            context,
+            continuationCount,
+            onStatus,
+            carriedPartial
+          );
+        }
+      }
       if (handoffCount < 2) {
         console.log(`[GATEWAY] Provider failed (${response.status}). Handing off to next provider (Attempt ${handoffCount + 1}/2).`);
         sidecarLogLedger.record(
@@ -1474,6 +1531,45 @@ export async function sendChatRequest(
           throw new Error(`[GATEWAY] All providers failed. Maximum handoffs reached.`);
         }
       } else {
+        // Chain exhausted pre-stream: ONE last silent treatment (community
+        // key refresh -> FCC sidecar heal -> health-aware rotation -> short
+        // cooldown) may still recover the turn.
+        const recovery = await reliabilityLadder.onChainExhausted({
+          taskId: currentTaskId,
+          failureProviderId: config.providerId || providerId,
+          failureModelId: requestModel || modelId,
+          httpStatus: response.status,
+          errorMessage: null,
+          tokensStreamed: 0,
+          allModels
+        });
+        if (recovery) {
+          console.log(`[GATEWAY] Ladder recovery attempt: ${recovery.providerId}/${recovery.modelId}`);
+          routeEventPolicy.recordHop(currentTaskId, config.providerId || providerId, response.status);
+          routeEventPolicy.setLanding(currentTaskId, recovery.providerId);
+          // Only carry the original key when the recovery target is the same
+          // provider family — never forward one provider's key to another.
+          const recoveryApiKey = recovery.providerId === (config.providerId || providerId) ? apiKey : undefined;
+          return await sendChatRequest(
+            recovery.providerId,
+            recovery.modelId,
+            messages,
+            stream,
+            recoveryApiKey,
+            onToken,
+            1,
+            abortSignal,
+            onHandoff,
+            onReasoning,
+            tools,
+            onToolCalls,
+            currentTaskId,
+            context,
+            continuationCount,
+            onStatus,
+            carriedPartial
+          );
+        }
         const errType = response.status === 429 ? 'RATE_LIMITED' : 'PROVIDER_DOWN';
         throw new Error(`[${errType}] ${providerDisplay} failed (${response.status}) and maximum handoffs (2) reached.`);
       }
@@ -1486,7 +1582,7 @@ export async function sendChatRequest(
       try {
         const errJson = JSON.parse(errText);
         parsedMsg = errJson.error?.message || errJson.message || errText;
-      } catch {}
+      } catch { }
       providerHealthMonitor.recordRequestOutcome(config.providerId || providerId, false, Math.max(1, Date.now() - requestStartMs), `${response.status}: ${parsedMsg}`);
       // Self-heal: reasoning models demand 'reasoning_content' on every earlier
       // assistant turn. Legacy history (or handoff copies) may lack it — convert
@@ -1511,100 +1607,100 @@ export async function sendChatRequest(
       throw new Error(`[GATEWAY] Response body is empty from ${providerId}`);
     }
 
-  if (!stream) {
-    const data: any = await response.json();
-    // Record H4 (Network TTFT) for non-streaming response
-    chatLatencyTracker.recordH4(currentTaskId);
-    let text = data.choices?.[0]?.message?.content || data.content?.[0]?.text || '';
-    // Stream Hygiene (Prompt 2): FCC harness announce text is sidecar log
-    // output even when it arrives inside a valid completion payload. It is
-    // routed to the ledger and never reaches the renderer chat stream.
-    if ((isFcc || isFccProxy) && typeof text === 'string' && isHarnessLogContent(text)) {
-      sidecarLogLedger.record('stream-gate', text);
-      text = '';
-    }
-    // Non-stream structured tool calls (OpenAI shape + Anthropic tool_use blocks)
-    const messageToolCalls = data.choices?.[0]?.message?.tool_calls;
-    if (Array.isArray(messageToolCalls)) {
-      messageToolCalls.forEach((tc: any, idx: number) => {
-        if (tc?.function?.name) {
-          streamedToolCalls.set(idx, {
-            id: tc.id || `call_gw_ns_${idx}`,
-            name: tc.function.name,
-            arguments: typeof tc.function.arguments === 'string' ? tc.function.arguments : JSON.stringify(tc.function.arguments ?? {})
-          });
-        }
-      });
-    }
-    if (Array.isArray(data.content)) {
-      data.content.forEach((block: any, idx: number) => {
-        if (block?.type === 'tool_use' && block?.name) {
-          streamedToolCalls.set(idx, {
-            id: block.id || `call_gw_ns_${idx}`,
-            name: block.name,
-            arguments: JSON.stringify(block.input ?? {})
-          });
-        }
-      });
-    }
-    const embeddedReasoning = data.choices?.[0]?.message?.reasoning_content;
-    if (typeof embeddedReasoning === 'string' && embeddedReasoning) {
-      fullThought += embeddedReasoning;
-      if (onReasoning) onReasoning(embeddedReasoning);
-    }
-    if (onToken) onToken(text);
-    chatLatencyTracker.recordToken(currentTaskId, text);
-    providerHealthMonitor.recordRequestOutcome(config.providerId || providerId, true, Math.max(1, Date.now() - requestStartMs));
-    extractProviderUsage(data);
-    const finish = parseFinishReason(data);
-    flushToolCalls();
-    chatLatencyTracker.recordStreamEnd(currentTaskId);
-    recordResponseUsage(text);
-
-    if (finish === 'length') {
-      if (continuationCount < 2) {
-        console.log(`[GATEWAY] Non-streaming response truncated by provider (finish_reason='length'). Auto-continuing (${continuationCount + 1}/2)...`);
-        onStatus?.({ type: 'status', content: 'Response hit token limit — continuing…' });
-        const continuationMessages = [
-          ...messages,
-          { role: 'assistant', content: text },
-          { role: 'user', content: 'Continue exactly where you stopped.' }
-        ];
-        try {
-          const continuationText = await sendChatRequest(
-            providerId,
-            modelId,
-            continuationMessages,
-            stream,
-            apiKey,
-            onToken,
-            handoffCount,
-            abortSignal,
-            onHandoff,
-            onReasoning,
-            tools,
-            onToolCalls,
-            currentTaskId,
-            context,
-            continuationCount + 1,
-            onStatus
-          );
-          return text + continuationText;
-        } catch (contErr) {
-          console.warn('[GATEWAY] Non-streaming auto-continuation failed:', contErr);
-        }
-      } else {
-        console.warn('[GATEWAY] Auto-continuations exhausted (2/2). Marking as truncated.');
-        onStatus?.({
-          type: 'done',
-          truncated: true,
-          actions: ['Continue']
+    if (!stream) {
+      const data: any = await response.json();
+      // Record H4 (Network TTFT) for non-streaming response
+      chatLatencyTracker.recordH4(currentTaskId);
+      let text = data.choices?.[0]?.message?.content || data.content?.[0]?.text || '';
+      // Stream Hygiene (Prompt 2): FCC harness announce text is sidecar log
+      // output even when it arrives inside a valid completion payload. It is
+      // routed to the ledger and never reaches the renderer chat stream.
+      if ((isFcc || isFccProxy) && typeof text === 'string' && isHarnessLogContent(text)) {
+        sidecarLogLedger.record('stream-gate', text);
+        text = '';
+      }
+      // Non-stream structured tool calls (OpenAI shape + Anthropic tool_use blocks)
+      const messageToolCalls = data.choices?.[0]?.message?.tool_calls;
+      if (Array.isArray(messageToolCalls)) {
+        messageToolCalls.forEach((tc: any, idx: number) => {
+          if (tc?.function?.name) {
+            streamedToolCalls.set(idx, {
+              id: tc.id || `call_gw_ns_${idx}`,
+              name: tc.function.name,
+              arguments: typeof tc.function.arguments === 'string' ? tc.function.arguments : JSON.stringify(tc.function.arguments ?? {})
+            });
+          }
         });
       }
-    }
+      if (Array.isArray(data.content)) {
+        data.content.forEach((block: any, idx: number) => {
+          if (block?.type === 'tool_use' && block?.name) {
+            streamedToolCalls.set(idx, {
+              id: block.id || `call_gw_ns_${idx}`,
+              name: block.name,
+              arguments: JSON.stringify(block.input ?? {})
+            });
+          }
+        });
+      }
+      const embeddedReasoning = data.choices?.[0]?.message?.reasoning_content;
+      if (typeof embeddedReasoning === 'string' && embeddedReasoning) {
+        fullThought += embeddedReasoning;
+        if (onReasoning) onReasoning(embeddedReasoning);
+      }
+      if (onToken) onToken(text);
+      chatLatencyTracker.recordToken(currentTaskId, text);
+      providerHealthMonitor.recordRequestOutcome(config.providerId || providerId, true, Math.max(1, Date.now() - requestStartMs));
+      extractProviderUsage(data);
+      const finish = parseFinishReason(data);
+      flushToolCalls();
+      chatLatencyTracker.recordStreamEnd(currentTaskId);
+      recordResponseUsage(text);
 
-    return text;
-  }
+      if (finish === 'length') {
+        if (continuationCount < 2) {
+          console.log(`[GATEWAY] Non-streaming response truncated by provider (finish_reason='length'). Auto-continuing (${continuationCount + 1}/2)...`);
+          onStatus?.({ type: 'status', content: 'Response hit token limit — continuing…' });
+          const continuationMessages = [
+            ...messages,
+            { role: 'assistant', content: text },
+            { role: 'user', content: 'Continue exactly where you stopped.' }
+          ];
+          try {
+            const continuationText = await sendChatRequest(
+              providerId,
+              modelId,
+              continuationMessages,
+              stream,
+              apiKey,
+              onToken,
+              handoffCount,
+              abortSignal,
+              onHandoff,
+              onReasoning,
+              tools,
+              onToolCalls,
+              currentTaskId,
+              context,
+              continuationCount + 1,
+              onStatus
+            );
+            return text + continuationText;
+          } catch (contErr) {
+            console.warn('[GATEWAY] Non-streaming auto-continuation failed:', contErr);
+          }
+        } else {
+          console.warn('[GATEWAY] Auto-continuations exhausted (2/2). Marking as truncated.');
+          onStatus?.({
+            type: 'done',
+            truncated: true,
+            actions: ['Continue']
+          });
+        }
+      }
+
+      return text;
+    }
 
     const tokenBatcher = new StreamChunkBatcher((chunk) => {
       if (onToken) onToken(chunk);
@@ -1736,7 +1832,7 @@ export async function sendChatRequest(
                   chatLatencyTracker.recordToken(currentTaskId, token);
                 }
               }
-            } catch {}
+            } catch { }
           }
         }
       }
@@ -1980,7 +2076,75 @@ export async function sendChatRequest(
         );
       } else {
         chatLatencyTracker.recordStreamEnd(currentTaskId);
-        throw new Error(`[GATEWAY] All providers failed. Maximum handoffs reached.`);
+        // Chain exhausted MID-STREAM: ONE silent last treatment; streamed
+        // content is carried forward so nothing re-runs or duplicates.
+        const tokensStreamedCarry =
+          carriedPartial.length +
+          fullText.length +
+          fullThought.length +
+          Array.from(streamedToolCalls.values()).reduce((n, call) => n + call.arguments.length + call.name.length, 0);
+        const recovery = await reliabilityLadder.onChainExhausted({
+          taskId: currentTaskId,
+          failureProviderId: config.providerId || providerId,
+          failureModelId: requestModel || modelId,
+          httpStatus: null,
+          errorMessage: err?.message || String(err),
+          tokensStreamed: tokensStreamedCarry,
+          allModels
+        });
+        if (recovery) {
+          routeEventPolicy.recordHop(currentTaskId, config.providerId || providerId, 'err');
+          routeEventPolicy.setLanding(currentTaskId, recovery.providerId);
+          const recoveryApiKey = recovery.providerId === (config.providerId || providerId) ? apiKey : undefined;
+          if (tokensStreamedCarry > 0) {
+            const priorPartial = `${carriedPartial}${fullText}`;
+            const resumeMessages = [
+              ...messages,
+              { role: 'assistant', content: priorPartial },
+              { role: 'user', content: FAILOVER_RESUME_INSTRUCTION }
+            ];
+            const recoveredText = await sendChatRequest(
+              recovery.providerId,
+              recovery.modelId,
+              resumeMessages,
+              stream,
+              recoveryApiKey,
+              onToken,
+              1,
+              abortSignal,
+              onHandoff,
+              onReasoning,
+              tools,
+              onToolCalls,
+              currentTaskId,
+              context,
+              continuationCount,
+              onStatus,
+              priorPartial
+            );
+            return priorPartial + recoveredText;
+          }
+          return await sendChatRequest(
+            recovery.providerId,
+            recovery.modelId,
+            messages,
+            stream,
+            recoveryApiKey,
+            onToken,
+            1,
+            abortSignal,
+            onHandoff,
+            onReasoning,
+            tools,
+            onToolCalls,
+            currentTaskId,
+            context,
+            continuationCount,
+            onStatus,
+            carriedPartial
+          );
+        }
+        throw err;
       }
     }
     chatLatencyTracker.recordStreamEnd(currentTaskId);
@@ -2070,7 +2234,7 @@ export function providerHasOwnKey(providerId: string): boolean {
     for (const candidate of candidates) {
       if (vKeys[candidate] && vKeys[candidate].trim()) return true;
     }
-  } catch {}
+  } catch { }
   for (const candidate of candidates) {
     for (const envVar of HANDOFF_ENV_HINTS[candidate] || []) {
       const envValue = process.env[envVar];
@@ -2240,7 +2404,8 @@ export class ProviderGateway {
     apiKey?: string,
     customEndpoint?: string
   ): Promise<DiscoveredModel[]> {
-    if (providerId === 'ollama') {      const allVerified = await getVerifiedModels();
+    if (providerId === 'ollama') {
+      const allVerified = await getVerifiedModels();
       const localModels = allVerified.filter((m) => m.providerId === 'ollama');
       return localModels.map((m) => ({
         id: m.modelId,
@@ -2446,7 +2611,7 @@ export class ProviderGateway {
       try {
         const stored = credentialStore.getDecryptedKey(candidate);
         if (stored && stored.trim()) return stored.trim();
-      } catch {}
+      } catch { }
     }
     try {
       const { getAllVaultKeys } = require('../services/credential-vault');
@@ -2454,7 +2619,7 @@ export class ProviderGateway {
       for (const candidate of candidates) {
         if (vKeys[candidate] && vKeys[candidate].trim()) return vKeys[candidate].trim();
       }
-    } catch {}
+    } catch { }
     for (const candidate of candidates) {
       for (const envVar of HANDOFF_ENV_HINTS[candidate] || []) {
         const envValue = process.env[envVar];
@@ -2531,7 +2696,7 @@ export class ProviderGateway {
             break;
           }
         }
-      } catch {}
+      } catch { }
     }
 
     if (!effectiveKey) {
@@ -2881,7 +3046,7 @@ export class ProviderGateway {
           if (!community) {
             console.log('[GATEWAY] Community Key FAILED - falling back to anonymous tier');
           }
-        } catch {}
+        } catch { }
       }
 
       if (!apiKey || !apiKey.trim()) {
@@ -2926,10 +3091,10 @@ export class ProviderGateway {
     const carriedText = carriedPartial && carriedPartial.length > 0 ? carriedPartial : '';
     const streamMessages = carriedText
       ? ([
-          ...messages,
-          { role: 'assistant', content: carriedText },
-          { role: 'user', content: FAILOVER_RESUME_INSTRUCTION }
-        ] as ChatCompletionMessage[])
+        ...messages,
+        { role: 'assistant', content: carriedText },
+        { role: 'user', content: FAILOVER_RESUME_INSTRUCTION }
+      ] as ChatCompletionMessage[])
       : messages;
 
     // Phase FCC-4: Semantic Response Cache (hash-keyed, per-session opt-out)
@@ -3021,10 +3186,10 @@ export class ProviderGateway {
     try {
       // Add 120s timeout for long streaming responses
       const timeoutSignal = AbortSignal.timeout(120_000);
-      const combinedSignal = abortSignal 
+      const combinedSignal = abortSignal
         ? AbortSignal.any([abortSignal, timeoutSignal])
         : timeoutSignal;
-      
+
       response = await providerFetch(gatewayUrl, {
         method: 'POST',
         headers,

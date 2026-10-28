@@ -12,6 +12,7 @@ import {
 } from '../../../shared/types/agent-events';
 import { useGitStore } from './git-store';
 import { useWorkspaceStore } from './workspace-store';
+import { useSettingsStore, TY_CODE_FREE_MODEL, TY_CODE_FREE_PROVIDER } from './settings-store';
 
 interface ChatState {
   messages: ChatMessage[];
@@ -143,7 +144,7 @@ function syncMessageToCanvas(message: ChatMessage): void {
         origin: 'main'
       }
     })
-    .catch(() => {});
+    .catch(() => { });
 }
 
 export const FORBIDDEN_FIXTURE_PATTERNS = [
@@ -157,6 +158,8 @@ export interface AssistantStreamMetadata {
   providerId: string;
   modelId: string;
   streamEventCount: number;
+  /** Epoch-ms of the FIRST token flush (route stamping point). */
+  firstTokenAt?: number;
 }
 
 export interface ValidationResult {
@@ -165,8 +168,8 @@ export interface ValidationResult {
 }
 
 let currentTaskStreamEvents = 0;
-let currentTaskProviderId = 'default';
-let currentTaskModelId = 'default';
+let currentTaskProviderId = '';
+let currentTaskModelId = '';
 // Prompt 3: true while the active task streams through the dedicated OpenCode
 // CLI bridge channel (so Stop also kills the subprocess, not just the agent).
 let openCodeBridgeRouteActive = false;
@@ -287,7 +290,7 @@ function finalizePartialMessage(messages: ChatMessage[], text: string, reasoning
           status: 'FAIL',
           error: errorViolation
         });
-      } catch {}
+      } catch { }
     }
     const violationErrorCard: ChatErrorCard = {
       taxonomyCode: 'RENDER_SOURCE_VIOLATION',
@@ -563,7 +566,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
       } catch (err) { console.error('Failed to load settings:', err); }
     };
     if (!settingsChangedUnsubscribe) {
-      settingsChangedUnsubscribe = window.electronAPI.onSettingsChanged(() => { void refreshSettings(); });
+      settingsChangedUnsubscribe = window.electronAPI.onSettingsChanged((payload) => {
+        // Echo suppression (Prompt: Break the Model-Sync Echo Loop): ignore
+        // echoes this window caused itself. null/undefined origin = main-
+        // originated -> every window applies. Primitive number comparison.
+        const origin = payload?.originWebContentsId;
+        if (typeof origin === 'number' && origin >= 0 && window.electronAPI?.getWebContentsId) {
+          if (origin === window.electronAPI.getWebContentsId()) return;
+        }
+        void refreshSettings();
+      });
     }
     if (!sketcherPromptUnsubscribe && window.electronAPI?.onSketcherPrompt) {
       sketcherPromptUnsubscribe = window.electronAPI.onSketcherPrompt((prompt: string) => {
@@ -696,8 +708,27 @@ export const useChatStore = create<ChatState>((set, get) => ({
       : currentMessages;
     const taskId = createId('task');
     currentTaskStreamEvents = 0;
-    currentTaskProviderId = traceOptions?.providerOverride || get().settings?.activeProvider || 'default';
-    currentTaskModelId = traceOptions?.modelOverride || get().settings?.activeModel || 'default';
+    // Prompt 2: route resolution — runtime override > local chat settings >
+    // unified route store pair (which always carries the locked/default
+    // model). The strings "default"/"undefined" are never valid routes; the
+    // badge renders "routing…" while the route is genuinely unknown.
+    const unifiedRoute = useSettingsStore.getState();
+    const resolveRoute = (override: string | undefined, local: string | undefined, unified: string, fallback: string): string => {
+      const candidate = (override || local || unified || fallback || '').trim();
+      return candidate && candidate !== 'default' && candidate !== 'undefined' ? candidate : fallback;
+    };
+    currentTaskProviderId = resolveRoute(
+      traceOptions?.providerOverride,
+      get().settings?.activeProvider,
+      unifiedRoute.activeProviderId,
+      TY_CODE_FREE_PROVIDER
+    );
+    currentTaskModelId = resolveRoute(
+      traceOptions?.modelOverride,
+      get().settings?.activeModel,
+      unifiedRoute.activeModelId,
+      TY_CODE_FREE_MODEL
+    );
 
     const assistantId = createId('assistant');
     const initialAssistantMessage: ChatMessage = {
@@ -746,8 +777,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
         payloadSize: prompt.length,
         metadata: {
           promptSize: prompt.length,
-          modelSelected: traceOptions.modelOverride || get().settings?.activeModel || 'default',
-          providerSelected: traceOptions.providerOverride || get().settings?.activeProvider || 'default'
+          modelSelected: currentTaskModelId,
+          providerSelected: currentTaskProviderId
         }
       });
     }
@@ -857,6 +888,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
       accumulatedContent = referenceContent + deduped;
 
+      // Prompt 2: route stamping on FIRST token. The metadata carries the
+      // live task route + first-token time from here on; done/finalize
+      // finalizes it (route trail + stream events usage).
+      const firstTokenStamp = accumulatedContent === deduped && referenceContent === ''
+        ? { firstTokenAt: Date.now() }
+        : {};
+
       // Update message via updateMessage action every 100ms
       const targetMessage = get().messages.find((m) => m.taskId === taskId && m.role === 'assistant');
       if (targetMessage) {
@@ -864,14 +902,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
           content: targetMessage.content + deduped,
           statusText: '',
           isStreaming: true,
-          metadata: targetMessage.metadata
-            ? { ...targetMessage.metadata, streamEventCount: currentTaskStreamEvents }
-            : {
-                source: 'provider-stream',
-                providerId: currentTaskProviderId,
-                modelId: currentTaskModelId,
-                streamEventCount: currentTaskStreamEvents
-              }
+          metadata: {
+            ...(targetMessage.metadata || {}),
+            providerId: currentTaskProviderId,
+            modelId: currentTaskModelId,
+            source: 'provider-stream',
+            streamEventCount: currentTaskStreamEvents,
+            ...(targetMessage.metadata?.firstTokenAt ? {} : firstTokenStamp)
+          }
         });
       }
 
@@ -1026,7 +1064,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         reasoningRaf = null;
       }
       activeStreamDisposables.forEach((dispose) => {
-        try { dispose(); } catch {}
+        try { dispose(); } catch { }
       });
       activeStreamDisposables = [];
 
@@ -1057,11 +1095,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
             metadata: m.metadata
               ? { ...m.metadata, streamEventCount: Math.max(1, currentTaskStreamEvents) }
               : {
-                  source: 'provider-stream' as const,
-                  providerId: currentTaskProviderId,
-                  modelId: currentTaskModelId,
-                  streamEventCount: Math.max(1, currentTaskStreamEvents)
-                }
+                source: 'provider-stream' as const,
+                providerId: currentTaskProviderId,
+                modelId: currentTaskModelId,
+                streamEventCount: Math.max(1, currentTaskStreamEvents)
+              }
           };
         });
 
@@ -1101,7 +1139,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     };
 
     activeStreamDisposables.forEach((dispose) => {
-      try { dispose(); } catch {}
+      try { dispose(); } catch { }
     });
     activeStreamDisposables = [];
 
@@ -1205,10 +1243,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
           messages: state.messages.map((m) =>
             m.taskId === taskId
               ? {
-                  ...m,
-                  toolExecutions: [...(m.toolExecutions || []), newTool],
-                  statusText: `Running ${newTool.name}…`
-                }
+                ...m,
+                toolExecutions: [...(m.toolExecutions || []), newTool],
+                statusText: `Running ${newTool.name}…`
+              }
               : m
           )
         }));
@@ -1230,11 +1268,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
             const updatedTools = (m.toolExecutions || []).map((t) =>
               t.id === result.toolCallId
                 ? {
-                    ...t,
-                    status: result.isError ? ('error' as const) : ('success' as const),
-                    output: result.output,
-                    isError: result.isError
-                  }
+                  ...t,
+                  status: result.isError ? ('error' as const) : ('success' as const),
+                  output: result.output,
+                  isError: result.isError
+                }
                 : t
             );
             return {
@@ -1257,9 +1295,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
           messages: state.messages.map((m) =>
             m.taskId === taskId
               ? {
-                  ...m,
-                  proposedDiffs: [...(m.proposedDiffs || []), parsed.data.diff as any]
-                }
+                ...m,
+                proposedDiffs: [...(m.proposedDiffs || []), parsed.data.diff as any]
+              }
               : m
           )
         }));
@@ -1276,9 +1314,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
             messages: state.messages.map((m) =>
               m.taskId === taskId
                 ? {
-                    ...m,
-                    proposedDocument: doc
-                  }
+                  ...m,
+                  proposedDocument: doc
+                }
                 : m
             )
           }));

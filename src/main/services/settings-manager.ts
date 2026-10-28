@@ -267,8 +267,15 @@ export class SettingsManager {
         (err as any).code = 'VALIDATION';
         throw err;
       }
+      // Echo suppression (Prompt: Break the Model-Sync Echo Loop): a no-op
+      // save (identical content) must not fire the change event — every
+      // 'change' fans out into renderer re-hydrations. Primitive content
+      // comparison, same pattern as the file-watcher reload path below.
+      const globalChanged = JSON.stringify(next.data) !== JSON.stringify(this.globalSettings);
       await this.writeFile(this.globalSettingsPath, next.data);
       this.globalSettings = next.data;
+      if (globalChanged) this.events.emit('change');
+      return;
     } else {
       if (!this.workspacePath) {
         const err = new Error('Select a workspace before saving workspace settings.');
@@ -296,11 +303,12 @@ export class SettingsManager {
         (err as any).code = 'VALIDATION';
         throw err;
       }
+      const workspaceChanged = JSON.stringify(next.data) !== JSON.stringify(this.workspaceSettings);
       await this.writeFile(await this.resolveWorkspaceSettingsPath(true), next.data);
       this.workspaceSettings = next.data;
       await this.configureWorkspaceWatcher();
+      if (workspaceChanged) this.events.emit('change');
     }
-    this.events.emit('change');
   }
 
   public async initializeFromLegacySettings(settings: SettingsPatch): Promise<void> {
@@ -375,7 +383,7 @@ export class SettingsManager {
         console.warn(`[SettingsManager] Corrupted workspace settings JSON at ${workspaceFile}. Backing up to ${backupPath} and resetting:`, parseErr);
         try {
           await fs.writeFile(backupPath, raw, 'utf8');
-        } catch {}
+        } catch { }
         this.workspaceSettings = {};
         return;
       }

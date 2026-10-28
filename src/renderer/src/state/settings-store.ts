@@ -71,11 +71,26 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
       }
       const response = await window.electronAPI.getSettings();
       if (response.success && response.data) {
-        set({
-          activeProviderId: response.data.activeProvider || DEFAULTS.activeProviderId,
-          activeModelId: response.data.activeModel || '',
-          hydrated: true
-        });
+        const nextProviderId = response.data.activeProvider || DEFAULTS.activeProviderId;
+        const nextModelId = response.data.activeModel || '';
+        const current = get();
+        // Echo suppression (Prompt: Break the Model-Sync Echo Loop): apply
+        // ONLY on a primitive string difference. An identical hydration must
+        // not flip state (which would re-arm the sync watcher) — this is the
+        // hydrate-with-suppress path that lets late-opening popout windows
+        // adopt the locked model WITHOUT pushing set-active-model back.
+        if (current.activeProviderId !== nextProviderId || current.activeModelId !== nextModelId) {
+          // The value CAME from main's persisted settings: record it as the
+          // synced signature so the watcher does not echo it straight back.
+          lastSyncedSignature = configSignature(nextProviderId, nextModelId);
+          set({
+            activeProviderId: nextProviderId,
+            activeModelId: nextModelId,
+            hydrated: true
+          });
+        } else if (!current.hydrated) {
+          set({ hydrated: true });
+        }
       } else {
         set({ hydrated: true });
       }
@@ -160,17 +175,10 @@ async function syncActiveConfigToMain(providerId: string, modelId: string): Prom
       else toast.info(title, message);
     }
 
-    // Persist to main settings layer
-    try {
-      if (window.electronAPI?.saveSettings) {
-        await window.electronAPI.saveSettings({
-          activeProvider: summary.providerId as any,
-          activeModel: summary.modelId
-        });
-      }
-    } catch {
-      // Optional persistence
-    }
+    // Persistence is owned by main: the providers:update-active-config handler
+    // persists the resolved pair (and only on a genuine change). The renderer
+    // previously duplicated that save here, which doubled every saveLayer ->
+    // settings:changed cycle and fed the echo loop.
 
     // Mirror into the active model store
     try {

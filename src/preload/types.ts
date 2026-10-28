@@ -10,6 +10,30 @@ export type { WorkspaceProfile, CorrectionCategory, CorrectionEntry, CorrectionS
 import type { FreeProvider, ModelTier, TierClassification, ProviderHealthStatus } from '../shared/types/free-providers';
 import type { DetectedApiKey, CustomProviderConfig, StoredKeySummary, ByokExportBundle, ByokImportResult, KeyDetectionSource } from '../shared/types/byok';
 import type { OpenCodeDetectionResult, OpenCodeFreeTierSummary, OpenCodeImportResult, AgentFramework } from '../shared/types/opencode-sync';
+import type { DevChaosFault, DevChaosRequest, ReliabilityAdvisorPayload, ReliabilityHealthSnapshot } from '../shared/types/agent-events';
+
+// ===== Autonomous Free-Tier Reliability =====
+/** Structural mirror of the bounded local reliability ledger record shape. */
+export interface ReliabilityLedgerRecord {
+  at: number;
+  kind: 'probe' | 'ladder_step' | 'cooldown' | 'advisor' | 'recovered' | 'chaos';
+  turnId?: string;
+  route?: string;
+  step?: string;
+  outcome?: string;
+  latencyMs?: number;
+  detail?: string;
+}
+export interface ReliabilityStatsSummary {
+  probeCount: number;
+  probeFailures: number;
+  ladderSteps: number;
+  ladderSucceeded: number;
+  cooldownCount: number;
+  rotationCount: number;
+  advisorCount: number;
+  recoveredCount: number;
+}
 import type {
   BootTrace,
   PerfMark,
@@ -543,6 +567,8 @@ export interface AssistantStreamMetadata {
   providerId: string;
   modelId: string;
   streamEventCount: number;
+  /** Epoch-ms of the FIRST token flush (route stamping point). */
+  firstTokenAt?: number;
 }
 
 export interface ToolExecutionRecord {
@@ -1123,7 +1149,29 @@ export interface ElectronAPI {
   saveSettingsLayer: (scope: SettingsScope, settings: SettingsPatch | WorkspaceSettingsPatch) => Promise<IpcResponse<void>>;
   getSecurityPolicy: () => Promise<IpcResponse<SecurityPolicySettings>>;
   saveSecurityPolicy: (policy: Partial<SecurityPolicySettings>) => Promise<IpcResponse<void>>;
-  onSettingsChanged: (callback: () => void) => () => void;
+  /** This window's own webContents id (echo suppression); cached, one probe. */
+  getWebContentsId: () => number;
+  /**
+   * settings:changed echo suppression (Prompt: Break the Model-Sync Echo
+   * Loop): the payload carries the webContents id of the window that caused
+   * the change; null = main-originated. Listeners are disposable.
+   */
+  onSettingsChanged: (callback: (payload?: { originWebContentsId?: number | null }) => void) => () => void;
+  /** Dev-only storm generator probe; rejects in packaged builds. */
+  devStormTestSetActiveModel: () => Promise<IpcResponse<{ calls: number; stormDetected: boolean }>>;
+  // ===== Autonomous Free-Tier Reliability (Prompts 1-3) =====
+  /** Dev-only chaos injector; main refuses in packaged builds. */
+  devChaosInject?: (request: DevChaosRequest) => Promise<IpcResponse<{ fault: DevChaosFault }>>;
+  getReliabilityHealth?: () => Promise<IpcResponse<ReliabilityHealthSnapshot>>;
+  getReliabilityLedgerTail?: (limit?: number) => Promise<IpcResponse<{ records: ReliabilityLedgerRecord[] }>>;
+  getReliabilityStats?: () => Promise<IpcResponse<ReliabilityStatsSummary>>;
+  /** Advisor one-click actions (non-modal card buttons; never toasts). */
+  reliabilityRepairFcc?: () => Promise<IpcResponse<{ started: boolean; isActive: boolean }>>;
+  reliabilityRetestProviders?: () => Promise<IpcResponse<ReliabilityHealthSnapshot>>;
+  reliabilityStartOllama?: () => Promise<IpcResponse<{ running: boolean; error?: string }>>;
+  /** Disposable subscriptions; versioned snapshots, advisor cards/recovery. */
+  onReliabilityHealth?: (callback: (snapshot: ReliabilityHealthSnapshot) => void) => () => void;
+  onReliabilityAdvisor?: (callback: (payload: ReliabilityAdvisorPayload) => void) => () => void;
   // Prompt Assembler & Role Preferences (Deliverable 1 & 2)
   getAssemblyHistory?: () => Promise<IpcResponse<AssemblyResult[]>>;
   getAssemblyInfo?: (taskId: string) => Promise<IpcResponse<AssemblyResult | null>>;
@@ -1228,7 +1276,7 @@ export interface ElectronAPI {
   // Open VSX Marketplace APIs
   marketplaceSearch: (options: MarketplaceSearchOptions | string) => Promise<IpcResponse<MarketplaceSearchResult>>;
   marketplaceMetadata: (namespace: string, extension: string) => Promise<IpcResponse<MarketplaceExtensionEntry | null>>;
-  marketplaceInstall: (entry: MarketplaceExtensionEntry | { id: string; downloadUrl?: string; sha256?: string; [key: string]: unknown }) => Promise<IpcResponse<InstallResult>>;
+  marketplaceInstall: (entry: MarketplaceExtensionEntry | { id: string; downloadUrl?: string; sha256?: string;[key: string]: unknown }) => Promise<IpcResponse<InstallResult>>;
   marketplaceUninstall: (id: string) => Promise<IpcResponse<boolean>>;
   marketplaceListInstalled: () => Promise<IpcResponse<InstalledExtension[]>>;
   onMarketplaceInstallProgress: (callback: (event: InstallProgressEvent) => void) => () => void;
@@ -1332,7 +1380,7 @@ export interface ElectronAPI {
   installUpdate: () => Promise<{ success: boolean; error?: string }>;
   getUpdateChannel: () => Promise<IpcResponse<string>>;
   setUpdateChannel: (channel: string) => Promise<IpcResponse<void>>;
-  onUpdateStatus: (callback: (status: { type: string; [key: string]: any }) => void) => () => void;
+  onUpdateStatus: (callback: (status: { type: string;[key: string]: any }) => void) => () => void;
   onUpdateProgress: (callback: (progress: UpdateProgress) => void) => () => void;
 
   // Myers Diff & App Info

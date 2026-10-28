@@ -26,6 +26,7 @@ import { ProviderSetupCard } from './ProviderSetupCard';
 import { ChatErrorCard } from './ChatErrorCard';
 import { BackgroundAgentsPanel } from './agent/BackgroundAgentsPanel';
 import { ChatInput } from './chat/ChatInput';
+import { ReliabilityAdvisorCard } from './chat/ReliabilityAdvisorCard';
 import { useChatInputStore } from '../state/chat-input-store';
 import { toast } from '../state/toast-store';
 import { ChatMessageItem } from './ChatMessage';
@@ -1958,6 +1959,8 @@ export const ChatSidecar: React.FC = () => {
         </div>
       </div>
     )}
+
+    <ReliabilityAdvisorCard />
 
     <ChatInput
       input={input}

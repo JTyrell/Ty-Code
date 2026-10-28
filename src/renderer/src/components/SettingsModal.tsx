@@ -72,6 +72,8 @@ import { DiagnosticsPanel } from './settings/DiagnosticsPanel';
 import { ProvidersModelsTab } from './settings/ProvidersModelsTab';
 import { UsageLedgerView } from './dashboard/UsageLedgerView';
 import { CorrectionsManager } from './settings/CorrectionsManager';
+import { PanelBoundary, RenderStormWatch } from './settings/PanelBoundary';
+import { trackRenders } from '../dev/render-storm';
 import type { FreeProvider } from '../../../shared/types/free-providers';
 import type { StoredKeySummary, CustomProviderConfig } from '../../../shared/types/byok';
 
@@ -137,7 +139,31 @@ const FALLBACK_PROVIDERS: PreConfiguredProvider[] = [
   }
 ];
 
+/**
+ * Per-tab crash isolation: each settings tab panel is seated by its own
+ * PanelBoundary so a render error in one tab can NEVER take down the whole
+ * Settings modal (the top-level boundary in App.tsx stays as last resort).
+ * Plates every panel with a dev-only RenderStormWatch counter.
+ *
+ * The boundary unmounts when the tab is left, which resets it, so the next
+ * visit starts clean; the "Reload panel" button resets in place.
+ */
+function renderTabPanel(
+  activeTab: SettingsTab,
+  tabId: SettingsTab,
+  content: React.ReactNode
+): React.ReactNode {
+  if (activeTab !== tabId) return null;
+  return (
+    <PanelBoundary key={tabId} tabId={tabId}>
+      <RenderStormWatch name={`settings:${tabId}`} />
+      {content}
+    </PanelBoundary>
+  );
+}
+
 export const SettingsModal: React.FC = () => {
+  trackRenders('settings:SettingsModal');
   const { isSettingsOpen, toggleSettings, settings, saveSettings, activeSettingsTab } = useChatStore();
   const [activeTab, setActiveTab] = useState<SettingsTab>('providers');
 
@@ -1203,18 +1229,18 @@ export const SettingsModal: React.FC = () => {
 
         <div className="settings-body" ref={settingsBodyRef}>
           {/* Tab 0: Simple API Key Harvesting & SafeStorage Vault (KeyHarvest) */}
-          {activeTab === 'apikeys' && <ApiKeyManager />}
+          {renderTabPanel(activeTab, 'apikeys', <ApiKeyManager />)}
 
           {/* Tab 1: AI Providers & Models — verified catalog, categorized
               Free / Premium / Local, instant activation via the unified store */}
-          {activeTab === 'providers' && (
+          {renderTabPanel(activeTab, 'providers', (
             <ProvidersModelsTab
               onOpenApiKeys={() => setActiveTab('apikeys')}
               onOpenByok={() => setActiveTab('byok')}
               onOpenProviderSetup={() => setIsProviderModalOpen(true)}
               onOpenWizard={() => useOnboardingStore.getState().openWizard('welcome')}
             />
-          )}
+          ))}
 
           {/* Floating Window for Provider Setup / Custom Form (reached from the
               AI Providers & Models tab) */}
@@ -1398,7 +1424,7 @@ export const SettingsModal: React.FC = () => {
               )}
 
           {/* Tab: Seamless BYOK Interface & Key Management (Phase 6.2) */}
-          {activeTab === 'byok' && (
+          {renderTabPanel(activeTab, 'byok', (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }} id="byok-settings-panel">
               {/* Sub-tab navigation */}
               <div
@@ -1492,10 +1518,10 @@ export const SettingsModal: React.FC = () => {
                 />
               )}
             </div>
-          )}
+          ))}
 
           {/* Tab: OpenCode Integration & Free Model Sync (Phase 6.3) */}
-          {activeTab === 'opencode' && (
+          {renderTabPanel(activeTab, 'opencode', (
             <OpenCodeIntegration
               onSyncComplete={async () => {
                 await refreshByokData();
@@ -1505,20 +1531,20 @@ export const SettingsModal: React.FC = () => {
                 }
               }}
             />
-          )}
+          ))}
 
           {/* Tab: Modular Skills & External Integration Registry (Phase 3.1) */}
-          {activeTab === 'integrations' && (
+          {renderTabPanel(activeTab, 'integrations', (
             <IntegrationsPanel />
-          )}
+          ))}
 
           {/* Tab: Universal Correction Memory & Project Rules (Learning Loop) */}
-          {activeTab === 'rules' && (
+          {renderTabPanel(activeTab, 'rules', (
             <CorrectionsManager />
-          )}
+          ))}
 
           {/* Tab: Smart Orchestration & Unified Experience (Layer 6) */}
-          {activeTab === 'orchestration' && (
+          {renderTabPanel(activeTab, 'orchestration', (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div
                 style={{
@@ -1719,23 +1745,23 @@ export const SettingsModal: React.FC = () => {
                 />
               </div>
             </div>
-          )}
+          ))}
 
-          {activeTab === 'openkilo' && <OpenKiloSetup />}
+          {renderTabPanel(activeTab, 'openkilo', <OpenKiloSetup />)}
 
-          {activeTab === 'fcc' && <FCCSetup />}
+          {renderTabPanel(activeTab, 'fcc', <FCCSetup />)}
 
-          {activeTab === 'endpoints' && <>
+          {renderTabPanel(activeTab, 'endpoints', <>
             <div><label className="settings-field-label">Local Ollama base URL</label><input type="url" value={ollamaUrl} onChange={(event) => setOllamaUrl(event.target.value)} placeholder="http://localhost:11434/v1" style={{ width: '100%' }} /></div>
             <div><label className="settings-field-label">Free-Claude-Code proxy URL</label><input type="url" value={fccProxyUrl} onChange={(event) => setFccProxyUrl(event.target.value)} placeholder="http://localhost:8082/v1" style={{ width: '100%' }} /></div>
-          </>}
+          </>)}
 
-          {activeTab === 'params' && <>
+          {renderTabPanel(activeTab, 'params', <>
             <div><label className="settings-field-label">Temperature: {temperature}</label><input type="range" min="0" max="1" step="0.05" value={temperature} onChange={(event) => setTemperature(Number(event.target.value))} style={{ width: '100%' }} /></div>
             <div><label className="settings-field-label">Max response tokens</label><input type="number" min="1024" max="16384" step="512" value={maxTokens} onChange={(event) => setMaxTokens(Number(event.target.value))} style={{ width: '100%' }} /></div>
-          </>}
+          </>)}
 
-          {activeTab === 'terminal' && <>
+          {renderTabPanel(activeTab, 'terminal', <>
             <div className="settings-section-heading"><strong>Shell profiles</strong><span>Profiles are available in the terminal tab menu.</span></div>
             <div><label className="settings-field-label">Default terminal profile</label>
               <select value={defaultProfileId} onChange={(event) => setDefaultProfileId(event.target.value)} style={{ width: '100%' }}>
@@ -1768,9 +1794,9 @@ export const SettingsModal: React.FC = () => {
               {newProfileShellId === 'custom' && <input value={newProfilePath} onChange={(event) => setNewProfilePath(event.target.value)} placeholder="Absolute path to shell executable" aria-label="New custom shell executable path" />}
             </div>
             <div className="settings-hint">Session scrollback and shell profile are saved locally.</div>
-          </>}
+          </>)}
 
-          {activeTab === 'privacy' && (
+          {renderTabPanel(activeTab, 'privacy', (
             telemetryInspectorOpen ? (
               <section className="privacy-inspector" aria-labelledby="telemetry-inspector-heading">
                 <button type="button" className="privacy-back" onClick={() => setTelemetryInspectorOpen(false)}>
@@ -1885,10 +1911,10 @@ export const SettingsModal: React.FC = () => {
                 </section>
               </section>
             )
-          )}
+          ))}
 
           {/* Security Policy Settings Tab */}
-          {activeTab === 'security' && (
+          {renderTabPanel(activeTab, 'security', (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <p style={{ color: 'var(--text-secondary)', fontSize: 12, margin: 0 }}>
                 Choose where these rules apply. Workspace settings override the global policy for this project, but cannot grant access to files outside the workspace.
@@ -1932,10 +1958,10 @@ export const SettingsModal: React.FC = () => {
               </div>
               {securitySettings.fileAccessPolicy === 'system-access' && !securitySettings.systemAccessConfirmed && <div className="settings-hint" role="status">System Access is selected but remains inactive until Global Settings explicitly confirm it.</div>}
             </div>
-          )}
+          ))}
 
           {/* LSP Settings Tab */}
-          {activeTab === 'lsp' && (
+          {renderTabPanel(activeTab, 'lsp', (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <p style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
                 Install language servers yourself. System PATH executables can start automatically; project-local candidates are detected for information only and never run unless you set an explicit absolute path.
@@ -2011,10 +2037,10 @@ export const SettingsModal: React.FC = () => {
                 );
               })}
             </div>
-          )}
+          ))}
 
           {/* Editor Polish Tab */}
-          {activeTab === 'editor' && (
+          {renderTabPanel(activeTab, 'editor', (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <div>
                 <label className="settings-field-label" htmlFor="edit-review-policy">Change review policy</label>
@@ -2203,10 +2229,10 @@ export const SettingsModal: React.FC = () => {
                 </div>
               </div>
             </div>
-          )}
+          ))}
 
           {/* Keybindings Tab */}
-          {activeTab === 'shortcuts' && (
+          {renderTabPanel(activeTab, 'shortcuts', (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <div style={{ position: 'relative' }}>
                 <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
@@ -2259,10 +2285,10 @@ export const SettingsModal: React.FC = () => {
                 ))}
               </div>
             </div>
-          )}
+          ))}
 
           {/* Extensions Tab */}
-          {activeTab === 'extensions' && (
+          {renderTabPanel(activeTab, 'extensions', (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <div className="settings-section-heading">
                 <strong>Third-party Extensions</strong>
@@ -2469,17 +2495,17 @@ export const SettingsModal: React.FC = () => {
                 </button>
               </div>
             </div>
-          )}
+          ))}
 
           {/* Tab: RealConnect Usage Ledger */}
-          {activeTab === 'usage' && (
+          {renderTabPanel(activeTab, 'usage', (
             <UsageLedgerView />
-          )}
+          ))}
 
           {/* Tab: Provider Connection Diagnostic Harness (Phase Diagnostics 1) */}
-          {activeTab === 'diagnostics' && (
+          {renderTabPanel(activeTab, 'diagnostics', (
             <DiagnosticsPanel />
-          )}
+          ))}
 
           {error && (
             <div

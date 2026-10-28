@@ -38,6 +38,13 @@ interface GovernorState {
   liteMode: boolean;
   samples: MemorySample[];
   latestSample: MemorySample | null;
+  /**
+   * Immutable snapshot VERSION for the ring buffer. Bumped once per sample
+   * replacement. Components must subscribe to this primitive (never select
+   * `samples`/derived copies through a hook): unstable selector results spin
+   * React's useSyncExternalStore into "Maximum update depth exceeded".
+   */
+  sampleVersion: number;
   surfaces: SurfacePresence[];
   hydrated: boolean;
   documentHidden: boolean;
@@ -67,6 +74,7 @@ export const useGovernorStore = create<GovernorState>((set, get) => ({
   mainRssMb: 0,
   liteMode: false,
   samples: [],
+  sampleVersion: 0,
   latestSample: null,
   surfaces: [],
   hydrated: false,
@@ -81,6 +89,7 @@ export const useGovernorStore = create<GovernorState>((set, get) => ({
       liteMode: snapshot.liteMode,
       samples: snapshot.samples,
       latestSample: snapshot.latestSample,
+      sampleVersion: state.sampleVersion + 1,
       surfaces: snapshot.surfaces,
       hydrated: true
     })),
@@ -94,19 +103,22 @@ export const useGovernorStore = create<GovernorState>((set, get) => ({
   addSample: (sample) =>
     set((state) => {
       const next = [...state.samples, sample].slice(-144);
-      return { samples: next, latestSample: sample, mainRssMb: sample.mainRssMb };
+      return { samples: next, latestSample: sample, mainRssMb: sample.mainRssMb, sampleVersion: state.sampleVersion + 1 };
     }),
 
   setSurfaces: (surfaces) => set({ surfaces }),
 
   heartbeat: (id) =>
-    set((state) => ({
-      surfaces: state.surfaces.map((s) => (s.id === id ? { ...s, lastActive: Date.now(), active: true } : s))
-    }))
+    set((state) => {
+      const target = state.surfaces.find((s) => s.id === id);
+      // Idempotent heartbeat: skip allocating a new array when nothing changes.
+      if (!target || (target.active && Date.now() - target.lastActive < 1000)) return {};
+      return { surfaces: state.surfaces.map((s) => (s.id === id ? { ...s, lastActive: Date.now(), active: true } : s)) };
+    })
 }));
 
 // ---------------------------------------------------------------------------
-// Atomic selectors (derived, stable references)
+// Atomic selectors (derived, STABLE references — never a fresh object/array)
 // ---------------------------------------------------------------------------
 
 export const selectGovernorTier = (state: GovernorState): GovernorTier => state.tier;
@@ -114,20 +126,25 @@ export const selectGovernorMode = (state: GovernorState): GovernorMode => state.
 export const selectGovernorLiteMode = (state: GovernorState): boolean => state.liteMode;
 export const selectGovernorMainRssMb = (state: GovernorState): number => state.mainRssMb;
 export const selectGovernorTotalRamGb = (state: GovernorState): number => state.totalSystemRamGb;
-export const selectGovernorSamples = (state: GovernorState): MemorySample[] => state.samples;
+export const selectGovernorSampleVersion = (state: GovernorState): number => state.sampleVersion;
 export const selectGovernorLatestSample = (state: GovernorState): MemorySample | null => state.latestSample;
-export const selectGovernorSurfaces = (state: GovernorState): SurfacePresence[] => state.surfaces;
 export const selectGovernorHydrated = (state: GovernorState): boolean => state.hydrated;
 export const selectDocumentHidden = (state: GovernorState): boolean => state.documentHidden;
 
-export const selectGovernorSparkline = (state: GovernorState): number[] =>
-  state.samples.map((s) => s.mainRssMb);
+/** Primitive selectors derived from `surfaces` (identity-stable source array). */
+export const selectGovernorSurfaceTotal = (state: GovernorState): number => state.surfaces.length;
+export const selectGovernorSurfaceActive = (state: GovernorState): number =>
+  state.surfaces.reduce((count, s) => (s.active ? count + 1 : count), 0);
 
 export const selectGovernorIsCriticalOrOver = (state: GovernorState): boolean =>
   state.tier === 'CRITICAL' || state.tier === 'OVER';
 
-export const selectGovernorActiveSurfaces = (state: GovernorState): SurfacePresence[] =>
-  state.surfaces.filter((s) => s.active);
+/**
+ * Direct read helpers for consumers that draw on a store.subscribe() callback
+ * (canvas sparkline). NEVER expose these through a hook selector: they return
+ * fresh collections per call, which fails React's Object.is snapshot check.
+ */
+export const readGovernorSamples = (storeState: GovernorState): readonly MemorySample[] => storeState.samples;
 
 // ---------------------------------------------------------------------------
 // Renderer memory sampler (Step 4)

@@ -1,6 +1,7 @@
 import { safeStorage, app, ipcMain, BrowserWindow } from 'electron';
 import fs from 'fs';
 import path from 'path';
+import { sanitizeApiKey } from '../../shared/types/api-key-hints';
 
 function getCredentialsFilePath(): string {
   if (typeof (app as { getPath?: unknown } | undefined)?.getPath !== 'function') {
@@ -102,7 +103,17 @@ export function resetVaultSessionStateForTests(): void {
   decryptLogOnce.clear();
   vaultDecryptFailed = false;
   vaultFailureEmitted = false;
+  warmBootLogEmitted = false;
 }
+
+/**
+ * "[VAULT] Warm boot" is logged at most ONCE per session (Prompt: Break the
+ * Model-Sync Echo Loop). warmUpCommunityKey() sits on many hot paths (agent
+ * config resolution, gateway requests, availability refreshes); the cache-hit
+ * branch must stay silent after the first visibility line or every sync-loop
+ * cycle multiplies it.
+ */
+let warmBootLogEmitted = false;
 
 /** True when the vault is in the permanent no-retry failure state. */
 export function isVaultDecryptFailed(): boolean {
@@ -198,16 +209,20 @@ export async function saveKey(providerId: string, key: string): Promise<void> {
     throw new Error('safeStorage encryption is not available');
   }
 
+  // Prompt 2 (self-healing keys): clean classic paste mistakes (quotes,
+  // Bearer prefix, whitespace, trailing punctuation) without truncation.
+  const sanitized = sanitizeApiKey(key);
+
   const normProvider = providerId.toLowerCase().trim();
   const keys = loadAllKeys();
-  keys[normProvider] = key.trim();
+  keys[normProvider] = sanitized.key;
 
   // In-Memory Key Cache update: keep RAM in sync with written key
-  decryptedKeyCache.set(normProvider, key.trim());
+  decryptedKeyCache.set(normProvider, sanitized.key);
   // Keep the session keyring snapshot coherent with the write (a later
   // vault miss must see the saved key without re-decrypting).
   if (decryptedFileSnapshot) {
-    decryptedFileSnapshot[normProvider] = key.trim();
+    decryptedFileSnapshot[normProvider] = sanitized.key;
   }
 
   const filePath = getCredentialsFilePath();
@@ -229,7 +244,7 @@ export async function saveKey(providerId: string, key: string): Promise<void> {
   // Bi-directional sync: ensure key is also saved in credentialStore
   try {
     const { credentialStore } = await import('./auth/credential-store');
-    await credentialStore.saveCredential(normProvider, key.trim(), `${normProvider.toUpperCase()} Key`);
+    await credentialStore.saveCredential(normProvider, sanitized.key, `${normProvider.toUpperCase()} Key`);
   } catch (err) {
     console.warn('[VAULT] Failed syncing key to credentialStore:', err);
   }
@@ -311,7 +326,7 @@ export async function getKey(providerId: string): Promise<string | null> {
         return fromStore;
       }
     }
-  } catch {}
+  } catch { }
 
   try {
     const { readStoredCredentials } = await import('../ipc/settings-handlers');
@@ -324,7 +339,7 @@ export async function getKey(providerId: string): Promise<string | null> {
         return stored[alias];
       }
     }
-  } catch {}
+  } catch { }
 
   // Zero-Friction Community Key: the 'ty-code-free' virtual provider never
   // requires user input. The rotating Community Key is bootstrapped once from
@@ -585,8 +600,12 @@ export function getCommunityKeyCooldownRemainingSec(): number {
 export function warmUpCommunityKey(): void {
   if (getCommunityKeyCached()) {
     // ZeroFriction diagnosis (Prompt 2): a warm boot skips the whole chain -
-    // make that visible (logging only, resolution behavior unchanged)
-    console.log('[VAULT] Warm boot: community key found in encrypted cache - skipping remote fetch');
+    // make that visible ONCE per session (logging only, resolution behavior
+    // unchanged). Repeat cache hits are silent.
+    if (!warmBootLogEmitted) {
+      warmBootLogEmitted = true;
+      console.log('[VAULT] Warm boot: community key found in encrypted cache - skipping remote fetch');
+    }
     return;
   }
   void getCommunityKey().catch(() => undefined);
@@ -661,7 +680,8 @@ export function invalidateCommunityKey(): void {
 
 export async function testKey(
   providerId: string,
-  key: string
+  key: string,
+  timeoutMs: number = 10_000
 ): Promise<{ success: boolean; message: string }> {
   const p = providerId.toLowerCase().trim();
   let trimmedKey = (key || '').trim();
@@ -710,7 +730,7 @@ export async function testKey(
     const response = await fetch(url, {
       method: 'GET',
       headers,
-      signal: AbortSignal.timeout(10_000)
+      signal: AbortSignal.timeout(timeoutMs)
     });
 
     console.log(`[VAULT] Response status: ${response.status}`);
@@ -731,7 +751,7 @@ export async function testKey(
           max_tokens: 1,
           messages: [{ role: 'user', content: 'test' }]
         }),
-        signal: AbortSignal.timeout(10_000)
+        signal: AbortSignal.timeout(timeoutMs)
       });
       if (msgRes.ok) {
         return { success: true, message: 'Key is valid' };
@@ -751,4 +771,84 @@ export async function testKey(
     console.error(`[VAULT] Network error testing ${providerId} key:`, err?.message || err);
     return { success: false, message: err instanceof Error ? err.message : 'Network error verifying key' };
   }
+}
+
+/**
+ * Prompt 2 (key validation): cheap saved-key probe with a strict timeout
+ * (default 5s). Resolves the stored key through the vault alias chain, then
+ * runs the same per-provider GET endpoint as testKey() without demanding a
+ * fresh paste. Never throws.
+ */
+export async function probeSavedKey(
+  providerId: string,
+  timeoutMs: number = 5_000
+): Promise<{ valid: boolean; status?: number; message: string }> {
+  try {
+    const resolved = await getKey(providerId);
+    if (!resolved || !resolved.trim()) {
+      return { valid: false, message: `No key saved for ${providerId}` };
+    }
+    const res = await testKey(providerId, resolved, timeoutMs);
+    if (res.success) return { valid: true, message: res.message };
+    // Auth-shaped rejections only ever carry a 401 status. Transient shapes
+    // (network errors, timeouts, upstream 5xx) must NOT look like invalid
+    // keys — sticky invalid_key flips on explicit 401s alone.
+    const msg = res.message || '';
+    const authShaped = /^Invalid (API|Anthropic) key$/i.test(msg) || /invalid api key/i.test(msg);
+    return { valid: false, status: authShaped ? 401 : undefined, message: msg || 'Key failed verification' };
+  } catch (err) {
+    return { valid: false, message: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
+ * Prompt 2 (staggered 30-min revalidation roster): normalized provider ids
+ * that currently hold a key in the vault or the credential store.
+ *
+ * Restricted to the provider families testKey() has a real endpoint for —
+ * unknown ids would be probed against the OpenRouter fallback and produce
+ * meaningless "invalid" verdicts.
+ */
+const TESTKEY_SUPPORTED_PROVIDERS = new Set([
+  'openrouter',
+  'groq',
+  'anthropic',
+  'claude',
+  'openai',
+  'deepseek',
+  'openkilo',
+  'kilo',
+  'gemini',
+  'google',
+  'google-ai-studio'
+]);
+
+export function listProvidersWithKeys(): string[] {
+  const found = new Set<string>();
+  const addSupported = (id: string): void => {
+    const base = (id || '').trim().toLowerCase().replace(/-free$/, '');
+    if (base && TESTKEY_SUPPORTED_PROVIDERS.has(base)) found.add(base);
+  };
+  try {
+    const vaultKeys = getAllVaultKeys();
+    for (const [id, value] of Object.entries(vaultKeys || {})) {
+      if (typeof value === 'string' && value.trim() && id !== COMMUNITY_KEY_LABEL) {
+        addSupported(id);
+      }
+    }
+  } catch {
+    // Vault unavailable
+  }
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { credentialStore } = require('./auth/credential-store') as typeof import('./auth/credential-store');
+    for (const [id, value] of Object.entries(credentialStore.getAllDecryptedKeys() || {})) {
+      if (value && value.trim()) {
+        addSupported(id);
+      }
+    }
+  } catch {
+    // Store unavailable
+  }
+  return Array.from(found);
 }

@@ -41,6 +41,7 @@ import type { OpenCodeKeyStatus } from '../../../../preload/types';
 import { useChatStore } from '../../state/chat-store';
 import { useOnboardingStore } from '../../state/onboarding-store';
 import { toast } from '../../state/toast-store';
+import { sanitizeApiKey, keyFormatHintFor } from '../../../../shared/types/api-key-hints';
 
 /** Manual key configuration targets for OpenCode's premium models (Prompt 2). */
 const OPENCODE_PREMIUM_PROVIDERS: Array<{ id: string; name: string; placeholder: string }> = [
@@ -135,7 +136,10 @@ export const APIKeyManager: React.FC<APIKeyManagerProps> = ({
   // One-Key Premium activation: verify the key against OpenRouter live, then
   // persist it through the encrypted settings vault (same path as the wizard).
   const handleActivatePremium = async () => {
-    const key = premiumKeyInput.trim();
+    // Prompt 2: clean paste mistakes (quotes / Bearer / whitespace) client-side
+    // too; the vault sanitizes again on the main-process side.
+    const cleaned = sanitizeApiKey(premiumKeyInput);
+    const key = cleaned.key;
     if (!key) {
       setErrorNotice('Enter your OpenRouter API key to unlock premium models.');
       return;
@@ -166,7 +170,7 @@ export const APIKeyManager: React.FC<APIKeyManagerProps> = ({
   // safeStorage vault and inject it into the user's OpenCode config. The IPC
   // response is booleans only — the plaintext key is never sent back here.
   const handleSaveOpenCodeKey = async (providerId: string) => {
-    const key = (opencodeKeyInputs[providerId] || '').trim();
+    const key = sanitizeApiKey(opencodeKeyInputs[providerId] || '').key;
     if (!key || key.length < 8) {
       toast.error('Enter a valid API key first', `The ${providerId} key looks too short — nothing was stored.`);
       return;
@@ -650,6 +654,10 @@ export const APIKeyManager: React.FC<APIKeyManagerProps> = ({
               ? ' Your saved key is active — replace it below any time.'
               : ' Get a key below if you want more capability.'}
           </p>
+          <div style={{ marginTop: '4px', fontSize: '10.5px', color: '#94a3b8' }}>
+            Format hint: {keyFormatHintFor('openrouter')?.hint || 'OpenRouter keys look like sk-or-v1-…'} Quoted,
+            "Bearer"-prefixed or spaced pastes are cleaned up automatically.
+          </div>
           <div style={{ display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
             <input
               type="password"

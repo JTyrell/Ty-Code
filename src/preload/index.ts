@@ -2,6 +2,23 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { IpcRendererEvent } from 'electron';
 import type { AgentStreamChunk, CanvasAgentEventPayloadData, CanvasEditAppliedPayload, CanvasEditIntent, CanvasMessageData, CanvasPreviewProposedPayload, CanvasPreviewStatusPayload, CanvasSnapshotData, CanvasStructuralIntentPayload, CanvasUpdateNotificationData, CommandExecutionOptions, ElectronAPI, ExtensionMetadata, ProposedDiff, PtySessionInfo, PtySpawnOptions, TerminalRunCommandOptions } from './types';
 import { AgentDonePayloadSchema } from '../shared/types/agent-events';
+import type { ReliabilityAdvisorPayload, ReliabilityHealthSnapshot } from '../shared/types/agent-events';
+
+// Echo suppression (Prompt: Break the Model-Sync Echo Loop): each renderer
+// needs its own webContents id to ignore settings:changed echoes it caused
+// itself. Probed ONCE via sendSync and cached for the window's lifetime.
+let cachedWebContentsId: number | null = null;
+function getOwnWebContentsId(): number {
+  if (cachedWebContentsId === null) {
+    try {
+      const value = ipcRenderer.sendSync('window:whoami');
+      cachedWebContentsId = typeof value === 'number' ? value : -1;
+    } catch {
+      cachedWebContentsId = -1;
+    }
+  }
+  return cachedWebContentsId;
+}
 
 const api: ElectronAPI = {
   minimizeWindow: () => ipcRenderer.send('window:minimize'),
@@ -121,10 +138,36 @@ const api: ElectronAPI = {
   saveSettingsLayer: (scope, settings) => ipcRenderer.invoke('settings:layer:save', { scope, settings }),
   getSecurityPolicy: () => ipcRenderer.invoke('settings:security:get'),
   saveSecurityPolicy: (policy) => ipcRenderer.invoke('settings:security:save', policy),
+  getWebContentsId: () => getOwnWebContentsId(),
   onSettingsChanged: (callback) => {
-    const listener = () => callback();
+    // Payload carries { originWebContentsId } (null = main-originated) so the
+    // renderer can suppress its own echo. Disposable subscription.
+    const listener = (_: IpcRendererEvent, payload: { originWebContentsId?: number | null }) => callback(payload);
     ipcRenderer.on('settings:changed', listener);
     return () => ipcRenderer.removeListener('settings:changed', listener);
+  },
+  // Dev-only storm GENERATOR probe (main registers the handler unpackaged
+  // builds only; in production this invoke simply rejects).
+  devStormTestSetActiveModel: () => ipcRenderer.invoke('dev:storm:set-active-model'),
+  // ===== Autonomous Free-Tier Reliability (Prompts 1-3) =====
+  // Dev-only chaos injector (main registers the handler unpackaged builds
+  // only; in production this invoke simply rejects).
+  devChaosInject: (request) => ipcRenderer.invoke('devChaos:fire', request),
+  getReliabilityHealth: () => ipcRenderer.invoke('reliability:get-health'),
+  getReliabilityLedgerTail: (limit) => ipcRenderer.invoke('reliability:get-ledger-tail', limit),
+  getReliabilityStats: () => ipcRenderer.invoke('reliability:get-stats'),
+  reliabilityRepairFcc: () => ipcRenderer.invoke('reliability:repair-fcc'),
+  reliabilityRetestProviders: () => ipcRenderer.invoke('reliability:retest-providers'),
+  reliabilityStartOllama: () => ipcRenderer.invoke('reliability:start-ollama'),
+  onReliabilityHealth: (callback) => {
+    const handler = (_: IpcRendererEvent, snapshot: unknown) => callback(snapshot as ReliabilityHealthSnapshot);
+    ipcRenderer.on('reliability:health-snapshot', handler);
+    return () => ipcRenderer.removeListener('reliability:health-snapshot', handler);
+  },
+  onReliabilityAdvisor: (callback) => {
+    const handler = (_: IpcRendererEvent, payload: unknown) => callback(payload as ReliabilityAdvisorPayload);
+    ipcRenderer.on('reliability:advisor', handler);
+    return () => ipcRenderer.removeListener('reliability:advisor', handler);
   },
   // Prompt Assembler & Role Preferences
   getAssemblyHistory: () => ipcRenderer.invoke('prompt:get-assembly-history'),
@@ -155,7 +198,7 @@ const api: ElectronAPI = {
           promptSize: params.prompt?.length || 0,
           workspacePath: params.workspacePath
         }
-      }).catch(() => {});
+      }).catch(() => { });
     }
     return ipcRenderer.invoke('agent:start-task', params);
   },
@@ -379,40 +422,40 @@ const api: ElectronAPI = {
   extensionProvideCompletions: (query: { language: string; filePath: string; line: number; character: number }) => ipcRenderer.invoke('extensions:provide-completions', query),
 
   // Git APIs always use the active workspace selected in the main process.
-      gitIsRepo: (payload?: { repoPath?: string }) => ipcRenderer.invoke('git:is-repo', payload),
-      gitInit: (payload?: { repoPath?: string }) => ipcRenderer.invoke('git:init', payload),
-      gitGetStatus: (payload?: { repoPath?: string }) => ipcRenderer.invoke('git:status', payload),
-      gitGetDiff: (payload?: { filePath?: string; staged?: boolean; repoPath?: string }) => ipcRenderer.invoke('git:diff', payload),
-      gitGetOriginalContent: (payload: { filePath: string; staged?: boolean; repoPath?: string }) => ipcRenderer.invoke('git:original-content', payload),
-      gitStage: (payload: { filePaths: string | string[]; repoPath?: string }) => ipcRenderer.invoke('git:stage', payload),
-      gitUnstage: (payload: { filePaths: string | string[]; repoPath?: string }) => ipcRenderer.invoke('git:unstage', payload),
-      gitDiscardChanges: (payload: { filePath: string; isUntracked?: boolean; repoPath?: string }) => ipcRenderer.invoke('git:discard', payload),
-      gitCommit: (payload: { message: string; options?: { amend?: boolean }; repoPath?: string }) => ipcRenderer.invoke('git:commit', payload),
-      gitGetBranches: (payload?: { repoPath?: string }) => ipcRenderer.invoke('git:branches', payload),
-      gitSwitchBranch: (payload: { branchName: string; repoPath?: string }) => ipcRenderer.invoke('git:switch-branch', payload),
-      gitCreateBranch: (payload: { branchName: string; repoPath?: string }) => ipcRenderer.invoke('git:create-branch', payload),
-      gitDeleteBranch: (payload: { branchName: string; force?: boolean; repoPath?: string }) => ipcRenderer.invoke('git:delete-branch', payload),
-      gitFetch: (payload?: { repoPath?: string }) => ipcRenderer.invoke('git:fetch', payload),
-      gitPull: (payload?: { repoPath?: string }) => ipcRenderer.invoke('git:pull', payload),
-      gitPush: (payload?: { remote?: string; branch?: string; repoPath?: string }) => ipcRenderer.invoke('git:push', payload),
-      gitGetLog: (payload?: { maxCount?: number; search?: string; repoPath?: string }) => ipcRenderer.invoke('git:log', payload),
-      gitGetBlame: (payload: { filePath: string; repoPath?: string }) => ipcRenderer.invoke('git:blame', payload),
-      gitStash: (payload: { action: 'list' | 'save' | 'pop' | 'drop'; message?: string; index?: number; repoPath?: string }) => ipcRenderer.invoke('git:stash', payload),
-      gitGetRemotes: (payload?: { repoPath?: string }) => ipcRenderer.invoke('git:remotes', payload),
-      gitGetFileDiff: (payload: { filePath: string; staged?: boolean; repoPath?: string }) => ipcRenderer.invoke('git:file-diff', payload),
-      gitGetCommitDetail: (payload: { hash: string; repoPath?: string }) => ipcRenderer.invoke('git:commit-detail', payload),
-      gitGetTags: (payload?: { repoPath?: string }) => ipcRenderer.invoke('git:tags', payload),
-      gitCreateTag: (payload: { name: string; message?: string; repoPath?: string }) => ipcRenderer.invoke('git:create-tag', payload),
-      gitDeleteTag: (payload: { name: string; repoPath?: string }) => ipcRenderer.invoke('git:delete-tag', payload),
-      gitGetConflictContent: (payload: { filePath: string; repoPath?: string }) => ipcRenderer.invoke('git:conflict-content', payload),
-      gitResolveConflict: (payload: { filePath: string; action: 'ours' | 'theirs' | 'mark-resolved'; repoPath?: string }) => ipcRenderer.invoke('git:resolve-conflict', payload),
-      gitAbortMerge: (payload?: { repoPath?: string }) => ipcRenderer.invoke('git:abort-merge', payload),
-      gitGetHunks: (payload: { filePath: string; staged?: boolean; repoPath?: string }) => ipcRenderer.invoke('git:hunks', payload),
-      gitApplyHunk: (payload: { filePath: string; hunkId: string; operation: 'stage' | 'unstage' | 'revert'; repoPath?: string }) => ipcRenderer.invoke('git:apply-hunk', payload),
-      gitMerge: (payload: { branchName: string; repoPath?: string }) => ipcRenderer.invoke('git:merge', payload),
-      gitListRepositories: (payload?: { workspacePath?: string }) => ipcRenderer.invoke('git:list-repositories', payload),
-      gitGraph: (payload?: { maxCount?: number; repoPath?: string }) => ipcRenderer.invoke('git:graph', payload),
-      gitSuggestCommitMessage: (payload?: { repoPath?: string }) => ipcRenderer.invoke('git:suggest-commit-message', payload),
+  gitIsRepo: (payload?: { repoPath?: string }) => ipcRenderer.invoke('git:is-repo', payload),
+  gitInit: (payload?: { repoPath?: string }) => ipcRenderer.invoke('git:init', payload),
+  gitGetStatus: (payload?: { repoPath?: string }) => ipcRenderer.invoke('git:status', payload),
+  gitGetDiff: (payload?: { filePath?: string; staged?: boolean; repoPath?: string }) => ipcRenderer.invoke('git:diff', payload),
+  gitGetOriginalContent: (payload: { filePath: string; staged?: boolean; repoPath?: string }) => ipcRenderer.invoke('git:original-content', payload),
+  gitStage: (payload: { filePaths: string | string[]; repoPath?: string }) => ipcRenderer.invoke('git:stage', payload),
+  gitUnstage: (payload: { filePaths: string | string[]; repoPath?: string }) => ipcRenderer.invoke('git:unstage', payload),
+  gitDiscardChanges: (payload: { filePath: string; isUntracked?: boolean; repoPath?: string }) => ipcRenderer.invoke('git:discard', payload),
+  gitCommit: (payload: { message: string; options?: { amend?: boolean }; repoPath?: string }) => ipcRenderer.invoke('git:commit', payload),
+  gitGetBranches: (payload?: { repoPath?: string }) => ipcRenderer.invoke('git:branches', payload),
+  gitSwitchBranch: (payload: { branchName: string; repoPath?: string }) => ipcRenderer.invoke('git:switch-branch', payload),
+  gitCreateBranch: (payload: { branchName: string; repoPath?: string }) => ipcRenderer.invoke('git:create-branch', payload),
+  gitDeleteBranch: (payload: { branchName: string; force?: boolean; repoPath?: string }) => ipcRenderer.invoke('git:delete-branch', payload),
+  gitFetch: (payload?: { repoPath?: string }) => ipcRenderer.invoke('git:fetch', payload),
+  gitPull: (payload?: { repoPath?: string }) => ipcRenderer.invoke('git:pull', payload),
+  gitPush: (payload?: { remote?: string; branch?: string; repoPath?: string }) => ipcRenderer.invoke('git:push', payload),
+  gitGetLog: (payload?: { maxCount?: number; search?: string; repoPath?: string }) => ipcRenderer.invoke('git:log', payload),
+  gitGetBlame: (payload: { filePath: string; repoPath?: string }) => ipcRenderer.invoke('git:blame', payload),
+  gitStash: (payload: { action: 'list' | 'save' | 'pop' | 'drop'; message?: string; index?: number; repoPath?: string }) => ipcRenderer.invoke('git:stash', payload),
+  gitGetRemotes: (payload?: { repoPath?: string }) => ipcRenderer.invoke('git:remotes', payload),
+  gitGetFileDiff: (payload: { filePath: string; staged?: boolean; repoPath?: string }) => ipcRenderer.invoke('git:file-diff', payload),
+  gitGetCommitDetail: (payload: { hash: string; repoPath?: string }) => ipcRenderer.invoke('git:commit-detail', payload),
+  gitGetTags: (payload?: { repoPath?: string }) => ipcRenderer.invoke('git:tags', payload),
+  gitCreateTag: (payload: { name: string; message?: string; repoPath?: string }) => ipcRenderer.invoke('git:create-tag', payload),
+  gitDeleteTag: (payload: { name: string; repoPath?: string }) => ipcRenderer.invoke('git:delete-tag', payload),
+  gitGetConflictContent: (payload: { filePath: string; repoPath?: string }) => ipcRenderer.invoke('git:conflict-content', payload),
+  gitResolveConflict: (payload: { filePath: string; action: 'ours' | 'theirs' | 'mark-resolved'; repoPath?: string }) => ipcRenderer.invoke('git:resolve-conflict', payload),
+  gitAbortMerge: (payload?: { repoPath?: string }) => ipcRenderer.invoke('git:abort-merge', payload),
+  gitGetHunks: (payload: { filePath: string; staged?: boolean; repoPath?: string }) => ipcRenderer.invoke('git:hunks', payload),
+  gitApplyHunk: (payload: { filePath: string; hunkId: string; operation: 'stage' | 'unstage' | 'revert'; repoPath?: string }) => ipcRenderer.invoke('git:apply-hunk', payload),
+  gitMerge: (payload: { branchName: string; repoPath?: string }) => ipcRenderer.invoke('git:merge', payload),
+  gitListRepositories: (payload?: { workspacePath?: string }) => ipcRenderer.invoke('git:list-repositories', payload),
+  gitGraph: (payload?: { maxCount?: number; repoPath?: string }) => ipcRenderer.invoke('git:graph', payload),
+  gitSuggestCommitMessage: (payload?: { repoPath?: string }) => ipcRenderer.invoke('git:suggest-commit-message', payload),
 
   // Search & Replace APIs
   searchInFiles: (options: any) => ipcRenderer.invoke('fs:search-in-files', options),
@@ -950,7 +993,7 @@ const api: ElectronAPI = {
     };
   },
   stopOpenCodeProcess: () => ipcRenderer.invoke('opencode:stop-process'),
-  testVerifiedApi: (data: { modelId: string; prompt: string; apiKey?: string }) => 
+  testVerifiedApi: (data: { modelId: string; prompt: string; apiKey?: string }) =>
     ipcRenderer.invoke('test-verified-api', data),
   onVerifiedApiChunk: (cb: (chunk: string) => void) => {
     const listener = (_e: any, chunk: string) => cb(chunk);

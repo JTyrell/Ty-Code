@@ -34,7 +34,8 @@ import {
   handleLspCodeActions, handleLspSignatureHelp, getLspManager
 } from './ipc/lsp-handlers';
 import { getCredentialStorageStatusResponse, getSettings, getSettingsLayer, getSecurityPolicy, saveSecurityPolicy, saveSettings, saveSettingsLayer, readOnboardingState, writeOnboardingState, mergeStoredApiKeys, classifySettingsError } from './ipc/settings-handlers';
-import { setActiveAgentConfig } from './agent/agent-config';
+import { setActiveAgentConfig, getActiveAgentConfig, seedActiveConfig } from './agent/agent-config';
+import { activePairChanged, hasSyncLoopStormFired } from './providers/active-model-lock';
 import { providerHealthStore } from './providers/provider-health-store';
 import { routeEventPolicy } from './providers/route-event-policy';
 import { settingsManager } from './services/settings-manager';
@@ -168,6 +169,21 @@ const AgentRespondApprovalPayloadSchema = z.object({
   feedback: z.string().optional()
 });
 
+// Prompt: Break the Model-Sync Echo Loop — Zod-validated payloads for every
+// set-active-model entry point. Blank provider/model are legal (they resolve
+// to the Ty-Code Free tier); lengths are bounded to keep the settings layer sane.
+const ActiveConfigSyncPayloadSchema = z.object({
+  providerId: z.string().max(128).optional(),
+  modelId: z.string().max(512).optional(),
+  origin: z.enum(['explicit', 'auto']).optional()
+});
+
+const ActiveModelConfigPayloadSchema = z.object({
+  providerId: z.string().max(128),
+  modelId: z.string().max(512),
+  isAutoMode: z.boolean()
+});
+
 const UserApproveDiffPayloadSchema = z.union([
   z.boolean(),
   z.object({
@@ -244,6 +260,10 @@ import { connectivityTracer } from './services/diagnostics/connectivity-tracer';
 import { providerOAuth } from './services/auth/provider-oauth';
 import { usageLedger } from './services/usage/ledger';
 import { saveKey, getKey, testKey, warmUpCommunityKey, revalidateCommunityKey, getCommunityKeyCached, hasCommunityKey, getCommunityKeyStatus, clearKeyCache } from './services/credential-vault';
+// === Autonomous Free-Tier Reliability (Prompt 1) ===
+import { reliabilitySentinel } from './services/reliability/reliability-sentinel';
+import { reliabilityLedger } from './services/reliability/reliability-ledger';
+import { DevChaosRequestSchema } from '../shared/types/agent-events';
 import { initiateCopilotDeviceFlow, pollCopilotToken } from './services/auth/subscription-auth';
 import { canvasSyncManager } from './services/canvas-sync-manager';
 import { canvasAgentEngine, type CanvasAgentGenerationResult } from './agent/canvas-agent-engine';
@@ -1169,8 +1189,11 @@ function registerIpcHandlers(): void {
     }
   });
   settingsManager.onDidChange(() => {
+    // Main-originated settings change (file watcher, any saveLayer): no single
+    // window caused it, so originWebContentsId is null and every renderer
+    // applies it (subject to its own equality guard).
     if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
-      mainWindow.webContents.send('settings:changed');
+      mainWindow.webContents.send('settings:changed', { originWebContentsId: null });
     }
   });
   ipcMain.handle('settings:layer:get', async (event, scope: unknown) => {
@@ -1203,10 +1226,10 @@ function registerIpcHandlers(): void {
   ipcMain.handle('settings:save', async (event, updates) => {
     if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.', errorDetail: { ok: false, code: 'IO', message: 'Untrusted renderer frame.', detail: 'Caller frame was not trusted.' } };
     try {
-      const result = await saveSettings(updates);
-    if (result.success && updates?.telemetry?.enabled === false) await getTelemetryManager().clearData();
-    if (result.success && updates?.['lsp.autoStart'] !== undefined) getLspManager(currentWorkspacePath).setAutoStart(updates['lsp.autoStart']);
-    if (result.success) clearAvailabilityCache();
+      const result = await saveSettings(updates, event.sender.id);
+      if (result.success && updates?.telemetry?.enabled === false) await getTelemetryManager().clearData();
+      if (result.success && updates?.['lsp.autoStart'] !== undefined) getLspManager(currentWorkspacePath).setAutoStart(updates['lsp.autoStart']);
+      if (result.success) clearAvailabilityCache();
       return result;
     } catch (err: unknown) {
       const { code, message, detail } = classifySettingsError(err);
@@ -1219,15 +1242,30 @@ function registerIpcHandlers(): void {
     }
   });
 
+  // Echo suppression (Prompt: Break the Model-Sync Echo Loop): one-time
+  // synchronous identity probe. Each renderer caches its own webContents id
+  // so it can ignore settings:changed echoes it caused itself.
+  ipcMain.on('window:whoami', (event) => {
+    event.returnValue = event.sender.id;
+  });
+
   // Renderer selection changes funnel here: validate -> active agent config ->
   // gateway override -> persist. Credentials never travel over this channel;
   // only masked key summaries (e.g. "sk-ant-••••1234") are returned.
-  ipcMain.handle('providers:update-active-config', async (event, config: { providerId?: string; modelId?: string; origin?: 'explicit' | 'auto' }) => {
+  ipcMain.handle('providers:update-active-config', async (event, config: unknown) => {
     if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    const parsedConfig = ActiveConfigSyncPayloadSchema.safeParse(config);
+    if (!parsedConfig.success) {
+      return { success: false, error: `Invalid active-config payload: ${parsedConfig.error.issues[0]?.message || 'validation failed'}` };
+    }
     try {
-      const providerId = typeof config?.providerId === 'string' ? config.providerId : '';
-      const modelId = typeof config?.modelId === 'string' ? config.modelId : '';
-      const origin = config?.origin === 'explicit' ? 'explicit' : 'auto';
+      const providerId = parsedConfig.data.providerId || '';
+      const modelId = parsedConfig.data.modelId || '';
+      const origin = parsedConfig.data.origin === 'explicit' ? 'explicit' : 'auto';
+      // Echo suppression (Prompt: Break the Model-Sync Echo Loop): capture the
+      // pair BEFORE resolution so an identical re-selection persists and
+      // broadcasts NOTHING. Primitive string comparison only.
+      const before = { ...getActiveAgentConfig() };
       const summary = await setActiveAgentConfig(providerId, modelId, origin);
       if (summary.keyStatus === 'missing') {
         return {
@@ -1238,10 +1276,14 @@ function registerIpcHandlers(): void {
       setGatewayActiveConfig(summary.providerId, summary.modelId);
       // Persist through the regular settings layer so restarts keep this
       // selection; the summary may carry a downgraded Ty-Code Free pair.
-      try {
-        await saveSettings({ activeProvider: summary.providerId as any, activeModel: summary.modelId });
-      } catch {}
-      clearAvailabilityCache();
+      // Skipped entirely when the resolved pair equals the previous one —
+      // this is what starves the settings:changed echo loop at the source.
+      if (activePairChanged(before, summary)) {
+        try {
+          await saveSettings({ activeProvider: summary.providerId as any, activeModel: summary.modelId }, event.sender.id);
+        } catch { }
+        clearAvailabilityCache();
+      }
       return { success: true, data: summary };
     } catch (error: unknown) {
       return { success: false, error: error instanceof Error ? error.message : String(error) };
@@ -1278,7 +1320,7 @@ function registerIpcHandlers(): void {
         }
       });
     }
-    const result = await startAgentTask(mainWindow, { ...params, workspacePath: currentWorkspacePath });
+    const result = await startAgentTask(mainWindow, { ...params, workspacePath: currentWorkspacePath || process.cwd() });
     if (result.success) void getTelemetryManager().recordFeatureUsed('agent_chat');
     return result;
   });
@@ -1849,7 +1891,7 @@ function registerIpcHandlers(): void {
         outputFileName,
         format,
         onProgress: (p) => {
-          try { event.sender.send('history:export-progress', p); } catch {}
+          try { event.sender.send('history:export-progress', p); } catch { }
         }
       });
       if (result.success) void getTelemetryManager().recordFeatureUsed('history_export');
@@ -2500,25 +2542,83 @@ function registerIpcHandlers(): void {
     return { success: true };
   });
 
-  ipcMain.handle('models:update-active-model-config', async (event, config: { providerId: string; modelId: string; isAutoMode: boolean }) => {
-    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+  ipcMain.handle('clipboard:write', async (_event, text: string) => {
     try {
-      ProviderGateway.setActiveModel(config);
-      return { success: true, data: config };
+      await navigator.clipboard.writeText(text);
+      return { success: true };
     } catch (err: unknown) {
       return { success: false, error: err instanceof Error ? err.message : String(err) };
     }
   });
 
-  ipcMain.handle('update-active-model-config', async (event, config: { providerId: string; modelId: string; isAutoMode: boolean }) => {
+  ipcMain.handle('models:update-active-model-config', async (event, config: unknown) => {
     if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    const parsedModelConfig = ActiveModelConfigPayloadSchema.safeParse(config);
+    if (!parsedModelConfig.success) {
+      return { success: false, error: `Invalid active model payload: ${parsedModelConfig.error.issues[0]?.message || 'validation failed'}` };
+    }
     try {
-      ProviderGateway.setActiveModel(config);
-      return { success: true, data: config };
+      // Gateway-level idempotency makes repeated identical pushes silent
+      // no-ops (no log, no preferences write); the [SYNC-LOOP] tripwire
+      // sheds call storms.
+      ProviderGateway.setActiveModel(parsedModelConfig.data);
+      return { success: true, data: parsedModelConfig.data };
     } catch (err: unknown) {
       return { success: false, error: err instanceof Error ? err.message : String(err) };
     }
   });
+
+  ipcMain.handle('update-active-model-config', async (event, config: unknown) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    const parsedModelConfig = ActiveModelConfigPayloadSchema.safeParse(config);
+    if (!parsedModelConfig.success) {
+      return { success: false, error: `Invalid active model payload: ${parsedModelConfig.error.issues[0]?.message || 'validation failed'}` };
+    }
+    try {
+      ProviderGateway.setActiveModel(parsedModelConfig.data);
+      return { success: true, data: parsedModelConfig.data };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  // Dev-only storm GENERATOR (Prompt: Break the Model-Sync Echo Loop). The
+  // [SYNC-LOOP] tripwire itself ships in production; this hook exists purely
+  // to VERIFY it: 100 rapid identical set-active-model calls must produce
+  // exactly one [GATEWAY] lock line (idempotency) and exactly one [SYNC-LOOP]
+  // storm log (tripwire) while the app stays responsive.
+  if (!app.isPackaged) {
+    ipcMain.handle('dev:storm:set-active-model', async (event) => {
+      if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+      for (let i = 0; i < 100; i++) {
+        ProviderGateway.setActiveModel({ providerId: 'ty-code-free', modelId: 'google/gemma-4-31b-it:free', isAutoMode: false });
+      }
+      return { success: true, data: { calls: 100, stormDetected: hasSyncLoopStormFired() } };
+    });
+  }
+
+  // Dev-only chaos injector (Autonomous Free-Tier Reliability). The gateway
+  // consumes queued faults (timeout / refused / rate_429) right before fetch
+  // so NATIVE failover + the remediation ladder run exactly as they would on
+  // a real outage. `auth_401` invalidates + silently re-fetches the Community
+  // Key (no fault reaches the gateway). CI guard `chaos-hook-guard` verifies
+  // this registration sits inside an app.isPackaged guard; the sentinel
+  // queue itself ALSO refuses packaged builds.
+  if (!app.isPackaged) {
+    ipcMain.handle('devChaos:fire', async (event, rawRequest: unknown) => {
+      if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+      const parsedChaos = DevChaosRequestSchema.safeParse(rawRequest);
+      if (!parsedChaos.success) {
+        return { success: false, error: `Invalid chaos payload: ${parsedChaos.error.issues[0]?.message || 'validation failed'}` };
+      }
+      try {
+        reliabilitySentinel.queueChaosFault(parsedChaos.data);
+        return { success: true, data: { fault: parsedChaos.data.fault } };
+      } catch (err: unknown) {
+        return { success: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    });
+  }
 
   ipcMain.handle('community-key:get-status', async () => {
     return { success: true, data: { status: getCommunityKeyStatus() } };
@@ -2530,6 +2630,67 @@ function registerIpcHandlers(): void {
       if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
         win.webContents.send('community-key:status-changed', payload);
       }
+    }
+  });
+
+  // ===== Autonomous Free-Tier Reliability (Prompt 1) =====
+  // Read-only infra for the Diagnostics panel + advisor-card one-click
+  // actions. Health snapshots also broadcast on `reliability:health-snapshot`
+  // and advisor cards on `reliability:advisor` (both SILENT-class channels);
+  // every response keeps the { success, data | error } envelope.
+
+  ipcMain.handle('reliability:get-health', async (event) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    return { success: true, data: reliabilitySentinel.getHealthSnapshot() };
+  });
+
+  ipcMain.handle('reliability:get-ledger-tail', async (event, rawLimit: unknown) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    const parsed = z.object({ limit: z.number().int().min(1).max(200).optional() }).safeParse({ limit: rawLimit });
+    const limit = parsed.success ? (parsed.data.limit ?? 50) : 50;
+    return { success: true, data: { records: reliabilityLedger.getRecent(limit) } };
+  });
+
+  ipcMain.handle('reliability:get-stats', async (event) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    return { success: true, data: reliabilityLedger.getStats() };
+  });
+
+  ipcMain.handle('reliability:repair-fcc', async (event) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      const health = await fccSidecarManager.checkHealth();
+      if (!fccSidecarManager.isActive() || !health) {
+        const started = await fccSidecarManager.start();
+        reliabilityLedger.record({ at: Date.now(), kind: 'ladder_step', step: 'advisor_repair_fcc', outcome: started ? 'ok' : 'failed', detail: 'user-initiated repair' });
+        return { success: true, data: { started, isActive: fccSidecarManager.isActive() } };
+      }
+      return { success: true, data: { started: false, isActive: true } };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('reliability:retest-providers', async (event) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    // Run one probe synchronously so the returned snapshot already reflects
+    // the retest (the tick is idle-aware and 5s-capped by construction).
+    await reliabilitySentinel.tick().catch(() => undefined);
+    return { success: true, data: reliabilitySentinel.getHealthSnapshot() };
+  });
+
+  ipcMain.handle('reliability:start-ollama', async (event) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      const { spawn } = await import('node:child_process');
+      const child = spawn('ollama', ['serve'], { detached: true, stdio: 'ignore', shell: true });
+      child.unref();
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+      const res = await fetch('http://127.0.0.1:11434/api/tags', { signal: AbortSignal.timeout(2000) }).catch(() => null);
+      reliabilityLedger.record({ at: Date.now(), kind: 'ladder_step', step: 'advisor_start_ollama', outcome: res ? 'ok' : 'failed', detail: res ? 'local Ollama reachable' : 'ollama serve spawned but port not reachable' });
+      return { success: true, data: { running: Boolean(res) } };
+    } catch (err: unknown) {
+      return { success: true, data: { running: false, error: err instanceof Error ? err.message : String(err) } };
     }
   });
 
@@ -3227,7 +3388,7 @@ function registerIpcHandlers(): void {
   memoryGovernor.subscribeTierChange((tier: GovernorTier) => {
     for (const win of BrowserWindow.getAllWindows()) {
       if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
-        try { win.webContents.send('governor:state-changed', { tier, mode: governorMode }); } catch {}
+        try { win.webContents.send('governor:state-changed', { tier, mode: governorMode }); } catch { }
       }
     }
   });
@@ -3869,7 +4030,7 @@ function registerFccHandlers(): void {
     backgroundTaskSupervisor.setRunInBackground(enabled);
     try {
       await settingsManager.saveLayer('global', { runInBackground: enabled });
-    } catch {}
+    } catch { }
     return { success: true, data: enabled };
   });
 
@@ -4034,7 +4195,7 @@ function registerFccHandlers(): void {
             config = JSON.parse(raw);
             console.log('[GROUND_TRUTH] Successfully read config from:', p);
             break;
-          } catch {}
+          } catch { }
         }
       }
 
@@ -4204,7 +4365,8 @@ async function ingestSiblingUserDataCredentials(): Promise<void> {
   }
 }
 
-function cleanupAllResources(): void {  cleanupAllPtys();
+function cleanupAllResources(): void {
+  cleanupAllPtys();
   try {
     voiceTranscriber.release();
   } catch {
@@ -4283,7 +4445,7 @@ function createWindow(): void {
       webviewTag: true
     }
   });
-   mainWindow = window;
+  mainWindow = window;
   MemoryGovernor.setMainWindow(window);
   workspaceManager.setMainWindow(window);
   connectivityTracer.setMainWindow(window);
@@ -4375,7 +4537,7 @@ function createWindow(): void {
           totalSystemRamGb,
           notice: 'Low-RAM device detected: running in LITE mode (1 debugger worker, deferred LSP, manual Canvas preview).'
         });
-      } catch {}
+      } catch { }
     }
   });
 
@@ -4693,6 +4855,32 @@ app.whenReady().then(async () => {
   );
 
   bootScheduler.register(
+    'active_model_seed',
+    'Active Model Lock Seed (persisted selection -> gateway + agent config, once per boot)',
+    1,
+    'providers',
+    async () => {
+      // Prompt: Break the Model-Sync Echo Loop — main owns the boot lock. The
+      // gateway starts from an empty sentinel, so this seed is the ONE genuine
+      // cold-boot transition (exactly one [GATEWAY] lock line); every later
+      // renderer re-push of the same pair is an idempotent no-op.
+      try {
+        const res = await getSettings();
+        if (res.success && res.data) {
+          seedActiveConfig(String(res.data.activeProvider || ''), String(res.data.activeModel || ''));
+          setGatewayActiveConfig(String(res.data.activeProvider || ''), String(res.data.activeModel || ''));
+        } else {
+          seedActiveConfig('ty-code-free', 'google/gemma-4-31b-it:free');
+          setGatewayActiveConfig('ty-code-free', 'google/gemma-4-31b-it:free');
+        }
+      } catch {
+        seedActiveConfig('ty-code-free', 'google/gemma-4-31b-it:free');
+        setGatewayActiveConfig('ty-code-free', 'google/gemma-4-31b-it:free');
+      }
+    }
+  );
+
+  bootScheduler.register(
     'community_key_bootstrap',
     'Community Key Bootstrap & Rotation Revalidation (ty-code-free across restarts)',
     2,
@@ -4709,6 +4897,19 @@ app.whenReady().then(async () => {
         void revalidateCommunityKey(ROTATION_REVALIDATE_MS);
       }, ROTATION_REVALIDATE_MS);
       if (typeof revalidation.unref === 'function') revalidation.unref();
+    }
+  );
+
+  bootScheduler.register(
+    'reliability_sentinel',
+    'Reliability Sentinel (idle-aware free-tier health gauge + adaptive cooldowns)',
+    3,
+    'providers',
+    async () => {
+      // Boot-only gauge: probes one free route at a time every ~50s, ONLY
+      // while no stream runs. Values feed the health channel (ModelSelector,
+      // Diagnostics) and the remediation ladder cooldowns. Zero telemetry.
+      reliabilitySentinel.start();
     }
   );
 
@@ -4890,7 +5091,7 @@ app.whenReady().then(async () => {
       if (s?.runInBackground !== undefined) {
         backgroundTaskSupervisor.setRunInBackground(Boolean(s.runInBackground));
       }
-    } catch {}
+    } catch { }
   })();
 
   // Dynamic discovery of verified cloud, local Ollama, and FCC models at startup
