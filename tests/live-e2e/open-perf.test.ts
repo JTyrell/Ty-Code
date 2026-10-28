@@ -47,34 +47,74 @@ export async function runOpenPerfTests(): Promise<{ passed: number; total: numbe
   console.log('=== LIVE E2E SUITE: OPEN-PATH PERFORMANCE & BUDGET VALIDATION        ===');
   console.log('========================================================================\n');
 
-  const fixtureDir = path.join(os.tmpdir(), `tycode-open-perf-10k-${Date.now()}`);
-  await fs.mkdir(fixtureDir, { recursive: true });
+  // Persistent at-rest fixture: a real desktop session opens a workspace that
+  // already exists on disk — it is NOT regenerated at the moment of opening.
+  // Regenerating 10k files and walking them a set of milliseconds later
+  // injects OS file-filter scan-queue latency (in-process stalls of 200-330ms
+  // observed during generation walkover; the identical walk measures <1.5ms
+  // loop lag on the same tree after it has rested ~1s), which pollutes the
+  // main-thread-blocking budget we are actually validating. Reuse one fixture
+  // across runs (files at rest since a previous run, matching production).
+  // Regenerate only when the completion marker is absent.
+  const fixtureDir = path.join(os.tmpdir(), 'tycode-open-perf-10k');
+  fsSync.mkdirSync(fixtureDir, { recursive: true });
+
+  // Clean stale timestamped fixture directories left by pre-persistent eras.
+  try {
+    for (const stale of fsSync.readdirSync(os.tmpdir())) {
+      if (/^tycode-open-perf-10k-\d+$/.test(stale)) {
+        fsSync.rmSync(path.join(os.tmpdir(), stale), { recursive: true, force: true });
+      }
+    }
+  } catch {}
+
+  const fixtureSettledMarkerPath = path.join(fixtureDir, '.fixture-complete');
+  const regenerateFixture = !fsSync.existsSync(fixtureSettledMarkerPath);
 
   try {
     // -------------------------------------------------------------------------
-    // 1. Generate 10,000 File Fixture Directory
+    // 1. Generate 10,000 File Fixture Directory (only when absent)
     // -------------------------------------------------------------------------
-    console.log('Generating 10,000 files across 100 subdirectories for live fixture test...');
-    const genStart = performance.now();
+    let genStart = 0;
+    if (regenerateFixture) {
+      console.log('Generating 10,000 files across 100 subdirectories for live fixture test...');
+      genStart = performance.now();
 
-    // 100 directories, each with 100 files = 10,000 files
-    for (let d = 0; d < 100; d++) {
-      const sub = path.join(fixtureDir, `module_${d.toString().padStart(3, '0')}`);
-      await fs.mkdir(sub, { recursive: true });
-      for (let f = 0; f < 100; f++) {
-        fsSync.writeFileSync(
-          path.join(sub, `component_${f.toString().padStart(3, '0')}.ts`),
-          `export const item_${d}_${f} = "val_${d}_${f}";\n`
-        );
+      // 100 directories, each with 100 files = 10,000 files
+      for (let d = 0; d < 100; d++) {
+        const sub = path.join(fixtureDir, `module_${d.toString().padStart(3, '0')}`);
+        await fs.mkdir(sub, { recursive: true });
+        for (let f = 0; f < 100; f++) {
+          fsSync.writeFileSync(
+            path.join(sub, `component_${f.toString().padStart(3, '0')}.ts`),
+            `export const item_${d}_${f} = "val_${d}_${f}";\n`
+          );
+        }
       }
+      fsSync.writeFileSync(fixtureSettledMarkerPath, String(Date.now()), 'utf-8');
+      const genDuration = Math.round(performance.now() - genStart);
+      console.log(`  ✓ Generated 10,000 files in ${genDuration}ms\n`);
+    } else {
+      console.log(`Reusing at-rest 10k fixture (${fixtureDir}, marked settled).`);
     }
-    const genDuration = Math.round(performance.now() - genStart);
-    console.log(`  ✓ Generated 10,000 files in ${genDuration}ms\n`);
 
     // -------------------------------------------------------------------------
     // 2. 10k Folder Open: First Progressive Paint & Full Index Timings
     // -------------------------------------------------------------------------
     console.log('--- 1. 10k Folder Progressive Open & Full Index Benchmark ---');
+
+    // FS filter settle: files the OS just saw written keep draining a scan
+    // queue for a while; walking mid-drain injects OS scan latency (not
+    // main-thread JS blocking). Reused fixtures are at rest (no settle
+    // needed); a freshly generated fixture gets a generous drain window.
+    const fsFilterSettleMs = regenerateFixture ? 6000 : 0;
+    if (fsFilterSettleMs > 0) {
+      const settleStart = performance.now();
+      await new Promise((resolve) => setTimeout(resolve, fsFilterSettleMs));
+      console.log(
+        `  (FS filter settle ${(Math.round(performance.now() - settleStart) / 1000).toFixed(1)}s — fresh fixture at rest, matching real-world open)`
+      );
+    }
 
     let firstChunkTime = 0;
     let firstChunkSize = 0;
@@ -230,9 +270,8 @@ export async function runOpenPerfTests(): Promise<{ passed: number; total: numbe
 
     return { passed: passedTests, total: totalTests };
   } finally {
-    try {
-      await fs.rm(fixtureDir, { recursive: true, force: true });
-    } catch {}
+    // Persistent at-rest fixture: keep on disk — the next run reuses it
+    // instead of regenerating + walking freshly-written files mid scan-drain.
   }
 }
 

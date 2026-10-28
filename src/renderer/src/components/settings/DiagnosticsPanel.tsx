@@ -44,7 +44,8 @@ import {
   ShieldCheck,
   Layers,
   Bug,
-  Info
+  Info,
+  ScrollText
 } from 'lucide-react';
 import type {
   DiagnosticRunSummary,
@@ -65,7 +66,8 @@ import type {
   ProviderConnectivityTrace,
   FullConnectivityTraceReport,
   MockScanFinding,
-  MockScanReport
+  MockScanReport,
+  SidecarLedgerEntry
 } from '../../../../shared/types/diagnostics';
 import { SMOKE_TEST_STEPS, SMOKE_TEST_FAILURE_PROTOCOL } from '../../../../shared/types/diagnostics';
 import { toast } from '../../state/toast-store';
@@ -112,7 +114,7 @@ const copyToClipboard = async (text: string): Promise<boolean> => {
 };
 
 export const DiagnosticsPanel: React.FC = () => {
-  const [subTab, setSubTab] = useState<'connection' | 'capabilities' | 'remediation' | 'trace'>('connection');
+  const [subTab, setSubTab] = useState<'connection' | 'capabilities' | 'remediation' | 'trace' | 'ledger'>('connection');
 
   // Connection diagnostics state (Phase Diagnostics 1)
   const [isConnRunning, setIsConnRunning] = useState(false);
@@ -152,6 +154,23 @@ export const DiagnosticsPanel: React.FC = () => {
   const [isLive, setIsLive] = useState(true);
   const [lastCheckedAt, setLastCheckedAt] = useState<number | null>(null);
   const [fleetHealth, setFleetHealth] = useState<DiagnosticsFleetHealth | null>(null);
+
+  // Stream Hygiene (Prompt 2): FCC sidecar log ledger
+  const [sidecarLedger, setSidecarLedger] = useState<SidecarLedgerEntry[] | null>(null);
+  const [isLedgerLoading, setIsLedgerLoading] = useState(false);
+
+  const refreshSidecarLedger = useCallback(async () => {
+    if (!window.electronAPI?.getSidecarLedger) return;
+    setIsLedgerLoading(true);
+    try {
+      const res = await window.electronAPI.getSidecarLedger(80);
+      if (res.success && res.data) setSidecarLedger(res.data);
+    } catch {
+      // Silent: a failed poll must never disrupt the panel
+    } finally {
+      setIsLedgerLoading(false);
+    }
+  }, []);
 
   // Load latest trace report and subscribe to live hop updates
   useEffect(() => {
@@ -707,6 +726,19 @@ export const DiagnosticsPanel: React.FC = () => {
         >
           <Network size={14} className={subTab === 'trace' ? 'text-purple-400' : ''} />
           <span>Trace (H1-H10)</span>
+        </button>
+
+        <button
+          onClick={() => {
+            setSubTab('ledger');
+            void refreshSidecarLedger();
+          }}
+          id="diag-subtab-ledger"
+          data-tab="ledger"
+          className={`diag-tab-btn ${subTab === 'ledger' ? 'is-active' : ''}`}
+        >
+          <ScrollText size={14} className={subTab === 'ledger' ? 'text-amber-400' : ''} />
+          <span>Stream Hygiene</span>
         </button>
       </div>
 
@@ -2054,6 +2086,87 @@ export const DiagnosticsPanel: React.FC = () => {
               ) : (
                 <div className="text-xs text-zinc-400">No mock pattern references found. Production streaming paths strictly verified.</div>
               )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* =====================================================================
+          SECTION 5: STREAM HYGIENE LEDGER (Prompt 2)
+          ===================================================================== */}
+      {subTab === 'ledger' && (
+        <div className="space-y-4">
+          <div className="diag-hero-banner">
+            <div className="diag-hero-title-group">
+              <div className="diag-hero-icon" style={{ background: 'rgba(245, 158, 11, 0.15)', color: '#fbbf24' }}>
+                <ScrollText size={18} />
+              </div>
+              <div className="diag-hero-text">
+                <div className="diag-hero-title">Stream Hygiene Ledger</div>
+                <div className="diag-hero-subtitle">
+                  Sidecar stdout/stderr log lines, gated stream-salvage output and gateway rerun decisions — coalesced
+                  with occurrence counts. These lines never reach the chat stream.
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={() => void refreshSidecarLedger()}
+              className="diag-btn-hud"
+              disabled={isLedgerLoading}
+              title="Refresh the sidecar log ledger"
+            >
+              <RotateCw size={12} className={isLedgerLoading ? 'animate-spin' : ''} />
+              <span>Refresh</span>
+            </button>
+          </div>
+
+          {sidecarLedger === null ? (
+            <div className="text-xs text-zinc-400">No ledger snapshot loaded yet. Press Refresh.</div>
+          ) : sidecarLedger.length === 0 ? (
+            <div className="text-xs text-zinc-400">
+              Ledger is empty — no stray sidecar lines or rerun decisions recorded in this session yet.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {sidecarLedger
+                .slice()
+                .reverse()
+                .map((entry) => {
+                  const sourceColor =
+                    entry.source === 'sidecar-stderr'
+                      ? 'text-red-300'
+                      : entry.source === 'stream-gate'
+                        ? 'text-amber-300'
+                        : entry.source === 'rerun-decision'
+                          ? 'text-sky-300'
+                          : 'text-zinc-300';
+                  return (
+                    <div
+                      key={entry.id}
+                      className="p-3 rounded-lg bg-zinc-950/70 border border-zinc-800 text-xs space-y-1 font-mono"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className={`${sourceColor} font-semibold`}>{entry.source}</span>
+                        <div className="flex items-center gap-2">
+                          {entry.count > 1 && (
+                            <span
+                              className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700"
+                              title={`Coalesced ${entry.count} identical consecutive lines`}
+                            >
+                              ×{entry.count}
+                            </span>
+                          )}
+                          <span className="text-[10px] text-zinc-500">
+                            {new Date(entry.lastTs).toLocaleTimeString()}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="text-zinc-400 text-[11px] bg-black/40 p-1.5 rounded break-all">
+                        {entry.text}
+                      </div>
+                    </div>
+                  );
+                })}
             </div>
           )}
         </div>

@@ -40,6 +40,8 @@ import { z } from 'zod';
 import { app, BrowserWindow } from 'electron';
 import { getAllVaultKeys } from './credential-vault';
 import { providerHealthMonitor } from './providers/health-monitor';
+import { classifySidecarLine } from './fcc/sidecar-line-classifier';
+import { sidecarLogLedger } from './fcc/sidecar-log-ledger';
 
 // --- Zod Validation Schemas for IPC ---
 
@@ -376,7 +378,6 @@ export class FCCSidecarManager {
           for (const line of lines) {
             const trimmed = line.trim();
             if (!trimmed) continue;
-            console.log(`[FCC-SIDECAR][STDOUT] ${trimmed}`);
 
             // Detect ready signal on stdout
             if (trimmed.includes('[FCC-SIDECAR] ready on port') || trimmed.includes(`ready on port ${this.port}`)) {
@@ -384,6 +385,15 @@ export class FCCSidecarManager {
                 isResolved = true;
                 resolve();
               }
+            }
+
+            // Stream Hygiene (Prompt 2): only Zod-validated protocol frames may
+            // drive RPC resolution; every other stdout line is sidecar log
+            // output and is routed to the ledger — never into any token stream.
+            const classified = classifySidecarLine(trimmed);
+            if (classified.kind === 'log') {
+              sidecarLogLedger.record('sidecar-stdout', trimmed);
+              continue;
             }
 
             // Detect JSON-RPC responses
@@ -412,7 +422,11 @@ export class FCCSidecarManager {
         child.stdout?.on('data', onData);
 
         child.stderr?.on('data', (data: Buffer) => {
-          console.error(`[FCC-SIDECAR][STDERR] ${data.toString().trim()}`);
+          const stderrText = data.toString().trim();
+          if (stderrText) {
+            sidecarLogLedger.record('sidecar-stderr', stderrText);
+          }
+          console.error(`[FCC-SIDECAR][STDERR] ${stderrText}`);
         });
 
         child.on('error', (err) => {

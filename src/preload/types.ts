@@ -84,7 +84,8 @@ import type {
   HopTraceRecord,
   ProviderConnectivityTrace,
   MockScanReport,
-  FullConnectivityTraceReport
+  FullConnectivityTraceReport,
+  SidecarLedgerEntry
 } from '../shared/types/diagnostics';
 export type {
   AgentStreamTokenPayload,
@@ -1555,6 +1556,11 @@ export interface ElectronAPI {
   runDiagnostics?: (providerId?: string) => Promise<IpcResponse<DiagnosticRunSummary>>;
   getDiagnosticReport?: (summary?: DiagnosticRunSummary) => Promise<IpcResponse<string>>;
   getDiagnosticsLatest?: () => Promise<IpcResponse<{ connSummary: DiagnosticRunSummary | null; capSummary: CapabilitySuiteSummary | null }>>;
+
+  // Stream Hygiene (Prompt 2): FCC sidecar log ledger (coalesced sidecar
+  // stdout/stderr lines, gated stream-salvage lines and gateway rerun
+  // decisions). Read-only diagnostics surface.
+  getSidecarLedger?: (limit?: number) => Promise<IpcResponse<SidecarLedgerEntry[]>>;
 
   // Diagnostics 2: End-to-End Capability Test Suite
   runCapabilitySuite?: (options?: { providerId?: string; modelId?: string }) => Promise<IpcResponse<CapabilitySuiteSummary>>;

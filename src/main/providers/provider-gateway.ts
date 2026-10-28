@@ -35,6 +35,8 @@ import { modelRotationManager } from '../services/model-rotation-manager';
 import { providerHealthStore } from './provider-health-store';
 import { routeEventPolicy } from './route-event-policy';
 import { fccModelMapper } from '../services/fcc-model-mapper';
+import { sidecarLogLedger } from '../services/fcc/sidecar-log-ledger';
+import { isHarnessLogContent, FAILOVER_RESUME_INSTRUCTION } from '../services/fcc/sidecar-line-classifier';
 
 const OPENCODE_FREE_PROTOCOL = 'opencode-cli://';
 
@@ -626,7 +628,8 @@ export async function sendChatRequest(
   taskId?: string,
   context?: 'chat' | 'debugger' | 'canvas' | string,
   continuationCount: number = 0,
-  onStatus?: (status: { type: string; content?: string; truncated?: boolean; actions?: string[] }) => void
+  onStatus?: (status: { type: string; content?: string; truncated?: boolean; actions?: string[] }) => void,
+  carriedPartial: string = ''
 ): Promise<string> {
   const currentTaskId = taskId || chatLatencyTracker.getActiveTaskId() || `task_${Date.now()}`;
   chatLatencyTracker.setActiveTaskId(currentTaskId);
@@ -1424,6 +1427,10 @@ export async function sendChatRequest(
     if (shouldHandoff) {
       if (handoffCount < 2) {
         console.log(`[GATEWAY] Provider failed (${response.status}). Handing off to next provider (Attempt ${handoffCount + 1}/2).`);
+        sidecarLogLedger.record(
+          'rerun-decision',
+          `[sendChatRequest] ${config.providerId || providerId} failed pre-stream (HTTP ${response.status}) → plain handoff, 0 tokens billed by this hop.`
+        );
         // FCC-managed handoff: only providers that are keyless or own their key.
         const requestedModel = requestModel || modelId;
         const nextModel = pickHandoffCandidate(allModels, config?.providerId || providerId, requestedModel);
@@ -1508,7 +1515,14 @@ export async function sendChatRequest(
     const data: any = await response.json();
     // Record H4 (Network TTFT) for non-streaming response
     chatLatencyTracker.recordH4(currentTaskId);
-    const text = data.choices?.[0]?.message?.content || data.content?.[0]?.text || '';
+    let text = data.choices?.[0]?.message?.content || data.content?.[0]?.text || '';
+    // Stream Hygiene (Prompt 2): FCC harness announce text is sidecar log
+    // output even when it arrives inside a valid completion payload. It is
+    // routed to the ledger and never reaches the renderer chat stream.
+    if ((isFcc || isFccProxy) && typeof text === 'string' && isHarnessLogContent(text)) {
+      sidecarLogLedger.record('stream-gate', text);
+      text = '';
+    }
     // Non-stream structured tool calls (OpenAI shape + Anthropic tool_use blocks)
     const messageToolCalls = data.choices?.[0]?.message?.tool_calls;
     if (Array.isArray(messageToolCalls)) {
@@ -1677,9 +1691,16 @@ export async function sendChatRequest(
               }
 
               if (token) {
-                fullText += token;
-                tokenBatcher.push(token);
-                chatLatencyTracker.recordToken(currentTaskId, token);
+                // Stream Hygiene (Prompt 2): token enters the agent stream only
+                // as completion content from a protocol frame; FCC harness
+                // announce content is log output and is gated to the ledger.
+                if ((isFcc || isFccProxy) && isHarnessLogContent(token)) {
+                  sidecarLogLedger.record('stream-gate', token);
+                } else {
+                  fullText += token;
+                  tokenBatcher.push(token);
+                  chatLatencyTracker.recordToken(currentTaskId, token);
+                }
               }
             } catch (parseErr) {
               console.warn('[GATEWAY] SSE chunk parse skipped:', parseErr instanceof Error ? parseErr.message : parseErr);
@@ -1707,9 +1728,13 @@ export async function sendChatRequest(
               }
               const token = json.choices?.[0]?.delta?.content ?? json.delta?.text;
               if (token) {
-                fullText += token;
-                tokenBatcher.push(token);
-                chatLatencyTracker.recordToken(currentTaskId, token);
+                if ((isFcc || isFccProxy) && isHarnessLogContent(token)) {
+                  sidecarLogLedger.record('stream-gate', token);
+                } else {
+                  fullText += token;
+                  tokenBatcher.push(token);
+                  chatLatencyTracker.recordToken(currentTaskId, token);
+                }
               }
             } catch {}
           }
@@ -1726,9 +1751,17 @@ export async function sendChatRequest(
     // payload into the onToken/onReasoning stream so agent-engine keeps a
     // stable token flow (AgentStreamChunk { type: 'token', content }).
     if (fullText === '' && strayNonSseLines.length > 0) {
-      const salvageable = strayNonSseLines.filter(
-        (l) => !/^(event|id|retry):/i.test(l) && l !== '[DONE]'
-      );
+      // Stream Hygiene (Prompt 2): stray lines are classified before salvage.
+      // Log-like lines (including FCC harness announces) are drained to the
+      // ledger; only protocol-shaped lines are eligible for the token stream.
+      const salvageable = strayNonSseLines.filter((l) => {
+        if (/^(event|id|retry):/i.test(l) || l === '[DONE]') return false;
+        if (isHarnessLogContent(l)) {
+          sidecarLogLedger.record('stream-gate', l);
+          return false;
+        }
+        return true;
+      });
       if (salvageable.length > 0) {
         const blobText = salvageable.join('\n');
         let salvagedContent = '';
@@ -1739,9 +1772,13 @@ export async function sendChatRequest(
           const finish = parseFinishReason(blob);
           if (finish) lastFinishReason = finish;
           const candidate = blob?.choices?.[0]?.message?.content ?? blob?.choices?.[0]?.delta?.content ?? blob?.content?.[0]?.text;
-          if (typeof candidate === 'string') {
-            salvagedContent = candidate;
-            structured = true;
+          if (typeof candidate === 'string' && candidate) {
+            if ((isFcc || isFccProxy) && isHarnessLogContent(candidate)) {
+              sidecarLogLedger.record('stream-gate', candidate);
+            } else {
+              salvagedContent = candidate;
+              structured = true;
+            }
           }
           const blobThought = blob?.choices?.[0]?.delta?.reasoning_content ?? blob?.choices?.[0]?.delta?.reasoning;
           if (typeof blobThought === 'string' && blobThought) salvagedThought = blobThought;
@@ -1756,22 +1793,36 @@ export async function sendChatRequest(
                 const json = JSON.parse(line) as any;
                 const piece = json?.choices?.[0]?.delta?.content ?? json?.choices?.[0]?.message?.content ?? json?.delta?.text;
                 if (typeof piece === 'string' && piece) {
-                  ndjsonPieces.push(piece);
-                  structured = true;
+                  if (isHarnessLogContent(piece)) {
+                    sidecarLogLedger.record('stream-gate', piece);
+                  } else {
+                    ndjsonPieces.push(piece);
+                    structured = true;
+                  }
                 }
                 const pieceThought = json?.choices?.[0]?.delta?.reasoning_content ?? json?.choices?.[0]?.delta?.reasoning;
                 if (typeof pieceThought === 'string' && pieceThought) salvagedThought += pieceThought;
               } catch {
-                plainPieces.push(line);
+                if (isHarnessLogContent(line)) {
+                  sidecarLogLedger.record('stream-gate', line);
+                } else {
+                  plainPieces.push(line);
+                }
               }
             } else {
-              plainPieces.push(line);
+              if (isHarnessLogContent(line)) {
+                sidecarLogLedger.record('stream-gate', line);
+              } else {
+                plainPieces.push(line);
+              }
             }
           }
           if (ndjsonPieces.length > 0) salvagedContent = [...(salvagedContent ? [salvagedContent] : []), ...ndjsonPieces].join('');
-          if (!structured) salvagedContent = [...ndjsonPieces, ...plainPieces].join(plainPieces.length > 0 && ndjsonPieces.length > 0 ? '\n' : '').trim();
+          if (!structured && !salvagedContent) {
+            salvagedContent = [...ndjsonPieces, ...plainPieces].join(ndjsonPieces.length > 0 && plainPieces.length > 0 ? '\n' : '').trim();
+          }
         }
-        if (salvagedContent.trim()) {
+        if (salvagedContent.trim() && !isHarnessLogContent(salvagedContent)) {
           fullText = salvagedContent;
           if (salvagedThought) {
             fullThought += salvagedThought;
@@ -1780,6 +1831,8 @@ export async function sendChatRequest(
           console.log(`[GATEWAY] FCC non-SSE stream normalized (${salvageable.length} line(s), structured=${structured}).`);
           if (onToken) onToken(salvagedContent);
           chatLatencyTracker.recordToken(currentTaskId, salvagedContent);
+        } else if (salvagedContent.trim() && isHarnessLogContent(salvagedContent)) {
+          sidecarLogLedger.record('stream-gate', salvagedContent);
         }
       }
     }
@@ -1857,7 +1910,54 @@ export async function sendChatRequest(
         // Mid-stream failure: trail only, never a per-hop renderer event.
         routeEventPolicy.recordHop(currentTaskId, config.providerId || providerId, 'err');
         routeEventPolicy.setLanding(currentTaskId, nextModel.providerId);
+        // Retry idempotency (Prompt 2): if THIS attempt already streamed token
+        // content to the renderer, a plain restart would re-run the whole
+        // request and re-stream everything (N x quota + duplicated chat
+        // output). Instead the partial text is carried forward explicitly:
+        // the next provider receives the assistant prefix plus a resume
+        // instruction and continues the answer. Only ZERO-token attempts are
+        // allowed to restart from scratch.
+        const tokensReceived =
+          fullText.length +
+          fullThought.length +
+          Array.from(streamedToolCalls.values()).reduce((n, call) => n + call.arguments.length + call.name.length, 0);
         const nextApiKey = (nextModel.providerId || '') === (providerId || '') ? apiKey : undefined;
+        const priorPartial = `${carriedPartial}${fullText}`;
+        if (tokensReceived > 0) {
+          sidecarLogLedger.record(
+            'rerun-decision',
+            `[sendChatRequest] ${config.providerId || providerId} died mid-stream after ${tokensReceived} token chars → carry partial to ${nextModel.providerId} (hop ${handoffCount + 1}); NO silent re-run.`
+          );
+          const resumeMessages = [
+            ...messages,
+            { role: 'assistant', content: priorPartial },
+            { role: 'user', content: FAILOVER_RESUME_INSTRUCTION }
+          ];
+          const continuedText = await sendChatRequest(
+            nextModel.providerId,
+            nextModel.modelId,
+            resumeMessages,
+            stream,
+            nextApiKey,
+            onToken,
+            handoffCount + 1,
+            abortSignal,
+            onHandoff,
+            onReasoning,
+            tools,
+            onToolCalls,
+            currentTaskId,
+            context,
+            continuationCount,
+            onStatus,
+            priorPartial
+          );
+          return priorPartial + continuedText;
+        }
+        sidecarLogLedger.record(
+          'rerun-decision',
+          `[sendChatRequest] ${config.providerId || providerId} died with 0 tokens streamed → plain handoff to ${nextModel.providerId} (hop ${handoffCount + 1}).`
+        );
         // Recursively call sendChatRequest with the new provider and incremented handoffCount
         return await sendChatRequest(
           nextModel.providerId,
@@ -1875,7 +1975,8 @@ export async function sendChatRequest(
           currentTaskId,
           context,
           continuationCount,
-          onStatus
+          onStatus,
+          carriedPartial
         );
       } else {
         chatLatencyTracker.recordStreamEnd(currentTaskId);
@@ -2624,8 +2725,8 @@ export class ProviderGateway {
           error: event.error
         });
       },
-      execute: async (candidate: ProviderCandidate, reconciledMessages: ChatCompletionMessage[]) => {
-        return this.streamWithCandidate(candidate, settings, reconciledMessages, tools, callbacks, abortSignal, traceId);
+      execute: async (candidate: ProviderCandidate, reconciledMessages: ChatCompletionMessage[], carriedPartial?: string) => {
+        return this.streamWithCandidate(candidate, settings, reconciledMessages, tools, callbacks, abortSignal, traceId, carriedPartial);
       }
     });
 
@@ -2639,7 +2740,8 @@ export class ProviderGateway {
     tools: unknown[],
     callbacks: StreamEventCallbacks,
     abortSignal?: AbortSignal,
-    traceId?: string
+    traceId?: string,
+    carriedPartial?: string
   ): Promise<{ fullText: string; fullThought: string; toolCalls: Array<{ id: string; name: string; arguments: Record<string, unknown> }> }> {
     const providerId = candidate.provider.id as ProviderType;
     const modelId = candidate.model.id;
@@ -2817,8 +2919,21 @@ export class ProviderGateway {
       }
     }
 
+    // Failover carry (Prompt 2): when a previous sibling attempt already
+    // streamed visible content, the fresh provider receives the assistant
+    // prefix plus a resume instruction and CONTINUES the answer instead of
+    // restarting it. The carried prefix is never re-emitted as tokens.
+    const carriedText = carriedPartial && carriedPartial.length > 0 ? carriedPartial : '';
+    const streamMessages = carriedText
+      ? ([
+          ...messages,
+          { role: 'assistant', content: carriedText },
+          { role: 'user', content: FAILOVER_RESUME_INSTRUCTION }
+        ] as ChatCompletionMessage[])
+      : messages;
+
     // Phase FCC-4: Semantic Response Cache (hash-keyed, per-session opt-out)
-    const optCacheKey = optimizationPipeline.computeCacheKey(modelId, messages, tools, settings.temperature);
+    const optCacheKey = optimizationPipeline.computeCacheKey(modelId, streamMessages, tools, settings.temperature);
     const optCached = optimizationPipeline.getCachedResponse(optCacheKey);
     if (optCached) {
       if (optCached.fullText) callbacks.onToken?.(optCached.fullText);
@@ -2837,7 +2952,7 @@ export class ProviderGateway {
     }
 
     // Phase 5.6: Request Caching for Repeated Queries
-    const cacheKey = requestCache.computeKey(modelId, messages, tools, settings.temperature);
+    const cacheKey = requestCache.computeKey(modelId, streamMessages, tools, settings.temperature);
     const cached = requestCache.get(cacheKey);
     if (cached) {
       if (cached.fullText) callbacks.onToken?.(cached.fullText);
@@ -2882,7 +2997,7 @@ export class ProviderGateway {
 
     const body: Record<string, unknown> = {
       model: modelId,
-      messages,
+      messages: streamMessages,
       stream: true,
       temperature: settings.temperature ?? 0.2,
       max_tokens: Math.min(settings.maxTokens ?? 4096, candidate.model.maxOutputTokens || 4096)
@@ -3032,6 +3147,9 @@ export class ProviderGateway {
       callbacks.onThought?.(chunk);
     }, 20);
 
+    const isFccFamilyProvider =
+      providerId === 'fcc' || providerId === 'fcc-proxy' || providerId.startsWith('anthropic-claude');
+
     const consume = (payload: StreamPayload) => {
       if (payload.usage) {
         streamUsage = payload.usage;
@@ -3039,6 +3157,13 @@ export class ProviderGateway {
       const delta = payload.choices?.[0]?.delta;
       if (!delta) return;
       if (delta.content) {
+        // Stream Hygiene (Prompt 2): FCC harness announce text rides in valid
+        // protocol frames but is log output — gate it to the ledger so it can
+        // never render in the chat stream.
+        if (isFccFamilyProvider && isHarnessLogContent(delta.content)) {
+          sidecarLogLedger.record('stream-gate', delta.content);
+          return;
+        }
         if (!firstChunkReported) console.log('Gateway: First chunk', JSON.stringify(delta.content.slice(0, 80)));
         fullText += delta.content;
         tokenBatcher.push(delta.content);
@@ -3085,90 +3210,114 @@ export class ProviderGateway {
       })));
     };
 
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        buffer = parseSSELines(buffer, consume);
-      }
-      buffer += decoder.decode();
-      if (buffer) parseSSELines(`${buffer}\n`, consume);
-      tokenBatcher.flush();
-      thoughtBatcher.flush();
-    } finally {
-      tokenBatcher.flush();
-      thoughtBatcher.flush();
-      reader.releaseLock();
-    }
+    const streamToolCallChars = (): number =>
+      Array.from(toolCalls.values()).reduce((n, call) => n + call.args.length + call.name.length, 0);
 
-    const parsedToolCalls = Array.from(toolCalls.values()).map((toolCall) => {
-      if (!toolCall.name || !toolCall.args) throw new Error('The model returned an incomplete tool call. Try again.');
-      let args: Record<string, unknown>;
+    try {
       try {
-        args = JSON.parse(toolCall.args) as Record<string, unknown>;
-      } catch {
-        throw new Error(`Malformed JSON in tool call arguments for ${toolCall.name}.`);
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          buffer = parseSSELines(buffer, consume);
+        }
+        buffer += decoder.decode();
+        if (buffer) parseSSELines(`${buffer}\n`, consume);
+        tokenBatcher.flush();
+        thoughtBatcher.flush();
+      } finally {
+        tokenBatcher.flush();
+        thoughtBatcher.flush();
+        reader.releaseLock();
       }
-      return { id: toolCall.id || `call_${crypto.randomUUID()}`, name: toolCall.name, arguments: args };
-    });
 
-    if (providerId === 'fcc-proxy') {
-      fccManager.recordTokenUsage(Math.max(10, Math.ceil(fullText.length / 4)));
+      const parsedToolCalls = Array.from(toolCalls.values()).map((toolCall) => {
+        if (!toolCall.name || !toolCall.args) throw new Error('The model returned an incomplete tool call. Try again.');
+        let args: Record<string, unknown>;
+        try {
+          args = JSON.parse(toolCall.args) as Record<string, unknown>;
+        } catch {
+          throw new Error(`Malformed JSON in tool call arguments for ${toolCall.name}.`);
+        }
+        return { id: toolCall.id || `call_${crypto.randomUUID()}`, name: toolCall.name, arguments: args };
+      });
+
+      if (providerId === 'fcc-proxy') {
+        fccManager.recordTokenUsage(Math.max(10, Math.ceil(fullText.length / 4)));
+      }
+
+      const composedFullText = `${carriedText}${fullText}`;
+
+      const finalUsage = streamUsage as { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } | null;
+      const isExact = Boolean(finalUsage && (finalUsage.prompt_tokens || finalUsage.total_tokens));
+      const promptTokens = finalUsage?.prompt_tokens ?? Math.max(1, Math.ceil(JSON.stringify(streamMessages).length / 3.8));
+      // Completion accounting stays attempt-scoped: any carried prefix was
+      // already billed by the earlier attempt.
+      const completionTokens = finalUsage?.completion_tokens ?? Math.max(1, Math.ceil(fullText.length / 3.8));
+      const totalTokens = finalUsage?.total_tokens ?? (promptTokens + completionTokens);
+
+      quotaTracker.recordUsage(providerId, modelId, {
+        promptTokens,
+        completionTokens,
+        totalTokens
+      }, true);
+
+      const elapsedMs = Math.max(1, Math.round(performance.now() - requestStartTime));
+      performanceManager.recordLatency(elapsedMs);
+
+      void usageLedger.recordTransaction({
+        providerId,
+        modelId,
+        promptTokens,
+        completionTokens,
+        totalTokens,
+        isExactUsage: isExact,
+        latencyMs: elapsedMs,
+        success: true,
+        headers: response.headers
+      });
+
+      try {
+        credentialStore.touchCredential(providerId);
+      } catch {
+        // non-blocking
+      }
+
+      requestCache.set(cacheKey, {
+        fullText: composedFullText,
+        fullThought,
+        toolCalls: parsedToolCalls,
+        modelId,
+        providerId,
+        promptTokens,
+        completionTokens
+      });
+
+      optimizationPipeline.setCachedResponse(optCacheKey, {
+        fullText: composedFullText,
+        fullThought,
+        toolCalls: parsedToolCalls,
+        promptTokens,
+        completionTokens
+      });
+
+      return { fullText: composedFullText, fullThought, toolCalls: parsedToolCalls };
+    } catch (streamErr: unknown) {
+      // Retry idempotency (Prompt 2): report exactly how much content THIS
+      // attempt already pushed downstream, plus the total visible partial
+      // text, so the router can carry it forward instead of silently re-running.
+      const tokensReceived = fullText.length + fullThought.length + streamToolCallChars();
+      sidecarLogLedger.record(
+        'rerun-decision',
+        `[streamWithCandidate] ${providerId} stream failed after ${tokensReceived} token chars → router: ${tokensReceived > 0 ? 'carry partial, no silent re-run' : 'fresh retry allowed (0 tokens)'}`
+      );
+      if (tokensReceived > 0) {
+        const enriched = streamErr as { __attemptTokensReceived?: number; __carriedPartial?: string };
+        enriched.__attemptTokensReceived = tokensReceived;
+        enriched.__carriedPartial = `${carriedText}${fullText}`;
+      }
+      throw streamErr;
     }
-
-    const finalUsage = streamUsage as { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } | null;
-    const isExact = Boolean(finalUsage && (finalUsage.prompt_tokens || finalUsage.total_tokens));
-    const promptTokens = finalUsage?.prompt_tokens ?? Math.max(1, Math.ceil(JSON.stringify(messages).length / 3.8));
-    const completionTokens = finalUsage?.completion_tokens ?? Math.max(1, Math.ceil(fullText.length / 3.8));
-    const totalTokens = finalUsage?.total_tokens ?? (promptTokens + completionTokens);
-
-    quotaTracker.recordUsage(providerId, modelId, {
-      promptTokens,
-      completionTokens,
-      totalTokens
-    }, true);
-
-    const elapsedMs = Math.max(1, Math.round(performance.now() - requestStartTime));
-    performanceManager.recordLatency(elapsedMs);
-
-    void usageLedger.recordTransaction({
-      providerId,
-      modelId,
-      promptTokens,
-      completionTokens,
-      totalTokens,
-      isExactUsage: isExact,
-      latencyMs: elapsedMs,
-      success: true,
-      headers: response.headers
-    });
-
-    try {
-      credentialStore.touchCredential(providerId);
-    } catch {
-      // non-blocking
-    }
-
-    requestCache.set(cacheKey, {
-      fullText,
-      fullThought,
-      toolCalls: parsedToolCalls,
-      modelId,
-      providerId,
-      promptTokens,
-      completionTokens
-    });
-
-    optimizationPipeline.setCachedResponse(optCacheKey, {
-      fullText,
-      fullThought,
-      toolCalls: parsedToolCalls,
-      promptTokens,
-      completionTokens
-    });
-
-    return { fullText, fullThought, toolCalls: parsedToolCalls };
   }
 }
 

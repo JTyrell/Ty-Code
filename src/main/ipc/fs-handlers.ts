@@ -32,34 +32,48 @@ async function readTreeDiskCache(cacheKey: string): Promise<FlatFileNodeEntry[] 
   return null;
 }
 
-async function writeTreeDiskCache(cacheKey: string, entries: FlatFileNodeEntry[]): Promise<void> {
+/**
+ * Open-path persistence (Prompt 4 open-latency budget): the disk cache write is
+ * a background concern, not part of the open critical section. The in-memory
+ * cache makes the freshly walked tree immediately reusable (second open in the
+ * same process never misses), and the disk stream drains after the open path
+ * has already resolved. A torn/partial file from a fast exit simply fails
+ * JSON.parse on the next cold process and degrades to a normal cache miss.
+ */
+function startTreeDiskCacheBackgroundWrite(cacheKey: string, entries: FlatFileNodeEntry[]): void {
+  // In-memory retention happens synchronously here: a second open in the same
+  // process hits memory (never a torn disk file mid-drain).
   inMemoryTreeCache.set(cacheKey, entries);
-  try {
-    await fs.mkdir(TREE_CACHE_DIR, { recursive: true });
-    const cacheFile = path.join(TREE_CACHE_DIR, `${cacheKey}.json`);
-    // Chunked serialize+stream: a single JSON.stringify of a 10k-entry tree
-    // plus one 2MB write blocked the main thread ~70ms and broke the
-    // open-perf <50ms event-loop budget. Yield between 500-entry chunks
-    // (~100KB of JSON each) instead of one monolithic serialize+write.
-    const cacheStream = fsSync.createWriteStream(cacheFile, { encoding: 'utf-8' });
-    cacheStream.write('[');
-    const CACHE_SERIALIZE_CHUNK = 500;
-    for (let start = 0; start < entries.length; start += CACHE_SERIALIZE_CHUNK) {
-      const slice = entries.slice(start, start + CACHE_SERIALIZE_CHUNK);
-      const parts = slice.map((entry) => JSON.stringify(entry));
-      cacheStream.write(parts.join(','));
-      await new Promise((resolve) => setImmediate(resolve));
+  const drain = (async () => {
+    for (let attempts = 0; attempts < 2; attempts++) {
+      try {
+        await fs.mkdir(TREE_CACHE_DIR, { recursive: true });
+        const cacheFile = path.join(TREE_CACHE_DIR, `${cacheKey}.json`);
+        const cacheStream = fsSync.createWriteStream(cacheFile, { encoding: 'utf-8' });
+        cacheStream.write('[');
+        const CACHE_SERIALIZE_CHUNK = 500;
+        for (let start = 0; start < entries.length; start += CACHE_SERIALIZE_CHUNK) {
+          const slice = entries.slice(start, start + CACHE_SERIALIZE_CHUNK);
+          const parts = slice.map((entry) => JSON.stringify(entry));
+          cacheStream.write(parts.join(','));
+          await new Promise((resolve) => setImmediate(resolve));
+        }
+        cacheStream.write(']');
+        await new Promise<void>((resolve, reject) => {
+          cacheStream.end((error?: Error | null) => {
+            if (error) reject(error);
+            else resolve();
+          });
+        });
+        return;
+      } catch (err) {
+        if (attempts === 1) {
+          console.warn('[FS Cache] Failed to write tree cache:', err);
+        }
+      }
     }
-    cacheStream.write(']');
-    await new Promise<void>((resolve, reject) => {
-      cacheStream.end((error?: Error | null) => {
-        if (error) reject(error);
-        else resolve();
-      });
-    });
-  } catch (err) {
-    console.warn('[FS Cache] Failed to write tree cache:', err);
-  }
+  })();
+  void drain.catch(() => undefined);
 }
 
 let activeWorkspaceWatcher: fsSync.FSWatcher | null = null;
@@ -258,8 +272,8 @@ export async function getWorkspaceTreeChunked(
     // Yield before cache serialization to keep event loop responsive
     await new Promise((resolve) => setImmediate(resolve));
 
-    // Write disk index cache
-    await writeTreeDiskCache(cacheKey, flatTree);
+    // Write disk index cache (background drain; in-memory cache is live now)
+    startTreeDiskCacheBackgroundWrite(cacheKey, flatTree);
 
     if (onChunk) {
       onChunk(flatTree, true, flatTree.length);

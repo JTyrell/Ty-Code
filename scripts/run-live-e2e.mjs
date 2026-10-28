@@ -21,6 +21,7 @@
 import fs from 'node:fs/promises';
 import fsSync from 'node:fs';
 import path from 'node:path';
+import { spawn } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
 
@@ -138,11 +139,35 @@ async function run() {
       (await import(pathToFileURL(agentBundleCjs).href));
     const agentResults = await runAgentLiveTests();
 
-    // 10. Open-Path Performance Tests
-    const { runOpenPerfTests } =
-      (await import(pathToFileURL(perfBundleCjs).href)).default ||
-      (await import(pathToFileURL(perfBundleCjs).href));
-    const perfResults = await runOpenPerfTests();
+    // 10. Open-Path Performance Tests — isolated child process measurement.
+    // Suites 1-9 leave live intervals in this process (sidecar health checks,
+    // gateway pings, keep-alives) that contaminate open-path event-loop
+    // blocking measurement; a fresh child matches the production open path.
+    const perfChildRun = await new Promise((resolve, reject) => {
+      const child = spawn(
+        process.execPath,
+        [path.join(projectRoot, 'tests', 'live-e2e', 'open-perf-child.mjs'), perfBundleCjs],
+        { cwd: projectRoot, stdio: ['ignore', 'pipe', 'pipe'] }
+      );
+      let out = '';
+      child.stdout.on('data', (chunk) => {
+        out += chunk.toString();
+        process.stdout.write(chunk);
+      });
+      child.stderr.on('data', (chunk) => {
+        process.stderr.write(chunk);
+      });
+      child.on('exit', (code) => resolve({ code, out }));
+      child.on('error', reject);
+    });
+    if (perfChildRun.code !== 0) {
+      throw new Error(`Open-perf suite child process failed with exit code ${perfChildRun.code}`);
+    }
+    const perfMarkerMatch = /PERF_CHILD_RESULT:(\{.*\})\s*$/.exec(perfChildRun.out);
+    if (!perfMarkerMatch) {
+      throw new Error('Open-perf child process exited 0 but emitted no PERF_CHILD_RESULT marker');
+    }
+    const perfResults = JSON.parse(perfMarkerMatch[1]);
 
     // Write docs/traces/live-verification.json
     let gitCommit = '35837e4b8995e19c1315c0c6f43762f2b2a5928c';

@@ -762,6 +762,43 @@ export const useChatStore = create<ChatState>((set, get) => ({
     let lastFlushTime = 0;
     const FLUSH_INTERVAL_MS = 100;
 
+    // Task idempotency (Prompt 2): duplicate done/error emissions (failover
+    // hand-offs, cancel races) and duplicate content re-appends must never
+    // mutate the task twice. `taskFinalized` makes finalization one-shot;
+    // `dedupeReplayAppend` de-overlaps repeated token batches against the
+    // text already rendered for THIS task.
+    let taskFinalized = false;
+    let accumulatedContent = '';
+
+    const guardFinalize = (status = '', errorCard?: ChatErrorCard) => {
+      if (taskFinalized) return;
+      taskFinalized = true;
+      finalizeStream(status, errorCard);
+    };
+
+    const DEDUPE_MIN_OVERLAP = 24;
+    const DEDUPE_MAX_OVERLAP = 1024;
+
+    // Returns the suffix of `incoming` that is genuinely new relative to the
+    // accumulated task content. Handles the three recurrence shapes produced
+    // by provider restarts / failover hops: identical full re-send, identical
+    // trailing block re-append, and re-streaming from zero (keep only the new
+    // tail). Overlap detection is bounded to avoid false positives on short
+    // coincidental repeats.
+    const dedupeReplayAppend = (referenceContent: string, incoming: string): string => {
+      if (!incoming) return '';
+      if (!referenceContent) return incoming;
+      if (incoming === referenceContent) return '';
+      if (referenceContent.endsWith(incoming)) return '';
+      if (incoming.startsWith(referenceContent)) return incoming.slice(referenceContent.length);
+      const maxOverlap = Math.min(referenceContent.length, incoming.length - 1, DEDUPE_MAX_OVERLAP);
+      for (let overlap = maxOverlap; overlap >= DEDUPE_MIN_OVERLAP; overlap--) {
+        const tail = referenceContent.slice(referenceContent.length - overlap);
+        if (incoming.startsWith(tail)) return incoming.slice(overlap);
+      }
+      return incoming;
+    };
+
     // Step 3: Stream Watchdog (auto-finalize if no chunks arrive for 4000ms)
     const taskStartTime = Date.now();
     let watchdogTimer: ReturnType<typeof setTimeout> | null = null;
@@ -776,7 +813,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         watchdogTimer = setTimeout(() => {
           if (get().isStreaming && get().currentTaskId === taskId) {
             console.warn(`[ChatStore] Watchdog triggered: 4000ms elapsed without stream chunk for task ${taskId}. Auto-finalizing.`);
-            finalizeStream();
+            guardFinalize();
           }
         }, WATCHDOG_MS);
       }
@@ -810,11 +847,21 @@ export const useChatStore = create<ChatState>((set, get) => ({
       lastFlushTime = performance.now();
       isFlushing = false;
 
+      // Task idempotency (Prompt 2): de-overlap against the content already
+      // rendered for this task before appending, so re-streamed/re-appended
+      // blocks from failover hops are never duplicated.
+      const referenceContent = get().messages.find((m) => m.taskId === taskId && m.role === 'assistant')?.content ?? accumulatedContent;
+      const deduped = dedupeReplayAppend(referenceContent, batch);
+      if (!deduped) {
+        return;
+      }
+      accumulatedContent = referenceContent + deduped;
+
       // Update message via updateMessage action every 100ms
       const targetMessage = get().messages.find((m) => m.taskId === taskId && m.role === 'assistant');
       if (targetMessage) {
         get().updateMessage(targetMessage.id, {
-          content: targetMessage.content + batch,
+          content: targetMessage.content + deduped,
           statusText: '',
           isStreaming: true,
           metadata: targetMessage.metadata
@@ -829,8 +876,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
 
       set((state) => ({
-        streamingText: state.streamingText + batch,
-        contextTokens: state.contextTokens + Math.ceil(batch.length / 4)
+        streamingText: state.streamingText + deduped,
+        contextTokens: state.contextTokens + Math.ceil(deduped.length / 4)
       }));
     };
 
@@ -1050,7 +1097,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     };
 
     const finishTask = (status = '') => {
-      finalizeStream(status);
+      guardFinalize(status);
     };
 
     activeStreamDisposables.forEach((dispose) => {
@@ -1252,7 +1299,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
               m.taskId === taskId ? { ...m, isStreaming: false, statusText: '' } : m
             )
           });
-          finalizeStream('Task stopped.');
+          guardFinalize('Task stopped.');
         } else {
           const lastMessage = get().messages.find((m) => m.taskId === taskId);
           if (traceOptions?.traceId && window.electronAPI?.recordTraceHop) {
@@ -1266,7 +1313,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
               }
             });
           }
-          finalizeStream();
+          guardFinalize();
         }
       }));
     }
@@ -1294,7 +1341,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
             error: parsed.data.error || 'The task could not be completed.'
           });
         }
-        finalizeStream('Task failed.', card);
+        guardFinalize('Task failed.', card);
       }));
     }
 
@@ -1360,7 +1407,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       };
       const applyBridgeError = (messageText: string): void => {
         const card = bridgeErrorCard(messageText);
-        finalizeStream('Task failed.', card);
+        guardFinalize('Task failed.', card);
       };
 
       activeStreamDisposables.push(window.electronAPI.onOpenCodeStream((chunk) => {
@@ -1382,7 +1429,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         activeStreamDisposables.push(window.electronAPI.onOpenCodeDone((payload) => {
           if (get().currentTaskId !== taskId) return;
           openCodeBridgeRouteActive = false;
-          finalizeStream(payload?.stopped ? 'Task stopped.' : '');
+          guardFinalize(payload?.stopped ? 'Task stopped.' : '');
         }));
       }
       if (window.electronAPI.onOpenCodeError) {

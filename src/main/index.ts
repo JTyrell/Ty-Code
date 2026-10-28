@@ -216,6 +216,7 @@ import { recordLspDiagnostics } from './services/orchestration/tools/diagnostics
 import { diagnosticService } from './services/diagnostics/diagnostic-service';
 import { capabilitySuite } from './services/diagnostics/capability-suite';
 import { remediationEngine } from './services/diagnostics/remediation-engine';
+import { sidecarLogLedger } from './services/fcc/sidecar-log-ledger';
 import { diagnosticsHealthMonitor } from './services/diagnostics/health-monitor';
 import { connectivityTracer } from './services/diagnostics/connectivity-tracer';
 import { providerOAuth } from './services/auth/provider-oauth';
@@ -2653,6 +2654,19 @@ function registerIpcHandlers(): void {
           capSummary: capabilitySuite.getLatestSummary()
         }
       };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  // Stream Hygiene (Prompt 2): read-only view of the FCC sidecar log ledger
+  // (coalesced sidecar stdout/stderr lines, gated stream-salvage lines and
+  // gateway rerun decisions). Read-only diagnostics: no state mutation.
+  ipcMain.handle('sidecar-ledger:get', async (event, limit?: number) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      const boundedLimit = typeof limit === 'number' && Number.isFinite(limit) && limit > 0 ? Math.min(200, Math.floor(limit)) : 80;
+      return { success: true, data: sidecarLogLedger.recent(boundedLimit) };
     } catch (err: unknown) {
       return { success: false, error: err instanceof Error ? err.message : String(err) };
     }

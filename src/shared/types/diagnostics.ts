@@ -389,4 +389,14 @@ export interface FullConnectivityTraceReport {
   mockScan: MockScanReport;
 }
 
+/** Stream Hygiene (Prompt 2): one coalesced entry of the FCC sidecar log ledger. */
+export interface SidecarLedgerEntry {
+  id: number;
+  source: 'sidecar-stdout' | 'sidecar-stderr' | 'stream-gate' | 'rerun-decision';
+  text: string;
+  count: number;
+  firstTs: number;
+  lastTs: number;
+}
+
 

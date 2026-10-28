@@ -792,6 +792,9 @@ const api: ElectronAPI = {
   getDiagnosticReport: (summary?: any) => ipcRenderer.invoke('diagnostics:report', summary),
   getDiagnosticsLatest: () => ipcRenderer.invoke('diagnostics:get-latest'),
 
+  // Stream Hygiene (Prompt 2): FCC sidecar log ledger
+  getSidecarLedger: (limit?: number) => ipcRenderer.invoke('sidecar-ledger:get', limit),
+
   // Diagnostics 2: End-to-End Capability Test Suite
   runCapabilitySuite: (options?: any) => ipcRenderer.invoke('diagnostics:run-capabilities', options),
   getCapabilityReport: () => ipcRenderer.invoke('diagnostics:get-capability-report'),

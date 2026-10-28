@@ -1,13 +1,13 @@
 {
-  "timestamp": "2026-10-27T01:45:50.966Z",
-  "gitCommit": "1c63ae43a0a47b3658346c6a51d22e5198fd83bc",
+  "timestamp": "2026-10-28T02:47:30.888Z",
+  "gitCommit": "ac711e5f70c6f207a327bd76fd9a283d50684fa8",
   "command": "npm run test:extensions",
-  "durationMs": 30898,
+  "durationMs": 28742,
   "environment": {
     "node": "v24.13.1",
     "platform": "win32",
     "arch": "x64",
-    "gitCommit": "1c63ae43a0a47b3658346c6a51d22e5198fd83bc",
+    "gitCommit": "ac711e5f70c6f207a327bd76fd9a283d50684fa8",
     "registryUrl": "https://open-vsx.org"
   },
   "summary": {
@@ -21,9 +21,9 @@
       "id": "test-1-registry-reachability",
       "name": "Registry Reachability: search Open VSX for \"theme\"",
       "status": "PASS",
-      "durationMs": 995,
+      "durationMs": 1007,
       "assertions": [
-        "PASS: Search response returned in 995ms (budget: <= 4000ms)",
+        "PASS: Search response returned in 1007ms (budget: <= 4000ms)",
         "PASS: Returned 25 extensions (expected: >= 10)",
         "PASS: results[0].displayName exists (\"Gruvbox Theme\")",
         "PASS: results.length >= 10 && results[0].displayName exists"
@@ -31,14 +31,14 @@
       "details": {
         "resultsCount": 25,
         "firstResult": "Gruvbox Theme",
-        "durationMs": 995
+        "durationMs": 1007
       }
     },
     {
       "id": "test-2-vsix-download",
       "name": "VSIX Download: install \"vscodevim.vim\"",
       "status": "PASS",
-      "durationMs": 1788,
+      "durationMs": 2114,
       "assertions": [
         "PASS: Installation succeeded for vscodevim.vim: ok",
         "PASS: installedExtension record returned",
@@ -50,14 +50,14 @@
         "extensionDir": "C:\\Users\\JT\\.ty-code\\extensions\\vscodevim.vim-1.32.4",
         "manifestName": "vim",
         "manifestVersion": "1.32.4",
-        "durationMs": 1788
+        "durationMs": 2114
       }
     },
     {
       "id": "test-3-extension-activation",
       "name": "Extension Activation: install \"ms-python.python\", open .py file",
       "status": "PASS",
-      "durationMs": 22974,
+      "durationMs": 20950,
       "assertions": [
         "PASS: Python extension downloaded & installed: ok",
         "PASS: activationEvent === 'onLanguage:python'",
@@ -73,7 +73,7 @@
       "id": "test-4-command-execution",
       "name": "Command Execution: extension registers command \"python.sortImports\"",
       "status": "PASS",
-      "durationMs": 8,
+      "durationMs": 10,
       "assertions": [
         "PASS: commandRegistry.has(\"python.sortImports\")",
         "PASS: executeCommand() resolved successfully",
@@ -92,7 +92,7 @@
       "id": "test-5-language-provider",
       "name": "Language Provider: type \"import \" in .py file",
       "status": "PASS",
-      "durationMs": 2,
+      "durationMs": 1,
       "assertions": [
         "PASS: completionItems.length (3) > 0",
         "PASS: completionItems contains \"os\" module",
@@ -112,7 +112,7 @@
       "id": "test-6-webview-panel",
       "name": "Webview Panel: install \"yzhang.markdown-all-in-one\", open .md file, run preview command",
       "status": "PASS",
-      "durationMs": 2909,
+      "durationMs": 3173,
       "assertions": [
         "PASS: Markdown extension installed: ok",
         "PASS: webviewPanel exists",
@@ -131,7 +131,7 @@
       "id": "test-7-uninstall-cleanup",
       "name": "Uninstall Cleanup: uninstall test extension",
       "status": "PASS",
-      "durationMs": 51,
+      "durationMs": 29,
       "assertions": [
         "PASS: Directory exists before uninstall",
         "PASS: Extension registered in host before uninstall",

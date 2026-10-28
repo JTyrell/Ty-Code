@@ -20,6 +20,8 @@ import { credentialStore } from '../auth/credential-store';
 import type { ProviderCandidate, RoutingContext } from './strategies/types';
 import { providerHealthStore } from '../../providers/provider-health-store';
 import { routeEventPolicy } from '../../providers/route-event-policy';
+import { sidecarLogLedger } from '../fcc/sidecar-log-ledger';
+import { FAILOVER_RESUME_INSTRUCTION } from '../fcc/sidecar-line-classifier';
 
 export interface FailoverEvent {
   attempt: number;
@@ -42,7 +44,12 @@ export interface ExecuteWithFailoverOptions<T> {
   context: RoutingContext;
   settings: ProviderSettings;
   messages: ChatCompletionMessage[];
-  execute: (candidate: ProviderCandidate, reconciledMessages: ChatCompletionMessage[]) => Promise<T>;
+  /**
+   * `carriedPartial` is non-empty when a previous sibling attempt already
+   * streamed visible content before failing — the fresh attempt must CONTINUE
+   * that content (never restart it).
+   */
+  execute: (candidate: ProviderCandidate, reconciledMessages: ChatCompletionMessage[], carriedPartial?: string) => Promise<T>;
   onFailover?: (event: FailoverEvent) => void;
   abortSignal?: AbortSignal;
 }
@@ -283,7 +290,7 @@ export class OmniRouteRouter {
   public async executeWithFailover<T>(
     optionsOrMessages: ExecuteWithFailoverOptions<T> | ChatCompletionMessage[],
     maybeSettings?: ProviderSettings,
-    maybeExecute?: (candidate: ProviderCandidate, reconciledMessages: ChatCompletionMessage[]) => Promise<T>,
+    maybeExecute?: (candidate: ProviderCandidate, reconciledMessages: ChatCompletionMessage[], carriedPartial?: string) => Promise<T>,
     maybeOnFailover?: (event: FailoverEvent) => void,
     maybeContext?: RoutingContext
   ): Promise<RoutingExecutionResult<T>> {
@@ -315,6 +322,13 @@ export class OmniRouteRouter {
     }
     const failoverHistory: FailoverEvent[] = [];
 
+    // Retry idempotency (Prompt 2): only ZERO-token attempts may restart from
+    // scratch. When an attempt already streamed visible content and then
+    // failed, the partial text is carried forward and the next provider
+    // receives the assistant prefix + resume instruction to continue.
+    let attemptMessages = messages;
+    let carriedPartial = '';
+
     let attempt = 0;
     const startTime = Date.now();
 
@@ -324,7 +338,7 @@ export class OmniRouteRouter {
       const routeContext: RoutingContext = {
         ...context,
         excludedProviders,
-        promptTokensEstimate: this.estimateTokens(messages)
+        promptTokensEstimate: this.estimateTokens(attemptMessages)
       };
 
       const candidate = this.route(routeContext, settings);
@@ -335,14 +349,14 @@ export class OmniRouteRouter {
       }
 
       const reconciledMessages = this.reconcileContextWindow(
-        messages,
+        attemptMessages,
         candidate.model.contextWindow,
         candidate.model.maxOutputTokens
       );
 
       const requestStart = Date.now();
       try {
-        const result = await execute(candidate, reconciledMessages);
+        const result = await execute(candidate, reconciledMessages, carriedPartial || undefined);
         const reqLatency = Date.now() - requestStart;
 
         // Record success in connection pool
@@ -362,6 +376,29 @@ export class OmniRouteRouter {
         const errorMsg = err instanceof Error ? err.message : String(err);
         const statusCodeMatch = errorMsg.match(/\((\d{3})\)/);
         const statusCode = statusCodeMatch ? Number(statusCodeMatch[1]) : undefined;
+
+        // Retry idempotency (Prompt 2): the streaming execute attaches how many
+        // token chars it already pushed downstream (`__attemptTokensReceived`)
+        // and the total visible partial text (`__carriedPartial`). A request
+        // that produced visible tokens is NEVER silently re-run — it continues.
+        const meta = err as { __attemptTokensReceived?: number; __carriedPartial?: string };
+        const tokensReceived = typeof meta.__attemptTokensReceived === 'number' && meta.__attemptTokensReceived > 0
+          ? meta.__attemptTokensReceived
+          : 0;
+        const carriedVisible = typeof meta.__carriedPartial === 'string' ? meta.__carriedPartial : '';
+        const canCarry = tokensReceived > 0 && carriedVisible.trim().length > 0;
+        sidecarLogLedger.record(
+          'rerun-decision',
+          `[OmniRoute] ${candidate.provider.id} failed (HTTP ${statusCode ?? 'err'}) after ${tokensReceived} token chars → ${attempt < maxRetries ? (canCarry ? 'carry partial to next provider' : 'fresh attempt (no visible partial to resume)') : 'exhausted, surfacing error'}`
+        );
+        if (canCarry && attempt < maxRetries) {
+          carriedPartial = carriedVisible;
+          attemptMessages = [
+            ...messages,
+            { role: 'assistant', content: carriedPartial },
+            { role: 'user', content: FAILOVER_RESUME_INSTRUCTION }
+          ] as ChatCompletionMessage[];
+        }
 
         // Record failure & trigger exponential cooldown if 429
         this.pool.recordFailure(candidate.provider.id, errorMsg, statusCode);
