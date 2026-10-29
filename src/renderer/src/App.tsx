@@ -20,6 +20,7 @@ import { WorkspaceEditReview } from './components/WorkspaceEditReview';
 import { ContextEngineDrawer } from './components/status-bar/ContextEngineDrawer';
 import { ToastContainer } from './components/ToastContainer';
 import { toast } from './state/toast-store';
+import { useBootStateStore } from './state/boot-state-store';
 import {
   useGovernorStore,
   startGovernorSampling,
@@ -30,6 +31,7 @@ import { AgentApprovalModal } from './components/AgentApprovalModal';
 import { ExtensionTracePanel } from './components/extensions/ExtensionTracePanel';
 import { transitionProfiler } from './services/perf/transition-profiler';
 import { useChatStore } from './state/chat-store';
+import { useUsageDashboardStore } from './state/usage-dashboard-store';
 import { initTypographyStore, useTypographyStore } from './state/typography-store';
 import { useWorkspaceStore } from './state/workspace-store';
 import { useEditorNavigationStore } from './state/editor-navigation-store';
@@ -81,6 +83,13 @@ const MainWorkbench: React.FC = () => {
   const setFileTree = useWorkspaceStore((s) => s.setFileTree);
   const navigateTo = useEditorNavigationStore((state) => state.navigateTo);
   const isPopOutMode = useDebuggerStore((s) => s.isPopOutMode);
+  // Prompt 3: tri-state hydration gate — undefined while the boot-state IPC
+  // (main-process first-run decision) has not resolved. While undefined, the
+  // boot-time Suspense trees below stay unmounted so no lazy chunk can suspend
+  // and flash a ViewSkeleton before first paint.
+  const bootHydration = useBootStateStore((s) => s.hydration);
+  const isSettingsOpen = useChatStore((s) => s.isSettingsOpen);
+  const usageDashboardOpen = useUsageDashboardStore((s) => s.isOpen);
   const prevPopOutRef = useRef(isPopOutMode);
 
   useEffect(() => {
@@ -355,6 +364,12 @@ const MainWorkbench: React.FC = () => {
     initTypographyStore();
     void useTypographyStore.getState().hydrate();
 
+    // Prompt 3: resolve the boot-state gate ONCE at mount (StrictMode-safe
+    // generation guard inside hydrate). Until this resolves, boot-time
+    // Suspense trees (Settings / Usage / Diff / BootTimeline / Onboarding) are
+    // not mounted, so their lazy chunks can never suspend during first paint.
+    void useBootStateStore.getState().hydrate();
+
     // Auto-load current workspace tree
     (async () => {
       try {
@@ -567,9 +582,14 @@ const MainWorkbench: React.FC = () => {
         <div style={{ flex: 1, height: '100%', minWidth: 200, overflow: 'hidden', position: 'relative', display: 'flex', flexDirection: 'column', scrollbarGutter: 'stable' }}>
           <div style={{ flex: 1, minHeight: 0, position: 'relative', overflow: 'hidden' }}>
             <EditorArea />
-            <React.Suspense fallback={<ViewSkeleton type="diff" />}>
-              <DiffViewer />
-            </React.Suspense>
+            {/* Prompt 3: DiffViewer tree only mounts after hydration resolves —
+                before that its lazy chunk would suspend behind a modal
+                skeleton, which reads as the boot flash. */}
+            {bootHydration !== undefined && (
+              <React.Suspense fallback={<ViewSkeleton type="diff" />}>
+                <DiffViewer />
+              </React.Suspense>
+            )}
             <WorkspaceEditReview />
           </div>
           {/* Context Engine drawer: dockable, in-flow participant of the center column split */}
@@ -622,31 +642,39 @@ const MainWorkbench: React.FC = () => {
         onOpenExtensionTrace={() => setIsExtensionTraceOpen(true)}
       />
 
-      {/* Settings & Usage Modals protected with individual ErrorBoundaries */}
-      <ErrorBoundary fallbackTitle="Settings Error" onReset={() => useChatStore.setState({ isSettingsOpen: false })}>
-        <React.Suspense fallback={<ViewSkeleton type="modal" />}>
-          <SettingsModal />
-        </React.Suspense>
-      </ErrorBoundary>
+      {/* Settings & Usage Modals protected with individual ErrorBoundaries.
+          Prompt 3: the whole boot-time modal block mounts only AFTER the
+          boot-state gate resolves, and each fallback reflects the view's
+          actual open state so a skeleton can never represent a moment that is
+          pure chunk-loading (that was the 'start with skeleton then remove' flash). */}
+      {bootHydration !== undefined && (
+        <>
+          <ErrorBoundary fallbackTitle="Settings Error" onReset={() => useChatStore.setState({ isSettingsOpen: false })}>
+            <React.Suspense fallback={isSettingsOpen ? <ViewSkeleton type="modal" /> : null}>
+              <SettingsModal />
+            </React.Suspense>
+          </ErrorBoundary>
 
-      <ErrorBoundary fallbackTitle="Usage Dashboard Error" onReset={() => useChatStore.getState().openSettings('analytics')}>
-        <React.Suspense fallback={<ViewSkeleton type="modal" />}>
-          <UsageDashboard />
-        </React.Suspense>
-      </ErrorBoundary>
+          <ErrorBoundary fallbackTitle="Usage Dashboard Error" onReset={() => useChatStore.getState().openSettings('analytics')}>
+            <React.Suspense fallback={usageDashboardOpen ? <ViewSkeleton type="modal" /> : null}>
+              <UsageDashboard />
+            </React.Suspense>
+          </ErrorBoundary>
 
-      <ErrorBoundary fallbackTitle="Boot Timeline Error" onReset={() => setIsBootTimelineOpen(false)}>
-        <React.Suspense fallback={null}>
-          <BootTimeline
-            isOpen={isBootTimelineOpen}
-            onClose={() => setIsBootTimelineOpen(false)}
-          />
-        </React.Suspense>
-      </ErrorBoundary>
+          <ErrorBoundary fallbackTitle="Boot Timeline Error" onReset={() => setIsBootTimelineOpen(false)}>
+            <React.Suspense fallback={null}>
+              <BootTimeline
+                isOpen={isBootTimelineOpen}
+                onClose={() => setIsBootTimelineOpen(false)}
+              />
+            </React.Suspense>
+          </ErrorBoundary>
 
-      <ErrorBoundary fallbackTitle="Onboarding Wizard Error">
-        <OnboardingWizard />
-      </ErrorBoundary>
+          <ErrorBoundary fallbackTitle="Onboarding Wizard Error">
+            <OnboardingWizard />
+          </ErrorBoundary>
+        </>
+      )}
 
       <ExtensionInputDialog />
       <AgentApprovalModal />

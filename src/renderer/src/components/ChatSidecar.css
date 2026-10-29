@@ -1054,9 +1054,17 @@ body.theme-group-light .markdown-content code:not(pre code) {
   min-height: 0;
   height: 100%;
   width: 100%;
+  /* Prompt 2: stable scrollbar gutter — a scrollbar rotating in/out of view
+     must not horizontally reflow the feed (or the centered pill) by a pixel. */
+  scrollbar-gutter: stable;
 }
 
-/* "Jump to latest" Smart Sticky-Scroll Pill */
+/* "Jump to latest" Smart Sticky-Scroll Pill.
+   Prompt 2: absolutely anchored at left: 50% / translateX(-50%) so the pill's
+   horizontal position is invariant to scrollbar-width changes, and the
+   transform NEVER changes across hover/active states — any transform shift is
+   what made the pill slip out from under a held finger/mouse ("should be still
+   under press which click land"). */
 .chat-jump-to-latest-pill {
   position: absolute;
   bottom: 16px;
@@ -1080,19 +1088,28 @@ body.theme-group-light .markdown-content code:not(pre code) {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.05);
   cursor: pointer;
   user-select: none;
-  transition: transform 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+  /* No `transform` in the transition list: the pinned translateX(-50%) offset
+     must be continuous through press, release and hover (no jitter). */
+  transition: background-color 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
   animation: chatPillSlideIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 .chat-jump-to-latest-pill:hover {
   background-color: var(--bg-hover, rgba(40, 40, 60, 0.95));
   border-color: var(--accent-primary, #6366f1);
-  transform: translateX(-50%) translateY(-1px);
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(99, 102, 241, 0.3);
 }
 
+/* Prompt 2: :active/:focus intentionally keep the exact same transform — no
+   translate/scale feedback while pressed, so the pill cannot shift under the
+   pointer during press or between press and click. */
 .chat-jump-to-latest-pill:active {
-  transform: translateX(-50%) translateY(1px);
+  background-color: var(--bg-hover, rgba(40, 40, 60, 0.95));
+}
+
+.chat-jump-to-latest-pill:focus-visible {
+  outline: 2px solid var(--accent-primary, #6366f1);
+  outline-offset: 2px;
 }
 
 .chat-jump-to-latest-pill .chat-jump-icon {

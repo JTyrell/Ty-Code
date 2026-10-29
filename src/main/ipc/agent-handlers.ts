@@ -361,6 +361,9 @@ export async function startAgentTask(
             }
           },
           mode: params.mode ?? 'BUILD',
+          // Prompt 1: the chat-sidecar agent mode ('build' | 'plan' | 'general') drives the
+          // engine's plan gate: 'plan' runs must end with a submitted plan document.
+          agentRunMode: params.agentMode ?? 'build',
           onChunk: emit,
           onProviderHandoff: (info) => {
             if (mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) return;

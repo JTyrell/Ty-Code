@@ -997,7 +997,7 @@ const ChatMessageItemComponent: React.FC<ChatMessageProps> = ({
       const textToCopy = ukPunctuationEnabled
         ? normalisePunctuation(message.content)
         : message.content;
-      await navigator.clipboard.writeText(textToCopy);
+      await window.electronAPI?.copyToClipboard(textToCopy);
       setCopiedMessage(true);
       setTimeout(() => setCopiedMessage(false), 1600);
     }

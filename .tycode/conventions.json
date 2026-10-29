@@ -1,0 +1,21 @@
+{
+  "key": "85230d3d95988979c6bacb377a6c2c6f5ded95765ea20cf34027c869a210e2fe",
+  "summary": {
+    "fileNaming": "Kebab-case for multi‑word file names, PascalCase for component files, and .ts/.tsx extensions for TypeScript source. Test files use a .test.ts suffix and reside alongside the code they verify.",
+    "importStyle": "Only ES‑module `import` statements are used. Path aliases are defined in the Vite config (`@` → src/renderer/src, `@shared` → src/preload) and are preferred for internal imports. Named imports are favored; default imports appear for plugins and libraries.",
+    "errorHandling": "Explicit `try`/`catch` blocks are used for async operations (e.g., network requests). Errors are logged to the console and, for critical failures, the process exits with a non‑zero code. No silent swallow of exceptions is observed.",
+    "stateManagement": "React functional components manage UI state with hooks (`useState`, `useEffect`). The main process uses plain TypeScript objects or simple store modules; no global state library (e.g., Redux) is evident.",
+    "styling": "Styling is applied via imported CSS files or inline `<style>` tags governed by the CSP defined in the Vite config. No CSS‑in‑JS or styled‑components pattern is observed.",
+    "testLayout": "Vitest is the test runner. Renderer tests use the default Vite root (`src/renderer`) and are named `*.test.ts`. Main‑process unit tests are isolated in `vitest.main.config.ts` and include files matching `src/main/**/*.test.ts`. Tests live next to the source they cover.",
+    "commentPolicy": "JSDoc‑style block comments are used for module headers and public APIs. Inline `//` comments provide short explanations. There are no ESLint disabling comments or excessive block comments.",
+    "forbiddenPatterns": [
+      "require()",
+      "module.exports / exports = ",
+      "wildcard imports (import * as)",
+      "unused variables without an `_` prefix"
+    ],
+    "commitStyle": "Commits follow the Conventional Commits format (`type(scope): description`). This is inferred from CI scripts and contribution guidelines.",
+    "moduleBoundaries": "The codebase enforces clear boundaries: `src/main` for Electron main‑process code, `src/renderer` for React UI, and `src/preload` for preload scripts. Imports across these layers use the defined path aliases, preventing accidental coupling."
+  },
+  "savedAt": 1793197427791
+}

@@ -116,6 +116,8 @@ export interface RunAgentParams {
   onChunk: (chunk: AgentStreamChunk) => void;
   requestApproval: (approval: AgentToolApproval) => Promise<AgentApprovalDecision>;
   abortSignal?: AbortSignal;
+  /** Chat-sidecar run mode: 'plan' requires a submit_plan document before the loop may stop. */
+  agentRunMode?: 'build' | 'plan' | 'general';
   onProviderHandoff?: (info: { fromProvider: string; toProvider: string; toModel: string }) => void;
   taskId?: string;
   resumeSessionId?: string;
@@ -227,6 +229,59 @@ function looksLikeSimpleQuery(prompt: string): boolean {
   if (/\b(what is|who is|where is|can you|could you|explain|define|meaning of|difference between|tell me about|help me understand|is it true|true or false)\b/i.test(lower)) return true;
 
   return false;
+}
+
+/** Structured plan-mode refusal body returned as a recoverable tool result. */
+const PLAN_MODE_REFUSAL = {
+  status: 'refused',
+  reason: 'plan-mode-read-only',
+  guidance: 'Propose changes via submit_plan; switch to Build mode to apply.'
+} as const;
+
+/**
+ * Prompt 1 Step 2: Repairs assistant tool_call -> tool_result pairing across
+ * provider failovers.
+ *
+ * A mid-tool failover (remediation-ladder rotation, provider outage, approval
+ * interruption) can leave an assistant message carrying tool_calls with no
+ * subsequent tool result. Strict providers reject that history with HTTP 400
+ * ("tool_call_id ... was not found") which kills the loop. For every orphaned
+ * tool_call a synthetic result is injected:
+ *   "[SYSTEM] Tool execution interrupted by provider failover; result unavailable."
+ *
+ * Mutates `messages` in place. Idempotent. Returns the count of injected
+ * synthetic results so call sites can log the repair.
+ */
+function repairToolPairing(messages: ChatCompletionMessage[]): number {
+  // Pass 1: index every tool call id that already has a tool message answer.
+  const answered = new Set<string>();
+  for (const message of messages) {
+    const callId = (message as { tool_call_id?: string }).tool_call_id;
+    if (message.role === 'tool' && callId) answered.add(callId);
+  }
+  // Pass 2: inject a synthetic result after each unpaired assistant tool_call.
+  let injected = 0;
+  const repaired: ChatCompletionMessage[] = [];
+  for (const message of messages) {
+    repaired.push(message);
+    if (message.role !== 'assistant' || !Array.isArray(message.tool_calls)) continue;
+    for (const call of message.tool_calls) {
+      if (!call?.id || answered.has(call.id)) continue;
+      answered.add(call.id); // also guards duplicate ids in malformed streams
+      repaired.push({
+        role: 'tool',
+        name: call.function?.name,
+        tool_call_id: call.id,
+        content: '[SYSTEM] Tool execution interrupted by provider failover; result unavailable.'
+      });
+      injected++;
+    }
+  }
+  if (injected > 0) {
+    messages.length = 0;
+    for (const message of repaired) messages.push(message);
+  }
+  return injected;
 }
 
 export class AgentEngine {
@@ -656,6 +711,42 @@ export class AgentEngine {
 
     onChunk({ type: 'status', content: 'Thinking…' });
 
+    // ===== Prompt 1 Step 1: Iteration instrumentation =====
+    // Every loop exit carries a non-empty stop=<reason>; every abnormal exit
+    // emits an `error` chunk so the renderer always shows an ErrorCard.
+    // Silent stops are forbidden.
+    const planModeRequested = params.agentRunMode === 'plan';
+    let planSubmitted = false;
+    let planNudgesUsed = 0;
+    let iterationKind: 'text' | 'tools' = 'text';
+    const logAgentStop = (stop: string, reason?: string): void => {
+      console.log(`[AGENT] iter=${stateManager.iterationCount} kind=${iterationKind} stop=${stop || 'none'}${reason ? ` reason=${reason}` : ''}`);
+    };
+
+    // Prompt 1 Step 4: approval parking must never stall forever. Race the
+    // Safe Edit Review Gate against a hard timeout; a timed-out gate is
+    // reported as an `error` chunk (visible ErrorCard) instead of hanging.
+    const APPROVAL_TIMEOUT_MS = 10 * 60_000;
+    const awaitApprovalWithTimeout = async (
+      pending: Promise<AgentApprovalDecision>,
+      gateLabel: string
+    ): Promise<AgentApprovalDecision & { timedOut?: boolean }> => {
+      let timedOut = false;
+      let timer: NodeJS.Timeout | undefined;
+      const timeoutDecision = new Promise<AgentApprovalDecision>((resolve) => {
+        timer = setTimeout(() => {
+          timedOut = true;
+          resolve({ approved: false, feedback: `Approval for the ${gateLabel} did not arrive within ${APPROVAL_TIMEOUT_MS / 60000} minutes.` });
+        }, APPROVAL_TIMEOUT_MS);
+      });
+      try {
+        const decision = await Promise.race([pending, timeoutDecision]);
+        return timedOut ? { approved: false, feedback: decision.feedback, timedOut: true } : decision;
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+    };
+
     // Helper: Build messages with todo context injected
     const buildMessagesWithTodos = (msgs: ChatCompletionMessage[], todos: TodoItem[]): ChatCompletionMessage[] => {
       if (todos.length === 0) return msgs;
@@ -736,18 +827,23 @@ export class AgentEngine {
     try {
       while (stateManager.iterationCount < stateManager.maxIterations) {
       if (abortSignal?.aborted) {
+        logAgentStop('aborted', 'abort_signal_before_iteration');
         onChunk({ type: 'cancelled' });
         return;
       }
-      // Yield to the Node.js event loop between ReAct iterations to keep IPC and UI non-blocking
-      await new Promise<void>((resolve) => setImmediate(resolve));
-      try {
+        // Yield to the Node.js event loop between ReAct iterations to keep IPC and UI non-blocking
+        await new Promise<void>((resolve) => setImmediate(resolve));
         if (stateManager.iterationCount > 0) {
           await injectLazyContextIfNeeded();
         }
-        console.log(`[AGENT] Iteration ${stateManager.iterationCount + 1}/${stateManager.maxIterations} — mode: ${stateManager.currentMode}`);
+        iterationKind = 'text';
+        console.log(`[AGENT] iter=${stateManager.iterationCount} begin mode=${stateManager.currentMode}`);
+        try {
+          if (stateManager.iterationCount > 0) {
+            await injectLazyContextIfNeeded();
+          }
 
-        // Select provider/model. Once a mid-turn failover has pinned a new
+          // Select provider/model. Once a mid-turn failover has pinned a new
         // provider, that override drives every subsequent iteration of this
         // run; the Todo list is untouched by the switch.
         let activeProvider: string;
@@ -827,8 +923,10 @@ export class AgentEngine {
           onChunk({ type: 'status', content: 'Compacting context…' });
           let summary = '';
           try {
-            summary = await generateSummary(messages, async (summaryMessages) =>
-              ProviderGateway.sendChatRequest(activeProvider, activeModel, summaryMessages, false, undefined, undefined, 0, abortSignal));
+          summary = await generateSummary(messages, async (summaryMessages) => {
+            repairToolPairing(summaryMessages);
+            return ProviderGateway.sendChatRequest(activeProvider, activeModel, summaryMessages, false, undefined, undefined, 0, abortSignal);
+          });
           } catch {
             summary = '';
           }
@@ -844,6 +942,13 @@ export class AgentEngine {
         onChunk({ type: 'status', content: `${stateManager.currentMode === 'plan' ? 'Planning' : 'Executing'}… (iteration ${stateManager.iterationCount + 1}/${stateManager.maxIterations})` });
 
         // 2. Send to LLM with current todos in system prompt
+        // Prompt 1 Step 2: repair tool pairing BEFORE EVERY provider send so
+        // remediation-ladder rotations / mid-tool failovers never orphan an
+        // assistant tool_call (strict providers answer orphans with HTTP 400).
+        const injectedSyntheticResults = repairToolPairing(messages);
+        if (injectedSyntheticResults > 0) {
+          console.log(`[AGENT] pairing repair: injected ${injectedSyntheticResults} synthetic tool result(s) after failover`);
+        }
         const messagesWithTodos = buildMessagesWithTodos(messages, stateManager.todos);
 
         // Mid-turn failover snapshot: tracks the streamed output of this turn
@@ -933,12 +1038,14 @@ export class AgentEngine {
 
         // SELF-CORRECTION: Detect "intent without action"
         const hasToolCalls = toolCallsToExecute.length > 0;
+        iterationKind = hasToolCalls ? 'tools' : 'text';
         const looksLikeIntentWithoutAction = !hasToolCalls &&
           (streamText || '').trim().length > 0 &&
           /\b(let me|i'll|i will|now i need to|i need to|let's|allow me to|i'm going to|i am going to|going to)\s+(read|check|search|run|execute|inspect|view|open|look at|examine|find|grep|list)\b/i.test(streamText || '');
 
         // Simple queries need no tools or scoping - answer directly and finish.
         if (isSimpleQuery && !hasToolCalls) {
+          logAgentStop('simple_query');
           onChunk({ type: 'done' });
           persistSessionState(true);
           return;
@@ -946,32 +1053,63 @@ export class AgentEngine {
 
         if (looksLikeIntentWithoutAction) {
           const nudgeMessage = 'You stated an intent but did not call a tool. Please execute the tool call now.';
+          logAgentStop('none', 'intent_without_action_nudge');
           messages.push({ role: 'system', content: nudgeMessage });
           onChunk({ type: 'status', content: 'Self-correction: requesting tool execution…' });
           stateManager.iterationCount++;
           continue;
         }
 
-        // 4. If no tool calls, check if all todos are complete
-        if (!hasToolCalls && !looksLikeIntentWithoutAction) {
-          if (stateManager.allTodosComplete()) {
-            if (params.traceId) {
-              try {
-                const { connectivityTracer } = require('../services/diagnostics/connectivity-tracer');
-                connectivityTracer.recordHop(params.traceId, 'H9', {
-                  status: 'PASS',
-                  metadata: {
-                    toolExecutorReady: true,
-                    toolCallsCount: 0,
-                    note: 'All tasks completed; task executor verified intact'
-                  }
-                });
-              } catch {
-                // ignore
+        // 4. No tool calls: exact stop-condition gate (Prompt 1 Step 3).
+        // Break ONLY when: no tool_calls AND no pending todos AND — for a
+        // chat Plan-mode run — the plan document was actually submitted.
+        if (!hasToolCalls) {
+          const pendingTodos = stateManager.hasPendingTodos();
+          const planGateBlocked = planModeRequested && !planSubmitted;
+
+          if (!pendingTodos && !planGateBlocked) {
+            if (stateManager.allTodosComplete()) {
+              if (params.traceId) {
+                try {
+                  const { connectivityTracer } = require('../services/diagnostics/connectivity-tracer');
+                  connectivityTracer.recordHop(params.traceId, 'H9', {
+                    status: 'PASS',
+                    metadata: {
+                      toolExecutorReady: true,
+                      toolCallsCount: 0,
+                      note: 'All tasks completed; task executor verified intact'
+                    }
+                  });
+                } catch {
+                  // ignore
+                }
               }
+              logAgentStop('todos_complete');
+              onChunk({ type: 'done' });
+              persistSessionState(true);
+              return;
             }
+            logAgentStop('final_text');
             onChunk({ type: 'done' });
             persistSessionState(true);
+            return;
+          }
+
+          // Prompt 1 Step 3: Plan-mode recovery. Nudge the model toward
+          // submit_plan (max 2), then surface the failure — finishing without
+          // a plan document (the old silent stop) is forbidden.
+          if (planGateBlocked) {
+            if (planNudgesUsed < 2) {
+              planNudgesUsed++;
+              logAgentStop('none', `plan_nudge_${planNudgesUsed}_of_2`);
+              messages.push({ role: 'system', content: 'You have not called submit_plan. Call submit_plan now with the complete plan markdown.' });
+              onChunk({ type: 'status', content: 'Nudging the model to submit its plan…' });
+              stateManager.iterationCount++;
+              continue;
+            }
+            logAgentStop('plan_not_submitted');
+            onChunk({ type: 'error', error: 'Plan mode: the model did not call submit_plan after 2 nudges, so no plan document was produced. Retry the request or run the task in Build mode.' });
+            persistSessionState(false);
             return;
           }
 
@@ -979,12 +1117,14 @@ export class AgentEngine {
           if (stateManager.currentMode === AgentMode.Plan && stateManager.todos.length === 0) {
             const looksLikeScopingReport = /Complexity & Resource Gauge|Execution Plan\s*\(\s*Phased\s*\)|Task Scoping Report/i.test(streamText || '');
             if (looksLikeScopingReport) {
+              logAgentStop('none', 'scoping_report_nudge');
               messages.push({ role: 'system', content: 'You generated the report but did not call the request_approval tool. Call request_approval with your Ty-Code Task Scoping Report now to pause for approval.' });
               stateManager.iterationCount++;
               continue;
             }
             const parsedTodos = parseTodosFromResponse(streamText);
             if (parsedTodos.length > 0) {
+              logAgentStop('none', 'todos_harvested_from_text');
               stateManager.addTodos(parsedTodos);
               onChunk({ type: 'agent_state', state: { todos: stateManager.todos, mode: stateManager.currentMode, iteration: stateManager.iterationCount, maxIterations: stateManager.maxIterations } });
               stateManager.iterationCount++;
@@ -994,6 +1134,7 @@ export class AgentEngine {
 
           // Final response with no tool calls but incomplete todos — nudge
           if (stateManager.hasPendingTodos()) {
+            logAgentStop('none', stateManager.currentMode === AgentMode.Plan ? 'plan_lock_pending_todos_nudge' : 'pending_todos_nudge');
             const nudgeContent = stateManager.currentMode === AgentMode.Plan
               ? 'You have pending tasks, but Plan mode locks mutating tools. Call request_approval with your Ty-Code Task Scoping Report to obtain approval and switch to Execute mode.'
               : 'You have pending tasks. Please continue working on them by calling the appropriate tools.';
@@ -1003,6 +1144,7 @@ export class AgentEngine {
           }
 
           // No todos, no tool calls — we're done
+          logAgentStop('final_text');
           onChunk({ type: 'done' });
           persistSessionState(true);
           return;
@@ -1029,6 +1171,7 @@ export class AgentEngine {
           await new Promise<void>((resolve) => setImmediate(resolve));
           approvalState.userApproved = false;
           if (abortSignal?.aborted) {
+            logAgentStop('aborted', 'abort_signal_before_tool');
             onChunk({ type: 'cancelled' });
             return;
           }
@@ -1041,6 +1184,7 @@ export class AgentEngine {
               const output = !envContext.hasWorkspace
                 ? `Tool "${tool.name}" is disabled: no workspace is loaded. Open a folder (File > Open Folder / Ctrl+O) or call request_workspace_open to launch the Open Folder dialog, then retry.`
                 : `Protocol violation: Tool "${tool.name}" is disabled under current scope "${scope}" (${mode} mode).`;
+              logAgentStop('none', `tool_unavailable_${tool.name}`);
               onChunk({ type: 'tool_result', toolResult: { toolCallId: tool.id, name: tool.name, output, isError: true } });
               messages.push({ role: 'tool', name: tool.name, tool_call_id: tool.id, content: output });
               stateManager.recordToolCall(tool.name, tool.arguments, output);
@@ -1053,6 +1197,7 @@ export class AgentEngine {
               const targetPath = String(toolCall.arguments.filePath || toolCall.arguments.path || '');
               if (!targetPath || !isDocsOnlyWrite(targetPath)) {
                 const output = `Tool "${tool.name}" is restricted in ${mode === 'DESIGN' ? 'DESIGN mode' : 'docs-only scope'}: writes are limited to the docs/ directory. Target "${targetPath}" is outside docs/.`;
+                logAgentStop('none', `docs_only_restriction_${tool.name}`);
                 onChunk({ type: 'tool_result', toolResult: { toolCallId: tool.id, name: tool.name, output, isError: true } });
                 messages.push({ role: 'tool', name: tool.name, tool_call_id: tool.id, content: output });
                 stateManager.recordToolCall(tool.name, toolCall.arguments, output);
@@ -1066,40 +1211,53 @@ export class AgentEngine {
           // Document submission tools: submit_plan and submit_report
           if (toolCall.name === 'submit_plan' || toolCall.name === 'submit_report') {
             const kind: 'plan' | 'report' = toolCall.name === 'submit_plan' ? 'plan' : 'report';
+            if (kind === 'plan') planSubmitted = true;
             const title = String(toolCall.arguments.title || (kind === 'plan' ? 'Execution Plan' : 'Analysis Report')).trim();
             const rawMarkdown = String(toolCall.arguments.markdown || '').trim();
 
-            const sections = parseMarkdownSections(rawMarkdown);
-            const docId = `doc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-            const document: AgentDocument = {
-              id: docId,
-              kind,
-              title,
-              markdown: rawMarkdown,
-              sections,
-              createdAt: Date.now()
-            };
+            // Prompt 1 Step 5: the document pipeline (parse -> zod validate ->
+            // persist -> document_proposed emission) is deliberately isolated.
+            // If the editor pane pipeline breaks, the loop must CONTINUE and
+            // the markdown is delivered as a plain tool-result string instead.
+            let document: AgentDocument | null = null;
+            let pipelineError = '';
+            let currentTaskId = params.taskId || `task_${Date.now()}`;
+            try {
+              const sections = parseMarkdownSections(rawMarkdown);
+              const docId = `doc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+              document = {
+                id: docId,
+                kind,
+                title,
+                markdown: rawMarkdown,
+                sections,
+                createdAt: Date.now()
+              };
 
-            const currentTaskId = params.taskId || `task_${Date.now()}`;
+              // Validate IPC payload with Zod schema (zDocumentProposed) per IPC security standards
+              zDocumentProposed.parse({
+                taskId: currentTaskId,
+                type: 'document_proposed',
+                document
+              });
 
-            // Validate IPC payload with Zod schema (zDocumentProposed) per IPC security standards
-            zDocumentProposed.parse({
-              taskId: currentTaskId,
-              type: 'document_proposed',
-              document
-            });
+              // Persist document to ~/.tycode/documents/{id}.md plus sidecar {id}.json
+              await persistDocument(document);
 
-            // Persist document to ~/.tycode/documents/{id}.md plus sidecar {id}.json
-            await persistDocument(document);
+              // Emit document_proposed through the EXISTING agent stream channel
+              onChunk({
+                taskId: currentTaskId,
+                type: 'document_proposed',
+                document
+              });
+            } catch (docErr: unknown) {
+              pipelineError = docErr instanceof Error ? docErr.message : String(docErr);
+              console.warn(`[AGENT] document pipeline failure for ${kind} "${title}": ${pipelineError} — delivering markdown as a plain tool result`);
+            }
 
-            // Emit document_proposed through the EXISTING agent stream channel
-            onChunk({
-              taskId: currentTaskId,
-              type: 'document_proposed',
-              document
-            });
-
-            const submittedOutput = `${kind === 'plan' ? 'Plan' : 'Report'} "${title}" (id: ${docId}, ${sections.length} sections) submitted successfully and opened in editor.`;
+            const submittedOutput = document
+              ? `${kind === 'plan' ? 'Plan' : 'Report'} "${title}" (id: ${(document as AgentDocument).id}, ${(document as AgentDocument).sections.length} sections) submitted successfully and opened in editor.`
+              : `${kind === 'plan' ? 'Plan' : 'Report'} "${title}" received. The document pipeline could not open it in the editor (${pipelineError || 'unknown pipeline error'}); the complete markdown follows.\n\n${rawMarkdown}`;
             if (kind === 'plan' && stateManager.currentMode === AgentMode.Plan) {
               const planApproval: AgentToolApproval = {
                 id: `plan_${toolCall.id}`,
@@ -1112,9 +1270,11 @@ export class AgentEngine {
               onChunk({ type: 'status', content: 'Waiting for plan approval…' });
               const decision = normalizeApprovalDecision(await requestApproval?.(planApproval));
               if (abortSignal?.aborted) {
+                logAgentStop('aborted', 'abort_signal_plan_review');
                 onChunk({ type: 'cancelled' });
                 return;
               }
+              logAgentStop('none', decision.approved ? 'plan_approved' : 'plan_revision_requested');
               let output = submittedOutput;
               if (decision.approved) {
                 stateManager.currentMode = AgentMode.Execute;
@@ -1166,9 +1326,11 @@ export class AgentEngine {
             onChunk({ type: 'status', content: 'Waiting for plan approval…' });
             const decision = normalizeApprovalDecision(await requestApproval?.(planApproval));
             if (abortSignal?.aborted) {
+              logAgentStop('aborted', 'abort_signal_scoping_review');
               onChunk({ type: 'cancelled' });
               return;
             }
+            logAgentStop('none', decision.approved ? 'scoping_approved' : 'scoping_revision_requested');
             stateManager.recordToolCall(toolCall.name, toolCall.arguments, decision.approved ? 'APPROVED' : `REVISION: ${decision.feedback || 'no feedback'}`);
             if (decision.approved) {
               if (stateManager.currentMode === AgentMode.Plan) {
@@ -1212,7 +1374,11 @@ export class AgentEngine {
             && (PLAN_MUTATING_TOOLS.has(toolCall.name)
               || (toolCall.name === 'git_branch' && ['create', 'switch'].includes(String(toolCall.arguments.action || ''))));
           if (isPlanLockedMutation) {
-            const output = 'Plan mode lock: mutating tools are disabled until a Task Scoping Report is approved. Call the request_approval tool with your Ty-Code Task Scoping Report (four sections: Complexity & Resource Gauge, Execution Plan (Phased), Failure Risks & Mitigations, Checkpoint Proposal), then wait for APPROVED.';
+            // Prompt 1 Step 4: plan-mode edit/bash refusals are STRUCTURED and
+            // recoverable — the model receives a machine-readable refusal that
+            // tells it how to recover; nothing here ever throws.
+            const output = JSON.stringify(PLAN_MODE_REFUSAL);
+            logAgentStop('none', 'plan_mode_refusal');
             onChunk({ type: 'tool_result', toolResult: { toolCallId: toolCall.id, name: toolCall.name, output, isError: true } });
             messages.push({ role: 'tool', name: toolCall.name, tool_call_id: toolCall.id, content: output });
             stateManager.recordToolCall(toolCall.name, toolCall.arguments, output);
@@ -1238,6 +1404,7 @@ export class AgentEngine {
               settings
             });
             const delegatedOutput = `Subtask delegated to background agent "${delegateName}" (id: ${childId}). It runs in parallel with fully isolated state; continue your main flow. Its final report appears in the Background Agents panel when it completes.`;
+            logAgentStop('none', 'delegated_to_background_agent');
             onChunk({ type: 'tool_result', toolResult: { toolCallId: toolCall.id, name: toolCall.name, output: delegatedOutput, isError: false } });
             messages.push({ role: 'tool', name: toolCall.name, tool_call_id: toolCall.id, content: delegatedOutput });
             stateManager.recordToolCall(toolCall.name, toolCall.arguments, delegatedOutput);
@@ -1248,6 +1415,7 @@ export class AgentEngine {
           if (toolCall.name === 'request_workspace_open') {
             await onRequestWorkspaceOpen?.();
             const output = 'Workspace picker requested: the Open Folder dialog has been shown to the user. Once a folder is selected, the full file and terminal tool suite becomes available.';
+            logAgentStop('none', 'workspace_open_requested');
             onChunk({ type: 'tool_result', toolResult: { toolCallId: toolCall.id, name: toolCall.name, output, isError: false } });
             messages.push({ role: 'tool', name: toolCall.name, tool_call_id: toolCall.id, content: output });
             stateManager.recordToolCall(toolCall.name, toolCall.arguments, output);
@@ -1321,9 +1489,14 @@ export class AgentEngine {
           }
           if (policyBlockReason) {
             const output = `Blocked by security policy: ${policyBlockReason}`;
+            logAgentStop('none', 'policy_blocked');
             onChunk({ type: 'tool_result', toolResult: { toolCallId: toolCall.id, name: toolCall.name, output, isError: true } });
             messages.push({ role: 'tool', name: toolCall.name, tool_call_id: toolCall.id, content: output });
             stateManager.recordToolCall(toolCall.name, toolCall.arguments, output);
+            // Prompt 1 (Build-mode stall fix): the blocked result counts as a
+            // completed iteration — without this increment a persistently
+            // blocked tool spins the loop without ever reaching the limit.
+            stateManager.iterationCount++;
             continue;
           }
           if (approvalReason) {
@@ -1359,8 +1532,24 @@ export class AgentEngine {
               } : {})
             };
             onChunk({ type: 'approval_request', approvalRequest: approval });
-            const decision = (await requestApproval?.(approval)) || { approved: false };
+            // Prompt 1 Step 4: the Safe Edit Review Gate parks the task here
+            // until the approval IPC resolves. A timeout converts an
+            // indefinite stall into a visible error (ErrorCard) instead of
+            // hanging the loop forever; a normal decision resumes exactly as
+            // before.
+            const gateDecision = await awaitApprovalWithTimeout(
+              Promise.resolve(requestApproval?.(approval) || { approved: false }),
+              `${toolCall.name} review gate`
+            );
+            if (gateDecision.timedOut) {
+              logAgentStop('approval_timeout', `${toolCall.name}_review_gate`);
+              onChunk({ type: 'error', error: `Approval timeout: the ${toolCall.name} review gate was not answered within ${APPROVAL_TIMEOUT_MS / 60000} minutes, so the paused operation was NOT applied and the task ended. Re-run the task to present the gate again.` });
+              persistSessionState(false);
+              return;
+            }
+            const decision = gateDecision;
             if (abortSignal?.aborted) {
+              logAgentStop('aborted', 'abort_signal_review_gate');
               onChunk({ type: 'cancelled' });
               return;
             }
@@ -1368,6 +1557,7 @@ export class AgentEngine {
               const output = decision.feedback
                 ? `The user did not approve this operation and sent feedback: ${decision.feedback}. Adjust your approach accordingly; request approval again before retrying any mutating action.`
                 : 'The user did not approve this operation. It was not executed.';
+              logAgentStop('none', `approval_denied_${toolCall.name}`);
               onChunk({ type: 'tool_result', toolResult: { toolCallId: toolCall.id, name: toolCall.name, output, isError: true } });
               messages.push({ role: 'tool', name: toolCall.name, tool_call_id: toolCall.id, content: output });
               stateManager.recordToolCall(toolCall.name, toolCall.arguments, output);
@@ -1379,6 +1569,7 @@ export class AgentEngine {
           const ruleApproved = await toolApprovalManager.checkApproval(toolCall.name, toolCall.arguments);
           if (!ruleApproved) {
             const output = `Tool ${toolCall.name} was denied by approval rules`;
+            logAgentStop('none', `approval_rule_denied_${toolCall.name}`);
             onChunk({ type: 'tool_result', toolResult: { toolCallId: toolCall.id, name: toolCall.name, output, isError: true } });
             messages.push({ role: 'tool', name: toolCall.name, tool_call_id: toolCall.id, content: output });
             stateManager.recordToolCall(toolCall.name, toolCall.arguments, output);
@@ -1448,6 +1639,7 @@ export class AgentEngine {
         }
 
         // Iteration complete
+        logAgentStop('none', 'tool_results_appended');
         onChunk({ type: 'status', content: `Iteration ${stateManager.iterationCount + 1}/${stateManager.maxIterations} complete — continuing…` });
         stateManager.iterationCount++;
 
@@ -1465,6 +1657,7 @@ export class AgentEngine {
 
       } catch (err: unknown) {
         if (abortSignal?.aborted) {
+          logAgentStop('aborted', 'abort_signal_during_iteration');
           onChunk({ type: 'cancelled' });
           return;
         }
@@ -1542,6 +1735,7 @@ export class AgentEngine {
             persistSessionState();
             savedPartialStream = '';
             currentTurnSnapshot = null;
+            logAgentStop('none', `provider_failover_${next.providerId}`);
             continue; // resume the ReAct loop; Todo state untouched
           }
         }
@@ -1555,13 +1749,28 @@ export class AgentEngine {
         if (!(err instanceof Error && err.name === 'AbortError')) {
           console.error(`[AGENT] Task error (provider:${runProvider || currentSettings.activeProvider || 'n/a'}, model:${runModel || currentSettings.activeModel || 'n/a'}): ${message}${err instanceof Error && err.stack ? `\n${err.stack.split('\n').slice(1, 6).join('\n')}` : ''}`);
         }
+        logAgentStop('error', providerFailure ? 'failover_no_eligible_provider' : 'iteration_exception');
         onChunk({ type: 'error', error: message });
         return;
       }
     }
+      logAgentStop('max_iterations', 'tool_execution_limit_reached');
       onChunk({ type: 'status', content: `Reached the tool-execution limit (${stateManager.maxIterations} iterations).` });
       onChunk({ type: 'done' });
       persistSessionState(true);
+    } catch (fatalErr: unknown) {
+      // Prompt 1 Step 1: the outer loop has no silent stops either — any
+      // exception escaping the per-iteration guard still produces a visible
+      // error chunk (ErrorCard) before the session context is released.
+      if (abortSignal?.aborted) {
+        logAgentStop('aborted', 'abort_signal_outer_loop');
+        onChunk({ type: 'cancelled' });
+        return;
+      }
+      const message = fatalErr instanceof Error ? fatalErr.message : String(fatalErr);
+      agentObservability.recordEvent({ type: 'error', message });
+      logAgentStop('error', 'outer_loop_exception');
+      onChunk({ type: 'error', error: message });
     } finally {
       activeAgentSessions.delete(activeTaskId);
     }

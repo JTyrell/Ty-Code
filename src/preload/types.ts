@@ -1137,6 +1137,8 @@ export interface ElectronAPI {
   renamePath: (oldPath: string, newPath: string) => Promise<IpcResponse<void>>;
   searchFiles: (query: string) => Promise<IpcResponse<string[]>>;
   getSettings: () => Promise<IpcResponse<ProviderSettings>>;
+  /** Prompt 3: boot-state hydration gate (first-run decision source = main). */
+  getBootState: () => Promise<IpcResponse<{ firstRun: boolean; hasCompletedOnboarding: boolean }>>;
   saveSettings: (settings: Partial<ProviderSettings>) => Promise<IpcResponse<void>>;
   /** Selection -> active agent config sync. Returns masked summaries only. */
   updateActiveProviderConfig: (config: { providerId: string; modelId?: string; origin?: 'explicit' | 'auto' }) => Promise<IpcResponse<ActiveProviderConfigSummary>>;
@@ -1145,6 +1147,8 @@ export interface ElectronAPI {
   clearTelemetryData: () => Promise<IpcResponse<void>>;
   getCredentialStorageStatus: () => Promise<IpcResponse<CredentialStorageStatus>>;
   onTelemetryChanged: (callback: () => void) => () => void;
+  /** Copy text to the system clipboard via the main process (sandbox-safe). */
+  copyToClipboard: (text: string) => Promise<IpcResponse<void>>;
   getSettingsLayer: (scope: SettingsScope) => Promise<IpcResponse<SettingsData | WorkspaceSettingsPatch>>;
   saveSettingsLayer: (scope: SettingsScope, settings: SettingsPatch | WorkspaceSettingsPatch) => Promise<IpcResponse<void>>;
   getSecurityPolicy: () => Promise<IpcResponse<SecurityPolicySettings>>;

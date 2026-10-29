@@ -42,6 +42,7 @@ import {
 import { useOnboardingStore } from '../state/onboarding-store';
 import { useChatStore } from '../state/chat-store';
 import { toast } from '../state/toast-store';
+import { useBootStateStore } from '../state/boot-state-store';
 
 // The default Ty-Code Free serving model: verified live against OpenRouter
 // (baked in src/main/services/verified-models.ts, providerId 'ty-code-free').
@@ -57,6 +58,10 @@ type OnboardingView = 'choose' | 'premium';
 export const OnboardingWizard: React.FC = () => {
   const { isOpen, openWizard, closeWizard } = useOnboardingStore();
   const { settings, saveSettings } = useChatStore();
+  // Prompt 3: first-run decision deferred to the main process boot-state read;
+  // localStorage stays as a fast-path renderer cache.
+  const bootHydration = useBootStateStore((s) => s.hydration);
+  const bootFirstRun = useBootStateStore((s) => s.firstRun);
 
   const [view, setView] = useState<OnboardingView>('choose');
   const [startingFree, setStartingFree] = useState(false);
@@ -71,16 +76,22 @@ export const OnboardingWizard: React.FC = () => {
 
   // Auto-open on clean install (no onboarding flag)
   useEffect(() => {
+    // Prompt 3: while hydration is undefined, do nothing — the window must not
+    // open onboarding on an unhydrated gate (StrictMode replays included).
+    if (bootHydration === undefined) return;
     const isDone =
       localStorage.getItem('ty_code_onboarding_completed') === 'true' ||
       localStorage.getItem('ty_code_first_run_completed') === 'true' ||
-      settings?.hasCompletedOnboarding === true;
+      settings?.hasCompletedOnboarding === true ||
+      // Main process confirms this is not a first run (localStorage cleared,
+      // onboarding file present): show onboarding exactly once per install.
+      (bootHydration === false && !bootFirstRun);
 
     if (!isDone && !isOpen) {
       openWizard();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, openWizard, settings]);
+  }, [isOpen, openWizard, settings, bootHydration, bootFirstRun]);
 
   // Keyboard navigation: Escape closes deferentially (non-trapping)
   const handleKeyDown = useCallback(

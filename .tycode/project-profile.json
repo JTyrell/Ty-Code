@@ -1,5 +1,5 @@
 {
-  "manifestHash": "a156bf9120f88251db2505b04b9bb6f83c821e265470807a165b76521e107229",
+  "manifestHash": "e0172a01460ca20a93db42b800b3de1860b03adddf6e4476d25abbb7f08447f8",
   "profile": {
     "name": "ty-code",
     "languages": [
@@ -13,11 +13,11 @@
     "pkgManager": "npm",
     "testRunner": "vitest",
     "buildTool": "npm run build (custom)",
-    "repoLayout": ".cache/\n.depcheckrc\n.github/\n.gitignore\n.kombai/\n.marprc.yml\n.npmrc\n.tmp-live-e2e/\n.ty-code/\n.wrangler/\ncontext/\nCONTRIBUTING.md\ndist-release/\ndocs/\nelectron-builder.yml\nfunctions/\nLICENSE\npackage-lock.json\npackage.json\nREADME.md\nRELEASE_NOTES_v1.0.0.md\nresources/\nscratch/\nscripts/\nSECURITY.md\nserver/\nsrc/\ntests/\ntest_api_ground_truth.py\ntsconfig.json\nTy-Code_Architecture_and_Interview_Guide.docx\nTy-Code_Architecture_and_Interview_Guide.pdf\ntycode-community-worker/\nvite.config.ts\nvitest.main.config.ts\nwebsite/\nwebsite-dist/\nworking_api_config.json\nwrangler.jsonc",
+    "repoLayout": ".cache/\n.depcheckrc\n.github/\n.gitignore\n.kombai/\n.marprc.yml\n.npmrc\n.tmp-live-e2e/\n.ty-code/\n.tycode/\n.wrangler/\ncontext/\nCONTRIBUTING.md\ndist-release/\ndocs/\nelectron-builder.yml\nfunctions/\nLICENSE\npackage-lock.json\npackage.json\nREADME.md\nRELEASE_NOTES_v1.0.0.md\nresources/\nscratch/\nscripts/\nSECURITY.md\nserver/\nsrc/\ntests/\ntest_api_ground_truth.py\ntsconfig.json\nTy-Code_Architecture_and_Interview_Guide.docx\nTy-Code_Architecture_and_Interview_Guide.pdf\ntycode-community-worker/\nvite.config.ts\nvitest.main.config.ts\nwebsite/\nwebsite-dist/\nworking_api_config.json\nwrangler.jsonc",
     "deployTargets": [],
     "ciSummary": "GitHub Actions",
-    "manifestHash": "a156bf9120f88251db2505b04b9bb6f83c821e265470807a165b76521e107229",
+    "manifestHash": "e0172a01460ca20a93db42b800b3de1860b03adddf6e4476d25abbb7f08447f8",
     "profileStatus": "full"
   },
-  "savedAt": 1793187153563
+  "savedAt": 1793245383073
 }

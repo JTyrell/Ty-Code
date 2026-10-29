@@ -123,6 +123,8 @@ const api: ElectronAPI = {
   renamePath: (oldPath: string, newPath: string) => ipcRenderer.invoke('fs:rename-path', oldPath, newPath),
   searchFiles: (query: string) => ipcRenderer.invoke('fs:search-files', query),
   getSettings: () => ipcRenderer.invoke('settings:get'),
+  // Prompt 3: boot-state hydration gate (first-run decision source = main).
+  getBootState: () => ipcRenderer.invoke('app:get-boot-state'),
   saveSettings: (settings) => ipcRenderer.invoke('settings:save', settings),
   updateActiveProviderConfig: (config) => ipcRenderer.invoke('providers:update-active-config', config),
   getTelemetryPreview: () => ipcRenderer.invoke('telemetry:get-preview'),
@@ -149,6 +151,7 @@ const api: ElectronAPI = {
   // Dev-only storm GENERATOR probe (main registers the handler unpackaged
   // builds only; in production this invoke simply rejects).
   devStormTestSetActiveModel: () => ipcRenderer.invoke('dev:storm:set-active-model'),
+  copyToClipboard: (text: string) => ipcRenderer.invoke('clipboard:write', text),
   // ===== Autonomous Free-Tier Reliability (Prompts 1-3) =====
   // Dev-only chaos injector (main registers the handler unpackaged builds
   // only; in production this invoke simply rejects).

@@ -99,8 +99,8 @@ export const GovernorPanel: React.FC = () => {
   const surfaceTotal = useGovernorStore(selectGovernorSurfaceTotal);
   const surfaceActive = useGovernorStore(selectGovernorSurfaceActive);
   // Immutable ring-buffer VERSION counter (never the live array).
-  useGovernorStore(selectGovernorSampleVersion);
-
+  // Subscribed via the useEffect below (single disposable subscription);
+  // this hook call is redundant and can trigger re-renders on every sample.
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rendererHeapTextRef = useRef<HTMLSpanElement>(null);
 

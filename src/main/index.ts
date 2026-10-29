@@ -8,7 +8,7 @@ process.on('uncaughtException', (err) => {
 process.on('unhandledRejection', (reason) => {
   console.error('[CRITICAL] Unhandled promise rejection in main process:', reason);
 });
-import { app, BrowserWindow, ipcMain, session, shell, dialog, type IpcMainInvokeEvent } from 'electron';
+import { app, BrowserWindow, clipboard, ipcMain, session, shell, dialog, type IpcMainInvokeEvent } from 'electron';
 import path from 'path';
 import os from 'os';
 import fsSync from 'fs';
@@ -1818,6 +1818,30 @@ function registerIpcHandlers(): void {
     }
   });
 
+  // Prompt 3 (Kill Boot Skeleton Flash): single boot-state read. The renderer
+  // asks once at mount; the first-run decision comes from the main process
+  // (onboarding file + settings) so no modal tree has to mount/flash before
+  // hydration can decide whether it is legitimately needed.
+  ipcMain.handle('app:get-boot-state', async () => {
+    try {
+      const [onboarding, settingsRes] = await Promise.all([readOnboardingState(), getSettings()]);
+      return {
+        success: true,
+        data: {
+          firstRun: !(onboarding.completed === true || onboarding.skipped === true),
+          hasCompletedOnboarding: settingsRes.success && settingsRes.data ? settingsRes.data.hasCompletedOnboarding === true : true
+        }
+      };
+    } catch (err: unknown) {
+      console.warn(`[boot] app:get-boot-state failed (${err instanceof Error ? err.message : String(err)}); fail-safe: treat as NOT first-run`);
+      // Fail-safe: never auto-open onboarding because a read failed.
+      return {
+        success: true,
+        data: { firstRun: false, hasCompletedOnboarding: true }
+      };
+    }
+  });
+
   // Unified Provisioning: Onboarding Wizard state persistence
   ipcMain.handle('onboarding:get-state', async (event) => {
     if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
@@ -2544,7 +2568,7 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle('clipboard:write', async (_event, text: string) => {
     try {
-      await navigator.clipboard.writeText(text);
+      clipboard.writeText(text);
       return { success: true };
     } catch (err: unknown) {
       return { success: false, error: err instanceof Error ? err.message : String(err) };

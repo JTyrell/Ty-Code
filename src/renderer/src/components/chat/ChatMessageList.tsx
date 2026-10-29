@@ -84,6 +84,16 @@ export const ChatMessageList = forwardRef<ChatMessageListHandle, ChatMessageList
     const [detachedFromBottom, setDetachedFromBottom] = useState<boolean>(false);
     const detachedFromBottomRef = useRef<boolean>(false);
 
+    // Prompt 2: pill press-stability refs. `pressing` spans pointerdown →
+    // one tick after pointerup (click fires in between); `suppress` is active
+    // while the click's own re-pin smooth scroll is running. During either
+    // window the rAF scroll handler must not flip detachedFromBottom, or a
+    // mid-stream flip tears the pill out from under the pointer (the reported
+    // disappeared-on-click and mid/post-stream dead-click bugs).
+    const pressingRef = useRef<boolean>(false);
+    const rePinSuppressRef = useRef<boolean>(false);
+    const scrollEndCleanupRef = useRef<(() => void) | null>(null);
+
     // Track dynamic header height to offset virtualization coordinates accurately
     useLayoutEffect(() => {
       if (headerRef.current) {
@@ -123,6 +133,12 @@ export const ChatMessageList = forwardRef<ChatMessageListHandle, ChatMessageList
           // Step 1: distanceFromBottom < 64 threshold
           const isPinned = distanceFromBottom < 64;
           pinnedToBottom.current = isPinned;
+
+          // Prompt 2: skip the visual flip while the pointer is pressing the
+          // pill or the click's re-pin window is active. The jump's scrollend
+          // handler snaps the pinned state afterwards; auto-follow behavior is
+          // unaffected because pinnedToBottom still updates above.
+          if (pressingRef.current || rePinSuppressRef.current) return;
 
           const isDetached = !isPinned;
           // Step 1 & 4: Flip React state ONLY when boolean changes value, never on every scroll pixel
@@ -242,10 +258,92 @@ export const ChatMessageList = forwardRef<ChatMessageListHandle, ChatMessageList
       };
     }, [messages.length > 0]);
 
-    // Step 3: Jump to latest pill handler
-    const handleJumpToLatest = useCallback(() => {
-      scrollToBottom(true);
-    }, [scrollToBottom]);
+    // Prompt 2: Jump-to-latest pill press handling.
+    // pointerdown captures the pointer and opens the press window so that any
+    // scroll flip triggered by the incoming pointerdown (streaming tick or
+    // settle listener) cannot unmount the pill before the click completes.
+    const handlePillPointerDown = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
+      pressingRef.current = true;
+      try {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      } catch {
+        // Pointer capture can throw if the node detached mid-event; the
+        // pressing window alone is enough to keep the click stable.
+      }
+    }, []);
+
+    const handlePillPointerUp = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
+      try {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      } catch {
+        // No capture held (or lost during press); nothing to release.
+      }
+      // Release 'pressing' one tick AFTER click so onClick still observes the
+      // stable press window even if pointerdown flipped pending state.
+      window.setTimeout(() => {
+        pressingRef.current = false;
+      }, 0);
+    }, []);
+
+    // Snap the pinned state (and hide the pill) once the re-pin scroll ended.
+    const finishJump = useCallback(() => {
+      rePinSuppressRef.current = false;
+      scrollEndCleanupRef.current?.();
+      scrollEndCleanupRef.current = null;
+      if (!pressingRef.current) {
+        pinnedToBottom.current = true;
+        detachedFromBottomRef.current = false;
+        setDetachedFromBottom(false);
+      }
+    }, []);
+
+    // Prompt 2: click must not hide the pill inline (mid-stream clicks used to
+    // re-detach the stream and vanish before the handler ran). Instead: open a
+    // suppression window, smooth-scroll to bottom, and hide on scrollend with
+    // a 1s safety fallback for browsers/edge cases where scrollend never fires.
+    const handleJumpToLatest = useCallback(
+      (e: React.MouseEvent<HTMLButtonElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        // Clear any stale listener from a previous jump before starting anew.
+        scrollEndCleanupRef.current?.();
+        scrollEndCleanupRef.current = null;
+
+        pinnedToBottom.current = true;
+        rePinSuppressRef.current = true;
+        if (messages.length > 0) {
+          rowVirtualizer.scrollToIndex(messages.length - 1, { align: 'end', behavior: 'smooth' });
+        }
+        const el = parentRef.current;
+        if (!el) {
+          finishJump();
+          return;
+        }
+        el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+
+        const onScrollEnd = () => finishJump();
+        el.addEventListener('scrollend', onScrollEnd, { once: true });
+        const safetyTimer = window.setTimeout(() => scrollEndCleanupRef.current?.(), 1000);
+        scrollEndCleanupRef.current = () => {
+          window.clearTimeout(safetyTimer);
+          el.removeEventListener('scrollend', onScrollEnd);
+          if (rePinSuppressRef.current) {
+            finishJump();
+          }
+        };
+      },
+      [finishJump, messages.length, rowVirtualizer]
+    );
+
+    // Prompt 2: unmount-safety — always release the scrollend listener and any
+    // pending safety timer when the list goes away (disposable register).
+    useEffect(
+      () => () => {
+        scrollEndCleanupRef.current?.();
+        scrollEndCleanupRef.current = null;
+      },
+      []
+    );
 
     const virtualItems = rowVirtualizer.getVirtualItems();
 
@@ -268,6 +366,10 @@ export const ChatMessageList = forwardRef<ChatMessageListHandle, ChatMessageList
             height: '100%',
             overflowY: 'auto',
             overflowX: 'hidden',
+            // Prompt 2: reserve a stable scrollbar gutter so the scrollbar
+            // appearing/disappearing cannot shift the feed (or the pill) by a
+            // pixel between overflow states.
+            scrollbarGutter: 'stable',
             contain: 'strict',
             position: 'relative',
             scrollBehavior: 'auto'
@@ -346,11 +448,14 @@ export const ChatMessageList = forwardRef<ChatMessageListHandle, ChatMessageList
           {footer && <div className="chat-feed-footer contain-content" style={{ contain: 'content' }}>{footer}</div>}
         </div>
 
-        {/* Step 3: "Jump to latest" pill anchored bottom-center */}
+        {/* Prompt 2: "Jump to latest" pill anchored bottom-center (no press-induced movement) */}
         {detachedFromBottom && (
           <button
             type="button"
             className="chat-jump-to-latest-pill"
+            onPointerDown={handlePillPointerDown}
+            onPointerUp={handlePillPointerUp}
+            onPointerCancel={handlePillPointerUp}
             onClick={handleJumpToLatest}
             aria-label="Jump to latest messages"
           >
