@@ -31,7 +31,11 @@ import { skillRegistry } from './agent-skills';
 import { getCorrections, onCorrectionAdded, computeWorkspaceHash, type CorrectionEvent } from '../services/context-engine/correction-memory';
 import { modelRotationManager } from '../services/model-rotation-manager';
 import { routeEventPolicy } from '../providers/route-event-policy';
-import { providerHealthStore } from '../providers/provider-health-store';
+import { providerHealthStore, normaliseHealthId } from '../providers/provider-health-store';
+// Route Truth (Prompt 1): centralized classifier + shared message repair so
+// the gateway and the agent gate sticky persistence through the same source.
+import { classifyProviderFailure } from '../providers/error-classifier';
+import { repairToolPairing } from '../providers/message-repair';
 
 interface ActiveSessionContext {
   taskId: string;
@@ -142,13 +146,17 @@ async function pickNextAgentProvider(
 ): Promise<{ providerId: string; modelId: string } | undefined> {
   try {
     const models = await getVerifiedModels();
-    const normId = (id: string): string => (id || '').toLowerCase().trim().replace(/-free$/, '');
+    const normId = normaliseHealthId;
     const isFreeCandidate = (m: { modelId: string; providerId: string; requiresKey: boolean }): boolean =>
       isFreeModel(m.modelId, m.providerId) || !m.requiresKey;
 
     const eligible = models.filter((m) => {
       const pid = normId(m.providerId);
       if (pid && excludedProviderIds.has(pid)) return false;
+      // Route Truth (Prompt 1 Step 3): health-aware selection — a sticky
+      // invalid_key (or live rate-limit TTL) route is never the target, so a
+      // 401-poisoned provider is not re-picked by the next hop either.
+      if (providerHealthStore.isDead(m.providerId)) return false;
       return !m.requiresKey || providerHasOwnKey(m.providerId);
     });
     if (eligible.length === 0) return undefined;
@@ -165,9 +173,19 @@ async function pickNextAgentProvider(
     const sameModelElsewhere = eligible.find((m) => m.modelId.toLowerCase() === failedModel);
     if (sameModelElsewhere) return { providerId: sameModelElsewhere.providerId, modelId: sameModelElsewhere.modelId };
 
-    const freePool = eligible.filter(isFreeCandidate);
-    const pool = freePool.length > 0 ? freePool : eligible;
-    return { providerId: pool[0].providerId, modelId: pool[0].modelId };
+    const localProvider = (m: { providerId: string }): boolean => /^(ollama|local|llamacpp|lmstudio|jan|lms)$/.test(normId(m.providerId));
+    // Health-aware tiering mirrors the gateway selector: keyless healthy
+    // routes first (ty-code-free, OpenKilo), then keyed, then local backstop.
+    const tierKeyless = eligible.filter((m) => !m.requiresKey && !localProvider(m));
+    const tierKeyed = eligible.filter((m) => m.requiresKey && !localProvider(m));
+    const tierLocal = eligible.filter(localProvider);
+    for (const tier of [tierKeyless, tierKeyed, tierLocal]) {
+      if (tier.length === 0) continue;
+      return { providerId: tier[0].providerId, modelId: tier[0].modelId };
+    }
+    const isFreeCandidateFallback = eligible.find(isFreeCandidate);
+    if (isFreeCandidateFallback) return { providerId: isFreeCandidateFallback.providerId, modelId: isFreeCandidateFallback.modelId };
+    return { providerId: eligible[0].providerId, modelId: eligible[0].modelId };
   } catch {
     return undefined;
   }
@@ -237,52 +255,6 @@ const PLAN_MODE_REFUSAL = {
   reason: 'plan-mode-read-only',
   guidance: 'Propose changes via submit_plan; switch to Build mode to apply.'
 } as const;
-
-/**
- * Prompt 1 Step 2: Repairs assistant tool_call -> tool_result pairing across
- * provider failovers.
- *
- * A mid-tool failover (remediation-ladder rotation, provider outage, approval
- * interruption) can leave an assistant message carrying tool_calls with no
- * subsequent tool result. Strict providers reject that history with HTTP 400
- * ("tool_call_id ... was not found") which kills the loop. For every orphaned
- * tool_call a synthetic result is injected:
- *   "[SYSTEM] Tool execution interrupted by provider failover; result unavailable."
- *
- * Mutates `messages` in place. Idempotent. Returns the count of injected
- * synthetic results so call sites can log the repair.
- */
-function repairToolPairing(messages: ChatCompletionMessage[]): number {
-  // Pass 1: index every tool call id that already has a tool message answer.
-  const answered = new Set<string>();
-  for (const message of messages) {
-    const callId = (message as { tool_call_id?: string }).tool_call_id;
-    if (message.role === 'tool' && callId) answered.add(callId);
-  }
-  // Pass 2: inject a synthetic result after each unpaired assistant tool_call.
-  let injected = 0;
-  const repaired: ChatCompletionMessage[] = [];
-  for (const message of messages) {
-    repaired.push(message);
-    if (message.role !== 'assistant' || !Array.isArray(message.tool_calls)) continue;
-    for (const call of message.tool_calls) {
-      if (!call?.id || answered.has(call.id)) continue;
-      answered.add(call.id); // also guards duplicate ids in malformed streams
-      repaired.push({
-        role: 'tool',
-        name: call.function?.name,
-        tool_call_id: call.id,
-        content: '[SYSTEM] Tool execution interrupted by provider failover; result unavailable.'
-      });
-      injected++;
-    }
-  }
-  if (injected > 0) {
-    messages.length = 0;
-    for (const message of repaired) messages.push(message);
-  }
-  return injected;
-}
 
 export class AgentEngine {
   private toolExecutor: ToolExecutor;
@@ -1714,13 +1686,20 @@ export class AgentEngine {
             // Per-hop status chunk and per-hop handoff IPC removed: record into
             // sticky health and the per-turn trail; the single consolidated
             // [ROUTE] status chunk is emitted at `done`.
-            const failureStatus = Number(message.match(/\((\d{3})\)/)?.[1]) || (rateLimited ? 429 : 'err');
-            if (failureStatus === 401 || failureStatus === 403 || /KEY_MISSING_ERROR|key required|invalid api key/i.test(message)) {
-              providerHealthStore.markInvalidKey(failedProvider, Number(failureStatus) || 401);
-            } else if (failureStatus === 429) {
+            // Route Truth (Prompt 1): sticky writes go through the central
+            // classifier — ONLY invalid_key persists; KEY_MISSING/"key
+            // required" text is treated as protocol_error (transient degraded
+            // TTL only, never a sticky key poisoning).
+            const failureStatus = Number(message.match(/\((\d{3})\)/)?.[1]) || (rateLimited ? 429 : null);
+            const failClassification = classifyProviderFailure({ httpStatus: Number.isFinite(failureStatus as number) ? (failureStatus as number) : null, message });
+            if (failClassification.failureClass === 'invalid_key') {
+              providerHealthStore.markInvalidKey(failedProvider, (failureStatus as number) || 401, 'invalid_key');
+            } else if (failClassification.failureClass === 'rate_limited') {
               providerHealthStore.markRateLimited(failedProvider);
+            } else if (failClassification.failureClass === 'protocol_error') {
+              providerHealthStore.markTransientDegraded(failedProvider);
             }
-            routeEventPolicy.recordHop(routeTurnId, failedProvider, failureStatus);
+            routeEventPolicy.recordHop(routeTurnId, failedProvider, failureStatus ?? 'err');
             routeEventPolicy.setLanding(routeTurnId, next.providerId);
             finalRouteProvider = next.providerId;
             agentObservability.recordEvent({

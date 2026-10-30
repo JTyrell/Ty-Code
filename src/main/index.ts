@@ -2695,6 +2695,27 @@ function registerIpcHandlers(): void {
     }
   });
 
+  // Route Truth (Prompt 1 Step 4) / Prompt 2 Step 3: advisor action
+  // "Re-test & recover routes" — re-probes every sticky invalid_key route and
+  // clears the ones that heal (or that were misclassified protocol_error).
+  ipcMain.handle('reliability:heal-routes', async (event) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    try {
+      const { healRoutes } = await import('./services/reliability/heal-routes');
+      const result = await healRoutes();
+      reliabilityLedger.record({
+        at: Date.now(),
+        kind: 'ladder_step',
+        step: 'advisor_heal_routes',
+        outcome: result.healed.length > 0 ? 'ok' : 'failed',
+        detail: result.healed.length > 0 ? `healed: ${result.healed.map((h) => h.providerId).join(', ')}` : 'no sticky route healed on re-probe'
+      });
+      return { success: true, data: result };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
   ipcMain.handle('reliability:retest-providers', async (event) => {
     if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
     // Run one probe synchronously so the returned snapshot already reflects

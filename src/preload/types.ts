@@ -1171,6 +1171,8 @@ export interface ElectronAPI {
   getReliabilityStats?: () => Promise<IpcResponse<ReliabilityStatsSummary>>;
   /** Advisor one-click actions (non-modal card buttons; never toasts). */
   reliabilityRepairFcc?: () => Promise<IpcResponse<{ started: boolean; isActive: boolean }>>;
+  /** Route Truth (Prompt 1 Step 4) / Prompt 2 Step 3: "Re-test & recover routes". */
+  reliabilityHealRoutes?: () => Promise<IpcResponse<{ healed: Array<{ providerId: string; modelId?: string }>; remaining: string[] }>>;
   reliabilityRetestProviders?: () => Promise<IpcResponse<ReliabilityHealthSnapshot>>;
   reliabilityStartOllama?: () => Promise<IpcResponse<{ running: boolean; error?: string }>>;
   /** Disposable subscriptions; versioned snapshots, advisor cards/recovery. */

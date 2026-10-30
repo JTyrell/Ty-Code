@@ -160,6 +160,7 @@ const api: ElectronAPI = {
   getReliabilityLedgerTail: (limit) => ipcRenderer.invoke('reliability:get-ledger-tail', limit),
   getReliabilityStats: () => ipcRenderer.invoke('reliability:get-stats'),
   reliabilityRepairFcc: () => ipcRenderer.invoke('reliability:repair-fcc'),
+  reliabilityHealRoutes: () => ipcRenderer.invoke('reliability:heal-routes'),
   reliabilityRetestProviders: () => ipcRenderer.invoke('reliability:retest-providers'),
   reliabilityStartOllama: () => ipcRenderer.invoke('reliability:start-ollama'),
   onReliabilityHealth: (callback) => {

@@ -38,7 +38,13 @@ import { pickHandoffCandidate, providerHasOwnKey } from '../../providers/provide
 import { reliabilitySentinel } from './reliability-sentinel';
 import { reliabilityLedger, type ReliabilityLedgerOutcome } from './reliability-ledger';
 import { broadcastReliability } from './bus';
-import type { ReliabilityAdvisorPayload, ReliabilityLadderStep } from '../../../shared/types/agent-events';
+import { healRoutes } from './heal-routes';
+import { classifyProviderFailure } from '../../providers/error-classifier';
+import type {
+  ReliabilityAdvisorPayload,
+  ReliabilityLadderStep
+} from '../../../shared/types/agent-events';
+import { ReliabilityAdvisorPayloadSchema, buildAdvisorActions } from '../../../shared/types/agent-events';
 
 const TY_CODE_FREE_PROVIDER_ID = 'ty-code-free';
 const TY_CODE_FREE_MODEL_ID = 'google/gemma-4-31b-it:free'; // mirrors provider-gateway consts (not exported)
@@ -47,7 +53,7 @@ const COOLDOWN_GRACE_MS = 10_000;
 const MAX_TRACKED_TASKS = 100;
 const MAX_SESSION_HASHES = 50;
 
-export type LadderStepId = 'community_key_refresh' | 'sidecar_heal' | 'provider_rotation' | 'cooldown_wait';
+export type LadderStepId = 'community_key_refresh' | 'sidecar_heal' | 'provider_rotation' | 'cooldown_wait' | 'route_heal';
 
 export interface CooldownRetryRequest {
   taskId: string;
@@ -69,7 +75,8 @@ export interface ChainExhaustedContext {
 export interface RecoveryAttempt {
   providerId: string;
   modelId: string;
-  step?: LadderStepId | 'recovery';
+  /** The ladder step (or 'recovery' for external rotations) that produced this target. */
+  originStep?: LadderStepId | 'recovery';
 }
 
 function sleep(ms: number): Promise<void> {
@@ -158,6 +165,14 @@ class RemediationLadder {
       recovery = await this.tryProviderRotation(ctx) ?? recovery;
     }
 
+    // Route Truth (Prompt 1 Step 4): before giving up, re-probe every sticky
+    // invalid_key route — protocol_error misclassifications and healed keys
+    // get healed here instead of a user-visible card.
+    if (!recovery && !this.stepDone(ctx.taskId, 'route_heal')) {
+      this.markStepDone(ctx.taskId, 'route_heal');
+      recovery = await this.tryRouteHeal(ctx) ?? recovery;
+    }
+
     if (!recovery && !this.stepDone(ctx.taskId, 'cooldown_wait')) {
       this.markStepDone(ctx.taskId, 'cooldown_wait');
       recovery = await this.tryCooldownWait(ctx) ?? recovery;
@@ -171,7 +186,7 @@ class RemediationLadder {
     return {
       providerId: recovery.providerId,
       modelId: recovery.modelId,
-      step: 'recovery'
+      originStep: recovery.originStep ?? 'recovery'
     };
   }
 
@@ -193,7 +208,7 @@ class RemediationLadder {
       if (key && key.trim()) {
         this.recordStep(ctx.taskId, 'community_key_refresh', 'ok', 'fresh community key bootstrapped', routeKey(ctx.failureProviderId, ctx.failureModelId));
         if (isTyCodeFree(ctx.failureProviderId)) {
-          return { providerId: TY_CODE_FREE_PROVIDER_ID, modelId: TY_CODE_FREE_MODEL_ID };
+          return { providerId: TY_CODE_FREE_PROVIDER_ID, modelId: TY_CODE_FREE_MODEL_ID, originStep: 'community_key_refresh' };
         }
         return null;
       }
@@ -230,7 +245,7 @@ class RemediationLadder {
       const fccModel = ctx.allModels.find(
         (m) => isFccProvider(m.providerId) && !providerHealthStore.isDead(m.providerId)
       );
-      if (fccModel) return { providerId: fccModel.providerId, modelId: fccModel.modelId };
+      if (fccModel) return { providerId: fccModel.providerId, modelId: fccModel.modelId, originStep: 'sidecar_heal' };
       this.recordStep(ctx.taskId, 'sidecar_heal', 'skipped', 'healed but no FCC route in catalog', routeKey(ctx.failureProviderId, ctx.failureModelId));
       return null;
     } catch (err) {
@@ -253,7 +268,7 @@ class RemediationLadder {
         const model = this.firstViableModel(ctx.allModels, provider);
         if (model) {
           this.recordStep(ctx.taskId, 'provider_rotation', 'ok', `rotated to ${model.providerId}`, routeKey(model.providerId, model.modelId));
-          return { providerId: model.providerId, modelId: model.modelId };
+          return { providerId: model.providerId, modelId: model.modelId, originStep: 'provider_rotation' };
         }
       }
       // Last sweep: any eligible model outside the static chain
@@ -261,7 +276,7 @@ class RemediationLadder {
       const alt = pickHandoffCandidate(ctx.allModels, ctx.failureProviderId, ctx.failureModelId);
       if (alt) {
         this.recordStep(ctx.taskId, 'provider_rotation', 'ok', `rotated to ${alt.providerId}`, routeKey(alt.providerId, alt.modelId));
-        return { providerId: alt.providerId, modelId: alt.modelId };
+        return { providerId: alt.providerId, modelId: alt.modelId, originStep: 'provider_rotation' };
       }
       this.recordStep(ctx.taskId, 'provider_rotation', 'failed', 'no eligible rotation target (pool exhausted)', routeKey(ctx.failureProviderId, ctx.failureModelId));
       return null;
@@ -285,18 +300,72 @@ class RemediationLadder {
     this.recordStep(ctx.taskId, 'cooldown_wait', 'started', `cooling ${Math.round(waitMs / 1000)}s before one silent retry`, routeKey(ctx.failureProviderId, ctx.failureModelId));
     await sleep(waitMs);
     this.recordStep(ctx.taskId, 'cooldown_wait', 'ok', `waited ${waitMs}ms`, routeKey(ctx.failureProviderId, ctx.failureModelId));
-    return { providerId: ctx.failureProviderId, modelId: ctx.failureModelId };
+    return { providerId: ctx.failureProviderId, modelId: ctx.failureModelId, originStep: 'cooldown_wait' };
+  }
+
+  // ---------- Route heal (Prompt 1 Step 4) ----------
+
+  /**
+   * Sticky-state healing: re-probe every sticky invalid_key route; clear the
+   * entries whose probe succeeds (or whose original classification was
+   * protocol_error). If at least one route healed, hand back that route as
+   * the recovery target instead of firing the advisor card.
+   */
+  private async tryRouteHeal(ctx: ChainExhaustedContext): Promise<RecoveryAttempt | null> {
+    this.recordStep(ctx.taskId, 'route_heal', 'started', 're-probing sticky routes', routeKey(ctx.failureProviderId, ctx.failureModelId));
+    try {
+      const healed = await healRoutes();
+      if (healed.healed.length === 0) {
+        this.recordStep(ctx.taskId, 'route_heal', 'failed', 'no sticky route recovered on re-probe', routeKey(ctx.failureProviderId, ctx.failureModelId));
+        return null;
+      }
+      const healedIds = healed.healed.map((h) => (h.providerId || '').toLowerCase().replace(/-free$/, ''));
+      const model =
+        healed.healed
+          .map((h) => {
+            const match = ctx.allModels.find(
+              (m) => (m.providerId || '').toLowerCase().replace(/-free$/, '') === (h.providerId || '').toLowerCase().replace(/-free$/, '') &&
+                (!m.requiresKey || providerHasOwnKey(m.providerId))
+            );
+            return match?.modelId || h.modelId;
+          })
+          .find((mid) => !!mid) || ctx.failureModelId;
+      const provider = healed.healed[0].providerId;
+      this.recordStep(ctx.taskId, 'route_heal', 'ok', `healed ${healedIds.join(', ')}`, routeKey(provider, model));
+      return { providerId: provider, modelId: model, originStep: 'route_heal' };
+    } catch (err) {
+      this.recordStep(ctx.taskId, 'route_heal', 'failed', err instanceof Error ? err.message : String(err), routeKey(ctx.failureProviderId, ctx.failureModelId));
+      return null;
+    }
   }
 
   // ---------- Advisor ----------
 
   private emitAdvisorCard(ctx: ChainExhaustedContext): void {
     const steps = this.stepsByTask.get(ctx.taskId);
-    const stepsTaken: ReliabilityLadderStep[] = steps ? Array.from(steps.values()) : [];
+    // Route Truth (Prompt 1 Step 2): finalize every step — a step the gateway
+    // never reported back on counts as "executed, retry still failed".
+    const stepsTaken: ReliabilityLadderStep[] = steps
+      ? Array.from(steps.values()).map((s) => ({
+          ...s,
+          outcome: s.outcome === 'started' ? 'failed' : s.outcome,
+          target: s.target,
+          retrySucceeded: s.retrySucceeded ?? false
+        }))
+      : [];
+    // Route Truth (Prompt 1 Step 1): the taxonomy reflects the CLASSIFIER's
+    // verdict (a 401/403 whose body is not auth-shaped is a protocol fault,
+    // not auth.invalid_key).
+    const failureClass = classifyProviderFailure({
+      httpStatus: ctx.httpStatus,
+      message: ctx.errorMessage || ''
+    }).failureClass;
     const taxonomyCode =
-      ctx.httpStatus === 401 || ctx.httpStatus === 403
+      failureClass === 'invalid_key'
         ? 'auth.invalid_key'
-        : ctx.httpStatus === 429
+        : failureClass === 'protocol_error'
+        ? 'protocol.tool_pairing'
+        : failureClass === 'rate_limited'
         ? 'pool.exhausted'
         : ctx.httpStatus === null
         ? 'network.sidecar_down'
@@ -314,6 +383,31 @@ class RemediationLadder {
     const keyedProviders = ['openrouter', 'google-ai-studio', 'gemini', 'anthropic', 'claude', 'openai', 'deepseek'];
     const norm = (ctx.failureProviderId || '').toLowerCase().replace(/-free$/, '');
     const isKeyedFamily = keyedProviders.includes(norm);
+    // Prompt 2 Step 2: the headline is derived from the STEP LOG — the count
+    // of executed steps and how many restored service (retrySucceeded).
+    const restored = stepsTaken.filter((s) => s.retrySucceeded).length;
+    const headline =
+      stepsTaken.length === 0
+        ? 'No silent recovery steps were needed in the log.'
+        : `${stepsTaken.length} silent recovery step${stepsTaken.length === 1 ? '' : 's'} attempted, ${
+            restored === 0 ? 'none' : restored
+          } restored service (${taxonomyCode}).`;
+    // Prompt 2 Step 2: the carrying route — first healthy keyless candidate
+    // that is NOT the failure provider, resolved through the SAME health-aware
+    // selector the gateway uses.
+    let carryingRoute: string | undefined;
+    try {
+      const carrier = pickHandoffCandidate(ctx.allModels, ctx.failureProviderId, ctx.failureModelId);
+      if (!carrier) {
+        carryingRoute = 'No live route; queued until recovery';
+      } else if (carrier.providerId === ctx.failureProviderId) {
+        carryingRoute = 'No live route; queued until recovery';
+      } else {
+        carryingRoute = `Carrying chat: ${carrier.providerId} (${carrier.modelId})`;
+      }
+    } catch {
+      carryingRoute = 'No live route; queued until recovery';
+    }
     const card: Extract<ReliabilityAdvisorPayload, { kind: 'card' }> = {
       kind: 'card',
       rootCauseHash: hash,
@@ -322,10 +416,12 @@ class RemediationLadder {
       message:
         ctx.httpStatus === 429
           ? `All free routes are momentarily rate limited (last: ${ctx.failureProviderId}).`
-          : ctx.httpStatus === 401 || ctx.httpStatus === 403
+          : taxonomyCode === 'auth.invalid_key'
           ? `The saved key for ${ctx.failureProviderId} was rejected and every silent recovery step failed.`
-          : ctx.httpStatus === null
+          : taxonomyCode === 'network.sidecar_down'
           ? 'The FCC sidecar and all free routes are unreachable right now.'
+          : taxonomyCode === 'protocol.tool_pairing'
+          ? `A provable message-pairing fault persisted on ${ctx.failureProviderId} after repair.`
           : `${ctx.failureProviderId} failed (HTTP ${ctx.httpStatus}) and every silent recovery step failed.`,
       remedy: isKeyedFamily
         ? 'Re-save the API key in Settings, or keep chatting on Ty-Code Free once a route recovers.'
@@ -336,10 +432,27 @@ class RemediationLadder {
       providerId: ctx.failureProviderId,
       modelId: ctx.failureModelId,
       stepsTaken,
+      headline,
+      carryingRoute,
+      actions: buildAdvisorActions(taxonomyCode),
       ts: Date.now()
     };
     this.lastAdvisorHashByProvider.set((ctx.failureProviderId || '').toLowerCase(), { hash, ts: card.ts });
-    broadcastReliability('reliability:advisor', card);
+    // Prompt 2 (strict): the advisor payload is Zod-validated before it ever
+    // rides the reliability channel; invalid payloads never broadcast.
+    const parsed = ReliabilityAdvisorPayloadSchema.safeParse(card);
+    if (!parsed.success) {
+      reliabilityLedger.record({
+        at: Date.now(),
+        kind: 'advisor',
+        turnId: ctx.taskId,
+        route: routeKey(ctx.failureProviderId, ctx.failureModelId),
+        outcome: 'failed',
+        detail: `advisor card failed schema validation; not broadcast (${parsed.error.issues.slice(0, 3).map((i) => `${i.path.join('.')}:${i.message}`).join('; ')})`
+      });
+      return;
+    }
+    broadcastReliability('reliability:advisor', parsed.data);
     reliabilityLedger.record({ at: Date.now(), kind: 'advisor', turnId: ctx.taskId, route: routeKey(ctx.failureProviderId, ctx.failureModelId), outcome: 'started', detail: `card ${hash} (${taxonomyCode})` });
   }
 
@@ -383,8 +496,46 @@ class RemediationLadder {
     if (steps) {
       const prev = steps.get(step);
       const merged: ReliabilityLadderStep = { step, outcome: prev?.outcome && outcome === 'started' ? prev.outcome : outcome, detail: detail || prev?.detail };
+      if (prev?.target) merged.target = prev.target;
+      if (prev?.retrySucceeded !== undefined) merged.retrySucceeded = prev.retrySucceeded;
       steps.set(step, merged);
     }
+  }
+
+  /**
+   * Route Truth (Prompt 1 Step 2): called by the gateway after it dispatched
+   * a recovery attempt produced by the ladder. The step that produced the
+   * target counts as "ok" ONLY if the retry actually returned a healthy
+   * response — recorded truthfully onto the step log (target =
+   * provider::model, retrySucceeded = verdict).
+   */
+  public reportRecoveryOutcome(taskId: string, attempt: RecoveryAttempt, succeeded: boolean): void {
+    const steps = this.stepsByTask.get(taskId);
+    const originStep = (attempt.originStep && attempt.originStep !== 'recovery' ? attempt.originStep : 'provider_rotation') as LadderStepId;
+    const target = `${attempt.providerId}::${attempt.modelId}`;
+    this.trimTrackedTasks(taskId);
+    if (!steps) {
+      const fresh = new Map<LadderStepId, ReliabilityLadderStep>();
+      fresh.set(originStep, { step: originStep, outcome: succeeded ? 'ok' : 'failed', detail: 'external recovery dispatch', target, retrySucceeded: succeeded });
+      this.stepsByTask.set(taskId, fresh);
+    } else {
+      const prev = steps.get(originStep);
+      if (prev) {
+        prev.target = target;
+        prev.retrySucceeded = succeeded;
+      } else {
+        steps.set(originStep, { step: originStep, outcome: succeeded ? 'ok' : 'failed', detail: 'external recovery dispatch', target, retrySucceeded: succeeded });
+      }
+    }
+    reliabilityLedger.record({
+      at: Date.now(),
+      kind: 'ladder_step',
+      turnId: taskId,
+      route: target,
+      step: originStep,
+      outcome: succeeded ? 'ok' : 'failed',
+      detail: `recovery retry ${succeeded ? 'restored service' : 'still failed'}`
+    });
   }
 
   private trimTrackedTasks(taskId: string): void {

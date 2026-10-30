@@ -32,6 +32,7 @@ import { providerHealthStore } from '../../providers/provider-health-store';
 import { providerHealthMonitor } from '../providers/health-monitor';
 import { chatLatencyTracker } from '../../providers/provider-gateway';
 import { reliabilityLedger } from './reliability-ledger';
+import { classifyProviderFailure } from '../../providers/error-classifier';
 import { broadcastReliability, isPackagedBuild } from './bus';
 import type { DevChaosRequest, ReliabilityHealthSnapshot, ReliabilityRouteHealth } from '../../../shared/types/agent-events';
 
@@ -169,10 +170,15 @@ class ReliabilitySentinel {
       if (providerHealthStore.getState(provider) === 'invalid_key') providerHealthStore.clear(provider);
       reliabilityLedger.record({ at: Date.now(), kind: 'probe', route: provider, outcome: 'ok', detail: 'saved-key revalidation ok' });
     } else {
-      // Only an auth-shaped rejection is sticky; transient probe failures
-      // never flip the invalid_key flag.
-      if (res.status === 401 || res.status === 403) {
-        providerHealthStore.markInvalidKey(provider, res.status);
+      // Route Truth (Prompt 1): ONLY an invalid_key-classified rejection is
+      // sticky. A 401/403 with a non-auth body (e.g. "User not found") still
+      // classifies as protocol_error here → transient degraded TTL, never a
+      // sticky key poisoning.
+      const probeClassification = classifyProviderFailure({ httpStatus: res.status ?? null, message: res.message || '' });
+      if (probeClassification.failureClass === 'invalid_key') {
+        providerHealthStore.markInvalidKey(provider, res.status ?? 401, 'invalid_key');
+      } else if (probeClassification.failureClass === 'protocol_error') {
+        providerHealthStore.markTransientDegraded(provider);
       }
       reliabilityLedger.record({
         at: Date.now(),

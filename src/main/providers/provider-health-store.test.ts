@@ -144,6 +144,106 @@ describe('ProviderHealthStore deadProviderSet', () => {
   });
 });
 
+// ===== Route Truth (Prompt 1) =====
+describe('ProviderHealthStore sticky invalid_key 24h auto-expiry', () => {
+  it('drops a sticky entry aged 24h+ at load time and persists the trim', () => {
+    const file = tempFile('health-expiry.json');
+    providerHealthStore.__forTest(file);
+    providerHealthStore.markInvalidKey('openrouter', 401, 'invalid_key');
+    expect(providerHealthStore.isDead('openrouter')).toBe(true);
+
+    // One millisecond past the 24h TTL: the entry ages out.
+    vi.setSystemTime(new Date('2026-01-02T00:00:00.001Z'));
+    const second = new ProviderHealthStore();
+    second.__forTest(file, { loaded: false });
+    expect(second.getState('openrouter')).toBeNull();
+    expect(second.isDead('openrouter')).toBe(false);
+    // The aged-out entry was trimmed from persistence too.
+    expect(JSON.parse(fs.readFileSync(file, 'utf-8'))).toEqual({});
+  });
+
+  it('still exposes entries younger than 24h after reload', () => {
+    const file = tempFile('health-young.json');
+    providerHealthStore.__forTest(file);
+    providerHealthStore.markInvalidKey('openrouter', 401, 'invalid_key');
+
+    vi.setSystemTime(new Date('2026-01-01T12:00:00Z'));
+    const second = new ProviderHealthStore();
+    second.__forTest(file, { loaded: false });
+    expect(second.getState('openrouter')).toBe('invalid_key');
+  });
+});
+
+describe('ProviderHealthStore transient degraded (Route Truth)', () => {
+  it('is a memory-only TTL state, never persisted and never a failover selector', () => {
+    const file = tempFile('health-degraded.json');
+    providerHealthStore.__forTest(file);
+
+    providerHealthStore.markTransientDegraded('openrouter');
+    expect(providerHealthStore.getState('openrouter')).toBe('degraded_transient');
+    // NOT a selector: isDead/deadProviderSet exclude degraded routes.
+    expect(providerHealthStore.isDead('openrouter')).toBe(false);
+    expect(providerHealthStore.deadProviderSet().has('openrouter')).toBe(false);
+    // Memory only.
+    expect(fs.existsSync(file)).toBe(false);
+
+    vi.setSystemTime(new Date('2026-01-01T00:00:10.001Z'));
+    expect(providerHealthStore.getState('openrouter')).toBeNull();
+  });
+
+  it('clears degraded state together with sticky/rate state', () => {
+    providerHealthStore.__forTest(null);
+    providerHealthStore.markTransientDegraded('groq', 60_000);
+    providerHealthStore.clear('groq');
+    expect(providerHealthStore.getState('groq')).toBeNull();
+  });
+});
+
+describe('ProviderHealthStore listInvalid (heal roster)', () => {
+  it('returns normalised entries with original classification metadata', () => {
+    providerHealthStore.__forTest(null);
+    providerHealthStore.markInvalidKey('openrouter', 401, 'invalid_key');
+    // A protocol_error class can no longer be written by the live API (the
+    // store downgrades it to a transient degraded TTL) — it only appears in
+    // LEGACY files painted by builds predating the central classifier.
+    const file = tempFile('health-legacy.json');
+    fs.writeFileSync(file, JSON.stringify({
+      'groq': { state: 'invalid_key', since: Date.now(), httpStatus: 400, failureClass: 'protocol_error' }
+    }), 'utf-8');
+    const legacy = new ProviderHealthStore();
+    legacy.__forTest(file, { loaded: false });
+
+    const roster = providerHealthStore.listInvalid();
+    const openrouter = roster.find((r) => r.providerId === 'openrouter');
+    expect(openrouter?.failureClass).toBe('invalid_key');
+    expect(openrouter?.httpStatus).toBe(401);
+
+    const legacyRoster = legacy.listInvalid();
+    const groq = legacyRoster.find((r) => r.providerId === 'groq');
+    expect(groq?.failureClass).toBe('protocol_error');
+    expect(groq?.httpStatus).toBe(400);
+  });
+
+  it('defaults the recorded classification to invalid_key', () => {
+    providerHealthStore.__forTest(null);
+    providerHealthStore.markInvalidKey('groq', 401);
+    expect(providerHealthStore.listInvalid()[0].failureClass).toBe('invalid_key');
+  });
+
+  it('loading a legacy protocol_error entry does not create a dead selector', () => {
+    const file = tempFile('health-legacy-nonsticky.json');
+    fs.writeFileSync(file, JSON.stringify({
+      'groq': { state: 'invalid_key', since: Date.now(), httpStatus: 400, failureClass: 'protocol_error' }
+    }), 'utf-8');
+    const legacy = new ProviderHealthStore();
+    legacy.__forTest(file, { loaded: false });
+    expect(legacy.listInvalid().some((r) => r.providerId === 'groq')).toBe(true);
+    // Heal semantics: the roster keeps it observable so healRoutes can clear
+    // it without a probe, but it must not silently block a healthy route.
+    expect(legacy.isDead('groq')).toBe(true);
+  });
+});
+
 describe('normaliseHealthId', () => {
   it('shares health between a provider and its free alias', () => {
     expect(normaliseHealthId('groq-free')).toBe('groq');

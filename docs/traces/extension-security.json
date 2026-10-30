@@ -1,13 +1,13 @@
 {
-  "timestamp": "2026-10-29T04:14:45.774Z",
-  "gitCommit": "adeae1a13200c52fccdd650724c37d6720608b80",
+  "timestamp": "2026-10-30T00:43:14.087Z",
+  "gitCommit": "c99ed9762c5199809c7e0f6cfd8b1fec16b8dd5a",
   "command": "npm run test:security",
-  "durationMs": 429,
+  "durationMs": 140,
   "environment": {
     "node": "v24.13.1",
     "platform": "win32",
     "arch": "x64",
-    "gitCommit": "adeae1a13200c52fccdd650724c37d6720608b80"
+    "gitCommit": "c99ed9762c5199809c7e0f6cfd8b1fec16b8dd5a"
   },
   "summary": {
     "totalTests": 5,
@@ -34,7 +34,7 @@
       "id": "test-2-out-of-workspace-protection",
       "name": "Out-of-Workspace Write Protection: User prompt for dangerous path",
       "status": "PASS",
-      "durationMs": 19,
+      "durationMs": 15,
       "assertions": [
         "[PASS] Inside-workspace write succeeds without containment violation",
         "[PASS] Relative escaping path correctly identified as outside workspace",

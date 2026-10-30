@@ -496,14 +496,19 @@ export async function saveSettings(
           // invalid-key/rate-limit state and re-arms the policy emitter.
           routeEventPolicy.onKeySaved(providerId);
           providerHealthStore.clear(providerId);
-          // Silent 5s save-probe: no blocking, no toast. Only an auth-shaped
-          // rejection (401/403) flips the sticky invalid_key flag; transient
-          // failures land in the reliability ledger without punishing the key.
+          // Silent 5s save-probe: no blocking, no toast. Route Truth
+          // (Prompt 1): only a classifier invalid_key rejection sticky-marks
+          // the key; protocol/rate/upstream faults keep the freshly saved key
+          // healthy (transient degraded TTL at most) and only log a probe.
           void probeSavedKey(providerId, 5000)
             .then((res) => {
               if (res.valid) return;
-              if (res.status === 401 || res.status === 403) {
-                providerHealthStore.markInvalidKey(providerId, res.status);
+              const { classifyProviderFailure } = require('../providers/error-classifier') as typeof import('../providers/error-classifier');
+              const probeClass = classifyProviderFailure({ httpStatus: res.status ?? null, message: res.message || '' });
+              if (probeClass.failureClass === 'invalid_key') {
+                providerHealthStore.markInvalidKey(providerId, res.status ?? 401, 'invalid_key');
+              } else if (probeClass.failureClass === 'protocol_error') {
+                providerHealthStore.markTransientDegraded(providerId);
               }
               reliabilityLedger.record({
                 at: Date.now(),

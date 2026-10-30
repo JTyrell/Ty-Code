@@ -1,13 +1,13 @@
 {
-  "timestamp": "2026-10-28T14:18:42.553Z",
-  "gitCommit": "52bb7d151b978144203814068ddc4ec795b71444",
+  "timestamp": "2026-10-30T00:44:01.067Z",
+  "gitCommit": "c99ed9762c5199809c7e0f6cfd8b1fec16b8dd5a",
   "command": "npm run test:extensions",
-  "durationMs": 14122,
+  "durationMs": 14293,
   "environment": {
     "node": "v24.13.1",
     "platform": "win32",
     "arch": "x64",
-    "gitCommit": "52bb7d151b978144203814068ddc4ec795b71444",
+    "gitCommit": "c99ed9762c5199809c7e0f6cfd8b1fec16b8dd5a",
     "registryUrl": "https://open-vsx.org"
   },
   "summary": {
@@ -21,9 +21,9 @@
       "id": "test-1-registry-reachability",
       "name": "Registry Reachability: search Open VSX for \"theme\"",
       "status": "PASS",
-      "durationMs": 618,
+      "durationMs": 792,
       "assertions": [
-        "PASS: Search response returned in 618ms (budget: <= 4000ms)",
+        "PASS: Search response returned in 792ms (budget: <= 4000ms)",
         "PASS: Returned 25 extensions (expected: >= 10)",
         "PASS: results[0].displayName exists (\"Gruvbox Theme\")",
         "PASS: results.length >= 10 && results[0].displayName exists"
@@ -31,7 +31,7 @@
       "details": {
         "resultsCount": 25,
         "firstResult": "Gruvbox Theme",
-        "durationMs": 618
+        "durationMs": 792
       }
     },
     {
@@ -57,7 +57,7 @@
       "id": "test-3-extension-activation",
       "name": "Extension Activation: install \"ms-python.python\", open .py file",
       "status": "PASS",
-      "durationMs": 10287,
+      "durationMs": 9528,
       "assertions": [
         "PASS: Python extension downloaded & installed: ok",
         "PASS: activationEvent === 'onLanguage:python'",
@@ -112,7 +112,7 @@
       "id": "test-6-webview-panel",
       "name": "Webview Panel: install \"yzhang.markdown-all-in-one\", open .md file, run preview command",
       "status": "PASS",
-      "durationMs": 1506,
+      "durationMs": 1969,
       "assertions": [
         "PASS: Markdown extension installed: ok",
         "PASS: webviewPanel exists",
@@ -131,7 +131,7 @@
       "id": "test-7-uninstall-cleanup",
       "name": "Uninstall Cleanup: uninstall test extension",
       "status": "PASS",
-      "durationMs": 17,
+      "durationMs": 22,
       "assertions": [
         "PASS: Directory exists before uninstall",
         "PASS: Extension registered in host before uninstall",

@@ -19,6 +19,7 @@ import { modelRotationManager, FALLBACK_CHAIN } from '../model-rotation-manager'
 import { credentialStore } from '../auth/credential-store';
 import type { ProviderCandidate, RoutingContext } from './strategies/types';
 import { providerHealthStore } from '../../providers/provider-health-store';
+import { classifyProviderFailure } from '../../providers/error-classifier';
 import { routeEventPolicy } from '../../providers/route-event-policy';
 import { sidecarLogLedger } from '../fcc/sidecar-log-ledger';
 import { FAILOVER_RESUME_INSTRUCTION } from '../fcc/sidecar-line-classifier';
@@ -404,12 +405,20 @@ export class OmniRouteRouter {
         this.pool.recordFailure(candidate.provider.id, errorMsg, statusCode);
         excludedProviders.add(candidate.provider.id);
 
-        // Sticky health: auth rejections persist, rate limits keep a TTL in memory.
-        if (statusCode === 401 || statusCode === 403 || /invalid api key|api key not valid|unauthori[sz]ed/i.test(errorMsg)) {
-          providerHealthStore.markInvalidKey(candidate.provider.id, statusCode ?? 401);
-        } else if (statusCode === 429 || /\[RATE_LIMITED\]/.test(errorMsg)) {
-          const retryAfter = errorMsg.match(/retry[- ]after[^\d]*(\d+)/i);
-          providerHealthStore.markRateLimited(candidate.provider.id, retryAfter ? Number(retryAfter[1]) : undefined);
+        // Sticky health: Route Truth (Prompt 1) — writes go through the central
+        // classifier. ONLY invalid_key persists (401/403 WITH an auth-specific
+        // body/code); protocol faults get a transient degraded TTL and never a
+        // sticky key poisoning.
+        {
+          const failureClass = classifyProviderFailure({ httpStatus: statusCode ?? null, message: errorMsg });
+          if (failureClass.failureClass === 'invalid_key') {
+            providerHealthStore.markInvalidKey(candidate.provider.id, statusCode ?? 401, 'invalid_key');
+          } else if (failureClass.failureClass === 'rate_limited') {
+            const retryAfter = errorMsg.match(/retry[- ]after[^\d]*(\d+)/i);
+            providerHealthStore.markRateLimited(candidate.provider.id, failureClass.retryAfterSec ?? (retryAfter ? Number(retryAfter[1]) : undefined));
+          } else if (failureClass.failureClass === 'protocol_error') {
+            providerHealthStore.markTransientDegraded(candidate.provider.id);
+          }
         }
         // Ledger + trail only. Retries against the same provider collapse into
         // one hop with an attempt counter; nothing is emitted from here.

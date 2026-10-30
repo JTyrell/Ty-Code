@@ -32,7 +32,9 @@ import { usageLedger as tokenAccountingLedger } from '../services/usage/usage-le
 import { countTokens, type LayerToken } from '../services/usage/token-accounting';
 import { fccSidecarManager } from '../services/fcc-sidecar-manager';
 import { modelRotationManager } from '../services/model-rotation-manager';
-import { providerHealthStore } from './provider-health-store';
+import { providerHealthStore, normaliseHealthId } from './provider-health-store';
+import { classifyProviderFailure, type ClassifiedFailure } from './error-classifier';
+import { repairToolPairing } from './message-repair';
 import { routeEventPolicy } from './route-event-policy';
 // === Autonomous Free-Tier Reliability (Prompt: sentinel + silent ladder) ===
 import { reliabilityLadder } from '../services/reliability/remediation-ladder';
@@ -1433,10 +1435,31 @@ export async function sendChatRequest(
 
     console.log(`[GATEWAY] Response status: ${response.status}`);
 
-    // Auth rejections (401/403) are treated as provider-level failures: FCC
-    // fails over to the next eligible free provider instead of hard-failing,
-    // so a revoked/expired key never blocks a free conversation.
-    const shouldHandoff = response.status === 429 || response.status >= 500 || response.status === 401 || response.status === 403 || (response.status === 404 && /:free|\/free/.test(requestModel || modelId));
+    // Route Truth (Prompt 1): read the error body ONCE for every failed
+    // response so classification is BODY-AWARE, not status-only.
+    let errBodyText = '';
+    if (!response.ok) {
+      errBodyText = await response.text().catch(() => '');
+    }
+    const errCode = (() => {
+      try {
+        const errJson = JSON.parse(errBodyText);
+        return (errJson?.error?.code ?? errJson?.code ?? errJson?.error?.type) as string | null;
+      } catch {
+        return null;
+      }
+    })();
+    // Auth rejections (401/403 with an auth-specific body/code) are treated as
+    // provider-level failures: FCC fails over to the next eligible free
+    // provider instead of hard-failing, so a revoked/expired key never blocks
+    // a free conversation.
+    const failureClass = classifyProviderFailure({ httpStatus: response.status, message: errBodyText, errorCode: errCode });
+    const shouldHandoff =
+      response.status === 429 ||
+      response.status >= 500 ||
+      (failureClass.failureClass === 'invalid_key') ||
+      (failureClass.failureClass === 'protocol_error' && (response.status === 401 || response.status === 403)) ||
+      (response.status === 404 && /:free|\/free/.test(requestModel || modelId));
     if (shouldHandoff && usedCommunityKey && (response.status === 401 || response.status === 403)) {
       // The rotating Community Key was rejected: drop the cached card so the
       // next attempt re-bootstraps the current rotation, then fail over.
@@ -1497,11 +1520,16 @@ export async function sendChatRequest(
           // Record into sticky health + the per-turn trail instead; the single
           // consolidated [ROUTE] status chunk is emitted once at `done`.
           const failedProviderId = config.providerId || providerId;
-          if (response.status === 401 || response.status === 403) {
-            providerHealthStore.markInvalidKey(failedProviderId, response.status);
-          } else if (response.status === 429) {
+          // Route Truth (Prompt 1): sticky persistence is classifier-gated —
+          // ONLY invalid_key writes health state; protocol_error records a
+          // transient degraded TTL and 5xx/404 rotate without any write.
+          if (failureClass.failureClass === 'invalid_key') {
+            providerHealthStore.markInvalidKey(failedProviderId, response.status, 'invalid_key');
+          } else if (failureClass.failureClass === 'rate_limited') {
             const retryAfter = Number(response.headers.get('retry-after'));
             providerHealthStore.markRateLimited(failedProviderId, Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : undefined);
+          } else if (failureClass.failureClass === 'protocol_error') {
+            providerHealthStore.markTransientDegraded(failedProviderId);
           }
           routeEventPolicy.recordHop(currentTaskId, failedProviderId, response.status);
           routeEventPolicy.setLanding(currentTaskId, nextModel.providerId);
@@ -1550,25 +1578,35 @@ export async function sendChatRequest(
           // Only carry the original key when the recovery target is the same
           // provider family — never forward one provider's key to another.
           const recoveryApiKey = recovery.providerId === (config.providerId || providerId) ? apiKey : undefined;
-          return await sendChatRequest(
-            recovery.providerId,
-            recovery.modelId,
-            messages,
-            stream,
-            recoveryApiKey,
-            onToken,
-            1,
-            abortSignal,
-            onHandoff,
-            onReasoning,
-            tools,
-            onToolCalls,
-            currentTaskId,
-            context,
-            continuationCount,
-            onStatus,
-            carriedPartial
-          );
+          // Route Truth (Prompt 1 Step 2): the producing step is "ok" only if
+          // this retry returns a healthy response — so the outcome is reported
+          // back to the ladder for the step log.
+          try {
+            const recoveredText = await sendChatRequest(
+              recovery.providerId,
+              recovery.modelId,
+              messages,
+              stream,
+              recoveryApiKey,
+              onToken,
+              1,
+              abortSignal,
+              onHandoff,
+              onReasoning,
+              tools,
+              onToolCalls,
+              currentTaskId,
+              context,
+              continuationCount,
+              onStatus,
+              carriedPartial
+            );
+            reliabilityLadder.reportRecoveryOutcome(currentTaskId, recovery, true);
+            return recoveredText;
+          } catch (recoveryErr) {
+            reliabilityLadder.reportRecoveryOutcome(currentTaskId, recovery, false);
+            throw recoveryErr;
+          }
         }
         const errType = response.status === 429 ? 'RATE_LIMITED' : 'PROVIDER_DOWN';
         throw new Error(`[${errType}] ${providerDisplay} failed (${response.status}) and maximum handoffs (2) reached.`);
@@ -1598,6 +1636,50 @@ export async function sendChatRequest(
         });
         console.log('[GATEWAY] Reasoning content required: sanitizing history and retrying once.');
         return await sendChatRequest(providerId, modelId, sanitized, stream, apiKey, onToken, handoffCount, abortSignal, onHandoff, onReasoning, tools, onToolCalls, currentTaskId, context, continuationCount, onStatus);
+      }
+      // Route Truth (Prompt 1 Step 1): any 400/malformed-message/tool-pairing
+      // fault is a protocol_error — NEVER sticky-mark the key. Trigger message
+      // repair (tool pairing) + ONE retry on the same route; only a persistent
+      // deadlock after that escapes to the normal error path.
+      // NOTE: the body was already read above for the handoff paths; for a 400
+      // reaching this branch the body is available via errBodyText/parsedMsg.
+      {
+        const bodyClassification = classifyProviderFailure({
+          httpStatus: response.status,
+          message: parsedMsg || errBodyText
+        });
+        if (bodyClassification.failureClass === 'invalid_key') {
+          providerHealthStore.markInvalidKey(config.providerId || providerId, response.status, 'invalid_key');
+        } else if (bodyClassification.failureClass === 'rate_limited') {
+          const retryAfter = Number(response.headers.get('retry-after'));
+          providerHealthStore.markRateLimited(config.providerId || providerId, Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : undefined);
+        } else if (bodyClassification.failureClass === 'protocol_error') {
+          // Transient degraded TTL only — never sticky, route stays in chain.
+          providerHealthStore.markTransientDegraded(config.providerId || providerId);
+          if (Array.isArray(messages) && !(messages as any).__protocolRepaired) {
+            (messages as any).__protocolRepaired = true;
+            const injected = repairToolPairing(messages as any[]);
+            console.warn(`[GATEWAY] Protocol fault on ${providerDisplay} (HTTP ${response.status}): "${(parsedMsg || errBodyText || '').slice(0, 160)}" — repaired tool pairing (${injected} synthetic result(s)), retrying ONCE on the same route.`);
+            return await sendChatRequest(
+              providerId,
+              modelId,
+              messages,
+              stream,
+              apiKey,
+              onToken,
+              handoffCount,
+              abortSignal,
+              onHandoff,
+              onReasoning,
+              tools,
+              onToolCalls,
+              currentTaskId,
+              context,
+              continuationCount,
+              onStatus
+            );
+          }
+        }
       }
       throw new Error(`[GATEWAY] ${providerDisplay} API error (${response.status}): ${parsedMsg}`);
     }
@@ -1988,6 +2070,75 @@ export async function sendChatRequest(
     if (abortSignal?.aborted || err?.name === 'AbortError') {
       throw err;
     }
+    // Route Truth (Prompt 1 Step 1): a mid-stream protocol fault (malformed
+    // message / tool pairing) must NEVER sticky-mark the key. Repair the
+    // message pairing and retry the SAME route once, carrying any already
+    // streamed partial forward (idempotent retry, no duplicated output).
+    {
+      const midClassification = classifyProviderFailure({ httpStatus: null, message: err?.message || String(err) });
+      const tokensSoFar =
+        carriedPartial.length +
+        fullText.length +
+        fullThought.length +
+        Array.from(streamedToolCalls.values()).reduce((n, call) => n + call.arguments.length + call.name.length, 0);
+      if (
+        midClassification.failureClass === 'protocol_error' &&
+        handoffCount < 2 &&
+        Array.isArray(messages) &&
+        !(messages as any).__midProtocolRepaired
+      ) {
+        (messages as any).__midProtocolRepaired = true;
+        const injected = repairToolPairing(messages as any[]);
+        providerHealthStore.markTransientDegraded(config.providerId || providerId);
+        console.warn(`[GATEWAY] Mid-stream protocol fault ("${(err?.message || '').slice(0, 160)}"): repaired tool pairing (${injected} synthetic result(s)); retrying ONCE on the same route (no key state written).`);
+        const priorPartial = `${carriedPartial}${fullText}`;
+        if (tokensSoFar > 0) {
+          const resumeMessages = [
+            ...messages,
+            { role: 'assistant', content: priorPartial },
+            { role: 'user', content: FAILOVER_RESUME_INSTRUCTION }
+          ];
+          return priorPartial + (await sendChatRequest(
+            providerId,
+            modelId,
+            resumeMessages,
+            stream,
+            apiKey,
+            onToken,
+            handoffCount,
+            abortSignal,
+            onHandoff,
+            onReasoning,
+            tools,
+            onToolCalls,
+            currentTaskId,
+            context,
+            continuationCount,
+            onStatus,
+            priorPartial
+          ));
+        }
+        return await sendChatRequest(
+          providerId,
+          modelId,
+          messages,
+          stream,
+          apiKey,
+          onToken,
+          handoffCount,
+          abortSignal,
+          onHandoff,
+          onReasoning,
+          tools,
+          onToolCalls,
+          currentTaskId,
+          context,
+          continuationCount,
+          onStatus,
+          carriedPartial
+        );
+      }
+    }
     if (
       handoffCount < 2 &&
       (err?.message?.includes('429') ||
@@ -2096,17 +2247,14 @@ export async function sendChatRequest(
           routeEventPolicy.recordHop(currentTaskId, config.providerId || providerId, 'err');
           routeEventPolicy.setLanding(currentTaskId, recovery.providerId);
           const recoveryApiKey = recovery.providerId === (config.providerId || providerId) ? apiKey : undefined;
-          if (tokensStreamedCarry > 0) {
-            const priorPartial = `${carriedPartial}${fullText}`;
-            const resumeMessages = [
-              ...messages,
-              { role: 'assistant', content: priorPartial },
-              { role: 'user', content: FAILOVER_RESUME_INSTRUCTION }
-            ];
-            const recoveredText = await sendChatRequest(
+          // Route Truth (Prompt 1 Step 2): report the recovery outcome back to
+          // the ladder's step log so the advisor headline and step colors are
+          // truthful (a rotation that did not restore service is NOT "ok").
+          const dispatchRecovery = async (retryMessages: unknown[], retryPartial?: string): Promise<string> =>
+            await sendChatRequest(
               recovery.providerId,
               recovery.modelId,
-              resumeMessages,
+              retryMessages as never,
               stream,
               recoveryApiKey,
               onToken,
@@ -2120,29 +2268,32 @@ export async function sendChatRequest(
               context,
               continuationCount,
               onStatus,
-              priorPartial
+              retryPartial
             );
-            return priorPartial + recoveredText;
+          if (tokensStreamedCarry > 0) {
+            const priorPartial = `${carriedPartial}${fullText}`;
+            const resumeMessages = [
+              ...messages,
+              { role: 'assistant', content: priorPartial },
+              { role: 'user', content: FAILOVER_RESUME_INSTRUCTION }
+            ];
+            try {
+              const recoveredText = await dispatchRecovery(resumeMessages, priorPartial);
+              reliabilityLadder.reportRecoveryOutcome(currentTaskId, recovery, true);
+              return priorPartial + recoveredText;
+            } catch (recoveredErr) {
+              reliabilityLadder.reportRecoveryOutcome(currentTaskId, recovery, false);
+              throw recoveredErr;
+            }
           }
-          return await sendChatRequest(
-            recovery.providerId,
-            recovery.modelId,
-            messages,
-            stream,
-            recoveryApiKey,
-            onToken,
-            1,
-            abortSignal,
-            onHandoff,
-            onReasoning,
-            tools,
-            onToolCalls,
-            currentTaskId,
-            context,
-            continuationCount,
-            onStatus,
-            carriedPartial
-          );
+          try {
+            const recoveredText = await dispatchRecovery(messages, carriedPartial);
+            reliabilityLadder.reportRecoveryOutcome(currentTaskId, recovery, true);
+            return recoveredText;
+          } catch (recoveredErr) {
+            reliabilityLadder.reportRecoveryOutcome(currentTaskId, recovery, false);
+            throw recoveredErr;
+          }
         }
         throw err;
       }
@@ -2249,43 +2400,88 @@ export function providerHasOwnKey(providerId: string): boolean {
  * (a) is keyless/anonymous (OpenKilo gateway, Ollama), or
  * (b) is a free-tier model of the provider we already hold a key for, or
  * (c) has its OWN stored key — never a borrowed key from another provider.
- * Priority: same model elsewhere > free pool > keyed-with-own-key.
+ *
+ * Route Truth (Prompt 1 Step 3): the candidate pool is filtered THROUGH the
+ * health board — sticky invalid_key and live rate-limit TTLs are never
+ * targets (google-ai-studio holding a sticky 401 can never be picked), and
+ * so are sentinel-degraded / quota-exhausted routes. Priority is
+ * health-aware: keyless healthy routes (ty-code-free, OpenKilo) first, then
+ * healthy keyed routes, then local backstops. The ROUTING CHAIN ORDER above
+ * the health filter is unchanged.
  */
 export function pickHandoffCandidate(
   allModels: VerifiedModelConfig[],
   currentProviderId: string,
   requestedModel: string
 ): VerifiedModelConfig | undefined {
-  const isFreeCandidate = (m: VerifiedModelConfig) =>
-    isFreeModel(m.modelId, m.providerId) || !m.requiresKey;
+  const norm = (id: string): string => normaliseHealthId(id);
+  const sameModel = (m: VerifiedModelConfig) =>
+    !!requestedModel && (m.modelId === requestedModel || m.modelId.toLowerCase() === String(requestedModel).toLowerCase());
 
   // Sticky health: providers with a persisted invalid_key (or a live
-  // Retry-After TTL) are never handoff targets, so dead providers are not re-walked.
+  // Retry-After TTL) are never handoff targets, so dead providers are not
+  // re-walked. Normalised BOTH sides so `openrouter-free` shares the fate of
+  // a sticky `openrouter` entry.
   const dead = providerHealthStore.deadProviderSet();
+  const isLocalProvider = (pid: string): boolean => /^(ollama|local|llamacpp|lmstudio|jan|lms)$/.test(norm(pid));
   const eligible = allModels.filter((m) => {
-    if ((m.providerId || '').toLowerCase() === (currentProviderId || '').toLowerCase()) return false;
-    if (providerHealthStore.isDead(m.providerId) || dead.has((m.providerId || '').toLowerCase())) return false;
+    if (norm(m.providerId) === norm(currentProviderId)) return false;
+    if (providerHealthStore.isDead(m.providerId) || dead.has(norm(m.providerId))) return false;
+    // Sentinel-poor / quota-exhausted routes are not health-aware targets.
+    try {
+      const { reliabilitySentinel } = require('../services/reliability/reliability-sentinel') as typeof import('../services/reliability/reliability-sentinel');
+      if (reliabilitySentinel.isProviderPoor(m.providerId)) return false;
+    } catch {
+      // Sentinel unavailable: health-board filtering above still applies.
+    }
+    try {
+      const quota = quotaTracker.getProviderQuota(m.providerId);
+      if (quota && quota.percentUsed >= 98) return false;
+    } catch {
+      // Quota tracker unavailable: continue with eligibility as-is.
+    }
     return !m.requiresKey || providerHasOwnKey(m.providerId);
   });
   if (eligible.length === 0) return undefined;
 
-  const sameModelAlt = eligible.find(
-    (m) => m.modelId === requestedModel || m.modelId.toLowerCase() === requestedModel.toLowerCase()
-  );
-  if (sameModelAlt) return sameModelAlt;
-
-  // Use ModelRotationManager fallback chain if coming from FCC
-  if ((currentProviderId || '').toLowerCase() === 'fcc' || (currentProviderId || '').toLowerCase() === 'fcc-proxy') {
-    const nextProv = modelRotationManager.getNextProvider('fcc');
-    if (nextProv) {
-      const match = eligible.find((m) => (m.providerId || '').toLowerCase() === nextProv.toLowerCase());
-      if (match) return match;
+  // Health-aware tiers: keyless healthy first (ty-code-free, OpenKilo) ->
+  // healthy keyed -> local backstop. Within the FIRST non-empty tier, a same
+  // model match still wins; the FCC chain peek runs inside the keyless tier.
+  const tierKeyless = eligible.filter((m) => !m.requiresKey && !isLocalProvider(m.providerId));
+  const tierKeyed = eligible.filter((m) => m.requiresKey && !isLocalProvider(m.providerId));
+  const tierLocal = eligible.filter((m) => isLocalProvider(m.providerId));
+  const tiers: VerifiedModelConfig[][] = [];
+  // "First" keyless preference: ty-code-free, then OpenKilo/anonymous pool,
+  // then the rest of the keyless fleet.
+  const preferOrderIn = (tier: VerifiedModelConfig[]): void => {
+    const preferred = tier.filter(
+      (m) => ['ty-code-free', 'tycode-free', 'openkilo', 'kilo'].includes(norm(m.providerId))
+    );
+    const rest = tier.filter((m) => !preferred.includes(m));
+    // FCC chain peek stays for FCC-originated requests.
+    if ((currentProviderId || '').toLowerCase() === 'fcc' || (currentProviderId || '').toLowerCase() === 'fcc-proxy') {
+      try {
+        const nextProv = modelRotationManager.getNextProvider('fcc');
+        if (nextProv) {
+          const match = rest.find((m) => norm(m.providerId) === norm(nextProv));
+          if (match) rest.sort((a, b) => (a === match ? -1 : b === match ? 1 : 0));
+        }
+      } catch {
+        // Rotation manager unavailable: catalog order stands.
+      }
     }
+    tiers.push([...preferred, ...rest]);
+  };
+  preferOrderIn(tierKeyless);
+  preferOrderIn(tierKeyed);
+  tiers.push(tierLocal);
+  for (const tier of tiers) {
+    if (tier.length === 0) continue;
+    const matchIn = tier.find(sameModel);
+    if (matchIn) return matchIn;
+    return tier[0];
   }
-
-  const freePool = eligible.filter(isFreeCandidate);
-  const pool = freePool.length > 0 ? freePool : eligible;
-  return pool[0];
+  return undefined;
 }
 
 export function categorizeModel(modelId: string, isFree: boolean, providerId: string): 'Free' | 'Fast' | 'Premium/Reasoning' {
