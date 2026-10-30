@@ -1,13 +1,13 @@
 {
-  "timestamp": "2026-10-30T00:43:14.087Z",
-  "gitCommit": "c99ed9762c5199809c7e0f6cfd8b1fec16b8dd5a",
+  "timestamp": "2026-10-30T05:57:29.957Z",
+  "gitCommit": "8f6f6fb53c4a00465f3efcda8a39aef9cf00f134",
   "command": "npm run test:security",
-  "durationMs": 140,
+  "durationMs": 69,
   "environment": {
     "node": "v24.13.1",
     "platform": "win32",
     "arch": "x64",
-    "gitCommit": "c99ed9762c5199809c7e0f6cfd8b1fec16b8dd5a"
+    "gitCommit": "8f6f6fb53c4a00465f3efcda8a39aef9cf00f134"
   },
   "summary": {
     "totalTests": 5,
@@ -20,7 +20,7 @@
       "id": "test-1-capability-permissions",
       "name": "Capability-Based Permissions: Undeclared API calls rejected",
       "status": "PASS",
-      "durationMs": 2,
+      "durationMs": 1,
       "assertions": [
         "[PASS] Extension successfully registered with scoped capabilities",
         "[PASS] Blocked write capability with error: PERMISSION_DENIED: Extension \"test.read-only\" attempted to access capability \"workspace.fs.writeFile\" (requires \"workspace.fs.write\"), but manifest only declared [workspace.fs.read].",
@@ -34,7 +34,7 @@
       "id": "test-2-out-of-workspace-protection",
       "name": "Out-of-Workspace Write Protection: User prompt for dangerous path",
       "status": "PASS",
-      "durationMs": 15,
+      "durationMs": 8,
       "assertions": [
         "[PASS] Inside-workspace write succeeds without containment violation",
         "[PASS] Relative escaping path correctly identified as outside workspace",
@@ -50,7 +50,7 @@
       "id": "test-3-webview-sandbox-nonce",
       "name": "Webview Sandbox & Nonce Handshake: allow-scripts only + handshake",
       "status": "PASS",
-      "durationMs": 4,
+      "durationMs": 1,
       "assertions": [
         "[PASS] Webview panel instantiated with unique ID",
         "[PASS] Webview sandbox strictly configured to \"allow-scripts\"",

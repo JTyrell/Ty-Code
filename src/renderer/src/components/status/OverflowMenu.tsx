@@ -39,6 +39,8 @@ export interface OverflowMenuProps {
 export const OverflowMenu: React.FC<OverflowMenuProps> = ({ className, isTelemetryCollapsed }) => {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  // Transaction id awaiting confirmation before reverting (prevents accidental data loss)
+  const [confirmRevertId, setConfirmRevertId] = useState<string | null>(null);
 
   // Store slices
   const openTabs = useWorkspaceStore((s) => s.openTabs);
@@ -301,13 +303,37 @@ export const OverflowMenu: React.FC<OverflowMenuProps> = ({ className, isTelemet
                       <span style={{ fontSize: '10px' }}>
                         {item.origin.replace('-', ' ')} ({item.fileCount}f)
                       </span>
-                      <button
-                        type="button"
-                        className={styles.actionBtn}
-                        onClick={() => void undoWorkspaceEditTransaction(item.transactionId)}
-                      >
-                        <Undo2 size={10} /> Revert
-                      </button>
+                      {confirmRevertId === item.transactionId ? (
+                        <>
+                          <button
+                            type="button"
+                            className={styles.actionBtn}
+                            onClick={() => {
+                              void undoWorkspaceEditTransaction(item.transactionId);
+                              setConfirmRevertId(null);
+                            }}
+                            style={{ color: 'var(--accent-red)' }}
+                          >
+                            <Undo2 size={10} /> Confirm
+                          </button>
+                          <button
+                            type="button"
+                            className={styles.actionBtn}
+                            onClick={() => setConfirmRevertId(null)}
+                            style={{ color: 'var(--text-muted)' }}
+                          >
+                            Cancel
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          className={styles.actionBtn}
+                          onClick={() => setConfirmRevertId(item.transactionId)}
+                        >
+                          <Undo2 size={10} /> Revert
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>

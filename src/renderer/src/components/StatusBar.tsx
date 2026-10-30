@@ -56,6 +56,8 @@ export const StatusBar: React.FC = () => {
   const refreshQuota = useUsageDashboardStore((s) => s.refreshStats);
 
   const connectedProviders = useOnboardingStore((s) => s.connectedProviders);
+  const discoveredFreeModelsCount = useOnboardingStore((s) => s.discoveredFreeModelsCount);
+  const isCompleted = useOnboardingStore((s) => s.isCompleted);
   const shouldShowReminder = useOnboardingStore((s) => s.shouldShowReminder);
   const dismissReminder = useOnboardingStore((s) => s.dismissReminder);
 
@@ -66,13 +68,12 @@ export const StatusBar: React.FC = () => {
     }
   }, [shouldShowReminder, dismissReminder]);
 
-  const totalModels = connectedProviders.reduce((sum, p) => {
-    if (p === 'openrouter') return sum + 10;
-    if (p === 'groq') return sum + 3;
-    if (p === 'google-gemini' || p === 'google-ai-studio') return sum + 3;
-    if (p === 'ollama') return sum + 3;
-    return sum + 2;
-  }, 0);
+  // Real model count from onboarding discovery (set during catalog load),
+  // never a hardcoded per-provider lookup. Falls back to provider count when
+  // no real discovery data exists so we never surface a fabricated total.
+  const totalModels = (isCompleted && discoveredFreeModelsCount > 0)
+    ? discoveredFreeModelsCount
+    : connectedProviders.length;
 
   // Derived calculations
   const activeTab = openTabs.find((tab) => tab.path === activeTabPath);
@@ -210,7 +211,7 @@ export const StatusBar: React.FC = () => {
           title={
             (useOnboardingStore.getState().isSkipped || localStorage.getItem('ty_code_anonymous_tier_active') === 'true' || connectedProviders.length === 0)
               ? 'Anonymous tier active (~50 req/h). Click to enable full free supply (61 providers, 1.3B+ free tokens/month).'
-              : `Connected: ${connectedProviders.join(', ')} (${totalModels} models). Click to open Settings > Providers.`
+              : `Connected: ${connectedProviders.join(', ')}${(isCompleted && discoveredFreeModelsCount > 0) ? ` (${totalModels} models)` : ''}. Click to open Settings > Providers.`
           }
           style={{
             color: (useOnboardingStore.getState().isSkipped || localStorage.getItem('ty_code_anonymous_tier_active') === 'true' || connectedProviders.length === 0) ? '#38bdf8' : '#34d399',
@@ -222,7 +223,7 @@ export const StatusBar: React.FC = () => {
           aria-label={
             (useOnboardingStore.getState().isSkipped || localStorage.getItem('ty_code_anonymous_tier_active') === 'true' || connectedProviders.length === 0)
               ? 'Anonymous tier active — Enable full free supply'
-              : `${connectedProviders.length} providers, ${totalModels} models connected`
+              : `${connectedProviders.length} providers${(isCompleted && discoveredFreeModelsCount > 0) ? `, ${totalModels} models` : ''} connected`
           }
         >
           {(useOnboardingStore.getState().isSkipped || localStorage.getItem('ty_code_anonymous_tier_active') === 'true' || connectedProviders.length === 0) ? (
@@ -233,7 +234,7 @@ export const StatusBar: React.FC = () => {
           <span>
             {(useOnboardingStore.getState().isSkipped || localStorage.getItem('ty_code_anonymous_tier_active') === 'true' || connectedProviders.length === 0)
               ? 'Enable full free supply'
-              : `${connectedProviders.length} provider${connectedProviders.length > 1 ? 's' : ''} • ${totalModels} models`}
+              : `${connectedProviders.length} provider${connectedProviders.length > 1 ? 's' : ''}${(isCompleted && discoveredFreeModelsCount > 0) ? ` • ${totalModels} models` : ''}`}
           </span>
         </button>
 

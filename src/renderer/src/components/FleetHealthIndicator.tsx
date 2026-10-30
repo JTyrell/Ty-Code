@@ -6,18 +6,28 @@ import type { DiagnosticsFleetHealth, FleetHealthState } from '../../../shared/t
 export const FleetHealthIndicator: React.FC = () => {
   // No fabricated defaults: nothing "healthy" is claimed until real fleet data arrives
   const [health, setHealth] = useState<DiagnosticsFleetHealth | null>(null);
+  // True only when the diagnostics IPC has been attempted and failed
+  // (frame untrusted, bridge missing, or hard error). Distinct from "still
+  // loading" so the user sees offline vs. checking.
+  const [fetchFailed, setFetchFailed] = useState(false);
   const openSettings = useChatStore((state) => state.openSettings);
 
   const fetchHealth = useCallback(async () => {
-    if (window.electronAPI?.diagnosticsGetFleetHealth) {
-      try {
-        const res = await window.electronAPI.diagnosticsGetFleetHealth();
-        if (res.success && res.data) {
-          setHealth(res.data);
-        }
-      } catch (err) {
-        console.warn('Failed to fetch diagnostics fleet health:', err);
+    if (!window.electronAPI?.diagnosticsGetFleetHealth) {
+      setFetchFailed(true);
+      return;
+    }
+    try {
+      const res = await window.electronAPI.diagnosticsGetFleetHealth();
+      if (res.success && res.data) {
+        setHealth(res.data);
+        setFetchFailed(false);
+      } else {
+        setFetchFailed(true);
       }
+    } catch (err) {
+      console.warn('Failed to fetch diagnostics fleet health:', err);
+      setFetchFailed(true);
     }
   }, []);
 
@@ -66,16 +76,21 @@ export const FleetHealthIndicator: React.FC = () => {
   }, []);
 
   const state: FleetHealthState = health?.state || 'degraded';
-  const dotColor = !health
+  const isChecking = !health && !fetchFailed;
+  const dotColor = isChecking
     ? '#9ca3af'
+    : fetchFailed
+    ? '#ef4444'
     : state === 'all-healthy'
       ? '#10b981'
       : state === 'degraded'
         ? '#f59e0b'
         : '#ef4444';
 
-  const labelText = !health
+  const labelText = isChecking
     ? 'Fleet: checking...'
+    : fetchFailed
+    ? 'Fleet: offline'
     : state === 'all-healthy'
       ? 'Fleet Healthy'
       : state === 'degraded'
@@ -83,6 +98,9 @@ export const FleetHealthIndicator: React.FC = () => {
         : 'Fleet Down';
 
   const titleText = (() => {
+    if (fetchFailed) {
+      return 'Diagnostics fleet health could not be reached (frame untrusted or bridge unavailable). Click to retry.';
+    }
     if (!health) return 'Fetching live fleet health from the diagnostics service. Click to open Diagnostics.';
     const untested = health.untestedCount > 0 ? `, ${health.untestedCount} untested` : '';
     const base = state === 'all-healthy'
@@ -95,6 +113,10 @@ export const FleetHealthIndicator: React.FC = () => {
   })();
 
   const handleClick = () => {
+    if (fetchFailed) {
+      void fetchHealth();
+      return;
+    }
     openSettings('diagnostics');
   };
 

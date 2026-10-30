@@ -1395,9 +1395,10 @@ export const ChatSidecar: React.FC = () => {
     setInput('');
     sendPrompt(composedPrompt, true, images, h1);
   };
-  const handleRegenerate = () => {
+  const handleRegenerate = async () => {
     if (isRunning) {
-      void stopTask();
+      await stopTask();
+      // stopTask resets isRunning; fall through to re-send the last prompt.
     }
     const h1 = performance.timeOrigin + performance.now();
     const promptToRetry = lastUserMessage?.content || input.trim();

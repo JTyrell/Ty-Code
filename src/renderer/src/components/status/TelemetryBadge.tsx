@@ -212,7 +212,7 @@ export const TelemetryBadge: React.FC<TelemetryBadgeProps> = ({
         {viewMode === 'tokens' ? (
           <>
             <Zap size={11} className={styles.icon} />
-            {breakpoint === 'wide' && <span className={styles.label}>Quota</span>}
+            {breakpoint === 'wide' && <span className={styles.label}>{quotaUserData ? 'Quota' : 'Context'}</span>}
             <span className={styles.value}>{result.formatted}</span>
           </>
         ) : (

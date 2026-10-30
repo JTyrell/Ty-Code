@@ -259,25 +259,16 @@ export const ChatMessageList = forwardRef<ChatMessageListHandle, ChatMessageList
     }, [messages.length > 0]);
 
     // Prompt 2: Jump-to-latest pill press handling.
-    // pointerdown captures the pointer and opens the press window so that any
-    // scroll flip triggered by the incoming pointerdown (streaming tick or
-    // settle listener) cannot unmount the pill before the click completes.
+    // pointerdown opens the press window so that any scroll flip triggered by
+    // the press (streaming tick or settle listener) cannot unmount the pill
+    // before the click completes. Pointer capture is intentionally NOT used:
+    // setPointerCapture can suppress the synthetic click in some browsers,
+    // which made the pill feel unresponsive ("clicks vanish").
     const handlePillPointerDown = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
       pressingRef.current = true;
-      try {
-        e.currentTarget.setPointerCapture(e.pointerId);
-      } catch {
-        // Pointer capture can throw if the node detached mid-event; the
-        // pressing window alone is enough to keep the click stable.
-      }
     }, []);
 
-    const handlePillPointerUp = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
-      try {
-        e.currentTarget.releasePointerCapture(e.pointerId);
-      } catch {
-        // No capture held (or lost during press); nothing to release.
-      }
+    const handlePillPointerUp = useCallback(() => {
       // Release 'pressing' one tick AFTER click so onClick still observes the
       // stable press window even if pointerdown flipped pending state.
       window.setTimeout(() => {
@@ -299,8 +290,8 @@ export const ChatMessageList = forwardRef<ChatMessageListHandle, ChatMessageList
 
     // Prompt 2: click must not hide the pill inline (mid-stream clicks used to
     // re-detach the stream and vanish before the handler ran). Instead: open a
-    // suppression window, smooth-scroll to bottom, and hide on scrollend with
-    // a 1s safety fallback for browsers/edge cases where scrollend never fires.
+    // suppression window, single smooth-scroll to bottom, and hide on scrollend
+    // with a 1s safety fallback for browsers where scrollend never fires.
     const handleJumpToLatest = useCallback(
       (e: React.MouseEvent<HTMLButtonElement>) => {
         e.preventDefault();

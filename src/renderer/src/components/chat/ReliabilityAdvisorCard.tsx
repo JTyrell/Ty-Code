@@ -174,14 +174,16 @@ export const ReliabilityAdvisorCard: React.FC = () => {
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
         <Activity size={13} color="#fbbf24" style={{ flexShrink: 0 }} />
-        <strong style={{ fontSize: '11.5px', color: '#fbbf24', flexShrink: 0 }}>{card.headline || 'Auto-recovery exhausted'}</strong>
+        <strong style={{ fontSize: '11.5px', color: '#fbbf24', flexShrink: 0, overflowWrap: 'break-word', maxWidth: '60vw' }}>{card.headline || 'Auto-recovery exhausted'}</strong>
         <span
           style={{
             fontSize: '10px',
             color: 'var(--text-muted, #94a3b8)',
+            overflowWrap: 'break-word',
+            whiteSpace: 'normal',
             overflow: 'hidden',
             textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap'
+            maxWidth: '40vw'
           }}
         >
           [{card.taxonomyCode}]
@@ -204,15 +206,15 @@ export const ReliabilityAdvisorCard: React.FC = () => {
         </button>
       </div>
 
-      <p style={{ margin: 0, fontSize: '11.5px', color: 'var(--text-primary, #f1f5f9)', lineHeight: 1.5 }}>{card.message}</p>
+      <p style={{ margin: 0, fontSize: '11.5px', color: 'var(--text-primary, #f1f5f9)', lineHeight: 1.5, overflowWrap: 'break-word' }}>{card.message}</p>
       {card.remedy && (
-        <p style={{ margin: 0, fontSize: '11px', color: 'var(--text-secondary, #9ca3af)', lineHeight: 1.5 }}>{card.remedy}</p>
+        <p style={{ margin: 0, fontSize: '11px', color: 'var(--text-secondary, #9ca3af)', lineHeight: 1.5, overflowWrap: 'break-word' }}>{card.remedy}</p>
       )}
       {card.carryingRoute && (
-        <p style={{ margin: 0, fontSize: '10.5px', color: 'var(--text-muted, #94a3b8)', lineHeight: 1.5 }}>{card.carryingRoute}</p>
+        <p style={{ margin: 0, fontSize: '10.5px', color: 'var(--text-muted, #94a3b8)', lineHeight: 1.5, overflowWrap: 'break-word' }}>{card.carryingRoute}</p>
       )}
       {note && (
-        <p style={{ margin: 0, fontSize: '11px', color: '#34d399', lineHeight: 1.5 }}>{note}</p>
+        <p style={{ margin: 0, fontSize: '11px', color: '#34d399', lineHeight: 1.5, overflowWrap: 'break-word' }}>{note}</p>
       )}
 
       {card.stepsTaken.length > 0 && (
@@ -248,7 +250,9 @@ export const ReliabilityAdvisorCard: React.FC = () => {
             display: 'flex',
             flexDirection: 'column',
             gap: '2px',
-            listStyleType: 'disc'
+            listStyleType: 'disc',
+            maxWidth: '100%',
+            overflowWrap: 'break-word'
           }}
         >
           {card.stepsTaken.map((step, i) => {
@@ -258,7 +262,7 @@ export const ReliabilityAdvisorCard: React.FC = () => {
             const ranButRetryStillFailed = step.outcome === 'ok' && !restored;
             const color = restored ? '#34d399' : ranButRetryStillFailed ? '#fbbf24' : '#f87171';
             return (
-              <li key={i} style={{ color }}>
+              <li key={i} style={{ color, overflowWrap: 'break-word', maxWidth: '100%' }}>
                 {step.step}
                 {step.target ? ` → ${step.target}` : ''}: {step.outcome}
                 {ranButRetryStillFailed ? ' (retry still failed)' : ''}
