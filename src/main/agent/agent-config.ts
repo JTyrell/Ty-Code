@@ -19,19 +19,22 @@ import { getProviderSettings } from '../ipc/settings-handlers';
 import { getCommunityKey, warmUpCommunityKey } from '../services/credential-vault';
 import { routeEventPolicy, type RouteNotice, type SelectionOrigin } from '../providers/route-event-policy';
 import { providerHealthStore } from '../providers/provider-health-store';
+import type { ModelLockMode } from '../../shared/types/settings';
 
 export type ActiveConfigKeyStatus = 'own' | 'community' | 'anonymous' | 'missing';
 
 export interface ActiveAgentConfig {
   providerId: string;
   modelId: string;
+  mode: ModelLockMode;
   updatedAt: number;
 }
 
 export interface ActiveProviderConfigSummary {
   providerId: string;
   modelId: string;
-  /** How the resolved provider authenticates. */
+  mode: ModelLockMode;
+  /** How the requested provider authenticates. */
   keyStatus: ActiveConfigKeyStatus;
   /** Masked preview only (e.g. "sk-ant-••••1234"); never a usable key. */
   maskedKey?: string;
@@ -64,6 +67,7 @@ const ANONYMOUS_PROVIDERS = new Set([
 let currentAgentConfig: ActiveAgentConfig = {
   providerId: TY_CODE_FREE_PROVIDER,
   modelId: TY_CODE_FREE_MODEL,
+  mode: 'resilient',
   updatedAt: 0
 };
 
@@ -109,12 +113,17 @@ export function getActiveAgentConfig(): ActiveAgentConfig {
  * persisted select pair into memory without fallback logic so a temporarily
  * unreachable community tier can not silently rewrite a working selection.
  */
-export function seedActiveConfig(providerId: string | undefined, modelId: string | undefined): ActiveAgentConfig {
+export function seedActiveConfig(
+  providerId: string | undefined,
+  modelId: string | undefined,
+  mode: ModelLockMode = 'resilient'
+): ActiveAgentConfig {
   const id = (providerId || '').trim();
   if (!id) return currentAgentConfig;
   currentAgentConfig = {
     providerId: id,
     modelId: normalizeModel(id, modelId || ''),
+    mode,
     updatedAt: Date.now()
   };
   return currentAgentConfig;
@@ -128,6 +137,7 @@ export function seedActiveConfig(providerId: string | undefined, modelId: string
 export async function setActiveAgentConfig(
   providerId: string,
   modelId: string,
+  mode: ModelLockMode = 'resilient',
   origin: SelectionOrigin = 'auto'
 ): Promise<ActiveProviderConfigSummary> {
   const requestedProvider = (providerId || '').trim();
@@ -136,6 +146,7 @@ export async function setActiveAgentConfig(
   const requested: ActiveProviderConfigSummary = {
     providerId: requestedProvider,
     modelId: requestedModel,
+    mode,
     keyStatus: 'anonymous'
   };
 
@@ -145,6 +156,7 @@ export async function setActiveAgentConfig(
     currentAgentConfig = {
       providerId: TY_CODE_FREE_PROVIDER,
       modelId: TY_CODE_FREE_MODEL,
+      mode,
       updatedAt: Date.now()
     };
     if (communityKey) {
@@ -157,6 +169,7 @@ export async function setActiveAgentConfig(
     return {
       providerId: TY_CODE_FREE_PROVIDER,
       modelId: TY_CODE_FREE_MODEL,
+      mode,
       keyStatus: 'community',
       maskedKey: maskKey(communityKey || undefined),
       ...(communityKey ? {} : { degraded: true, reason: 'UNRESOLVED_COMMUNITY' as const })
@@ -169,11 +182,13 @@ export async function setActiveAgentConfig(
     currentAgentConfig = {
       providerId: requestedProvider,
       modelId: normalizeModel(requestedProvider, requestedModel),
+      mode,
       updatedAt: Date.now()
     };
     return {
       providerId: currentAgentConfig.providerId,
       modelId: currentAgentConfig.modelId,
+      mode,
       keyStatus: 'anonymous'
     };
   }
@@ -181,63 +196,46 @@ export async function setActiveAgentConfig(
   // 3. Keyed provider: resolve the credential from the merged settings layer.
   const ownKey = await resolveOwnKey(requestedProvider);
   if (ownKey) {
-    // A saved key re-arms the provider: clear sticky invalid_key health and
-    // the once-per-session actionable warning.
-    providerHealthStore.clear(requestedProvider);
-    routeEventPolicy.onKeySaved(requestedProvider);
+    // Key presence does not clear sticky invalid-key health. Only the
+    // authoritative successful save-probe or a sentinel recovery may do that.
     currentAgentConfig = {
       providerId: requestedProvider,
       modelId: normalizeModel(requestedProvider, requestedModel),
+      mode,
       updatedAt: Date.now()
     };
     return {
       providerId: requestedProvider,
       modelId: currentAgentConfig.modelId,
+      mode,
       keyStatus: 'own',
       maskedKey: maskKey(ownKey)
     };
   }
 
-  // 4. No key for the selection: gracefully degrade to Ty-Code Free instead
-  //    of letting the next chat request crash into CONFIG_MISSING.
-  try {
-    warmUpCommunityKey();
-  } catch {
-    // Warm-up failure is fine: the stream path re-resolves lazily.
-  }
-  const communityKey = await getCommunityKey().catch(() => null);
-  if (communityKey) {
-    currentAgentConfig = {
-      providerId: TY_CODE_FREE_PROVIDER,
-      modelId: TY_CODE_FREE_MODEL,
-      updatedAt: Date.now()
-    };
-    // Policy decides whether this downgrade may reach the renderer. Automatic
-    // syncs (hydration, store mirrors, window mounts) are SILENT or once per
-    // session; only an explicit user selection is ACTIONABLE (once per provider).
-    const notice = routeEventPolicy.resolveKeyMissingNotice({
-      providerId: requestedProvider,
-      apiKeyOptional: false, // this branch is only reached for key-requiring providers
-      origin,
-      landedOnWorkingFree: true
-    });
-    return {
-      providerId: TY_CODE_FREE_PROVIDER,
-      modelId: TY_CODE_FREE_MODEL,
-      keyStatus: 'community',
-      maskedKey: maskKey(communityKey),
-      // `degraded`/`reason` are ledger-grade facts the renderer must not toast on.
-      degraded: true,
-      reason: 'MISSING_KEY',
-      ...(notice ? { notice } : {})
-    };
-  }
-
-  // 5. Last resort: keep the previous working configuration untouched and
-  //    surface the missing key to the renderer as a UI error.
+  // Missing credentials never rewrite the requested lock. Strict mode will
+  // return a structured KEY_MISSING_ERROR from the gateway; resilient mode may
+  // only deviate after both health authorities mark this route unusable.
+  currentAgentConfig = {
+    providerId: requestedProvider,
+    modelId: normalizeModel(requestedProvider, requestedModel),
+    mode,
+    updatedAt: Date.now()
+  };
+  const notice = origin === 'explicit'
+    ? routeEventPolicy.resolveKeyMissingNotice({
+        providerId: requestedProvider,
+        apiKeyOptional: false,
+        origin,
+        landedOnWorkingFree: false
+      })
+    : undefined;
   return {
     providerId: requestedProvider,
-    modelId: requestedModel,
-    keyStatus: 'missing'
+    modelId: currentAgentConfig.modelId,
+    mode,
+    keyStatus: 'missing',
+    reason: 'MISSING_KEY',
+    ...(notice ? { notice } : {})
   };
 }

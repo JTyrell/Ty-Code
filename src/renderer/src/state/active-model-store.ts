@@ -21,16 +21,24 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { useEffect } from 'react';
 import type { VerifiedModelConfig } from '../../../preload/types';
+import type { ModelLockMode } from '../../../shared/types/settings';
+
+/** Lock mode adopted when main has not yet reported one (schema default). */
+export const DEFAULT_LOCK_MODE: ModelLockMode = 'resilient';
 
 export interface ActiveModelState {
   providerId: string;
   modelId: string;
   modelConfig: VerifiedModelConfig | null;
   isAutoMode: boolean; // For "Auto (FCC decides)"
+  /** Requested lock mode: 'strict' never deviates, 'resilient' may on health. */
+  mode: ModelLockMode;
 
   // Actions
   setActiveModel: (providerId: string, modelId: string, modelConfig?: VerifiedModelConfig | null) => Promise<void>;
   setAutoMode: (enabled: boolean) => Promise<void>;
+  /** Change only the lock mode (strict/resilient) and re-sync to main. */
+  setLockMode: (mode: ModelLockMode) => Promise<void>;
   syncToMainProcess: () => Promise<void>;
 }
 
@@ -38,6 +46,7 @@ interface PushTriple {
   providerId: string;
   modelId: string;
   isAutoMode: boolean;
+  mode: ModelLockMode;
 }
 
 /** Last triple pushed to main (primitive comparison only). */
@@ -48,7 +57,12 @@ let bootPullSettled = false;
 let userPushedSinceBoot = false;
 
 function samePush(a: PushTriple, b: PushTriple): boolean {
-  return a.providerId === b.providerId && a.modelId === b.modelId && a.isAutoMode === b.isAutoMode;
+  return (
+    a.providerId === b.providerId &&
+    a.modelId === b.modelId &&
+    a.isAutoMode === b.isAutoMode &&
+    a.mode === b.mode
+  );
 }
 
 export const useActiveModelStore = create<ActiveModelState>()(
@@ -58,6 +72,7 @@ export const useActiveModelStore = create<ActiveModelState>()(
       modelId: 'google/gemma-4-31b-it:free',
       modelConfig: null,
       isAutoMode: true,
+      mode: DEFAULT_LOCK_MODE,
 
       setActiveModel: async (providerId: string, modelId: string, modelConfig: VerifiedModelConfig | null = null) => {
         set({
@@ -77,9 +92,15 @@ export const useActiveModelStore = create<ActiveModelState>()(
         await get().syncToMainProcess();
       },
 
+      setLockMode: async (mode: ModelLockMode) => {
+        if (get().mode === mode) return;
+        set({ mode });
+        await get().syncToMainProcess();
+      },
+
       syncToMainProcess: async () => {
-        const { providerId, modelId, isAutoMode } = get();
-        const next: PushTriple = { providerId, modelId, isAutoMode };
+        const { providerId, modelId, isAutoMode, mode } = get();
+        const next: PushTriple = { providerId, modelId, isAutoMode, mode };
         // Compare-before-push: identical re-pushes are silent no-ops.
         if (lastPushed && samePush(lastPushed, next)) return;
         lastPushed = next;
@@ -100,7 +121,8 @@ export const useActiveModelStore = create<ActiveModelState>()(
       partialize: (state) => ({
         providerId: state.providerId,
         modelId: state.modelId,
-        isAutoMode: state.isAutoMode
+        isAutoMode: state.isAutoMode,
+        mode: state.mode
       })
     }
   )
@@ -116,10 +138,11 @@ export function useActiveModelSync(): void {
   const providerId = useActiveModelStore((s) => s.providerId);
   const modelId = useActiveModelStore((s) => s.modelId);
   const isAutoMode = useActiveModelStore((s) => s.isAutoMode);
+  const mode = useActiveModelStore((s) => s.mode);
 
   useEffect(() => {
     if (!bootPullSettled) return;
-    const next: PushTriple = { providerId, modelId, isAutoMode };
+    const next: PushTriple = { providerId, modelId, isAutoMode, mode };
     if (lastPushed && samePush(lastPushed, next)) return;
     lastPushed = next;
     userPushedSinceBoot = true;
@@ -129,7 +152,7 @@ export function useActiveModelSync(): void {
         console.warn('[ACTIVE-MODEL-SYNC] Error synchronizing active model:', err);
       });
     }
-  }, [providerId, modelId, isAutoMode]);
+  }, [providerId, modelId, isAutoMode, mode]);
 }
 
 // Module-level listener to guarantee sync even on store rehydration or non-React changes.
@@ -140,12 +163,14 @@ if (typeof window !== 'undefined') {
     if (
       state.providerId !== prevState.providerId ||
       state.modelId !== prevState.modelId ||
-      state.isAutoMode !== prevState.isAutoMode
+      state.isAutoMode !== prevState.isAutoMode ||
+      state.mode !== prevState.mode
     ) {
       const next: PushTriple = {
         providerId: state.providerId,
         modelId: state.modelId,
-        isAutoMode: state.isAutoMode
+        isAutoMode: state.isAutoMode,
+        mode: state.mode
       };
       if (lastPushed && samePush(lastPushed, next)) return;
       lastPushed = next;
@@ -174,16 +199,18 @@ if (typeof window !== 'undefined') {
           const providerId = res.data.activeProvider || 'ty-code-free';
           const modelId = res.data.activeModel || 'google/gemma-4-31b-it:free';
           const isAutoMode = providerId === 'auto' || !providerId;
-          const adopted: PushTriple = { providerId, modelId, isAutoMode };
+          const mode: ModelLockMode = res.data.modelLock?.mode === 'strict' ? 'strict' : DEFAULT_LOCK_MODE;
+          const adopted: PushTriple = { providerId, modelId, isAutoMode, mode };
           // Mark as already-pushed BEFORE touching state so the reactive
           // paths treat the adoption as settled (no echo to main).
           lastPushed = adopted;
           const current = useActiveModelStore.getState();
-          if (!samePush({ providerId: current.providerId, modelId: current.modelId, isAutoMode: current.isAutoMode }, adopted)) {
+          if (!samePush({ providerId: current.providerId, modelId: current.modelId, isAutoMode: current.isAutoMode, mode: current.mode }, adopted)) {
             useActiveModelStore.setState({
               providerId: adopted.providerId,
               modelId: adopted.modelId,
               isAutoMode: adopted.isAutoMode,
+              mode: adopted.mode,
               modelConfig: null
             });
           }
@@ -196,4 +223,66 @@ if (typeof window !== 'undefined') {
   } else {
     bootPullSettled = true;
   }
+}
+
+/**
+ * Cross-window lock adoption (Multi-window integration contract).
+ *
+ * Main is the single authority for the requested lock. Whenever it changes —
+ * from Settings in the main window, a popout, or an auto-return after a
+ * resilient deviation — every window adopts it here. The adoption marks the
+ * triple as ALREADY PUSHED before touching state, so the reactive paths stay
+ * silent: no echo back to main, no sync-loop storm.
+ *
+ * Only `modelLock` is adopted, never `activeRoute`: a temporary deviation is
+ * surfaced by the route badge, not by mutating the user's chosen lock.
+ */
+let disposeActiveRouteListener: (() => void) | null = null;
+
+function adoptRequestedLock(modelLock: { providerId?: string; modelId?: string; mode?: ModelLockMode } | null | undefined): void {
+  if (!modelLock || typeof modelLock !== 'object') return;
+  const providerId = modelLock.providerId || 'ty-code-free';
+  const modelId = modelLock.modelId || 'google/gemma-4-31b-it:free';
+  const isAutoMode = providerId === 'auto' || !providerId;
+  const mode: ModelLockMode = modelLock.mode === 'strict' ? 'strict' : DEFAULT_LOCK_MODE;
+  const adopted: PushTriple = { providerId, modelId, isAutoMode, mode };
+
+  const current = useActiveModelStore.getState();
+  const live: PushTriple = {
+    providerId: current.providerId,
+    modelId: current.modelId,
+    isAutoMode: current.isAutoMode,
+    mode: current.mode
+  };
+
+  // Suppress BEFORE setState so this adoption can never round-trip to main.
+  lastPushed = adopted;
+  bootPullSettled = true;
+  if (samePush(live, adopted)) return;
+  useActiveModelStore.setState({
+    providerId: adopted.providerId,
+    modelId: adopted.modelId,
+    isAutoMode: adopted.isAutoMode,
+    mode: adopted.mode,
+    modelConfig: null
+  });
+}
+
+if (typeof window !== 'undefined' && window.electronAPI?.onActiveRouteChanged) {
+  disposeActiveRouteListener = window.electronAPI.onActiveRouteChanged((snapshot) => {
+    adoptRequestedLock(snapshot?.modelLock);
+  }) || null;
+}
+
+/** Tears down the route listener. Used by tests to avoid leaked IPC handlers. */
+export function disposeActiveRouteAdoption(): void {
+  disposeActiveRouteListener?.();
+  disposeActiveRouteListener = null;
+}
+
+/** Test seam: apply an authoritative lock exactly as a route event would. */
+export function adoptRequestedLockFromMain(
+  modelLock: { providerId?: string; modelId?: string; mode?: ModelLockMode } | null | undefined
+): void {
+  adoptRequestedLock(modelLock);
 }

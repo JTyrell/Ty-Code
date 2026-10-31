@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const SETTINGS_SCHEMA_VERSION = 4;
+export const SETTINGS_SCHEMA_VERSION = 5;
 
 export type SettingsErrorCode = 'VALIDATION' | 'IO' | 'PARSE' | 'LOCK';
 
@@ -97,9 +97,21 @@ export function migrateSettingsDocument(raw: Record<string, unknown>): Record<st
     if (typeof migrated.defaultTerminalProfileId !== 'string') {
       migrated.defaultTerminalProfileId = '';
     }
-    migrated.schemaVersion = SETTINGS_SCHEMA_VERSION;
   }
 
+  if (version < 5) {
+    const providerId = typeof migrated.activeProvider === 'string' && migrated.activeProvider.trim()
+      ? migrated.activeProvider.trim()
+      : 'ty-code-free';
+    const modelId = typeof migrated.activeModel === 'string'
+      ? migrated.activeModel.trim()
+      : 'google/gemma-4-31b-it:free';
+    if (!migrated.modelLock || typeof migrated.modelLock !== 'object') {
+      migrated.modelLock = { providerId, modelId, mode: 'resilient' };
+    }
+  }
+
+  migrated.schemaVersion = SETTINGS_SCHEMA_VERSION;
   return migrated;
 }
 
@@ -148,9 +160,20 @@ export const TelemetrySettingsSchema = z.object({
   enabled: z.boolean()
 }).passthrough();
 
+export const ModelLockSchema = z.object({
+  providerId: z.string().min(1).max(128),
+  modelId: z.string().max(512),
+  mode: z.enum(['strict', 'resilient'])
+});
+
 // Validated categories made forward-compatible with .passthrough()
 export const ProviderSettingsSchema = z.object({
   activeProvider: z.string().min(1).max(128).default('auto'),
+  modelLock: ModelLockSchema.default({
+    providerId: 'ty-code-free',
+    modelId: 'google/gemma-4-31b-it:free',
+    mode: 'resilient'
+  }),
   apiKeys: z.record(z.string().min(1).max(128), z.string().max(16_384).optional()).default({}),
   customEndpoints: z.record(z.string().min(1).max(128), z.string().max(4096).optional()).default({}),
   offlineDemoMode: z.boolean().optional(),
@@ -251,6 +274,8 @@ export const WorkspaceSettingsSchema = SettingsPatchSchema
   })
   .passthrough();
 
+export type ModelLockMode = z.infer<typeof ModelLockSchema>['mode'];
+export type ModelLock = z.infer<typeof ModelLockSchema>;
 export type SettingsData = z.infer<typeof SettingsSchema>;
 export type SettingsPatch = z.infer<typeof SettingsPatchSchema>;
 export type WorkspaceSettingsPatch = z.infer<typeof WorkspaceSettingsSchema>;

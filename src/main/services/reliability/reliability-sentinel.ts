@@ -100,6 +100,7 @@ class ReliabilitySentinel {
   private keyTimer: ReturnType<typeof setInterval> | null = null;
   private keyRevalidateIdx = 0;
   private queuedFaults = new Map<string, { fault: 'timeout' | 'refused' | 'rate_429'; until: number }>();
+  private routeListeners = new Set<(providerId: string, modelId: string, status: RouteStatus) => void>();
 
   // ---------- Lifecycle ----------
 
@@ -350,6 +351,9 @@ class ReliabilitySentinel {
       }
     }
 
+    if (previous !== stat.status) {
+      for (const listener of this.routeListeners) listener(stat.providerId, stat.modelId, stat.status);
+    }
     this.version += 1;
     this.broadcastSnapshot();
   }
@@ -393,6 +397,53 @@ class ReliabilitySentinel {
     if (now - this.lastBroadcastAt < 500) return; // coalesce micro-storms
     this.lastBroadcastAt = now;
     broadcastReliability('reliability:health-snapshot', this.getHealthSnapshot());
+  }
+
+  public getRouteStatus(providerId: string, modelId: string): RouteStatus {
+    return this.stats.get(routeKey(providerId, modelId))?.status ?? 'unknown';
+  }
+
+  public isRouteUnusable(providerId: string, modelId: string): boolean {
+    const status = this.getRouteStatus(providerId, modelId);
+    return status === 'degraded' || status === 'cooling';
+  }
+
+  public isRouteConfirmedHealthy(providerId: string, modelId: string): boolean {
+    return this.getRouteStatus(providerId, modelId) === 'ok';
+  }
+
+  public onRouteStatusChanged(listener: (providerId: string, modelId: string, status: RouteStatus) => void): () => void {
+    this.routeListeners.add(listener);
+    return () => this.routeListeners.delete(listener);
+  }
+
+  public recordRequestResult(
+    providerId: string,
+    modelId: string,
+    ok: boolean,
+    httpStatus?: number,
+    error?: string
+  ): void {
+    const key = routeKey(providerId, modelId);
+    let stat = this.stats.get(key);
+    if (!stat) {
+      stat = {
+        providerId,
+        modelId,
+        url: '',
+        results: [],
+        status: 'unknown',
+        failuresInARow: 0,
+        cooldownUntil: 0,
+        lastError: null,
+        lastProbeTs: Date.now(),
+        ttftHistory: []
+      };
+      this.stats.set(key, stat);
+    }
+    stat.lastProbeTs = Date.now();
+    this.recordOutcome(stat, ok, undefined, httpStatus, error);
+    if (ok) providerHealthStore.clear(providerId);
   }
 
   /** True when every route of this provider is cooling/degraded. */

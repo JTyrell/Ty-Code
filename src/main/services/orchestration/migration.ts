@@ -9,6 +9,11 @@ import type { ProviderSettings, ProviderType, RoutingStrategyType } from '../../
 export const DEFAULT_OMNIROUTE_SETTINGS: ProviderSettings = {
   activeProvider: 'auto',
   activeModel: '',
+  modelLock: {
+    providerId: 'auto',
+    modelId: '',
+    mode: 'resilient'
+  },
   apiKeys: {},
   apiKeysConfigured: {},
   customEndpoints: {

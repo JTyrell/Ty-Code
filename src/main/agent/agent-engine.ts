@@ -5,7 +5,7 @@ export { ProviderGateway };
 import { buildSystemPrompt, AGENT_TOOLS_DEFINITIONS, TASK_SCOPING_PROTOCOL, getEccRulesPrompt, getSeoPromptGuidance, isLocalModel, type EnvironmentContext } from './system-prompt';
 import { ToolExecutor, type ToolExecutionResponse } from './tool-executor';
 import { parseMarkdownSections, persistDocument } from '../services/document-parser';
-import { zDocumentProposed } from '../../shared/types/agent-events';
+import { ChatErrorCardSchema, zDocumentProposed } from '../../shared/types/agent-events';
 import { getAvailableTools, isToolAvailable, isDocsOnlyWrite } from './tool-registry';
 import { workspaceManager } from '../services/workspace-manager';
 import { assembleSystemPrompt, classify, buildProjectProfile, saveProjectProfileCache, runConventionsExtractor, pickProviderModel, loadPreferences, invalidateAssemblyCache, type ProjectProfile, type ModeId, type ToolScope, type TaskClass, type RolePreferences } from './prompt-assembler';
@@ -19,8 +19,8 @@ import { mcpManager } from '../services/mcp-manager';
 import { diagnosticsHealthMonitor } from '../services/diagnostics/health-monitor';
 import { optimizationPipeline } from '../providers/optimization-pipeline';
 import { failoverResumeManager, type TurnSnapshot } from './failover-resume';
-import { agentStateManager, AgentMode, type TodoItem } from './agent-state-manager';
-import { compactMessages, estimateContextTokens, estimateTokenCount, generateSummary, shouldCompact, buildFallbackSummary, MODEL_CONTEXT_LIMIT } from './context-compactor';
+import { agentStateManager, AgentMode, discoverPackageScripts, type TodoItem } from './agent-state-manager';
+import { compactMessages, estimateContextTokens, estimateTokenCount, generateSummary, shouldCompact, buildFallbackSummary, upsertPinnedTaskContext, MODEL_CONTEXT_LIMIT } from './context-compactor';
 import { fileMemoryManager, extractKeySymbols, extractDependencies, isFileMemoryEnabled } from './file-memory';
 import { sessionStore, buildSessionSnapshot, type AgentSessionState } from './session-store';
 import { toolApprovalManager, type ApprovalRule } from './tool-approval-manager';
@@ -475,7 +475,6 @@ export class AgentEngine {
     const stateManager = agentStateManager;
     stateManager.resetRun();
     stateManager.currentMode = AgentMode.Plan;
-    stateManager.maxIterations = 70;
 
     let restoredSession: AgentSessionState | null = null;
     if (params.resumeSessionId) {
@@ -485,9 +484,17 @@ export class AgentEngine {
         restoredSession = null;
       }
     }
+    const packageScripts = await discoverPackageScripts(workspacePath);
+    stateManager.initializeCompletionContract({
+      originalObjective: prompt,
+      taskClass: classifiedTaskClass,
+      informational: isSimpleQuery,
+      packageScripts
+    });
     if (restoredSession) {
       stateManager.currentMode = restoredSession.mode === 'execute' ? AgentMode.Execute : AgentMode.Plan;
       stateManager.restoreTodos(restoredSession.todos || []);
+      stateManager.restoreCompletionContract(restoredSession.completionContract);
     }
 
     const sessionId = params.taskId || `session_${Date.now().toString(36)}`;
@@ -497,7 +504,8 @@ export class AgentEngine {
         currentMode: stateManager.currentMode,
         todos: stateManager.todos,
         iterationCount: stateManager.iterationCount,
-        toolCallHistory: stateManager.toolCallHistory
+        toolCallHistory: stateManager.toolCallHistory,
+        completionContract: stateManager.getCompletionContractSnapshot()
       }, sessionStartedAt, completed));
     };
     persistSessionState();
@@ -694,6 +702,16 @@ export class AgentEngine {
     const logAgentStop = (stop: string, reason?: string): void => {
       console.log(`[AGENT] iter=${stateManager.iterationCount} kind=${iterationKind} stop=${stop || 'none'}${reason ? ` reason=${reason}` : ''}`);
     };
+    const emitCompletionError = (unmetEvidence: string[], reason: string): void => {
+      const message = `Implementation completion contract was not satisfied: ${unmetEvidence.join('; ') || reason}.`;
+      const errorCard = ChatErrorCardSchema.parse({
+        taxonomyCode: 'TASK_EVIDENCE_INCOMPLETE',
+        message,
+        remedy: 'Resume the task, complete every todo, run a discovered verification command after the latest edit, and provide an evidence-based final summary.'
+      });
+      const chunk = { type: 'error' as const, error: message, errorCard };
+      onChunk(chunk);
+    };
 
     // Prompt 1 Step 4: approval parking must never stall forever. Race the
     // Safe Edit Review Gate against a hard timeout; a timed-out gate is
@@ -721,25 +739,16 @@ export class AgentEngine {
 
     // Helper: Build messages with todo context injected
     const buildMessagesWithTodos = (msgs: ChatCompletionMessage[], todos: TodoItem[]): ChatCompletionMessage[] => {
-      if (todos.length === 0) return msgs;
-      
-      const todoContext = `\n\n## Active Tasks\n${todos.map(t => 
-        `- [${t.status.toUpperCase()}] ${t.task} (Priority: ${t.priority})${t.context ? ` — ${t.context}` : ''}`
-      ).join('\n')}\n`;
-      
-      // Find the last system message and append todo context
-      const newMessages = [...msgs];
-      let lastSystemIdx = -1;
-      for (let i = newMessages.length - 1; i >= 0; i--) {
-        if (newMessages[i].role === 'system') { lastSystemIdx = i; break; }
+      const pinned = upsertPinnedTaskContext(msgs, stateManager.getPinnedTaskContext());
+      if (todos.length === 0) return pinned;
+      const todoContext = `\n\n## Active Tasks\n${todos.map((todo) =>
+        `- [${todo.status.toUpperCase()}] ${todo.task} (Priority: ${todo.priority})${todo.context ? ` — ${todo.context}` : ''}`
+      ).join('\n')}\n\nOnly report completion after every task is completed and fresh verification evidence is recorded.`;
+      const systemIndex = pinned.findIndex((message) => message.role === 'system');
+      if (systemIndex >= 0) {
+        pinned[systemIndex] = { ...pinned[systemIndex], content: pinned[systemIndex].content + todoContext };
       }
-      if (lastSystemIdx >= 0) {
-        newMessages[lastSystemIdx] = {
-          ...newMessages[lastSystemIdx],
-          content: newMessages[lastSystemIdx].content + todoContext + '\n\nUpdate task status as you complete them. If all tasks are done, provide a final summary.'
-        };
-      }
-      return newMessages;
+      return pinned;
     };
 
     // Helper: Parse todos from LLM response (plan mode)
@@ -767,15 +776,21 @@ export class AgentEngine {
     };
 
     // Helper: Find related todo for a tool call
-    const getRelatedTodo = (toolCall: ToolCall, todos: TodoItem[]): TodoItem | null => {
-      const lowerTask = toolCall.name.toLowerCase();
-      return todos.find(t => 
-        t.status === 'pending' && (
-          t.task.toLowerCase().includes(lowerTask) ||
-          (toolCall.arguments.filePath && t.task.toLowerCase().includes(String(toolCall.arguments.filePath).toLowerCase())) ||
-          (toolCall.arguments.path && t.task.toLowerCase().includes(String(toolCall.arguments.path).toLowerCase()))
-        )
-      ) || todos.find(t => t.status === 'pending') || null;
+    const getRelatedTodo = (toolCall: ToolCall, todos: TodoItem[], verificationCommand = false): TodoItem | null => {
+      const pending = todos.filter((todo) => todo.status === 'pending' || todo.status === 'in_progress');
+      const referenced = String(toolCall.arguments.filePath || toolCall.arguments.path || '').toLowerCase().replace(/\\/g, '/');
+      const pathMatch = referenced
+        ? pending.find((todo) => todo.task.toLowerCase().replace(/\\/g, '/').includes(referenced))
+        : undefined;
+      if (pathMatch) return pathMatch;
+      const semanticPattern = verificationCommand
+        ? /\b(test|verify|verification|check|typecheck|lint|build|audit)\b/i
+        : ['write_file', 'replace_file_content', 'edit_file', 'generate_presentation'].includes(toolCall.name)
+          ? /\b(implement|add|create|change|update|modify|edit|fix|refactor|write|generate)\b/i
+          : ['read_file', 'list_dir', 'list_directory', 'grep_search'].includes(toolCall.name)
+            ? /\b(discover|inspect|read|review|analy[sz]e|search|locate|find)\b/i
+            : /$a/;
+      return pending.find((todo) => semanticPattern.test(todo.task)) || null;
     };
 
     // Helper: Populate todos from the approved Execution Plan (Phased) section of the report
@@ -885,6 +900,9 @@ export class AgentEngine {
           finalRouteProvider = activeProvider;
           console.log(`[AGENT] Provider: ${activeProvider}, Model: ${activeModel}`);
         }
+
+        // Refresh the pinned objective/evidence block before any compaction pass.
+        messages = upsertPinnedTaskContext(messages, stateManager.getPinnedTaskContext());
 
         // 1. Compact context when the estimated token budget crosses 85% capacity of the model limit
         const activeModelLimit = await resolveModelContextLimit(activeProvider, activeModel);
@@ -1032,44 +1050,10 @@ export class AgentEngine {
           continue;
         }
 
-        // 4. No tool calls: exact stop-condition gate (Prompt 1 Step 3).
-        // Break ONLY when: no tool_calls AND no pending todos AND — for a
-        // chat Plan-mode run — the plan document was actually submitted.
+        // 4. No tool calls: informational turns remain exempt; implementation
+        // turns must satisfy the complete evidence contract before `done`.
         if (!hasToolCalls) {
-          const pendingTodos = stateManager.hasPendingTodos();
           const planGateBlocked = planModeRequested && !planSubmitted;
-
-          if (!pendingTodos && !planGateBlocked) {
-            if (stateManager.allTodosComplete()) {
-              if (params.traceId) {
-                try {
-                  const { connectivityTracer } = require('../services/diagnostics/connectivity-tracer');
-                  connectivityTracer.recordHop(params.traceId, 'H9', {
-                    status: 'PASS',
-                    metadata: {
-                      toolExecutorReady: true,
-                      toolCallsCount: 0,
-                      note: 'All tasks completed; task executor verified intact'
-                    }
-                  });
-                } catch {
-                  // ignore
-                }
-              }
-              logAgentStop('todos_complete');
-              onChunk({ type: 'done' });
-              persistSessionState(true);
-              return;
-            }
-            logAgentStop('final_text');
-            onChunk({ type: 'done' });
-            persistSessionState(true);
-            return;
-          }
-
-          // Prompt 1 Step 3: Plan-mode recovery. Nudge the model toward
-          // submit_plan (max 2), then surface the failure — finishing without
-          // a plan document (the old silent stop) is forbidden.
           if (planGateBlocked) {
             if (planNudgesUsed < 2) {
               planNudgesUsed++;
@@ -1085,7 +1069,6 @@ export class AgentEngine {
             return;
           }
 
-          // 5. Plan mode: route report text into the approval tool instead of auto-todos
           if (stateManager.currentMode === AgentMode.Plan && stateManager.todos.length === 0) {
             const looksLikeScopingReport = /Complexity & Resource Gauge|Execution Plan\s*\(\s*Phased\s*\)|Task Scoping Report/i.test(streamText || '');
             if (looksLikeScopingReport) {
@@ -1104,21 +1087,28 @@ export class AgentEngine {
             }
           }
 
-          // Final response with no tool calls but incomplete todos — nudge
-          if (stateManager.hasPendingTodos()) {
-            logAgentStop('none', stateManager.currentMode === AgentMode.Plan ? 'plan_lock_pending_todos_nudge' : 'pending_todos_nudge');
-            const nudgeContent = stateManager.currentMode === AgentMode.Plan
-              ? 'You have pending tasks, but Plan mode locks mutating tools. Call request_approval with your Ty-Code Task Scoping Report to obtain approval and switch to Execute mode.'
-              : 'You have pending tasks. Please continue working on them by calling the appropriate tools.';
-            messages.push({ role: 'system', content: nudgeContent });
+          const assessment = stateManager.assessCompletion(streamText || '');
+          if (assessment.complete) {
+            logAgentStop(isSimpleQuery ? 'simple_query' : 'completion_contract_satisfied');
+            onChunk({ type: 'done' });
+            persistSessionState(true);
+            return;
+          }
+          if (stateManager.consumeContinuationInjection()) {
+            const attempt = stateManager.getContinuationInjectionCount();
+            const unmetList = assessment.unmetEvidence.map((item) => `- ${item}`).join('\n');
+            messages.push({
+              role: 'system',
+              content: `Completion evidence is incomplete (continuation ${attempt}/3). Do not claim success. Continue using tools until every item is satisfied:\n${unmetList}`
+            });
+            onChunk({ type: 'status', content: `Completion evidence incomplete; continuing (${attempt}/3)…` });
             stateManager.iterationCount++;
+            persistSessionState(false);
             continue;
           }
-
-          // No todos, no tool calls — we're done
-          logAgentStop('final_text');
-          onChunk({ type: 'done' });
-          persistSessionState(true);
+          logAgentStop('completion_contract_exhausted');
+          emitCompletionError(assessment.unmetEvidence, 'continuation budget exhausted');
+          persistSessionState(false);
           return;
         }
 
@@ -1138,6 +1128,7 @@ export class AgentEngine {
         if (toolCallsToExecute.length > 0) {
           await injectLazyContextIfNeeded();
         }
+        let verificationFailureFeedback = '';
         for (const toolCall of toolCallsToExecute) {
           // Yield to the event loop between tool executions to prevent event loop starvation
           await new Promise<void>((resolve) => setImmediate(resolve));
@@ -1250,6 +1241,7 @@ export class AgentEngine {
               let output = submittedOutput;
               if (decision.approved) {
                 stateManager.currentMode = AgentMode.Execute;
+                stateManager.recordExplicitApproval(true);
                 if (stateManager.todos.length === 0) populateTodosFromPlan(rawMarkdown);
                 onChunk({ type: 'agent_state', state: { todos: stateManager.todos, mode: stateManager.currentMode, iteration: stateManager.iterationCount, maxIterations: stateManager.maxIterations } });
                 onChunk({ type: 'status', content: `Plan approved. Executing ${stateManager.todos.length} planned tasks.` });
@@ -1305,6 +1297,7 @@ export class AgentEngine {
             logAgentStop('none', decision.approved ? 'scoping_approved' : 'scoping_revision_requested');
             stateManager.recordToolCall(toolCall.name, toolCall.arguments, decision.approved ? 'APPROVED' : `REVISION: ${decision.feedback || 'no feedback'}`);
             if (decision.approved) {
+              stateManager.recordExplicitApproval(true);
               if (stateManager.currentMode === AgentMode.Plan) {
                 stateManager.currentMode = AgentMode.Execute;
                 if (stateManager.todos.length === 0) populateTodosFromPlan(report);
@@ -1564,10 +1557,17 @@ export class AgentEngine {
             void this.refreshFileMemory(referencedPath, memoryContent, activeProvider, activeModel);
           }
 
-          // Auto-update todos based on tool results
-          const relatedTodo = getRelatedTodo(toolCall, stateManager.todos);
-          if (relatedTodo && (toolCall.name === 'write_file' || toolCall.name === 'replace_file_content' || toolCall.name === 'read_file' || toolCall.name === 'run_command')) {
-            stateManager.updateTodoStatus(relatedTodo.id, 'completed');
+          // Completion evidence: successful edits invalidate older verification;
+          // only semantically matched successful tools may complete a todo.
+          if (!result.isError) stateManager.recordSuccessfulEdit(toolCall.name, approvedExecutionArgs);
+          const verificationCommandText = String(approvedExecutionArgs.command || toolCall.arguments.command || '');
+          const verificationCommand = toolCall.name === 'run_command'
+            && stateManager.recordVerification(verificationCommandText, result.output, !result.isError);
+          if (verificationCommand && result.isError) {
+            verificationFailureFeedback = `The verification command failed. Correct the implementation and run verification again.\n${result.output.slice(0, 1500)}`;
+          }
+          const relatedTodo = getRelatedTodo(toolCall, stateManager.todos, verificationCommand);
+          if (relatedTodo && stateManager.updateTodoFromTool(relatedTodo.id, toolCall.name, !result.isError, verificationCommand)) {
             onChunk({ type: 'agent_state', state: { todos: stateManager.todos, mode: stateManager.currentMode, iteration: stateManager.iterationCount, maxIterations: stateManager.maxIterations } });
           }
 
@@ -1608,6 +1608,10 @@ export class AgentEngine {
               cachedInput: 0
             }
           });
+        }
+
+        if (verificationFailureFeedback) {
+          messages.push({ role: 'system', content: verificationFailureFeedback });
         }
 
         // Iteration complete
@@ -1734,9 +1738,12 @@ export class AgentEngine {
       }
     }
       logAgentStop('max_iterations', 'tool_execution_limit_reached');
-      onChunk({ type: 'status', content: `Reached the tool-execution limit (${stateManager.maxIterations} iterations).` });
-      onChunk({ type: 'done' });
-      persistSessionState(true);
+      const assessment = stateManager.assessCompletion('');
+      emitCompletionError(
+        [...assessment.unmetEvidence, `iteration limit reached (${stateManager.maxIterations})`],
+        'tool execution limit reached'
+      );
+      persistSessionState(false);
     } catch (fatalErr: unknown) {
       // Prompt 1 Step 1: the outer loop has no silent stops either — any
       // exception escaping the per-iteration guard still produces a visible

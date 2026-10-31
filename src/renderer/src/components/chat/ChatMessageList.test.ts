@@ -47,6 +47,47 @@ describe('Smart Sticky-Scroll Auto-Follow Logic', () => {
     expect(isDetached).toBe(true);
   });
 
+  it('does not detach for streaming or programmatic scroll changes without user intent', () => {
+    let pinnedToBottom = true;
+    let detached = false;
+
+    const reconcileScroll = (distanceFromBottom: number, hasUserIntent: boolean) => {
+      if (distanceFromBottom < 64) {
+        pinnedToBottom = true;
+        detached = false;
+      } else if (hasUserIntent) {
+        pinnedToBottom = false;
+        detached = true;
+      }
+    };
+
+    reconcileScroll(180, false);
+    expect(pinnedToBottom).toBe(true);
+    expect(detached).toBe(false);
+
+    reconcileScroll(180, true);
+    expect(pinnedToBottom).toBe(false);
+    expect(detached).toBe(true);
+  });
+
+  it('keeps immediate pinned intent while streaming through a smooth physical scroll', () => {
+    let pinnedToBottom = false;
+    let detached = true;
+    mockScrollContainer.scrollTop = 400;
+
+    pinnedToBottom = true;
+    const reconcileProgrammaticScroll = () => {
+      const distance = mockScrollContainer.scrollHeight - mockScrollContainer.scrollTop - mockScrollContainer.clientHeight;
+      if (distance < 64) detached = false;
+    };
+    reconcileProgrammaticScroll();
+
+    mockScrollContainer.scrollHeight = 1200;
+    if (pinnedToBottom) mockScrollContainer.scrollTop = mockScrollContainer.scrollHeight;
+    expect(mockScrollContainer.scrollTop).toBe(1200);
+    expect(detached).toBe(true);
+  });
+
   it('flips detached state ONLY when boolean changes value, preventing per-pixel re-renders', () => {
     let stateUpdates = 0;
     let detachedState = false;

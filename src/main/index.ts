@@ -35,10 +35,24 @@ import {
 } from './ipc/lsp-handlers';
 import { getCredentialStorageStatusResponse, getSettings, getSettingsLayer, getSecurityPolicy, saveSecurityPolicy, saveSettings, saveSettingsLayer, readOnboardingState, writeOnboardingState, mergeStoredApiKeys, classifySettingsError } from './ipc/settings-handlers';
 import { setActiveAgentConfig, getActiveAgentConfig, seedActiveConfig } from './agent/agent-config';
-import { activePairChanged, hasSyncLoopStormFired } from './providers/active-model-lock';
+import {
+  getActiveRouteSnapshot,
+  getModelLock,
+  getModelRouteEvents,
+  hasSyncLoopStormFired,
+  onActiveRouteChanged,
+  restoreRequestedRoute,
+  seedModelLock
+} from './providers/active-model-lock';
 import { providerHealthStore } from './providers/provider-health-store';
 import { routeEventPolicy } from './providers/route-event-policy';
 import { settingsManager } from './services/settings-manager';
+import {
+  getClipboardAuditTrail,
+  readClipboardText,
+  registerClipboardBackend,
+  writeClipboardText
+} from './services/clipboard-service';
 import { startAgentTask, stopAgentTask, respondAgentApproval, applyDiff, handleUserApproveDiff } from './ipc/agent-handlers';
 import { chatLatencyTracker } from './providers/provider-gateway';
 import {
@@ -175,13 +189,15 @@ const AgentRespondApprovalPayloadSchema = z.object({
 const ActiveConfigSyncPayloadSchema = z.object({
   providerId: z.string().max(128).optional(),
   modelId: z.string().max(512).optional(),
+  mode: z.enum(['strict', 'resilient']).default('resilient'),
   origin: z.enum(['explicit', 'auto']).optional()
 });
 
 const ActiveModelConfigPayloadSchema = z.object({
   providerId: z.string().max(128),
   modelId: z.string().max(512),
-  isAutoMode: z.boolean()
+  isAutoMode: z.boolean(),
+  mode: z.enum(['strict', 'resilient']).default('resilient')
 });
 
 const UserApproveDiffPayloadSchema = z.union([
@@ -276,6 +292,12 @@ import { getWorkspaceSessionManager } from './services/workspace-session-manager
 import { registerWorkspaceSessionHandlers } from './ipc/workspace-session-handlers';
 import { registerCanvasPreviewHandlers } from './ipc/canvas-preview-handlers';
 import { registerPromptAssemblerHandlers } from './ipc/preferences-handlers';
+import { registerCommandHandlers } from './ipc/command-handlers';
+import { createElectronMainCommandAdapters } from './services/command-main-adapters';
+import {
+  createMainCommandHandlers,
+  createMainContextProvider
+} from './services/command-main-handlers';
 
 /**
  * Single instance lock: Ensure only one Ty-Code process runs at a time.
@@ -662,6 +684,27 @@ function registerIpcHandlers(): void {
         scrollbarGutter: 12
       }
     };
+  });
+
+  // Prompt 5: the main-process half of the command registry. Renderers paint
+  // menus and bind keybindings straight from the shared registry (it is
+  // Electron-free), so only main-target activations cross this bridge — new
+  // window, close window, quit, devtools, update check, FCC sidecar status.
+  // Window and workspace state arrive as getters because both are module-scoped
+  // here and are rebound when the primary window is recreated; reading them
+  // lazily keeps the adapters from holding a stale reference.
+  //
+  // `assertCommandRegistryValid()` runs inside registerCommandHandlers, so a
+  // malformed table stops the app at boot rather than surfacing later as
+  // inexplicably missing menu rows.
+  const mainCommandAdapters = createElectronMainCommandAdapters({
+    getMainWindow: () => mainWindow,
+    getWorkspacePath: () => currentWorkspacePath
+  });
+  registerCommandHandlers({
+    isTrustedSender: isTrustedExtensionFrame,
+    contexts: createMainContextProvider(mainCommandAdapters),
+    handlers: createMainCommandHandlers(mainCommandAdapters)
   });
 
   registerWorkspaceSessionHandlers();
@@ -1189,13 +1232,37 @@ function registerIpcHandlers(): void {
     }
   });
   settingsManager.onDidChange(() => {
-    // Main-originated settings change (file watcher, any saveLayer): no single
-    // window caused it, so originWebContentsId is null and every renderer
-    // applies it (subject to its own equality guard).
-    if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
-      mainWindow.webContents.send('settings:changed', { originWebContentsId: null });
+    // Main-originated settings changes hydrate every main and popout window.
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
+        win.webContents.send('settings:changed', { originWebContentsId: null });
+      }
     }
   });
+
+  const broadcastActiveRoute = (snapshot: ReturnType<typeof getActiveRouteSnapshot>, event?: ReturnType<typeof getModelRouteEvents>[number]) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
+        win.webContents.send('providers:active-route-changed', { snapshot, event });
+      }
+    }
+  };
+  onActiveRouteChanged((snapshot, event) => broadcastActiveRoute(snapshot, event));
+  const maybeRestoreRequestedRoute = () => {
+    const snapshot = getActiveRouteSnapshot();
+    if (!snapshot.temporary) return;
+    const lock = snapshot.modelLock;
+    if (providerHealthStore.getState(lock.providerId) === null && reliabilitySentinel.isRouteConfirmedHealthy(lock.providerId, lock.modelId)) {
+      restoreRequestedRoute('Requested route recovered and is active again.');
+    }
+  };
+  providerHealthStore.onDidChange((snapshot) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed() && !win.webContents.isDestroyed()) win.webContents.send('providers:health-changed', snapshot);
+    }
+    maybeRestoreRequestedRoute();
+  });
+  reliabilitySentinel.onRouteStatusChanged(() => maybeRestoreRequestedRoute());
   ipcMain.handle('settings:layer:get', async (event, scope: unknown) => {
     if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
     if (scope !== 'global' && scope !== 'workspace') return { success: false, error: 'Settings scope must be global or workspace.' };
@@ -1249,9 +1316,8 @@ function registerIpcHandlers(): void {
     event.returnValue = event.sender.id;
   });
 
-  // Renderer selection changes funnel here: validate -> active agent config ->
-  // gateway override -> persist. Credentials never travel over this channel;
-  // only masked key summaries (e.g. "sk-ant-••••1234") are returned.
+  // Renderer selection changes funnel through one authoritative requested-lock
+  // operation. Temporary runtime routes never enter settings persistence.
   ipcMain.handle('providers:update-active-config', async (event, config: unknown) => {
     if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
     const parsedConfig = ActiveConfigSyncPayloadSchema.safeParse(config);
@@ -1261,33 +1327,30 @@ function registerIpcHandlers(): void {
     try {
       const providerId = parsedConfig.data.providerId || '';
       const modelId = parsedConfig.data.modelId || '';
+      const mode = parsedConfig.data.mode;
       const origin = parsedConfig.data.origin === 'explicit' ? 'explicit' : 'auto';
-      // Echo suppression (Prompt: Break the Model-Sync Echo Loop): capture the
-      // pair BEFORE resolution so an identical re-selection persists and
-      // broadcasts NOTHING. Primitive string comparison only.
-      const before = { ...getActiveAgentConfig() };
-      const summary = await setActiveAgentConfig(providerId, modelId, origin);
-      if (summary.keyStatus === 'missing') {
-        return {
-          success: false,
-          error: `No API key configured for "${summary.providerId}" and the Ty-Code Free tier is currently unreachable. The previous selection stays active.`
-        };
-      }
-      setGatewayActiveConfig(summary.providerId, summary.modelId);
-      // Persist through the regular settings layer so restarts keep this
-      // selection; the summary may carry a downgraded Ty-Code Free pair.
-      // Skipped entirely when the resolved pair equals the previous one —
-      // this is what starves the settings:changed echo loop at the source.
-      if (activePairChanged(before, summary)) {
-        try {
-          await saveSettings({ activeProvider: summary.providerId as any, activeModel: summary.modelId }, event.sender.id);
-        } catch { }
-        clearAvailabilityCache();
-      }
+      const summary = await setActiveAgentConfig(providerId, modelId, mode, origin);
+      ProviderGateway.setActiveModel({ providerId: summary.providerId, modelId: summary.modelId, isAutoMode: summary.providerId === 'auto', mode });
+      const modelLock = getModelLock();
+      await saveSettings({
+        modelLock,
+        activeProvider: modelLock.providerId as any,
+        activeModel: modelLock.modelId
+      }, event.sender.id);
+      clearAvailabilityCache();
       return { success: true, data: summary };
     } catch (error: unknown) {
       return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
+  });
+
+  ipcMain.handle('providers:get-active-route', async (event) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    return { success: true, data: { ...getActiveRouteSnapshot(), events: getModelRouteEvents() } };
+  });
+  ipcMain.handle('providers:get-health', async (event) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    return { success: true, data: providerHealthStore.getSnapshot() };
   });
 
   ipcMain.handle('agent:start-task', async (_event, params) => {
@@ -2566,13 +2629,43 @@ function registerIpcHandlers(): void {
     return { success: true };
   });
 
-  ipcMain.handle('clipboard:write', async (_event, text: string) => {
-    try {
-      clipboard.writeText(text);
-      return { success: true };
-    } catch (err: unknown) {
-      return { success: false, error: err instanceof Error ? err.message : String(err) };
+  // Prompt 3: Copy Pipeline. Main is the clipboard fallback for EVERY window
+  // (main, Canvas popout, Debugger popout) — the renderer tries the async
+  // clipboard API first and falls back here when it is unavailable or denied.
+  // The service verifies each write against a read-back, so a copy can never
+  // report success without landing.
+  registerClipboardBackend({
+    writeText: (text: string) => clipboard.writeText(text),
+    readText: () => clipboard.readText()
+  });
+
+  ipcMain.handle('clipboard:write', async (event, payload: unknown) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    // Back-compat: the original contract was a bare string argument.
+    const normalized = typeof payload === 'string' ? { text: payload } : payload;
+    const rawSource = (normalized as { source?: unknown })?.source;
+    const result = writeClipboardText(
+      (normalized as { text?: unknown })?.text,
+      typeof rawSource === 'string' ? rawSource : 'unspecified'
+    );
+    if (!result.ok) {
+      return { success: false, error: result.error || 'Clipboard write failed', data: result };
     }
+    return { success: true, data: result };
+  });
+
+  ipcMain.handle('clipboard:read', async (event, payload: unknown) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    const source = (payload as { source?: unknown })?.source;
+    const result = readClipboardText(typeof source === 'string' ? source : 'unspecified');
+    if (!result.ok) return { success: false, error: result.error || 'Clipboard read failed', data: result };
+    return { success: true, data: result };
+  });
+
+  // Metadata-only trail (never clipboard content) for the diagnostics panel.
+  ipcMain.handle('clipboard:audit', async (event) => {
+    if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+    return { success: true, data: getClipboardAuditTrail() };
   });
 
   ipcMain.handle('models:update-active-model-config', async (event, config: unknown) => {
@@ -2582,11 +2675,10 @@ function registerIpcHandlers(): void {
       return { success: false, error: `Invalid active model payload: ${parsedModelConfig.error.issues[0]?.message || 'validation failed'}` };
     }
     try {
-      // Gateway-level idempotency makes repeated identical pushes silent
-      // no-ops (no log, no preferences write); the [SYNC-LOOP] tripwire
-      // sheds call storms.
       ProviderGateway.setActiveModel(parsedModelConfig.data);
-      return { success: true, data: parsedModelConfig.data };
+      const modelLock = getModelLock();
+      await saveSettings({ modelLock, activeProvider: modelLock.providerId as any, activeModel: modelLock.modelId }, event.sender.id);
+      return { success: true, data: getActiveRouteSnapshot() };
     } catch (err: unknown) {
       return { success: false, error: err instanceof Error ? err.message : String(err) };
     }
@@ -2600,7 +2692,9 @@ function registerIpcHandlers(): void {
     }
     try {
       ProviderGateway.setActiveModel(parsedModelConfig.data);
-      return { success: true, data: parsedModelConfig.data };
+      const modelLock = getModelLock();
+      await saveSettings({ modelLock, activeProvider: modelLock.providerId as any, activeModel: modelLock.modelId }, event.sender.id);
+      return { success: true, data: getActiveRouteSnapshot() };
     } catch (err: unknown) {
       return { success: false, error: err instanceof Error ? err.message : String(err) };
     }
@@ -4911,16 +5005,15 @@ app.whenReady().then(async () => {
       // renderer re-push of the same pair is an idempotent no-op.
       try {
         const res = await getSettings();
-        if (res.success && res.data) {
-          seedActiveConfig(String(res.data.activeProvider || ''), String(res.data.activeModel || ''));
-          setGatewayActiveConfig(String(res.data.activeProvider || ''), String(res.data.activeModel || ''));
-        } else {
-          seedActiveConfig('ty-code-free', 'google/gemma-4-31b-it:free');
-          setGatewayActiveConfig('ty-code-free', 'google/gemma-4-31b-it:free');
-        }
+        const lock = res.success && res.data?.modelLock
+          ? res.data.modelLock
+          : { providerId: 'ty-code-free', modelId: 'google/gemma-4-31b-it:free', mode: 'resilient' as const };
+        seedActiveConfig(lock.providerId, lock.modelId, lock.mode);
+        seedModelLock(lock);
       } catch {
-        seedActiveConfig('ty-code-free', 'google/gemma-4-31b-it:free');
-        setGatewayActiveConfig('ty-code-free', 'google/gemma-4-31b-it:free');
+        const lock = { providerId: 'ty-code-free', modelId: 'google/gemma-4-31b-it:free', mode: 'resilient' as const };
+        seedActiveConfig(lock.providerId, lock.modelId, lock.mode);
+        seedModelLock(lock);
       }
     }
   );

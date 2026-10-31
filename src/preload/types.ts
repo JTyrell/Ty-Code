@@ -1,6 +1,6 @@
 import type { z } from 'zod';
 import type { ExtensionCapabilitySchema, ExtensionManifestSchema } from './extension-schemas';
-import type { SecurityPolicySettings, SettingsData, SettingsPatch, SettingsScope, TelemetrySettings, WorkspaceSettingsPatch } from '../shared/types/settings';
+import type { ModelLock, ModelLockMode, SecurityPolicySettings, SettingsData, SettingsPatch, SettingsScope, TelemetrySettings, WorkspaceSettingsPatch } from '../shared/types/settings';
 import type { WorkspaceProfile } from '../main/services/context-engine/types';
 import type { CorrectionCategory, CorrectionEntry, CorrectionSurface } from '../main/services/context-engine/correction-memory';
 import type { MCPServerConfig } from '../main/services/context-engine/mcp-router';
@@ -11,6 +11,43 @@ import type { FreeProvider, ModelTier, TierClassification, ProviderHealthStatus 
 import type { DetectedApiKey, CustomProviderConfig, StoredKeySummary, ByokExportBundle, ByokImportResult, KeyDetectionSource } from '../shared/types/byok';
 import type { OpenCodeDetectionResult, OpenCodeFreeTierSummary, OpenCodeImportResult, AgentFramework } from '../shared/types/opencode-sync';
 import type { DevChaosFault, DevChaosRequest, ReliabilityAdvisorPayload, ReliabilityHealthSnapshot } from '../shared/types/agent-events';
+import type {
+  CommandContext,
+  CommandContextKey,
+  CommandContextSnapshot,
+  CommandEntry,
+  CommandExecutionRecord,
+  CommandMenuId,
+  CommandOutcomeReason,
+  DynamicSubmenuItem,
+  DynamicSubmenuSource,
+  ExecuteCommandPayload,
+  ExecuteCommandResult,
+  MainCommandContext,
+  RegistryKeybinding,
+  ResolvedMenu,
+  ResolvedMenuRow
+} from '../shared/types/command-registry';
+
+// Prompt 5: the command registry. Re-exported so renderer surfaces type their
+// menu payloads from here rather than reaching into shared/types directly.
+export type {
+  CommandContext,
+  CommandContextKey,
+  CommandContextSnapshot,
+  CommandEntry,
+  CommandExecutionRecord,
+  CommandMenuId,
+  CommandOutcomeReason,
+  DynamicSubmenuItem,
+  DynamicSubmenuSource,
+  ExecuteCommandPayload,
+  ExecuteCommandResult,
+  MainCommandContext,
+  RegistryKeybinding,
+  ResolvedMenu,
+  ResolvedMenuRow
+};
 
 // ===== Autonomous Free-Tier Reliability =====
 /** Structural mirror of the bounded local reliability ledger record shape. */
@@ -304,9 +341,32 @@ export interface OpencodeInstallState {
  * credentials: the renderer only sees a display-safe preview string
  * (e.g. "sk-ant-••••1234") or nothing at all.
  */
+export interface ActiveRouteSnapshot {
+  modelLock: ModelLock;
+  activeRoute: { providerId: string; modelId: string };
+  temporary: boolean;
+  reason: string | null;
+  updatedAt: number;
+}
+
+export interface ModelRouteEvent {
+  kind: 'lock_changed' | 'deviated' | 'recovered';
+  modelLock: ModelLock;
+  activeRoute: { providerId: string; modelId: string };
+  reason: string;
+  timestamp: number;
+}
+
+export interface ProviderHealthSnapshot {
+  updatedAt: number;
+  invalidProviders: string[];
+  rateLimitedProviders: Array<{ providerId: string; retryAt: number }>;
+}
+
 export interface ActiveProviderConfigSummary {
   providerId: string;
   modelId: string;
+  mode: ModelLockMode;
   keyStatus: 'own' | 'community' | 'anonymous' | 'missing';
   maskedKey?: string;
   degraded?: boolean;
@@ -513,6 +573,7 @@ export interface CredentialStorageStatus {
 export interface ProviderSettings {
   activeProvider: ProviderType;
   activeModel: string;
+  modelLock: ModelLock;
   activeHarness?: AgentHarnessType;
   apiKeys: Record<string, string | undefined>;
   apiKeysConfigured?: Partial<Record<ProviderType, boolean>>;
@@ -1094,6 +1155,51 @@ export interface GitSuggestedCommitMessage {
   body: string;
 }
 
+/**
+ * Prompt 3: Copy Pipeline — clipboard contracts.
+ *
+ * `via` reports which path actually landed the copy: the renderer's async
+ * clipboard API ('async') or this main-process fallback ('main'). `verified`
+ * is false when a write did not throw but could not be confirmed by read-back
+ * (e.g. remote session blocking reads); callers may still treat that as a
+ * success, but diagnostics stay honest about it.
+ */
+export type ClipboardFailureReason =
+  | 'invalid_payload'
+  | 'write_threw'
+  | 'unverified'
+  | 'read_threw'
+  | 'no_backend'
+  | 'denied'
+  | 'unavailable';
+
+export interface ClipboardWriteOutcome {
+  ok: boolean;
+  via: 'main';
+  chars: number;
+  verified: boolean;
+  reason?: ClipboardFailureReason;
+  error?: string;
+}
+
+export interface ClipboardReadOutcome {
+  ok: boolean;
+  text: string;
+  reason?: ClipboardFailureReason;
+  error?: string;
+}
+
+/** One entry of the bounded clipboard trail. NEVER contains copied content. */
+export interface ClipboardAuditEntry {
+  timestamp: number;
+  op: 'write' | 'read';
+  source: string;
+  ok: boolean;
+  chars: number;
+  reason?: ClipboardFailureReason;
+  error?: string;
+}
+
 export interface ElectronAPI {
   minimizeWindow: () => void;
   maximizeWindow: () => void;
@@ -1141,14 +1247,62 @@ export interface ElectronAPI {
   getBootState: () => Promise<IpcResponse<{ firstRun: boolean; hasCompletedOnboarding: boolean }>>;
   saveSettings: (settings: Partial<ProviderSettings>) => Promise<IpcResponse<void>>;
   /** Selection -> active agent config sync. Returns masked summaries only. */
-  updateActiveProviderConfig: (config: { providerId: string; modelId?: string; origin?: 'explicit' | 'auto' }) => Promise<IpcResponse<ActiveProviderConfigSummary>>;
+  updateActiveProviderConfig: (config: { providerId: string; modelId?: string; mode: ModelLockMode; origin?: 'explicit' | 'auto' }) => Promise<IpcResponse<ActiveProviderConfigSummary>>;
+  getActiveRoute: () => Promise<IpcResponse<ActiveRouteSnapshot & { events: ModelRouteEvent[] }>>;
+  onActiveRouteChanged: (callback: (snapshot: ActiveRouteSnapshot, event?: ModelRouteEvent) => void) => () => void;
+  getProviderHealth: () => Promise<IpcResponse<ProviderHealthSnapshot>>;
+  onProviderHealthChanged: (callback: (snapshot: ProviderHealthSnapshot) => void) => () => void;
   getTelemetryPreview: () => Promise<IpcResponse<TelemetryPreview>>;
   deleteTelemetryEvent: (index: number, expected: TelemetryEvent) => Promise<IpcResponse<void>>;
   clearTelemetryData: () => Promise<IpcResponse<void>>;
   getCredentialStorageStatus: () => Promise<IpcResponse<CredentialStorageStatus>>;
   onTelemetryChanged: (callback: () => void) => () => void;
-  /** Copy text to the system clipboard via the main process (sandbox-safe). */
-  copyToClipboard: (text: string) => Promise<IpcResponse<void>>;
+  /**
+   * Copy text to the system clipboard via the main process (sandbox-safe).
+   * Prompt 3: this is the FALLBACK used by src/renderer/src/lib/clipboard.ts
+   * when the async clipboard API is unavailable or denied, and it works in
+   * every window (main, Canvas popout, Debugger popout). Main verifies each
+   * write against a read-back, so `success:false` always carries a reason.
+   */
+  copyToClipboard: (payload: string | { text: string; source?: string }) => Promise<IpcResponse<ClipboardWriteOutcome>>;
+  /** Read the system clipboard via main; fallback for navigator.clipboard.readText. */
+  readFromClipboard: (source?: string) => Promise<IpcResponse<ClipboardReadOutcome>>;
+  /** Metadata-only clipboard trail for the diagnostics panel. */
+  getClipboardAudit: () => Promise<IpcResponse<ClipboardAuditEntry[]>>;
+  // ===== Prompt 5: Command Registry bridge =====
+  /**
+   * Forward a menu/palette/keybinding activation to the main process.
+   *
+   * Only needed for entries whose `target` is `main`; renderer-target commands
+   * run locally through the renderer executor so a click never waits on IPC.
+   * The window's own context snapshot travels with the call because main cannot
+   * observe editor or debugger state. Main layers its own authoritative keys
+   * over the snapshot, so a window cannot unlock a guarded row by claiming one.
+   *
+   * `success:false` means the call itself failed (untrusted frame, invalid
+   * payload). `success:true` with `data.ok === false` means the call completed
+   * and the command declined for a reason the UI can show — that distinction is
+   * what lets "zero dead clicks" be reported honestly.
+   */
+  executeCommand: (payload: ExecuteCommandPayload) => Promise<IpcResponse<ExecuteCommandResult>>;
+  /**
+   * Click on a runtime-generated submenu row (an open tab, a running task, a
+   * detected process). These cannot be named in the registry because they only
+   * exist once the user looks.
+   */
+  executeDynamicCommand: (
+    item: DynamicSubmenuItem,
+    contexts?: CommandContextSnapshot
+  ) => Promise<IpcResponse<ExecuteCommandResult>>;
+  /**
+   * Main's view of the command table: contexts only main can know, the handler
+   * keys it has live, and the ones it still lacks. A window merges this over its
+   * own state so it hides rows main could not run rather than painting a click
+   * that ends in `no_handler`.
+   */
+  getMainCommandContext: () => Promise<IpcResponse<MainCommandContext>>;
+  /** Bounded execution ledger, metadata only, for the Reliability Panel. */
+  getCommandAuditTrail: () => Promise<IpcResponse<CommandExecutionRecord[]>>;
   getSettingsLayer: (scope: SettingsScope) => Promise<IpcResponse<SettingsData | WorkspaceSettingsPatch>>;
   saveSettingsLayer: (scope: SettingsScope, settings: SettingsPatch | WorkspaceSettingsPatch) => Promise<IpcResponse<void>>;
   getSecurityPolicy: () => Promise<IpcResponse<SecurityPolicySettings>>;
@@ -1620,7 +1774,7 @@ export interface ElectronAPI {
   getAvailableModels?: () => Promise<IpcResponse<AvailableModelConfig[]>>;
   getModelAvailabilitySummary?: () => Promise<IpcResponse<ModelAvailabilitySummary>>;
   resetModelsAvailabilityCache?: () => Promise<IpcResponse<void>>;
-  updateActiveModelConfig?: (config: { providerId: string; modelId: string; isAutoMode: boolean }) => Promise<IpcResponse<{ providerId: string; modelId: string; isAutoMode: boolean }>>;
+  updateActiveModelConfig?: (config: { providerId: string; modelId: string; isAutoMode: boolean; mode: ModelLockMode }) => Promise<IpcResponse<ActiveRouteSnapshot>>;
   getCommunityKeyStatus?: () => Promise<IpcResponse<{ status: 'active' | 'degraded' | 'missing' }>>;
   onCommunityKeyStatusChanged?: (callback: (data: { status: 'active' | 'degraded' | 'missing' }) => void) => () => void;
 

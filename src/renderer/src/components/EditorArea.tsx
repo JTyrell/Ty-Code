@@ -37,6 +37,14 @@ import {
 } from '../services/monaco-lsp-adapter';
 import { registerMonacoInlineCompletionProvider } from '../services/monaco-inline-completion';
 import { ensureMonaco, useMonacoRuntime } from '../services/monaco-runtime';
+import {
+  forgetFile,
+  recordEdit,
+  registerDiffEditor,
+  registerEditor,
+  setActiveFile,
+  type EditorDisposable
+} from '../services/editor-service';
 import { usePairProgrammingStore } from '../state/pair-programming-store';
 import { useExtensionPromptStore } from '../state/extension-prompt-store';
 import { LazyModelManager } from '../services/lazy-model-manager';
@@ -83,6 +91,11 @@ export const EditorArea: React.FC = () => {
   const [blameHunks, setBlameHunks] = useState<GitBlameHunk[]>([]);
   const [blameRefreshKey, setBlameRefreshKey] = useState(0);
   const cursorListenerRef = useRef<{ dispose: () => void } | null>(null);
+  // The command registry's view of the live editors (Prompt 5). Each pane owns one
+  // registration, so an unmounted pane stops asserting cursor state it cannot see.
+  const primaryEditorRegistration = useRef<EditorDisposable | null>(null);
+  const secondaryEditorRegistration = useRef<EditorDisposable | null>(null);
+  const diffEditorRegistration = useRef<EditorDisposable | null>(null);
   const [splitState, setSplitState] = useState<SplitPaneState>({
     isSplit: false,
     orientation: 'vertical',
@@ -105,6 +118,39 @@ export const EditorArea: React.FC = () => {
   }, [shouldLoadMonaco, monacoRuntime.status]);
 
   useEffect(() => () => cursorListenerRef.current?.dispose(), []);
+
+  useEffect(
+    () => () => {
+      primaryEditorRegistration.current?.dispose();
+      primaryEditorRegistration.current = null;
+      secondaryEditorRegistration.current?.dispose();
+      secondaryEditorRegistration.current = null;
+      diffEditorRegistration.current?.dispose();
+      diffEditorRegistration.current = null;
+    },
+    []
+  );
+
+  // Tell the editor service which file the active pane is showing. This is what
+  // makes `hasSymbolProvider` honest per language, and what keys both the
+  // navigation history and the per-file last-edit map.
+  useEffect(() => {
+    setActiveFile(activeTab?.path ?? null, activeTab?.language ?? null);
+  }, [activeTab?.path, activeTab?.language]);
+
+  // Release a split pane's registration the moment the split closes rather than
+  // waiting for unmount, so Switch Group never lists a group that is already gone.
+  useEffect(() => {
+    if (splitState.isSplit) return;
+    secondaryEditorRegistration.current?.dispose();
+    secondaryEditorRegistration.current = null;
+  }, [splitState.isSplit]);
+
+  useEffect(() => {
+    if (diffReview?.isOpen) return;
+    diffEditorRegistration.current?.dispose();
+    diffEditorRegistration.current = null;
+  }, [diffReview?.isOpen]);
 
   useEffect(() => {
     setMinimapEnabled(settings?.editor?.minimap ?? true);
@@ -344,6 +390,8 @@ export const EditorArea: React.FC = () => {
   const handleEditorMount = (editor: any) => {
     cursorListenerRef.current?.dispose();
     editorRef.current = editor;
+    primaryEditorRegistration.current?.dispose();
+    primaryEditorRegistration.current = registerEditor(editor, { groupId: 'primary' });
     if (monaco && activeTab) applyStoredDiagnostics(monaco, activeTab.path);
     setCurrentLine(editor.getPosition()?.lineNumber || 1);
     cursorListenerRef.current = editor.onDidChangeCursorPosition((event: { position: { lineNumber: number } }) => {
@@ -435,11 +483,23 @@ export const EditorArea: React.FC = () => {
     });
   };
 
+  const handleSecondaryEditorMount = (editor: any) => {
+    secondaryEditorRegistration.current?.dispose();
+    secondaryEditorRegistration.current = registerEditor(editor, { groupId: 'secondary' });
+  };
+
+  const handleDiffEditorMount = (editor: any) => {
+    diffEditorRegistration.current?.dispose();
+    diffEditorRegistration.current = registerDiffEditor(editor);
+  };
+
   const handleContentChange = (path: string, newContent: string) => {
     const transactionContent = useWorkspaceEditStore.getState().consumePendingEditorContent(path);
     if (transactionContent !== undefined && transactionContent === newContent) return;
     updateTabContent(path, newContent);
     notifyDocumentChanged(path, newContent);
+    // Go G1's per-file last-edit map: the cursor at change time is the edit site.
+    recordEdit(path);
     useWorkspaceEditStore.getState().markEditorChanged(path, newContent);
     if (activeTab) {
       void usePairProgrammingStore.getState().processEditorEvent({
@@ -454,6 +514,8 @@ export const EditorArea: React.FC = () => {
 
   const handleCloseTab = (path: string) => {
     notifyDocumentClosed(path);
+    // Otherwise Back keeps offering a tab the user deliberately closed.
+    forgetFile(path);
     if (monaco) {
       try {
         const uri = monaco.Uri.file(path);
@@ -843,6 +905,7 @@ export const EditorArea: React.FC = () => {
             modified={diffReview.diff.proposedContent}
             language="typescript"
             theme={monacoTheme}
+            onMount={handleDiffEditorMount}
             options={{
               renderSideBySide: true,
               fontSize: 13,
@@ -929,6 +992,7 @@ export const EditorArea: React.FC = () => {
                     language={secondaryTab.language}
                     value={secondaryTab.content}
                     theme={monacoTheme}
+                    onMount={handleSecondaryEditorMount}
                     onChange={(val) => {
                       if (val !== undefined) handleContentChange(secondaryTab.path, val);
                     }}

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { toast } from './toast-store';
 import type { ActiveProviderConfigSummary, ProviderType } from '../../../preload/types';
+import type { ModelLockMode } from '../../../shared/types/settings';
 
 /**
  * Unified UI-facing settings store for the active provider/model pair.
@@ -21,6 +22,12 @@ export type CommunityKeyStatus = 'active' | 'degraded' | 'missing';
 interface SettingsStoreState {
   activeProviderId: string;
   activeModelId: string;
+  /**
+   * Requested model-lock mode. 'strict' never deviates from the locked route;
+   * 'resilient' may deviate only when the health board marks it unusable.
+   * Main's persisted settings are the authority; this mirrors them.
+   */
+  lockMode: ModelLockMode;
   communityKeyStatus: CommunityKeyStatus;
   /** Set once the persisted selection has been read at boot. */
   hydrated: boolean;
@@ -30,17 +37,24 @@ interface SettingsStoreState {
   hydrate: () => Promise<void>;
   setActiveProvider: (providerId: string, modelId?: string) => void;
   setActiveModel: (modelId: string) => void;
+  setLockMode: (mode: ModelLockMode) => Promise<void>;
   setCommunityKeyStatus: (status: CommunityKeyStatus) => void;
 }
 
 export const TY_CODE_FREE_PROVIDER = 'ty-code-free';
 export const TY_CODE_FREE_MODEL = 'google/gemma-4-31b-it:free';
+export const DEFAULT_LOCK_MODE: ModelLockMode = 'resilient';
 
 const DEFAULTS = {
   activeProviderId: TY_CODE_FREE_PROVIDER,
   activeModelId: TY_CODE_FREE_MODEL,
+  lockMode: DEFAULT_LOCK_MODE,
   communityKeyStatus: 'active' as CommunityKeyStatus
 };
+
+function normalizeLockMode(mode: unknown): ModelLockMode {
+  return mode === 'strict' ? 'strict' : DEFAULT_LOCK_MODE;
+}
 
 function configSignature(providerId: string, modelId: string): string {
   return `${providerId}::${modelId}`;
@@ -56,6 +70,7 @@ let nextSyncOrigin: 'explicit' | 'auto' = 'auto';
 export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
   activeProviderId: DEFAULTS.activeProviderId,
   activeModelId: DEFAULTS.activeModelId,
+  lockMode: DEFAULTS.lockMode,
   communityKeyStatus: DEFAULTS.communityKeyStatus,
   hydrated: false,
   syncing: false,
@@ -73,19 +88,25 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
       if (response.success && response.data) {
         const nextProviderId = response.data.activeProvider || DEFAULTS.activeProviderId;
         const nextModelId = response.data.activeModel || '';
+        const nextLockMode = normalizeLockMode(response.data.modelLock?.mode);
         const current = get();
         // Echo suppression (Prompt: Break the Model-Sync Echo Loop): apply
         // ONLY on a primitive string difference. An identical hydration must
         // not flip state (which would re-arm the sync watcher) — this is the
         // hydrate-with-suppress path that lets late-opening popout windows
         // adopt the locked model WITHOUT pushing set-active-model back.
-        if (current.activeProviderId !== nextProviderId || current.activeModelId !== nextModelId) {
+        if (
+          current.activeProviderId !== nextProviderId ||
+          current.activeModelId !== nextModelId ||
+          current.lockMode !== nextLockMode
+        ) {
           // The value CAME from main's persisted settings: record it as the
           // synced signature so the watcher does not echo it straight back.
           lastSyncedSignature = configSignature(nextProviderId, nextModelId);
           set({
             activeProviderId: nextProviderId,
             activeModelId: nextModelId,
+            lockMode: nextLockMode,
             hydrated: true
           });
         } else if (!current.hydrated) {
@@ -114,6 +135,37 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
       activeModelId: modelId,
       activeProviderId: get().activeProviderId || DEFAULTS.activeProviderId
     });
+  },
+
+  /**
+   * Change ONLY the lock mode. Pushes straight to main (explicit origin) so
+   * the requested lock is re-persisted; the pair itself is untouched, which
+   * keeps the watcher's signature stable and avoids a redundant sync.
+   */
+  setLockMode: async (mode) => {
+    const normalized = normalizeLockMode(mode);
+    if (get().lockMode === normalized) return;
+    set({ lockMode: normalized });
+    const { activeProviderId, activeModelId } = get();
+    try {
+      const response = await window.electronAPI.updateActiveProviderConfig({
+        providerId: activeProviderId,
+        modelId: activeModelId,
+        mode: normalized,
+        origin: 'explicit'
+      });
+      if (!response.success) throw new Error(response.error || 'Model lock mode sync failed');
+      lastSyncedSignature = configSignature(activeProviderId, activeModelId);
+      set({ lastSyncError: '' });
+    } catch (err) {
+      // Revert so the UI never shows a mode main did not accept. Re-read
+      // main's persisted value rather than guessing the previous one.
+      const persisted = await window.electronAPI.getSettings().catch(() => null);
+      set({ lockMode: normalizeLockMode(persisted?.data?.modelLock?.mode) });
+      const message = err instanceof Error ? err.message : String(err);
+      set({ lastSyncError: message });
+      toast.error('Model Lock Not Applied', message);
+    }
   },
 
   setCommunityKeyStatus: (status) => {
@@ -151,7 +203,10 @@ async function syncActiveConfigToMain(providerId: string, modelId: string): Prom
   try {
     const origin = nextSyncOrigin;
     nextSyncOrigin = 'auto';
-    const response = await window.electronAPI.updateActiveProviderConfig({ providerId, modelId, origin });
+    // The lock mode travels with the pair so main re-persists a complete lock;
+    // read via getState() to stay current without re-arming this watcher.
+    const mode = useSettingsStore.getState().lockMode;
+    const response = await window.electronAPI.updateActiveProviderConfig({ providerId, modelId, mode, origin });
     if (!response.success) throw new Error(response.error || 'Active provider sync failed');
     const summary = (response.data || {}) as ActiveProviderConfigSummary;
 
@@ -259,3 +314,48 @@ function armSettingsSyncWatcher(): void {
 }
 
 armSettingsSyncWatcher();
+
+/**
+ * Cross-window lock adoption (Multi-window integration contract).
+ *
+ * Settings changes made in ANY window (main, Canvas popout, Debugger popout)
+ * reach main first; main is the authority and re-broadcasts the requested
+ * lock. Every window adopts it here so the Settings UI never drifts.
+ *
+ * Echo suppression: `lastSyncedSignature` is advanced BEFORE setState and only
+ * primitive differences are applied, so adoption can never re-arm the pair
+ * watcher above.
+ */
+let disposeSettingsRouteListener: (() => void) | null = null;
+
+if (typeof window !== 'undefined' && window.electronAPI?.onActiveRouteChanged) {
+  disposeSettingsRouteListener =
+    window.electronAPI.onActiveRouteChanged((snapshot) => {
+      const lock = snapshot?.modelLock;
+      if (!lock || typeof lock !== 'object') return;
+      const nextProviderId = lock.providerId || DEFAULTS.activeProviderId;
+      const nextModelId = lock.modelId || '';
+      const nextLockMode = normalizeLockMode(lock.mode);
+
+      const current = useSettingsStore.getState();
+      if (
+        current.activeProviderId === nextProviderId &&
+        current.activeModelId === nextModelId &&
+        current.lockMode === nextLockMode
+      ) {
+        return;
+      }
+      lastSyncedSignature = configSignature(nextProviderId, nextModelId);
+      useSettingsStore.setState({
+        activeProviderId: nextProviderId,
+        activeModelId: nextModelId,
+        lockMode: nextLockMode
+      });
+    }) || null;
+}
+
+/** Tears down the route listener. Used by tests to avoid leaked IPC handlers. */
+export function disposeSettingsRouteAdoption(): void {
+  disposeSettingsRouteListener?.();
+  disposeSettingsRouteListener = null;
+}

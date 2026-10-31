@@ -15,7 +15,18 @@ const changeDebounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 type Monaco = typeof monacoType;
 
-const REGISTERED_LANGUAGES = ['typescript', 'javascript', 'python', 'rust', 'go', 'cpp', 'c', 'java'];
+/**
+ * Languages this adapter registers symbol providers for.
+ *
+ * Exported so the command registry's `hasSymbolProvider` context can distinguish
+ * "this language has no provider at all" from "a provider exists but its server
+ * is not running". Go G4 must grey out with a reason in both cases and fire a
+ * dead F12 in neither, so the list lives here rather than being retyped by the
+ * consumer and drifting.
+ */
+export const LSP_PROVIDER_LANGUAGES = ['typescript', 'javascript', 'python', 'rust', 'go', 'cpp', 'c', 'java'] as const;
+
+const REGISTERED_LANGUAGES = LSP_PROVIDER_LANGUAGES;
 let isAdapterRegistered = false;
 let editorOpenerRegistered = false;
 let reviewCommandRegistered = false;

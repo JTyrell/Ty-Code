@@ -302,6 +302,11 @@ export class SmartModelSelectorService {
     const defaultSettings: ProviderSettings = {
       activeProvider: 'openkilo',
       activeModel: 'kilo-auto/free',
+      modelLock: {
+        providerId: 'openkilo',
+        modelId: 'kilo-auto/free',
+        mode: 'resilient'
+      },
       temperature: 0.2,
       maxTokens: 4096,
       freeMode: true,

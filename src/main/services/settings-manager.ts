@@ -72,6 +72,7 @@ function normalizeGlobal(value: unknown): SettingsData {
   const categoryValues = [
     ProviderSettingsSchema.safeParse({
       activeProvider: typeof source.activeProvider === 'string' && source.activeProvider ? source.activeProvider : defaults.activeProvider,
+      modelLock: isRecord(source.modelLock) ? source.modelLock : defaults.modelLock,
       apiKeys: {},
       customEndpoints: { ...defaults.customEndpoints, ...Object.fromEntries(endpointEntries) },
       offlineDemoMode: source.offlineDemoMode,

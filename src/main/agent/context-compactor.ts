@@ -5,6 +5,8 @@ export type Message = ChatCompletionMessage;
 export const MODEL_CONTEXT_LIMIT = 128_000;
 const COMPACTION_THRESHOLD = 0.85;
 const KEEP_LAST_EXCHANGES = 3;
+const PINNED_TASK_START = '<!-- TYCODE_PINNED_TASK_START -->';
+const PINNED_TASK_END = '<!-- TYCODE_PINNED_TASK_END -->';
 
 const CODE_HINT = /[=;{}()<>]|function|class|const|let|var|import|export|def |=>|\[\]/;
 
@@ -59,6 +61,23 @@ function findTransferPoint(body: Message[]): number {
   while (boundary > 0 && hasToolCalls(body[boundary - 1])) boundary--;
   while (boundary > 0 && body[boundary].role === 'tool') boundary--;
   return boundary;
+}
+
+export function upsertPinnedTaskContext(messages: Message[], pinnedContext: string): Message[] {
+  if (!pinnedContext.trim()) return messages.slice();
+  const block = `${PINNED_TASK_START}\n${pinnedContext.trim()}\n${PINNED_TASK_END}`;
+  const next = messages.map((message) => ({ ...message }));
+  const systemIndex = next.findIndex((message) => message.role === 'system');
+  if (systemIndex < 0) return [{ role: 'system', content: block }, ...next];
+  const current = next[systemIndex].content || '';
+  const pattern = new RegExp(`${PINNED_TASK_START}[\\s\\S]*?${PINNED_TASK_END}`, 'g');
+  next[systemIndex] = {
+    ...next[systemIndex],
+    content: pattern.test(current)
+      ? current.replace(pattern, block)
+      : `${current}\n\n${block}`
+  };
+  return next;
 }
 
 export function compactMessages(messages: Message[], summary: string): Message[] {

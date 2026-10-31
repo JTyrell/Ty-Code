@@ -22,6 +22,12 @@ import path from 'path';
 
 export type ProviderHealthState = 'invalid_key' | 'rate_limited' | 'degraded_transient';
 
+export interface ProviderHealthSnapshot {
+  updatedAt: number;
+  invalidProviders: string[];
+  rateLimitedProviders: Array<{ providerId: string; retryAt: number }>;
+}
+
 export interface PersistedEntry {
   state: 'invalid_key';
   since: number;
@@ -46,6 +52,7 @@ export class ProviderHealthStore {
   private degraded = new Map<string, number>();
   private loaded = false;
   private filePath: string | null = null;
+  private listeners = new Set<(snapshot: ProviderHealthSnapshot) => void>();
 
   /** Test-only: point the store at a custom file and reset in-memory state. */
   __forTest(filePath: string | null, opts?: { loaded?: boolean }): void {
@@ -100,6 +107,22 @@ export class ProviderHealthStore {
     return dropped;
   }
 
+  private snapshot(): ProviderHealthSnapshot {
+    const now = Date.now();
+    return {
+      updatedAt: now,
+      invalidProviders: Array.from(this.invalid.keys()),
+      rateLimitedProviders: Array.from(this.rateLimited.entries())
+        .filter(([, retryAt]) => retryAt > now)
+        .map(([providerId, retryAt]) => ({ providerId, retryAt }))
+    };
+  }
+
+  private emitChange(): void {
+    const snapshot = this.snapshot();
+    for (const listener of this.listeners) listener(snapshot);
+  }
+
   private persist(): void {
     const file = this.resolveFile();
     if (!file) return;
@@ -130,6 +153,7 @@ export class ProviderHealthStore {
     if (!id || this.invalid.has(id)) return; // first-write-wins
     this.invalid.set(id, { state: 'invalid_key', since: Date.now(), httpStatus, failureClass: failureClass || 'invalid_key' });
     this.persist();
+    this.emitChange();
   }
 
   /** Call when the user saves a key for the provider or a re-test succeeds. */
@@ -140,6 +164,7 @@ export class ProviderHealthStore {
     this.rateLimited.delete(id);
     this.degraded.delete(id);
     if (had) this.persist();
+    if (had) this.emitChange();
   }
 
   /** 429: honour Retry-After (seconds) in memory only. */
@@ -148,6 +173,7 @@ export class ProviderHealthStore {
     if (!id) return;
     const ttl = retryAfterSec && retryAfterSec > 0 ? retryAfterSec * 1000 : DEFAULT_RATE_LIMIT_TTL_MS;
     this.rateLimited.set(id, Date.now() + ttl);
+    this.emitChange();
   }
 
   /**
@@ -159,6 +185,7 @@ export class ProviderHealthStore {
     const id = normaliseHealthId(providerId);
     if (!id) return;
     this.degraded.set(id, Date.now() + Math.max(0, ttlMs));
+    this.emitChange();
   }
 
   /** Live transient-degraded state (false once expired). */
@@ -188,6 +215,17 @@ export class ProviderHealthStore {
     const state = this.getState(providerId);
     // Transient degraded entries block nothing: the route stays in the chain.
     return state === 'invalid_key' || state === 'rate_limited';
+  }
+
+  public getSnapshot(): ProviderHealthSnapshot {
+    this.load();
+    this.dropAgedEntries();
+    return this.snapshot();
+  }
+
+  public onDidChange(listener: (snapshot: ProviderHealthSnapshot) => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
   }
 
   /** Normalised ids that failover must skip right now (degraded excluded). */

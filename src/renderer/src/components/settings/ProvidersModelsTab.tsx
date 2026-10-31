@@ -377,7 +377,8 @@ export function ProvidersModelsTab({ onOpenApiKeys, onOpenByok, onOpenProviderSe
       if (window.electronAPI?.updateActiveProviderConfig) {
         await window.electronAPI.updateActiveProviderConfig({
           providerId: selectionProviderId,
-          modelId: model.modelId
+          modelId: model.modelId,
+          mode: useSettingsStore.getState().lockMode
         });
       }
       if (window.electronAPI?.saveSettings) {

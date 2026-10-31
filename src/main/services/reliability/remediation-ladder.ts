@@ -60,6 +60,9 @@ export interface CooldownRetryRequest {
   providerId: string;
   modelId: string;
   retryAfterSec?: number;
+  abortSignal?: AbortSignal;
+  maxWaitMs?: number;
+  honorFullRetryAfter?: boolean;
 }
 
 export interface ChainExhaustedContext {
@@ -79,8 +82,20 @@ export interface RecoveryAttempt {
   originStep?: LadderStepId | 'recovery';
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function sleep(ms: number, signal?: AbortSignal): Promise<boolean> {
+  if (signal?.aborted) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve(true);
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+      resolve(false);
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
 }
 
 function routeKey(providerId: string, modelId: string): string {
@@ -119,7 +134,13 @@ class RemediationLadder {
     const headerMs = (req.retryAfterSec && req.retryAfterSec > 0 ? req.retryAfterSec * 1000 : 0);
     const sentinelMs = reliabilitySentinel.getCooldownRemainingSec(req.providerId, req.modelId) * 1000;
     const requested = Math.max(headerMs, sentinelMs);
-    const waitMs = Math.max(COOLDOWN_GRACE_MS, Math.min(requested || COOLDOWN_GRACE_MS, MAX_COOLDOWN_WAIT_MS));
+    const policyCap = req.honorFullRetryAfter ? Number.MAX_SAFE_INTEGER : MAX_COOLDOWN_WAIT_MS;
+    const deadlineCap = Math.max(0, req.maxWaitMs ?? policyCap);
+    const waitMs = Math.min(
+      Math.max(COOLDOWN_GRACE_MS, Math.min(requested || COOLDOWN_GRACE_MS, policyCap)),
+      deadlineCap
+    );
+    if (waitMs <= 0 || req.abortSignal?.aborted) return false;
 
     reliabilityLedger.record({
       at: Date.now(),
@@ -129,7 +150,18 @@ class RemediationLadder {
       outcome: 'started',
       detail: `waiting ${waitMs}ms before a silent same-route retry (429)`
     });
-    await sleep(waitMs);
+    const completed = await sleep(waitMs, req.abortSignal);
+    if (!completed) {
+      reliabilityLedger.record({
+        at: Date.now(),
+        kind: 'cooldown',
+        turnId: req.taskId,
+        route: routeKey(req.providerId, req.modelId),
+        outcome: 'failed',
+        detail: 'cooldown wait cancelled'
+      });
+      return false;
+    }
     reliabilityLedger.record({
       at: Date.now(),
       kind: 'cooldown',

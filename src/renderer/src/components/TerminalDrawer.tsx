@@ -7,6 +7,7 @@ import { Terminal as TerminalIcon, Plus, X, Trash2, Maximize2, Minimize2, Chevro
 import { useChatStore } from '../state/chat-store';
 import { useWorkspaceStore } from '../state/workspace-store';
 import { toast } from '../state/toast-store';
+import { copyText, readClipboardText } from '../lib/clipboard';
 import type { ShellInfo, TerminalSplitOrientation } from '../../../preload/types';
 
 interface TerminalTab { id: string; ptyId: string; shellId: string; shellName: string; profileId?: string; cwd: string; serializedHistory?: string; hasExited?: boolean; }
@@ -509,15 +510,47 @@ export const TerminalDrawer: React.FC = () => {
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', stop, { once: true });
   };
+  /**
+   * Prompt 3: the single terminal copy path. Routes through the shared
+   * clipboard lib so the async API is tried first and the Main process is the
+   * fallback in every window, and so a failure is never swallowed.
+   */
+  const copyTerminalText = async (text: string, source: string): Promise<boolean> => {
+    const result = await copyText(text, source);
+    if (result.ok) return true;
+    const message = result.error || 'The terminal selection could not be copied.';
+    setTerminalError(message);
+    toast.error('Copy Failed', message, {
+      label: 'Retry',
+      onClick: () => { void copyTerminalText(text, source); }
+    });
+    return false;
+  };
+
   const copySelection = async (tabId: string) => {
     const runtime = terminalRefs.current.get(tabId);
-    if (runtime?.term.hasSelection()) try { await navigator.clipboard.writeText(runtime.term.getSelection()); } catch { /* Clipboard may be unavailable. */ }
+    const selection = runtime?.term.hasSelection() ? runtime.term.getSelection() : '';
     setContextMenu(null);
+    if (!selection) {
+      // Never a silent no-op: the menu item was reachable, so say why nothing happened.
+      toast.info('Nothing Selected', 'Select terminal text before copying.');
+      return;
+    }
+    await copyTerminalText(selection, `terminal:${tabId}`);
   };
+
   const pasteClipboard = async (tabId: string) => {
     const tab = tabsRef.current.find((item) => item.id === tabId);
-    if (tab) try { const text = await navigator.clipboard.readText(); if (text) window.electronAPI.writePty(tab.ptyId, text); } catch { /* Permission denied. */ }
     setContextMenu(null);
+    if (!tab) return;
+    const result = await readClipboardText(`terminal:${tabId}`);
+    if (!result.ok) {
+      const message = result.error || 'The clipboard could not be read.';
+      setTerminalError(message);
+      toast.error('Paste Failed', message);
+      return;
+    }
+    if (result.text) window.electronAPI.writePty(tab.ptyId, result.text);
   };
   const clearTerminal = (tabId: string) => { terminalRefs.current.get(tabId)?.term.clear(); setContextMenu(null); };
 
@@ -545,12 +578,29 @@ export const TerminalDrawer: React.FC = () => {
     term.attachCustomKeyEventHandler((event) => {
       const modifier = event.ctrlKey || event.metaKey;
       const key = event.key.toLowerCase();
-      if (modifier && key === 'c' && (event.shiftKey || term.hasSelection())) {
-        if (term.hasSelection()) void navigator.clipboard.writeText(term.getSelection()).catch(() => undefined);
-        return false;
+      if (modifier && key === 'c') {
+        // Selection present -> copy it and do NOT forward the chord, so the
+        // running process never sees a spurious SIGINT.
+        if (term.hasSelection()) {
+          void copyTerminalText(term.getSelection(), `terminal:${tab.id}`);
+          return false;
+        }
+        // Nothing selected -> Ctrl+C (and Ctrl+Shift+C) must reach the PTY as
+        // SIGINT. The previous handler returned false whenever Shift was held,
+        // which silently ate the interrupt.
+        return true;
       }
       if (modifier && key === 'v') {
-        void navigator.clipboard.readText().then((text) => { if (text) window.electronAPI.writePty(tab.ptyId, text); }).catch(() => undefined);
+        void (async () => {
+          const result = await readClipboardText(`terminal:${tab.id}`);
+          if (!result.ok) {
+            const message = result.error || 'The clipboard could not be read.';
+            setTerminalError(message);
+            toast.error('Paste Failed', message);
+            return;
+          }
+          if (result.text) window.electronAPI.writePty(tab.ptyId, result.text);
+        })();
         return false;
       }
       return true;

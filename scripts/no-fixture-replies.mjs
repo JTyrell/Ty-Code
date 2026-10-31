@@ -48,6 +48,13 @@ const MESSAGE_RENDER_PATH_FILES = [
 /** Never render the literal "default" as a route/badge fallback. */
 const DEFAULT_BADGE_PATTERN = /metadata\?\.(providerId|modelId)\s*\|\|\s*['"]default['"]/;
 
+/**
+ * Hard-coded success text may never be emitted as a provider token. Completion
+ * must be derived from live tool evidence, not a production reply fixture.
+ */
+const TOKEN_LITERAL_SINK = /onChunk\s*\(\s*\{\s*type\s*:\s*['"]token['"][\s\S]{0,240}?content\s*:\s*(['"`])([\s\S]{1,300}?)\1[\s\S]{0,80}?\}\s*\)/g;
+const SUCCESS_CLAIM = /\b(?:(?:implementation|task|work)\s+(?:is\s+)?(?:complete|completed|done)|all\s+(?:tests?|checks?)\s+(?:pass|passed|passing)|successfully\s+(?:implemented|completed|verified))\b/i;
+
 async function collectFiles(dir) {
   const results = [];
   try {
@@ -117,9 +124,26 @@ async function run() {
     }
   }
 
+  // Reject assistant success sentences wired directly into token emission.
+  // Dynamic provider chunks and evidence-derived status/error cards are allowed.
+  for (const file of srcFiles) {
+    const content = await fs.readFile(file, 'utf-8');
+    for (const match of content.matchAll(TOKEN_LITERAL_SINK)) {
+      const literal = match[2];
+      if (!SUCCESS_CLAIM.test(literal)) continue;
+      const relPath = path.relative(projectRoot, file).replace(/\\/g, '/');
+      const lineNumber = content.slice(0, match.index).split('\n').length;
+      console.error('✗ VIOLATION: Hard-coded successful assistant reply emitted as a token!');
+      console.error(`  File: ${relPath}:${lineNumber}`);
+      console.error(`  Literal: "${literal.trim()}"`);
+      console.error('  Policy: success must come from live completion evidence and provider output, never a canned production token.\n');
+      violationCount++;
+    }
+  }
+
   if (violationCount > 0) {
-    console.error(`\n❌ FAILED: ${violationCount} forbidden fixture string violation(s) found in src/.`);
-    console.error('Production code must connect to real providers or fail transparently. Mock text is forbidden.');
+    console.error(`\n❌ FAILED: ${violationCount} forbidden fixture or canned-success violation(s) found in src/.`);
+    console.error('Production code must connect to real providers and derive success from real evidence.');
     process.exit(1);
   }
 
@@ -167,7 +191,7 @@ async function run() {
   }
 
   console.log(`✓ Truth Guard Passed: Verified ${srcFiles.length} source files in src/.`);
-  console.log(`  Zero forbidden fixture strings detected. All responses must originate from real providers.`);
+  console.log(`  Zero forbidden fixture strings or hard-coded successful token replies detected.`);
   console.log(`  Message content path clean: no assistant-shaped placeholder replies, no "default" badge fallback.\n`);
   process.exit(0);
 }

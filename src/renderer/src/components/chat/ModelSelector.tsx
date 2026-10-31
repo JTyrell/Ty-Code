@@ -598,6 +598,7 @@ export const ModelSelector: React.FC = () => {
         const syncRes = await window.electronAPI.updateActiveProviderConfig({
           providerId: targetProvider,
           modelId: candidate.modelId,
+          mode: useSettingsStore.getState().lockMode,
           origin: 'explicit'
         });
         // Main's RouteEventPolicy dedupes (once per provider per session).
@@ -631,7 +632,8 @@ export const ModelSelector: React.FC = () => {
       if (window.electronAPI?.updateActiveProviderConfig) {
         await window.electronAPI.updateActiveProviderConfig({
           providerId: 'auto',
-          modelId: ''
+          modelId: '',
+          mode: useSettingsStore.getState().lockMode
         });
       }
     } catch {}

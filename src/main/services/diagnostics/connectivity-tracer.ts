@@ -500,6 +500,7 @@ export class ConnectivityTracer extends EventEmitter {
       const settings = settingsRes.data || {
         activeProvider: providerId as any,
         activeModel: modelId,
+        modelLock: { providerId, modelId, mode: 'resilient' as const },
         apiKeys: {},
         customEndpoints: {},
         temperature: 0.2,

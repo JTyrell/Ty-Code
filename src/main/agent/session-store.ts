@@ -1,7 +1,7 @@
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
-import type { TodoItem } from './agent-state-manager';
+import type { CompletionContractState, TodoItem } from './agent-state-manager';
 
 export type AgentSessionMode = 'plan' | 'execute' | 'hybrid';
 
@@ -15,6 +15,7 @@ export interface AgentSessionState {
   createdAt: number;
   updatedAt: number;
   completed?: boolean;
+  completionContract?: CompletionContractState;
 }
 
 const SESSIONS_DIR = path.join(os.homedir(), '.tycode', 'sessions');
@@ -142,6 +143,7 @@ export function buildSessionSnapshot(
     todos: TodoItem[];
     iterationCount: number;
     toolCallHistory: Array<{ tool: string; timestamp: number }>;
+    completionContract?: CompletionContractState | null;
   },
   createdAt?: number,
   completed?: boolean
@@ -154,6 +156,7 @@ export function buildSessionSnapshot(
     todos: state.todos,
     iterationCount: state.iterationCount,
     recentToolCalls: state.toolCallHistory.slice(-20),
+    ...(state.completionContract ? { completionContract: state.completionContract } : {}),
     createdAt: createdAt ?? now,
     updatedAt: now,
     ...(completed === true ? { completed: true } : {})

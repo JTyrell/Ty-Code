@@ -408,6 +408,7 @@ import {
   getActiveModel as readActiveModelLock,
   getGatewayActiveOverride as readGatewayActiveOverride
 } from './active-model-lock';
+import type { ModelLockMode } from '../../shared/types/settings';
 
 const endpointOverrides: Partial<Record<string, string>> = {};
 
@@ -421,7 +422,7 @@ export function setEndpointOverride(providerId: string, url?: string): void {
   }
 }
 
-export function setActiveModel(config: { providerId: string; modelId: string; isAutoMode: boolean }): void {
+export function setActiveModel(config: { providerId: string; modelId: string; isAutoMode: boolean; mode?: ModelLockMode }): void {
   // Tripwire + idempotent re-lock guard live in active-model-lock. An
   // identical re-lock returns changed:false and this function emits NOTHING
   // (no log, no preferences write, no vault access) — this is what breaks

@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { IpcRendererEvent } from 'electron';
 import type { AgentStreamChunk, CanvasAgentEventPayloadData, CanvasEditAppliedPayload, CanvasEditIntent, CanvasMessageData, CanvasPreviewProposedPayload, CanvasPreviewStatusPayload, CanvasSnapshotData, CanvasStructuralIntentPayload, CanvasUpdateNotificationData, CommandExecutionOptions, ElectronAPI, ExtensionMetadata, ProposedDiff, PtySessionInfo, PtySpawnOptions, TerminalRunCommandOptions } from './types';
 import { AgentDonePayloadSchema } from '../shared/types/agent-events';
+import { COMMAND_CHANNELS } from '../shared/types/command-registry';
 import type { ReliabilityAdvisorPayload, ReliabilityHealthSnapshot } from '../shared/types/agent-events';
 
 // Echo suppression (Prompt: Break the Model-Sync Echo Loop): each renderer
@@ -127,6 +128,20 @@ const api: ElectronAPI = {
   getBootState: () => ipcRenderer.invoke('app:get-boot-state'),
   saveSettings: (settings) => ipcRenderer.invoke('settings:save', settings),
   updateActiveProviderConfig: (config) => ipcRenderer.invoke('providers:update-active-config', config),
+  getActiveRoute: () => ipcRenderer.invoke('providers:get-active-route'),
+  onActiveRouteChanged: (callback) => {
+    const listener = (_: IpcRendererEvent, payload: { snapshot: Parameters<typeof callback>[0]; event?: Parameters<typeof callback>[1] }) => {
+      callback(payload.snapshot, payload.event);
+    };
+    ipcRenderer.on('providers:active-route-changed', listener);
+    return () => ipcRenderer.removeListener('providers:active-route-changed', listener);
+  },
+  getProviderHealth: () => ipcRenderer.invoke('providers:get-health'),
+  onProviderHealthChanged: (callback) => {
+    const listener = (_: IpcRendererEvent, snapshot: Parameters<typeof callback>[0]) => callback(snapshot);
+    ipcRenderer.on('providers:health-changed', listener);
+    return () => ipcRenderer.removeListener('providers:health-changed', listener);
+  },
   getTelemetryPreview: () => ipcRenderer.invoke('telemetry:get-preview'),
   deleteTelemetryEvent: (index, expected) => ipcRenderer.invoke('telemetry:delete-event', { index, expected }),
   clearTelemetryData: () => ipcRenderer.invoke('telemetry:clear-data'),
@@ -151,7 +166,23 @@ const api: ElectronAPI = {
   // Dev-only storm GENERATOR probe (main registers the handler unpackaged
   // builds only; in production this invoke simply rejects).
   devStormTestSetActiveModel: () => ipcRenderer.invoke('dev:storm:set-active-model'),
-  copyToClipboard: (text: string) => ipcRenderer.invoke('clipboard:write', text),
+  // Prompt 3: Copy Pipeline. Main-process fallback for every window; the
+  // renderer lib (src/renderer/src/lib/clipboard.ts) tries the async clipboard
+  // API first and falls back here. Payload may be a bare string (back-compat)
+  // or { text, source } so the audit trail can name the originating surface.
+  copyToClipboard: (payload) => ipcRenderer.invoke('clipboard:write', payload),
+  readFromClipboard: (source) => ipcRenderer.invoke('clipboard:read', { source }),
+  getClipboardAudit: () => ipcRenderer.invoke('clipboard:audit'),
+  // ===== Prompt 5: Command Registry bridge =====
+  // Menus and keybindings are painted by the renderer straight from the shared
+  // registry (it is Electron-free), so only main-target activations cross here.
+  // Channel names come from the shared contract rather than being retyped, so a
+  // rename cannot orphan a handler and turn a click into a rejection.
+  executeCommand: (payload) => ipcRenderer.invoke(COMMAND_CHANNELS.execute, payload),
+  executeDynamicCommand: (item, contexts) =>
+    ipcRenderer.invoke(COMMAND_CHANNELS.executeDynamic, { item, contexts }),
+  getMainCommandContext: () => ipcRenderer.invoke(COMMAND_CHANNELS.mainContext),
+  getCommandAuditTrail: () => ipcRenderer.invoke(COMMAND_CHANNELS.audit),
   // ===== Autonomous Free-Tier Reliability (Prompts 1-3) =====
   // Dev-only chaos injector (main registers the handler unpackaged builds
   // only; in production this invoke simply rejects).
@@ -829,7 +860,7 @@ const api: ElectronAPI = {
   getAvailableModels: () => ipcRenderer.invoke('models:get-available-models'),
   getModelAvailabilitySummary: () => ipcRenderer.invoke('models:get-availability-summary'),
   resetModelsAvailabilityCache: () => ipcRenderer.invoke('models:reset-availability-cache'),
-  updateActiveModelConfig: (config: any) => ipcRenderer.invoke('models:update-active-model-config', config),
+  updateActiveModelConfig: (config) => ipcRenderer.invoke('models:update-active-model-config', config),
   getCommunityKeyStatus: () => ipcRenderer.invoke('community-key:get-status'),
   onCommunityKeyStatusChanged: (callback: (data: any) => void) => {
     const listener = (_event: any, data: any) => callback(data);

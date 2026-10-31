@@ -1054,17 +1054,12 @@ body.theme-group-light .markdown-content code:not(pre code) {
   min-height: 0;
   height: 100%;
   width: 100%;
-  /* Prompt 2: stable scrollbar gutter — a scrollbar rotating in/out of view
-     must not horizontally reflow the feed (or the centered pill) by a pixel. */
+  /* Keep the viewport and its absolute follow control geometrically stable. */
   scrollbar-gutter: stable;
 }
 
-/* "Jump to latest" Smart Sticky-Scroll Pill.
-   Prompt 2: absolutely anchored at left: 50% / translateX(-50%) so the pill's
-   horizontal position is invariant to scrollbar-width changes, and the
-   transform NEVER changes across hover/active states — any transform shift is
-   what made the pill slip out from under a held finger/mouse ("should be still
-   under press which click land"). */
+/* The follow pill is an absolute viewport control. Its centering transform is
+   invariant through shown, pressing, and suppressing phases. */
 .chat-jump-to-latest-pill {
   position: absolute;
   bottom: 16px;
@@ -1088,10 +1083,10 @@ body.theme-group-light .markdown-content code:not(pre code) {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.05);
   cursor: pointer;
   user-select: none;
-  /* No `transform` in the transition list: the pinned translateX(-50%) offset
-     must be continuous through press, release and hover (no jitter). */
-  transition: background-color 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
-  animation: chatPillSlideIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  touch-action: manipulation;
+  will-change: opacity;
+  transition: opacity 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+  animation: chatPillReveal 0.18s ease-out both;
 }
 
 .chat-jump-to-latest-pill:hover {
@@ -1100,11 +1095,16 @@ body.theme-group-light .markdown-content code:not(pre code) {
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(99, 102, 241, 0.3);
 }
 
-/* Prompt 2: :active/:focus intentionally keep the exact same transform — no
-   translate/scale feedback while pressed, so the pill cannot shift under the
-   pointer during press or between press and click. */
-.chat-jump-to-latest-pill:active {
+.chat-jump-to-latest-pill[data-phase='pressing'] {
   background-color: var(--bg-hover, rgba(40, 40, 60, 0.95));
+  border-color: var(--accent-primary, #6366f1);
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.46), 0 0 0 1px rgba(99, 102, 241, 0.38);
+}
+
+.chat-jump-to-latest-pill[data-phase='suppressing'] {
+  opacity: 0;
+  pointer-events: none;
+  animation: none;
 }
 
 .chat-jump-to-latest-pill:focus-visible {
@@ -1129,15 +1129,9 @@ body.theme-group-light .chat-jump-to-latest-pill {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.05);
 }
 
-@keyframes chatPillSlideIn {
-  from {
-    opacity: 0;
-    transform: translate(-50%, 10px) scale(0.95);
-  }
-  to {
-    opacity: 1;
-    transform: translate(-50%, 0) scale(1);
-  }
+@keyframes chatPillReveal {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 @media (prefers-reduced-motion: reduce) {
