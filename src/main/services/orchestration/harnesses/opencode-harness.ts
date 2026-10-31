@@ -7,7 +7,7 @@ import type { AgentHarness, HarnessMetadata } from './types';
 import type { ChatCompletionMessage } from '../../../providers/provider-gateway';
 import type { ToolCall } from '../../../../preload/types';
 import { OPENCODE_TOOL_DEFINITIONS } from '../tools';
-import { TEXTUAL_TOOL_PROTOCOL } from './tool-protocol';
+import { TEXTUAL_TOOL_PROTOCOL, parseTextualToolCalls } from './tool-protocol';
 
 export class OpenCodeHarness implements AgentHarness {
   public readonly metadata: HarnessMetadata = {
@@ -45,17 +45,6 @@ export class OpenCodeHarness implements AgentHarness {
     fullText: string,
     toolCalls: ToolCall[]
   ): { text: string; toolCalls: ToolCall[] } {
-    const finalCalls = [...toolCalls];
-    const xmlRegex = /<tool_call>\s*<name>([\s\S]+?)<\/name>\s*<arguments>([\s\S]*?)<\/arguments>\s*<\/tool_call>/g;
-    let match: RegExpExecArray | null;
-    while ((match = xmlRegex.exec(fullText)) !== null) {
-      try {
-        finalCalls.push({ id: `call_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`, name: match[1].trim(), arguments: JSON.parse(match[2].trim()) as Record<string, unknown> });
-      } catch {
-        // Skip malformed XML tool call
-      }
-    }
-    const cleanText = finalCalls.length ? fullText.replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '').trim() : fullText;
-    return { text: cleanText || fullText, toolCalls: finalCalls };
+    return parseTextualToolCalls(fullText, toolCalls);
   }
 }

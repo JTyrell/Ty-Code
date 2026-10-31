@@ -492,10 +492,21 @@ describe('Terminal menu — exact group order (Prompt 5b Step 4)', () => {
     for (const id of ['terminal.show-running-tasks', 'terminal.restart-running-task', 'terminal.terminate-task']) {
       expect(getCommandEntry(id)?.when).toBe('tasksRunning');
       expect(getCommandEntry(id)?.disabledReason).toBe('No task is currently running.');
-      expect(getCommandEntry(id)?.submenuSource).toBe('runningTasks');
     }
     expect(getCommandEntry('terminal.run-selected-text')?.when).toBe('selectionActive');
     expect(getCommandEntry('terminal.run-active-file')?.when).toBe('editorOpen');
+  });
+
+  /**
+   * Each G3 parent needs its own source. A published row carries the command it
+   * runs and the resolver attaches rows verbatim, so one shared list would make
+   * Restart and Terminate do whatever Show does.
+   */
+  it('gives each G3 parent a distinct submenu source', () => {
+    const sources = ['terminal.show-running-tasks', 'terminal.restart-running-task', 'terminal.terminate-task']
+      .map((id) => getCommandEntry(id)?.submenuSource);
+    expect(sources).toEqual(['runningTasks', 'runningTasksRestart', 'runningTasksTerminate']);
+    expect(new Set(sources).size).toBe(3);
   });
 
   it('enables G3 only while a task runs', () => {

@@ -293,6 +293,8 @@ import { registerWorkspaceSessionHandlers } from './ipc/workspace-session-handle
 import { registerCanvasPreviewHandlers } from './ipc/canvas-preview-handlers';
 import { registerPromptAssemblerHandlers } from './ipc/preferences-handlers';
 import { registerCommandHandlers } from './ipc/command-handlers';
+import { registerFileDialogHandlers } from './ipc/file-dialog-handlers';
+import { registerTaskHandlers } from './ipc/task-handlers';
 import { createElectronMainCommandAdapters } from './services/command-main-adapters';
 import {
   createMainCommandHandlers,
@@ -709,6 +711,29 @@ function registerIpcHandlers(): void {
 
   registerWorkspaceSessionHandlers();
   registerCanvasPreviewHandlers();
+
+  // File > Open File… and File > Save As… are registry rows whose handlers live
+  // in the renderer, but a renderer cannot open a native picker. The window is
+  // passed as a getter for the same reason the command adapters get one:
+  // `mainWindow` is rebound when the primary window is recreated, and a captured
+  // reference would parent the dialog to a destroyed window.
+  registerFileDialogHandlers({
+    isTrustedSender: isTrustedExtensionFrame,
+    getFallbackWindow: () => mainWindow
+  });
+
+  // Terminal > Run Task… and the whole of group G3 (Show/Restart/Terminate
+  // Running Task…) are registry rows backed by the task runner, which resolves
+  // terminals through `pty-handlers` and pushes `tasks:changed` to every window
+  // so a popout's menu bar agrees with the primary one. Both are getters: a task
+  // can outlive the window it was started from, and `currentWorkspacePath`
+  // changes every time a folder is opened, so discovery has to read it at call
+  // time rather than at registration.
+  registerTaskHandlers({
+    isTrustedSender: isTrustedExtensionFrame,
+    getMainWindow: () => mainWindow,
+    getWorkspacePath: () => currentWorkspacePath
+  });
 
   ipcMain.handle('fs:select-workspace', async () => {
     const targetWin = BrowserWindow.getFocusedWindow() || mainWindow;

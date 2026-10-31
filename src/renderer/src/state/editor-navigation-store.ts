@@ -6,7 +6,21 @@ export interface EditorNavigationTarget {
   column?: number;
 }
 
-type EditorActionName = 'toggleMinimap' | 'toggleWordWrap' | 'toggleZenMode' | 'splitVertical' | 'splitHorizontal' | 'renameSymbol' | 'findReferences' | 'goToDefinition' | 'goToImplementation' | 'quickFix';
+/**
+ * The editor-side implementations a command handler can ask for.
+ *
+ * Exported because `lib/workbench-commands.ts` has to check whether one is
+ * actually registered before calling it: `runAction` is a silent no-op when
+ * `EditorArea` is unmounted, and a menu row that quietly does nothing is the
+ * dead click the registry exists to remove.
+ *
+ * `refreshBlame` is the one entry that is *not* a user-facing toggle. Saving
+ * used to bump a `useState` counter inside `EditorArea` from its own keydown
+ * listener; with that listener retired in favour of registry keybindings, the
+ * bump has to be reachable from the `workbench.save` handler, and this store is
+ * already the bridge between the two.
+ */
+export type EditorActionName = 'toggleMinimap' | 'toggleWordWrap' | 'toggleZenMode' | 'splitVertical' | 'splitHorizontal' | 'renameSymbol' | 'findReferences' | 'goToDefinition' | 'goToImplementation' | 'quickFix' | 'refreshBlame';
 type EditorActionHandlers = Partial<Record<EditorActionName, () => void>>;
 
 interface EditorNavigationState {

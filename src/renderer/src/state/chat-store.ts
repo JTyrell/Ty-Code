@@ -791,7 +791,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     let flushTimer: ReturnType<typeof setTimeout> | null = null;
     let flushRaf: number | null = null;
     let lastFlushTime = 0;
-    const FLUSH_INTERVAL_MS = 100;
+    const FLUSH_INTERVAL_MS = 16;
 
     // Task idempotency (Prompt 2): duplicate done/error emissions (failover
     // hand-offs, cancel races) and duplicate content re-appends must never
@@ -830,10 +830,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
       return incoming;
     };
 
-    // Step 3: Stream Watchdog (auto-finalize if no chunks arrive for 4000ms)
+    // Step 3: Stream Watchdog (safety net if backend stream stalls completely without done/error)
     const taskStartTime = Date.now();
     let watchdogTimer: ReturnType<typeof setTimeout> | null = null;
-    const WATCHDOG_MS = 4000;
+    const WATCHDOG_MS = 18_000;
 
     const resetWatchdog = () => {
       if (watchdogTimer) {
@@ -842,8 +842,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
       if (get().isStreaming && get().currentTaskId === taskId) {
         watchdogTimer = setTimeout(() => {
-          if (get().isStreaming && get().currentTaskId === taskId) {
-            console.warn(`[ChatStore] Watchdog triggered: 4000ms elapsed without stream chunk for task ${taskId}. Auto-finalizing.`);
+          if (get().isStreaming && get().currentTaskId === taskId && !get().pendingApproval) {
+            console.warn(`[ChatStore] Watchdog triggered: ${WATCHDOG_MS}ms elapsed without stream chunk for task ${taskId}. Auto-finalizing.`);
             guardFinalize();
           }
         }, WATCHDOG_MS);
@@ -1169,6 +1169,29 @@ export const useChatStore = create<ChatState>((set, get) => ({
           } else if (chunk.type === 'thought') {
             reasoningBuffer += chunk.content || '';
             hasNewReasoning = true;
+          } else if (chunk.type === 'status') {
+            let statusText = chunk.content || '';
+            if (/thinking/i.test(statusText)) {
+              statusText = 'Thinking…';
+            }
+            set((state) => ({
+              currentStatus: statusText,
+              contextTokens: statusText.includes('compacting')
+                ? Math.floor(state.contextLimit * 0.35)
+                : state.contextTokens,
+              messages: state.messages.map((m) =>
+                m.taskId === taskId ? { ...m, statusText } : m
+              )
+            }));
+          } else if (chunk.type === 'approval_request' && chunk.approvalRequest) {
+            set({ pendingApproval: chunk.approvalRequest, currentStatus: 'Waiting for your approval…' });
+          }
+          if (chunk.scopeRejectionCard) {
+            set((state) => ({
+              messages: state.messages.map((m) =>
+                m.taskId === taskId ? { ...m, scopeRejectionCard: chunk.scopeRejectionCard } : m
+              )
+            }));
           }
         }
 
@@ -1180,7 +1203,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
           }
         }
         if (hasNewReasoning) {
-          scheduleReasoningFlush();
+          if (lastReasoningFlushTime === 0) {
+            flushReasoningBuffer();
+          } else {
+            scheduleReasoningFlush();
+          }
         }
       }));
     }

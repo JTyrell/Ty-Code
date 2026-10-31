@@ -83,8 +83,17 @@ export const ChatMessageList = forwardRef<ChatMessageListHandle, ChatMessageList
     const scrollRafRef = useRef<number | null>(null);
     const userScrollIntentRef = useRef<boolean>(false);
     const userScrollIntentTimerRef = useRef<number | null>(null);
+    const programmaticScrollUntilRef = useRef<number>(0);
     const [detachedFromBottom, setDetachedFromBottom] = useState<boolean>(false);
     const detachedFromBottomRef = useRef<boolean>(false);
+
+    const clearUserScrollIntent = useCallback(() => {
+      userScrollIntentRef.current = false;
+      if (userScrollIntentTimerRef.current !== null) {
+        window.clearTimeout(userScrollIntentTimerRef.current);
+        userScrollIntentTimerRef.current = null;
+      }
+    }, []);
 
     // Track dynamic header height to offset virtualization coordinates accurately
     useLayoutEffect(() => {
@@ -116,14 +125,8 @@ export const ChatMessageList = forwardRef<ChatMessageListHandle, ChatMessageList
       const el = parentRef.current;
       if (!el) return;
 
-      const clearUserScrollIntent = () => {
-        userScrollIntentRef.current = false;
-        if (userScrollIntentTimerRef.current !== null) {
-          window.clearTimeout(userScrollIntentTimerRef.current);
-          userScrollIntentTimerRef.current = null;
-        }
-      };
       const markUserScrollIntent = () => {
+        if (performance.now() < programmaticScrollUntilRef.current) return;
         userScrollIntentRef.current = true;
         if (userScrollIntentTimerRef.current !== null) {
           window.clearTimeout(userScrollIntentTimerRef.current);
@@ -150,6 +153,7 @@ export const ChatMessageList = forwardRef<ChatMessageListHandle, ChatMessageList
             if (!container) return;
             const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
             const isPinned = distanceFromBottom < 64;
+            const isProgrammatic = performance.now() < programmaticScrollUntilRef.current;
 
             if (isPinned) {
               pinnedToBottom.current = true;
@@ -157,14 +161,16 @@ export const ChatMessageList = forwardRef<ChatMessageListHandle, ChatMessageList
                 detachedFromBottomRef.current = false;
                 setDetachedFromBottom(false);
               }
-            } else if (userScrollIntentRef.current) {
+            } else if (!isProgrammatic && userScrollIntentRef.current) {
               pinnedToBottom.current = false;
               if (!detachedFromBottomRef.current) {
                 detachedFromBottomRef.current = true;
                 setDetachedFromBottom(true);
               }
             }
-            clearUserScrollIntent();
+            if (!isProgrammatic) {
+              clearUserScrollIntent();
+            }
           });
         }
         onScroll?.(event as unknown as UIEvent<HTMLDivElement>);
@@ -187,7 +193,7 @@ export const ChatMessageList = forwardRef<ChatMessageListHandle, ChatMessageList
           scrollRafRef.current = null;
         }
       };
-    }, [onScroll]);
+    }, [onScroll, clearUserScrollIntent]);
 
     // Step 2 & 3: Auto-follow helper (behavior 'auto' during streaming)
     const autoFollow = useCallback(() => {
@@ -207,14 +213,25 @@ export const ChatMessageList = forwardRef<ChatMessageListHandle, ChatMessageList
       (behavior: ScrollBehavior) => {
         const el = parentRef.current;
         if (!el) return;
+        programmaticScrollUntilRef.current = performance.now() + 750;
         if (messages.length > 0) {
-          rowVirtualizer.scrollToIndex(messages.length - 1, { align: 'end', behavior });
+          // Ensure virtual items at the bottom are mounted/measured without fighting smooth scroll
+          rowVirtualizer.scrollToIndex(messages.length - 1, { align: 'end', behavior: 'auto' });
         }
         if (behavior === 'smooth') {
           el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
         } else {
           el.scrollTop = el.scrollHeight;
         }
+        requestAnimationFrame(() => {
+          const target = parentRef.current;
+          if (!target || !pinnedToBottom.current) return;
+          if (behavior === 'smooth') {
+            target.scrollTo({ top: target.scrollHeight, behavior: 'smooth' });
+          } else {
+            target.scrollTop = target.scrollHeight;
+          }
+        });
       },
       [messages.length, rowVirtualizer]
     );
@@ -224,14 +241,14 @@ export const ChatMessageList = forwardRef<ChatMessageListHandle, ChatMessageList
     const scrollToBottom = useCallback(
       (smooth = false) => {
         pinnedToBottom.current = true;
-        userScrollIntentRef.current = false;
+        clearUserScrollIntent();
         if (detachedFromBottomRef.current) {
           detachedFromBottomRef.current = false;
           setDetachedFromBottom(false);
         }
         performBottomScroll(smooth ? 'smooth' : 'auto');
       },
-      [performBottomScroll]
+      [performBottomScroll, clearUserScrollIntent]
     );
 
     // Expose handle methods to parent components
@@ -295,10 +312,14 @@ export const ChatMessageList = forwardRef<ChatMessageListHandle, ChatMessageList
 
     const handlePillActivate = useCallback(() => {
       pinnedToBottom.current = true;
-      userScrollIntentRef.current = false;
+      clearUserScrollIntent();
+      if (detachedFromBottomRef.current) {
+        detachedFromBottomRef.current = false;
+        setDetachedFromBottom(false);
+      }
       const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
       performBottomScroll(reducedMotion ? 'auto' : 'smooth');
-    }, [performBottomScroll]);
+    }, [performBottomScroll, clearUserScrollIntent]);
 
     const handlePillSuppressionEnd = useCallback(() => {
       const shouldRemainDetached = !pinnedToBottom.current;
@@ -347,7 +368,7 @@ export const ChatMessageList = forwardRef<ChatMessageListHandle, ChatMessageList
             <div
               ref={headerRef}
               className="chat-feed-header contain-content"
-              style={{ contain: 'content' }}
+              style={{ contain: 'content', flexShrink: 0 }}
             >
               {header}
             </div>
@@ -361,7 +382,8 @@ export const ChatMessageList = forwardRef<ChatMessageListHandle, ChatMessageList
               style={{
                 height: `${rowVirtualizer.getTotalSize()}px`,
                 width: '100%',
-                position: 'relative'
+                position: 'relative',
+                flexShrink: 0
               }}
             >
               {virtualItems.map((virtualRow: VirtualItem) => {
@@ -385,6 +407,7 @@ export const ChatMessageList = forwardRef<ChatMessageListHandle, ChatMessageList
                       width: '100%',
                       transform: `translateY(${virtualRowStart}px)`,
                       boxSizing: 'border-box',
+                      paddingBottom: '12px',
                       contain: 'content',
                       contentVisibility: 'auto',
                       containIntrinsicSize: 'auto 130px'
@@ -409,7 +432,7 @@ export const ChatMessageList = forwardRef<ChatMessageListHandle, ChatMessageList
           )}
 
           {/* Optional Footer (e.g. Plan Reviews, Security Approvals, Active Errors) */}
-          {footer && <div className="chat-feed-footer contain-content" style={{ contain: 'content' }}>{footer}</div>}
+          {footer && <div className="chat-feed-footer contain-content" style={{ contain: 'content', flexShrink: 0 }}>{footer}</div>}
         </div>
 
         <ScrollFollowPill

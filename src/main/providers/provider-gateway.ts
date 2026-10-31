@@ -1470,17 +1470,21 @@ export async function sendChatRequest(
       invalidateCommunityKey();
     }
     if (shouldHandoff) {
-      // Autonomous Free-Tier Reliability: a 429 waits out its cooldown at most
-      // ONCE per (task, route) — header Retry-After or the learned window,
-      // capped at 20s — then retries the SAME route silently before a handoff
-      // hop is spent. SILENT class: ledger only.
-      if (response.status === 429) {
+      const requestedModel = requestModel || modelId;
+      const nextModel = handoffCount < 2
+        ? pickHandoffCandidate(allModels, config?.providerId || providerId, requestedModel)
+        : undefined;
+
+      // Fast-path hop: only sleep on a pre-stream 429 if no immediate healthy
+      // handoff candidate is available (or cap pre-hop wait to 1.2s).
+      if (response.status === 429 && !nextModel) {
         const retryAfterHeader = Number(response.headers.get('retry-after'));
         const waited = await reliabilityLadder.acquireCooldownRetry({
           taskId: currentTaskId,
           providerId: config.providerId || providerId,
           modelId: requestModel || modelId,
-          retryAfterSec: Number.isFinite(retryAfterHeader) && retryAfterHeader > 0 ? retryAfterHeader : undefined
+          retryAfterSec: Number.isFinite(retryAfterHeader) && retryAfterHeader > 0 ? retryAfterHeader : undefined,
+          maxWaitMs: 1_500
         });
         if (waited) {
           console.log('[GATEWAY] 429: honored cooldown; retrying same route silently.');
@@ -1513,8 +1517,6 @@ export async function sendChatRequest(
           `[sendChatRequest] ${config.providerId || providerId} failed pre-stream (HTTP ${response.status}) → plain handoff, 0 tokens billed by this hop.`
         );
         // FCC-managed handoff: only providers that are keyless or own their key.
-        const requestedModel = requestModel || modelId;
-        const nextModel = pickHandoffCandidate(allModels, config?.providerId || providerId, requestedModel);
         if (nextModel) {
           console.log(`[GATEWAY] Handing off to ${nextModel.providerId} (${nextModel.modelId})`);
           // Per-hop renderer notification removed (backend emission defect).
@@ -1787,10 +1789,10 @@ export async function sendChatRequest(
 
     const tokenBatcher = new StreamChunkBatcher((chunk) => {
       if (onToken) onToken(chunk);
-    }, 20);
+    }, 10);
     const reasoningBatcher = new StreamChunkBatcher((chunk) => {
       if (onReasoning) onReasoning(chunk);
-    }, 20);
+    }, 10);
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder('utf-8');
@@ -1821,8 +1823,19 @@ export async function sendChatRequest(
             const dataStr = trimmed.slice(6).trim();
             if (dataStr === '[DONE]') continue;
 
+            let json: any;
             try {
-              const json = JSON.parse(dataStr);
+              json = JSON.parse(dataStr);
+            } catch (parseErr) {
+              console.warn('[GATEWAY] SSE chunk parse skipped:', parseErr instanceof Error ? parseErr.message : parseErr);
+              json = null;
+            }
+            if (json) {
+              if (json.error && !fullText && streamedToolCalls.size === 0) {
+                const errCodeVal = json.error?.code || json.error?.status || 502;
+                const errMsgVal = json.error?.message || (typeof json.error === 'string' ? json.error : JSON.stringify(json.error));
+                throw new Error(`fetch failed: Upstream stream error (${errCodeVal}): ${errMsgVal}`);
+              }
               extractProviderUsage(json);
               const finish = parseFinishReason(json);
               if (finish) lastFinishReason = finish;
@@ -1831,14 +1844,15 @@ export async function sendChatRequest(
               // mix it into the assistant content stream.
               const reasoningToken: unknown =
                 json.choices?.[0]?.delta?.reasoning_content ??
-                json.choices?.[0]?.delta?.reasoning;
+                json.choices?.[0]?.delta?.reasoning ??
+                (!fullThought ? (json.choices?.[0]?.message?.reasoning_content ?? json.choices?.[0]?.message?.reasoning) : undefined);
               if (typeof reasoningToken === 'string' && reasoningToken) {
                 fullThought += reasoningToken;
                 reasoningBatcher.push(reasoningToken);
               }
               // OpenAI-style streamed tool calls arrive as fragments:
               // { index, id?, function?: { name?, arguments? } }
-              const deltaToolCalls: unknown = json.choices?.[0]?.delta?.tool_calls;
+              const deltaToolCalls: unknown = json.choices?.[0]?.delta?.tool_calls ?? json.choices?.[0]?.message?.tool_calls;
               if (Array.isArray(deltaToolCalls)) {
                 for (const fragment of deltaToolCalls as any[]) {
                   if (!fragment) continue;
@@ -1864,9 +1878,20 @@ export async function sendChatRequest(
                 const slot = streamedToolCalls.get(idx);
                 if (slot) slot.arguments += json.partial_json;
               }
-              let token = json.choices?.[0]?.delta?.content;
-              if ((token === undefined || token === null) && json.delta?.text) {
-                token = json.delta.text;
+              let rawContent = json.choices?.[0]?.delta?.content;
+              if ((rawContent === undefined || rawContent === null || rawContent === '') && json.delta?.text) {
+                rawContent = json.delta.text;
+              }
+              if ((rawContent === undefined || rawContent === null || rawContent === '') && !fullText && json.choices?.[0]?.message?.content) {
+                rawContent = json.choices[0].message.content;
+              }
+              let token = '';
+              if (typeof rawContent === 'string') {
+                token = rawContent;
+              } else if (Array.isArray(rawContent)) {
+                token = rawContent
+                  .map((part: any) => (typeof part === 'string' ? part : (part?.text ?? part?.content ?? '')))
+                  .join('');
               }
 
               if (token) {
@@ -1881,8 +1906,6 @@ export async function sendChatRequest(
                   chatLatencyTracker.recordToken(currentTaskId, token);
                 }
               }
-            } catch (parseErr) {
-              console.warn('[GATEWAY] SSE chunk parse skipped:', parseErr instanceof Error ? parseErr.message : parseErr);
             }
           } else {
             strayNonSseLines.push(trimmed);
@@ -2013,6 +2036,25 @@ export async function sendChatRequest(
         } else if (salvagedContent.trim() && isHarnessLogContent(salvagedContent)) {
           sidecarLogLedger.record('stream-gate', salvagedContent);
         }
+      }
+    }
+
+    // If a reasoning/free model emitted only reasoning_content with empty content
+    // and no tool calls, salvage the thought as the assistant response so the
+    // user never receives a blank message bubble.
+    if (!fullText.trim() && streamedToolCalls.size === 0 && fullThought.trim()) {
+      fullText = fullThought.trim();
+      if (onToken) onToken(fullText);
+      chatLatencyTracker.recordToken(currentTaskId, fullText);
+    }
+
+    // If an upstream free provider closed an HTTP 200 SSE stream with 0 content,
+    // 0 reasoning, and 0 tool calls, treat it as an empty upstream failure (502)
+    // and hand off to the next healthy candidate if one is available.
+    if (!fullText.trim() && streamedToolCalls.size === 0 && !fullThought.trim() && handoffCount < 2) {
+      const altCandidate = pickHandoffCandidate(allModels, config?.providerId || providerId, requestModel || modelId);
+      if (altCandidate && altCandidate.providerId !== (config?.providerId || providerId)) {
+        throw new Error('fetch failed: 502 Empty stream from upstream provider');
       }
     }
 
@@ -2425,8 +2467,16 @@ export function pickHandoffCandidate(
   // a sticky `openrouter` entry.
   const dead = providerHealthStore.deadProviderSet();
   const isLocalProvider = (pid: string): boolean => /^(ollama|local|llamacpp|lmstudio|jan|lms)$/.test(norm(pid));
+  const fccLive = (() => {
+    try {
+      return canFccServeCompletions() || fccSidecarManager.isActive();
+    } catch {
+      return false;
+    }
+  })();
   const eligible = allModels.filter((m) => {
     if (norm(m.providerId) === norm(currentProviderId)) return false;
+    if (!fccLive && (norm(m.providerId) === 'fcc' || norm(m.providerId) === 'fcc-proxy')) return false;
     if (providerHealthStore.isDead(m.providerId) || dead.has(norm(m.providerId))) return false;
     // Sentinel-poor / quota-exhausted routes are not health-aware targets.
     try {

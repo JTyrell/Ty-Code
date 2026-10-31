@@ -1,8 +1,10 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { IpcRendererEvent } from 'electron';
-import type { AgentStreamChunk, CanvasAgentEventPayloadData, CanvasEditAppliedPayload, CanvasEditIntent, CanvasMessageData, CanvasPreviewProposedPayload, CanvasPreviewStatusPayload, CanvasSnapshotData, CanvasStructuralIntentPayload, CanvasUpdateNotificationData, CommandExecutionOptions, ElectronAPI, ExtensionMetadata, ProposedDiff, PtySessionInfo, PtySpawnOptions, TerminalRunCommandOptions } from './types';
+import type { AgentStreamChunk, CanvasAgentEventPayloadData, CanvasEditAppliedPayload, CanvasEditIntent, CanvasMessageData, CanvasPreviewProposedPayload, CanvasPreviewStatusPayload, CanvasSnapshotData, CanvasStructuralIntentPayload, CanvasUpdateNotificationData, CommandExecutionOptions, ElectronAPI, ExtensionMetadata, ProposedDiff, PtySessionInfo, PtySpawnOptions, RunningTask, TerminalRunCommandOptions } from './types';
 import { AgentDonePayloadSchema } from '../shared/types/agent-events';
 import { COMMAND_CHANNELS } from '../shared/types/command-registry';
+import { FILE_DIALOG_CHANNELS } from '../shared/types/file-dialog';
+import { TASK_CHANNELS } from '../shared/types/tasks';
 import type { ReliabilityAdvisorPayload, ReliabilityHealthSnapshot } from '../shared/types/agent-events';
 
 // Echo suppression (Prompt: Break the Model-Sync Echo Loop): each renderer
@@ -183,6 +185,12 @@ const api: ElectronAPI = {
     ipcRenderer.invoke(COMMAND_CHANNELS.executeDynamic, { item, contexts }),
   getMainCommandContext: () => ipcRenderer.invoke(COMMAND_CHANNELS.mainContext),
   getCommandAuditTrail: () => ipcRenderer.invoke(COMMAND_CHANNELS.audit),
+  // File > Open File… and File > Save As… had no dialog to call before the
+  // registry; these are the two that were added for them. Channel names come
+  // from the same shared contract the main handler binds, so a rename cannot
+  // orphan one side and turn a click into a silent rejection.
+  openFileDialog: (request) => ipcRenderer.invoke(FILE_DIALOG_CHANNELS.openFile, request ?? {}),
+  savePathDialog: (request) => ipcRenderer.invoke(FILE_DIALOG_CHANNELS.savePath, request ?? {}),
   // ===== Autonomous Free-Tier Reliability (Prompts 1-3) =====
   // Dev-only chaos injector (main registers the handler unpackaged builds
   // only; in production this invoke simply rejects).
@@ -425,6 +433,20 @@ const api: ElectronAPI = {
     const listener = (_event: IpcRendererEvent, data: PtySessionInfo & { cwd?: string }) => callback(data);
     ipcRenderer.on('pty:session-created', listener);
     return () => ipcRenderer.removeListener('pty:session-created', listener);
+  },
+  // Prompt 5b Terminal menu: task discovery, run, restart, terminate and the
+  // change push that drives `tasksRunning`. Channel names come from the same
+  // shared contract the main handler binds, so a rename cannot orphan one side
+  // and turn a menu click into a silent rejection.
+  taskList: () => ipcRenderer.invoke(TASK_CHANNELS.list),
+  taskRunning: () => ipcRenderer.invoke(TASK_CHANNELS.running),
+  taskRun: (request) => ipcRenderer.invoke(TASK_CHANNELS.run, request),
+  taskRestart: (request) => ipcRenderer.invoke(TASK_CHANNELS.restart, request),
+  taskTerminate: (request) => ipcRenderer.invoke(TASK_CHANNELS.terminate, request),
+  onTasksChanged: (callback: (tasks: RunningTask[]) => void) => {
+    const listener = (_event: IpcRendererEvent, tasks: RunningTask[]) => callback(tasks);
+    ipcRenderer.on(TASK_CHANNELS.changed, listener);
+    return () => ipcRenderer.removeListener(TASK_CHANNELS.changed, listener);
   },
   searchExtensions: (query: string) => ipcRenderer.invoke('extensions:search', query),
   getExtensionDetails: (namespace: string, name: string) => ipcRenderer.invoke('extensions:details', { namespace, name }),

@@ -8,6 +8,7 @@ import { useChatStore } from '../state/chat-store';
 import { useWorkspaceStore } from '../state/workspace-store';
 import { toast } from '../state/toast-store';
 import { copyText, readClipboardText } from '../lib/clipboard';
+import { registerTerminalController } from '../services/terminal-controller';
 import type { ShellInfo, TerminalSplitOrientation } from '../../../preload/types';
 
 interface TerminalTab { id: string; ptyId: string; shellId: string; shellName: string; profileId?: string; cwd: string; serializedHistory?: string; hasExited?: boolean; }
@@ -461,19 +462,91 @@ export const TerminalDrawer: React.FC = () => {
       window.removeEventListener('resize', handleResize);
     };
   }, [showShellMenu, updateMenuCoords]);
+  /**
+   * Make a second pane visible, spawning whatever that takes.
+   *
+   * Separate from {@link handleToggleSplit} on purpose: the Terminal menu row and
+   * Ctrl+Shift+5 must never close the split the user just opened, so this only
+   * ever opens. Resolves true when a split is showing afterwards — including
+   * when one already was, which is a success and not something to apologise for.
+   */
+  const handleOpenSplit = useCallback(async (): Promise<boolean> => {
+    if (splitTabRef.current) return true;
+    if (!isTerminalOpenRef.current) toggleTerminalRef.current();
+
+    // An idle tab is a cheaper partner than a fresh shell, and it is the
+    // preference the drawer's own split button already has. Honouring it here
+    // too means the menu row cannot cost the user a PTY they did not ask for.
+    const partner = tabsRef.current.find((tab) => tab.id !== activeTabRef.current);
+    if (partner) {
+      splitTabRef.current = partner.id;
+      setSplitTabId(partner.id);
+      queuePersist();
+      return true;
+    }
+
+    const profile = settings?.terminalProfiles?.find((item) => item.id === settings.defaultTerminalProfileId);
+    const shellId = profile?.shellId || availableShells.find((shell) => shell.isDefault)?.id || availableShells[0]?.id;
+
+    // With no tab at all, `makeSplit` cannot be used yet. `handleSpawnTerminal`
+    // picks its partner as `previousActive || tabs[len - 2] || tabs[0]`, and
+    // from a standing start all three resolve to the tab it just created — one
+    // PTY painted in both panes. Spawn the first shell plainly so the second
+    // spawn has a real partner to point at.
+    if (tabsRef.current.length === 0) {
+      await spawnRef.current({ shellId, profileId: profile?.id });
+      if (tabsRef.current.length === 0) return false;
+    }
+
+    await spawnRef.current({ shellId, profileId: profile?.id, makeSplit: true });
+    return splitTabRef.current !== null;
+  }, [availableShells, queuePersist, settings]);
+
   const handleToggleSplit = () => {
     if (splitTabRef.current) {
       splitTabRef.current = null; setSplitTabId(null);
     } else {
-      const other = tabsRef.current.find((tab) => tab.id !== activeTabRef.current);
-      if (other) { splitTabRef.current = other.id; setSplitTabId(other.id); }
-      else void handleSpawnTerminal({
-        shellId: settings?.terminalProfiles?.find((profile) => profile.id === settings.defaultTerminalProfileId)?.shellId || availableShells.find((shell) => shell.isDefault)?.id,
-        profileId: settings?.defaultTerminalProfileId, makeSplit: true
-      });
+      void handleOpenSplit();
     }
     queuePersist();
   };
+
+  // Prompt 5b (Terminal menu): publish the drawer so the menu bar and its
+  // keybindings can drive it. They live in a different component tree and cannot
+  // see this state, and the four `workbench:*` events the old title bar fired
+  // for exactly this purpose had no listener anywhere — an event nobody hears is
+  // indistinguishable from one that was handled. This returns whether it worked.
+  useEffect(() => {
+    const registration = registerTerminalController({
+      terminalCount: () => tabsRef.current.length,
+      hasSplit: () => splitTabRef.current !== null,
+      async createTerminal() {
+        // `handleSpawnTerminal` never opens the drawer — the restore path and the
+        // FCC quick-toggle each open it themselves first. A menu click has to as
+        // well, or Terminal > New Terminal spawns a shell behind a closed panel
+        // and the user sees nothing happen.
+        if (!isTerminalOpenRef.current) toggleTerminalRef.current();
+        const before = tabsRef.current.length;
+        await spawnRef.current({});
+        // `updateTabs` assigns `tabsRef.current` synchronously, so the count is
+        // an honest witness even though the spawn helper returns `void` and
+        // swallows its failures into the inline error banner.
+        return tabsRef.current.length > before;
+      },
+      openSplit: handleOpenSplit,
+      revealTerminal(ptyId: string) {
+        const tab = tabsRef.current.find((item) => item.ptyId === ptyId);
+        if (!tab) return false;
+        if (!isTerminalOpenRef.current) toggleTerminalRef.current();
+        activeTabRef.current = tab.id;
+        setActiveTabId(tab.id);
+        flashTab(tab.id);
+        window.requestAnimationFrame(() => terminalRefs.current.get(tab.id)?.term.focus());
+        return true;
+      }
+    });
+    return () => registration.dispose();
+  }, [flashTab, handleOpenSplit]);
   const toggleSplitOrientation = () => {
     const next = splitOrientation === 'horizontal' ? 'vertical' : 'horizontal';
     orientationRef.current = next; setSplitOrientation(next); queuePersist();

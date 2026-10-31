@@ -12,6 +12,13 @@ import { buildFccTerminalEnv } from '../fcc-integration';
 interface ActivePty {
   process: pty.IPty;
   shellPath: string;
+  /**
+   * The registry id of the shell that was spawned (`powershell`, `cmd`, `bash`,
+   * `custom`, …), kept alongside `shellPath` because a task's completion
+   * sentinel has to be spelled differently per shell and `custom` says nothing
+   * about which syntax the executable actually accepts.
+   */
+  shellId: string;
   window: BrowserWindow;
   outputBuffer: string;
   attached: boolean;
@@ -26,6 +33,83 @@ interface ActivePty {
 
 const activePtys = new Map<string, ActivePty>();
 const MAX_UNATTACHED_OUTPUT = 256_000;
+
+// ---------------------------------------------------------------------------
+// Output and exit observers (Prompt 5b Step 4: task completion tracking)
+// ---------------------------------------------------------------------------
+
+/**
+ * Raw PTY output, observed outside the window.
+ *
+ * A task's completion is not observable from the shell's lifecycle:
+ * `dispatchRunCommand` writes `cmd\r` into a *persistent interactive* shell,
+ * which stays alive and prints a fresh prompt after the command ends. Nothing
+ * about the PTY says "the task finished". The task runner therefore appends a
+ * per-run sentinel to every command it writes and watches for it here.
+ *
+ * Notified unconditionally, BEFORE the `attached` branch in `onData`. That
+ * ordering is load-bearing: a task started while the terminal drawer is closed
+ * has its output buffered rather than forwarded, and buffering is exactly the
+ * case where a sentinel checked only on the forwarded path would be missed —
+ * leaving the task reported as running forever.
+ */
+export type PtyOutputListener = (ptyId: string, data: string) => void;
+export type PtyExitListener = (ptyId: string, exitCode: number) => void;
+
+const outputObservers = new Set<PtyOutputListener>();
+const exitObservers = new Set<PtyExitListener>();
+
+function notifyPtyOutput(ptyId: string, data: string): void {
+  // Copied before iterating: an observer is allowed to unsubscribe itself the
+  // first time it sees its own sentinel, and mutating a Set mid-iteration skips
+  // the listener after it.
+  for (const listener of [...outputObservers]) {
+    try {
+      listener(ptyId, data);
+    } catch (err: unknown) {
+      // An observer must never be able to break the terminal it watches.
+      console.warn('[PTY] output observer failed:', err instanceof Error ? err.message : String(err));
+    }
+  }
+}
+
+function notifyPtyExit(ptyId: string, exitCode: number): void {
+  for (const listener of [...exitObservers]) {
+    try {
+      listener(ptyId, exitCode);
+    } catch (err: unknown) {
+      console.warn('[PTY] exit observer failed:', err instanceof Error ? err.message : String(err));
+    }
+  }
+}
+
+/**
+ * Subscribe to output from every PTY. Returns a disposer.
+ *
+ * Every listener receives every terminal's bytes, so a caller must filter on the
+ * `ptyId` it cares about. That is deliberate: the alternative — a per-PTY
+ * listener list — would have to be torn down when a PTY dies, and a listener
+ * registered for a terminal that exited a moment later would leak.
+ */
+export function observePtyOutput(listener: PtyOutputListener): () => void {
+  outputObservers.add(listener);
+  return () => { outputObservers.delete(listener); };
+}
+
+/**
+ * Subscribe to terminal exits. Returns a disposer.
+ *
+ * Fires for every way a terminal can stop being observable: the child exiting on
+ * its own, and {@link killPty} closing one. The kill path has to notify
+ * explicitly — it disposes the PTY's subscriptions synchronously while
+ * `process.kill()` delivers its exit event asynchronously, so the child's own
+ * `onExit` never runs. Without that, a task running in a terminal the user
+ * closed would stay in the running list forever.
+ */
+export function observePtyExit(listener: PtyExitListener): () => void {
+  exitObservers.add(listener);
+  return () => { exitObservers.delete(listener); };
+}
 
 function shellExists(shellPath: string): boolean {
   try { return fs.statSync(shellPath).isFile(); } catch { return false; }
@@ -115,12 +199,13 @@ export function spawnPtySession(mainWindow: BrowserWindow, options: PtySpawnOpti
     let resolveReady: () => void = () => undefined;
     const whenReady = new Promise<void>((resolve) => { resolveReady = resolve; });
     const session: ActivePty = {
-      process: processHandle, shellPath: selectedShell.path, window: mainWindow,
+      process: processHandle, shellPath: selectedShell.path, shellId: selectedShell.id, window: mainWindow,
       outputBuffer: '', attached: false, subscriptions: [],
       whenReady, resolveReady, queue: []
     };
     activePtys.set(ptyId, session);
     session.subscriptions.push(processHandle.onData((data) => {
+      notifyPtyOutput(ptyId, data);
       if (session.attached) {
         if (!session.window.isDestroyed() && !session.window.webContents.isDestroyed()) session.window.webContents.send(`pty:data:${ptyId}`, data);
       } else {
@@ -130,6 +215,7 @@ export function spawnPtySession(mainWindow: BrowserWindow, options: PtySpawnOpti
     session.subscriptions.push(processHandle.onExit(({ exitCode }) => {
       session.exited = exitCode;
       clearReportedActiveIfGone(ptyId);
+      notifyPtyExit(ptyId, exitCode);
       if (session.attached) {
         if (!session.window.isDestroyed() && !session.window.webContents.isDestroyed()) session.window.webContents.send(`pty:exit:${ptyId}`, exitCode);
         activePtys.delete(ptyId);
@@ -224,6 +310,84 @@ function sendToWindow(window: BrowserWindow | undefined, channel: string, payloa
   } catch {
     /* Window raced shutdown; the ledger still records the outcome. */
   }
+}
+
+export interface ResolvedTaskTerminal {
+  terminalId: string;
+  /** The registry shell id: `powershell`, `cmd`, `bash`, `git-bash`, `custom`, … */
+  shellId: string;
+  /** Absolute path of the shell executable, for sniffing syntax when `shellId` is `custom`. */
+  shellPath: string;
+}
+
+/**
+ * Resolve — creating if necessary — the terminal a task will run in, WITHOUT
+ * writing anything to it.
+ *
+ * This exists because a task command must be wrapped in a shell-specific
+ * completion sentinel, and the correct wrapper cannot be chosen until the shell
+ * is known. {@link dispatchRunCommand} resolves and writes in one step and
+ * reports only a `terminalId`, which arrives too late: by the time it returns,
+ * the unwrapped command is already sitting in the shell's input buffer. Splitting
+ * resolution out lets the task runner resolve, pick the wrapper for the shell it
+ * was handed, then call `dispatchRunCommand` with an explicit `terminalId` — so
+ * the real write still rides the existing readiness/queue machinery rather than
+ * a second, weaker one that drops commands typed before the terminal attaches.
+ *
+ * Resolution order matches `dispatchRunCommand` exactly: explicit id, then the
+ * active terminal the renderer reported, then a fresh one. That is what makes
+ * "Run Task…" land in the terminal the user is looking at instead of silently
+ * spawning a fourth one behind the drawer.
+ */
+export function resolveTaskTerminal(
+  opts: { terminalId?: string; cwd?: string },
+  mainWindow: BrowserWindow | null
+): IpcResponse<ResolvedTaskTerminal> {
+  let ptyId: string | undefined;
+  let session: ActivePty | undefined;
+
+  if (opts.terminalId) {
+    session = activePtys.get(opts.terminalId);
+    if (!session) return { success: false, error: `Terminal '${opts.terminalId}' does not exist or has exited.` };
+    ptyId = opts.terminalId;
+  } else if (lastReportedActivePtyId) {
+    session = activePtys.get(lastReportedActivePtyId);
+    if (!session) {
+      clearReportedActiveIfGone(lastReportedActivePtyId);
+      lastReportedActivePtyId = null;
+    } else {
+      ptyId = lastReportedActivePtyId;
+    }
+  }
+
+  if (!session || !ptyId) {
+    if (!mainWindow) return { success: false, error: 'No main window is available to host a new terminal.' };
+    const taskCwd = opts.cwd || process.cwd();
+    const spawnResponse = spawnPtySession(mainWindow, { cwd: taskCwd });
+    if (!spawnResponse.success || !spawnResponse.data) {
+      return { success: false, error: spawnResponse.error || 'Terminal creation failed.' };
+    }
+    ptyId = spawnResponse.data.ptyId;
+    session = activePtys.get(ptyId);
+    if (!session) return { success: false, error: 'Terminal creation failed.' };
+    terminalDispatchLedger.record({
+      terminalId: ptyId,
+      cmd: '(task terminal)',
+      readyWaitMs: 0,
+      outcome: 'created',
+      detail: `New ${spawnResponse.data.shellName} terminal for a task`
+    });
+    // Same emission `dispatchRunCommand` makes, so `TerminalDrawer` adopts the
+    // new PTY and the user sees the terminal the task is about to run in.
+    sendToWindow(mainWindow, 'pty:session-created', {
+      ptyId,
+      shellId: spawnResponse.data.shellId,
+      shellName: spawnResponse.data.shellName,
+      cwd: taskCwd
+    });
+  }
+
+  return { success: true, data: { terminalId: ptyId, shellId: session.shellId, shellPath: session.shellPath } };
 }
 
 /**
@@ -460,6 +624,13 @@ export function killPty(ptyId: string): IpcResponse<void> {
   } finally {
     session.subscriptions.forEach((subscription) => subscription.dispose());
     activePtys.delete(ptyId);
+    // Notify last, after the session is out of `activePtys`: an observer is free
+    // to call back into this module synchronously, and resolving a terminal must
+    // not find the one being torn down. `session.exited` is set only by the
+    // child's own `onExit`, which already notified, so an already-dead shell is
+    // not reported twice. `-1` stands for "killed, no code", which is how a shell
+    // reads a SIGKILL.
+    if (session.exited === undefined) notifyPtyExit(ptyId, -1);
   }
   return { success: true };
 }

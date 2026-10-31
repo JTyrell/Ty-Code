@@ -162,12 +162,14 @@ export async function startAgentTask(
     mainWindow.webContents.send('agent:stream-batch', batch);
   };
 
+  let thoughtCount = 0;
+
   const scheduleFlush = () => {
     if (!batchTimer) {
       batchTimer = setTimeout(() => {
         batchTimer = null;
         flushBatch();
-      }, 20); // 16-24ms cadence for optimal UI smoothness and minimal IPC bridge overhead
+      }, 12); // 12ms cadence for low-latency streaming and minimal IPC bridge overhead
     }
   };
 
@@ -195,8 +197,13 @@ export async function startAgentTask(
         scheduleFlush();
       }
     } else if (chunk.type === 'thought') {
+      thoughtCount++;
       batchBuffer.push(chunkWithTask);
-      scheduleFlush();
+      if (thoughtCount <= 1) {
+        flushBatch();
+      } else {
+        scheduleFlush();
+      }
     } else {
       // High-priority state transition (tool_call, tool_result, diff, status, approval_request, done, cancelled, error, agent_state)
       // Flush previous buffered tokens and this state event immediately so event order is strictly preserved

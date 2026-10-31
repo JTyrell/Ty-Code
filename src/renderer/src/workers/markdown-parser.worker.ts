@@ -10,10 +10,10 @@
 import { marked } from 'marked';
 import katex from 'katex';
 
-// Configure marked with GitHub Flavored Markdown (GFM) and line breaks
+// Configure marked with GitHub Flavored Markdown (GFM)
 marked.setOptions({
   gfm: true,
-  breaks: true
+  breaks: false
 });
 
 export interface MarkdownWorkerRequest {

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
   Search,
   Settings,
@@ -7,10 +7,6 @@ import {
   DownloadCloud,
   CheckCircle2,
   FolderOpen,
-  FileCode,
-  Terminal as TerminalIcon,
-  HelpCircle,
-  ExternalLink,
   Shield,
   Palette,
   Check
@@ -19,6 +15,8 @@ import { useWorkspaceStore } from '../state/workspace-store';
 import { useChatStore } from '../state/chat-store';
 import { useUsageDashboardStore } from '../state/usage-dashboard-store';
 import { toast } from '../state/toast-store';
+import { registerRendererCommands } from '../lib/command-runtime';
+import { CommandMenuBar } from './CommandMenuBar';
 import type { AppInfo } from '../../../preload/types';
 
 const appRegion = (region: 'drag' | 'no-drag'): React.CSSProperties => ({ WebkitAppRegion: region } as React.CSSProperties);
@@ -198,15 +196,8 @@ const WindowControlButton: React.FC<WindowControlButtonProps> = ({ onClick, titl
   );
 };
 
-interface MenuItem {
-  label: string;
-  shortcut?: string;
-  action?: () => void;
-  divider?: boolean;
-}
-
 export const TitleBar: React.FC = () => {
-  const { workspacePath, setWorkspacePath, setFileTree } = useWorkspaceStore();
+  const { workspacePath } = useWorkspaceStore();
   const { toggleSettings, openSettings, toggleTerminal, isTerminalOpen } = useChatStore();
   const openUsageDashboard = useUsageDashboardStore((s) => s.openDashboard);
 
@@ -219,11 +210,10 @@ export const TitleBar: React.FC = () => {
   const [updatePercent, setUpdatePercent] = useState<number>(0);
   const [isMaximized, setIsMaximized] = useState<boolean>(false);
 
-  // Menubar state
-  const [activeMenu, setActiveMenu] = useState<string | null>(null);
+  // Profile dropdown and About modal. The menu bar's own open state lives in
+  // CommandMenuBar, which resolves its rows from the command registry.
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState<boolean>(false);
   const [isAboutOpen, setIsAboutOpen] = useState<boolean>(false);
-  const menuBarRef = useRef<HTMLDivElement>(null);
   const profileMenuRef = useRef<HTMLDivElement>(null);
 
   // Apply theme to body and sync across all windows
@@ -291,20 +281,18 @@ export const TitleBar: React.FC = () => {
     };
   }, []);
 
-  // Close menus when clicking outside or pressing Escape
+  // Close the profile dropdown when clicking outside or pressing Escape. The
+  // menu bar keeps an equivalent listener inside CommandMenuBar, installed only
+  // while one of its menus is actually open.
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as Node;
-      if (menuBarRef.current && !menuBarRef.current.contains(target)) {
-        setActiveMenu(null);
-      }
       if (profileMenuRef.current && !profileMenuRef.current.contains(target)) {
         setIsProfileMenuOpen(false);
       }
     };
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        setActiveMenu(null);
         setIsProfileMenuOpen(false);
       }
     };
@@ -317,21 +305,24 @@ export const TitleBar: React.FC = () => {
     };
   }, []);
 
-  const handleOpenFolder = async () => {
-    try {
-      const res = await window.electronAPI.selectWorkspaceFolder();
-      if (res.success && res.data) {
-        setWorkspacePath(res.data);
-        const treeRes = await window.electronAPI.getWorkspaceTree(res.data);
-        if (treeRes.success && treeRes.data) {
-          setFileTree(treeRes.data);
-          toast.success('Workspace opened', res.data);
-        }
+  /**
+   * The About dialog is this component's own surface — it owns `appInfo` and the
+   * FCC attribution block — so it owns the handler too, the same rule
+   * `registerEditorCommandHandlers` and `registerWorkbenchCommandHandlers`
+   * follow. Without a registration the registry row is unbacked and
+   * "hidden > dead" would drop About out of the Help menu entirely.
+   *
+   * Disposing on unmount is what makes StrictMode's double mount safe: the
+   * executor restores the previous handler instead of stacking a second one.
+   */
+  useEffect(() => {
+    const disposable = registerRendererCommands({
+      'help.about': () => {
+        setIsAboutOpen(true);
       }
-    } catch (err) {
-      toast.error('Failed to open folder', String(err));
-    }
-  };
+    });
+    return () => disposable.dispose();
+  }, []);
 
   const cycleTheme = () => {
     const idx = APP_THEMES.findIndex((t) => t.id === theme);
@@ -377,76 +368,10 @@ export const TitleBar: React.FC = () => {
   const folderName = workspacePath ? workspacePath.split(/[/\\]/).pop() : '';
   const isMac = appInfo?.platform === 'darwin';
 
-  // Desktop Menu Definitions
-  const menus: Record<string, MenuItem[]> = {
-    File: [
-      { label: 'New File', shortcut: 'Ctrl+N', action: () => window.dispatchEvent(new CustomEvent('workbench:new-file')) },
-      { label: 'Open Folder…', shortcut: 'Ctrl+O', action: handleOpenFolder },
-      { divider: true, label: '' },
-      { label: 'Save', shortcut: 'Ctrl+S', action: () => toast.info('File saved') },
-      { label: 'Save All', action: () => toast.info('All workspace files saved') },
-      { divider: true, label: '' },
-      { label: 'Settings', shortcut: 'Ctrl+,', action: toggleSettings },
-      { divider: true, label: '' },
-      { label: 'Exit', shortcut: 'Alt+F4', action: () => window.electronAPI.closeWindow() }
-    ],
-    Edit: [
-      { label: 'Undo', shortcut: 'Ctrl+Z', action: () => document.execCommand('undo') },
-      { label: 'Redo', shortcut: 'Ctrl+Y', action: () => document.execCommand('redo') },
-      { divider: true, label: '' },
-      { label: 'Cut', shortcut: 'Ctrl+X', action: () => document.execCommand('cut') },
-      { label: 'Copy', shortcut: 'Ctrl+C', action: () => document.execCommand('copy') },
-      { label: 'Paste', shortcut: 'Ctrl+V', action: () => document.execCommand('paste') },
-      { divider: true, label: '' },
-      { label: 'Find in Files', shortcut: 'Ctrl+Shift+F', action: () => window.dispatchEvent(new CustomEvent('workbench:find-in-files')) }
-    ],
-    Selection: [
-      { label: 'Select All', shortcut: 'Ctrl+A', action: () => document.execCommand('selectAll') },
-      { label: 'Expand Selection', shortcut: 'Alt+Shift+Right' },
-      { label: 'Shrink Selection', shortcut: 'Alt+Shift+Left' },
-      { divider: true, label: '' },
-      { label: 'Copy Line Up', shortcut: 'Alt+Shift+Up' },
-      { label: 'Copy Line Down', shortcut: 'Alt+Shift+Down' }
-    ],
-    View: [
-      { label: 'Command Palette…', shortcut: 'Ctrl+Shift+P', action: () => window.dispatchEvent(new CustomEvent('workbench:command-palette')) },
-      { label: 'Quick Open…', shortcut: 'Ctrl+P', action: () => window.dispatchEvent(new CustomEvent('workbench:quick-open')) },
-      { divider: true, label: '' },
-      { label: 'Toggle Primary Sidebar', shortcut: 'Ctrl+B', action: () => window.dispatchEvent(new CustomEvent('workbench:toggle-left-sidebar')) },
-      { label: 'Toggle Terminal', shortcut: 'Ctrl+`', action: toggleTerminal },
-      { label: 'Toggle AI Assistant', shortcut: 'Ctrl+Alt+B', action: () => window.dispatchEvent(new CustomEvent('workbench:toggle-right-sidebar')) },
-      { divider: true, label: '' },
-      { label: 'Usage & Quota Dashboard', action: openUsageDashboard },
-      { label: 'Boot Timeline', action: () => window.dispatchEvent(new CustomEvent('workbench:show-boot-timeline')) }
-    ],
-    Go: [
-      { label: 'Go to File…', shortcut: 'Ctrl+P', action: () => window.dispatchEvent(new CustomEvent('workbench:quick-open')) },
-      { label: 'Go to Symbol…', shortcut: 'Ctrl+T', action: () => window.dispatchEvent(new CustomEvent('workbench:quick-open-symbols')) },
-      { label: 'Go to Line…', shortcut: 'Ctrl+G', action: () => window.dispatchEvent(new CustomEvent('workbench:quick-open-line')) },
-      { divider: true, label: '' },
-      { label: 'Back', shortcut: 'Alt+Left' },
-      { label: 'Forward', shortcut: 'Alt+Right' }
-    ],
-    Run: [
-      { label: 'Start Debugging', shortcut: 'F5', action: () => toast.info('Starting debug session…') },
-      { label: 'Run Without Debugging', shortcut: 'Ctrl+F5', action: () => toast.info('Running code…') },
-      { divider: true, label: '' },
-      { label: 'Run Active File in Terminal', action: toggleTerminal }
-    ],
-    Terminal: [
-      { label: 'New Terminal', shortcut: 'Ctrl+Shift+`', action: toggleTerminal },
-      { label: 'Toggle Terminal', shortcut: 'Ctrl+`', action: toggleTerminal },
-      { divider: true, label: '' },
-      { label: 'Clear Terminal' }
-    ],
-    Help: [
-      { label: 'Documentation', action: () => toast.info('Ty-Code Documentation') },
-      { label: 'Keyboard Shortcuts', shortcut: 'Ctrl+K Ctrl+S' },
-      { label: 'Check for Updates…', action: handleCheckUpdate },
-      { divider: true, label: '' },
-      { label: 'About Ty-Code', action: () => setIsAboutOpen(true) }
-    ]
-  };
+  // The menu table itself lives in the shared command registry
+  // (src/main/services/command-registry.ts). CommandMenuBar resolves it against
+  // this window's contexts, so nothing here declares a label, a shortcut or an
+  // action any more.
 
   return (
     <header
@@ -467,7 +392,6 @@ export const TitleBar: React.FC = () => {
     >
       {/* Left: App Logo & Menubar */}
       <div
-        ref={menuBarRef}
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -481,96 +405,7 @@ export const TitleBar: React.FC = () => {
           <TyCodeMicrochipLogo size={16} />
         </div>
 
-        {/* Menu Bar Items */}
-        <nav style={{ display: 'flex', alignItems: 'center', gap: '1px', height: '100%' }}>
-          {Object.keys(menus).map((menuKey) => {
-            const isOpen = activeMenu === menuKey;
-            return (
-              <div key={menuKey} style={{ position: 'relative', height: '100%', display: 'flex', alignItems: 'center' }}>
-                <button
-                  type="button"
-                  className={`titlebar-menu-btn${isOpen ? ' is-open' : ''}`}
-                  onClick={() => setActiveMenu(isOpen ? null : menuKey)}
-                  onMouseEnter={() => {
-                    if (activeMenu !== null && activeMenu !== menuKey) {
-                      setActiveMenu(menuKey);
-                    }
-                  }}
-                >
-                  {menuKey}
-                </button>
-
-                {/* Dropdown Menu */}
-                {isOpen && (
-                  <div
-                    style={{
-                      position: 'absolute',
-                      top: '100%',
-                      left: 0,
-                      backgroundColor: 'var(--bg-secondary, #12181f)',
-                      border: '1px solid var(--border-subtle, rgba(255, 255, 255, 0.12))',
-                      borderRadius: '6px',
-                      padding: '4px 0',
-                      minWidth: '220px',
-                      boxShadow: '0 10px 28px rgba(0, 0, 0, 0.55)',
-                      zIndex: 'var(--layer-menu)',
-                      backdropFilter: 'blur(16px)'
-                    }}
-                  >
-                    {menus[menuKey].map((item, idx) => {
-                      if (item.divider) {
-                        return (
-                          <div
-                            key={idx}
-                            style={{
-                              height: '1px',
-                              backgroundColor: 'var(--border-subtle, rgba(255, 255, 255, 0.08))',
-                              margin: '4px 0'
-                            }}
-                          />
-                        );
-                      }
-                      return (
-                        <div
-                          key={idx}
-                          onClick={() => {
-                            setActiveMenu(null);
-                            item.action?.();
-                          }}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            padding: '5px 12px',
-                            fontSize: '12px',
-                            color: 'var(--text-primary, #e2e8f0)',
-                            cursor: 'pointer',
-                            userSelect: 'none'
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.backgroundColor = 'var(--bg-hover)';
-                            e.currentTarget.style.color = 'var(--text-primary)';
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.backgroundColor = 'transparent';
-                            e.currentTarget.style.color = 'var(--text-primary, #e2e8f0)';
-                          }}
-                        >
-                          <span>{item.label}</span>
-                          {item.shortcut && (
-                            <span style={{ fontSize: '10px', opacity: 0.7, marginLeft: '16px' }}>
-                              {item.shortcut}
-                            </span>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </nav>
+        <CommandMenuBar isMac={isMac} />
       </div>
 
       {/* Center: Window & Workspace Title */}

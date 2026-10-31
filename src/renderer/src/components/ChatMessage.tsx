@@ -40,7 +40,7 @@ import {
 } from 'lucide-react';
 import type { ChatMessage, ProposedDiff, ToolExecutionRecord } from '../../../preload/types';
 import { ChatErrorCard } from './ChatErrorCard';
-import { MessageRenderer } from './chat/MessageRenderer';
+import { MessageRenderer, sanitizeAssistantDisplayContent } from './chat/MessageRenderer';
 import { ThinkingPanel } from './chat/ThinkingPanel';
 import { useTypographyStore, buildChatTypographyStyle } from '../state/typography-store';
 import { normalisePunctuation } from '../services/punctuation-normaliser';
@@ -950,7 +950,12 @@ const ChatMessageItemComponent: React.FC<ChatMessageProps> = ({
     return list;
   }, [message]);
 
-  const hasTextContent = Boolean(message.content && message.content.length > 0);
+  const cleanedAssistantContent = useMemo(
+    () => (isAssistant ? sanitizeAssistantDisplayContent(message.content || '', isStreaming) : (message.content || '')),
+    [isAssistant, message.content, isStreaming]
+  );
+
+  const hasTextContent = Boolean(cleanedAssistantContent && cleanedAssistantContent.trim().length > 0);
 
   const isThinking =
     isAssistant &&
@@ -993,10 +998,11 @@ const ChatMessageItemComponent: React.FC<ChatMessageProps> = ({
   }, [isRunning]);
 
   const handleCopyMessage = async () => {
-    if (message.content) {
+    const rawToCopy = isAssistant ? cleanedAssistantContent : message.content;
+    if (rawToCopy) {
       const textToCopy = ukPunctuationEnabled
-        ? normalisePunctuation(message.content)
-        : message.content;
+        ? normalisePunctuation(rawToCopy)
+        : rawToCopy;
       await window.electronAPI?.copyToClipboard(textToCopy);
       setCopiedMessage(true);
       setTimeout(() => setCopiedMessage(false), 1600);
@@ -1078,7 +1084,8 @@ const ChatMessageItemComponent: React.FC<ChatMessageProps> = ({
         </div>
 
         {/* User preference remember button & modal */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '4px', fontSize: '10px' }}>
+        {((message.content || '').trim().length >= 24 || showRememberModal || savedCorrectionSuccess) && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '4px', fontSize: '10px', opacity: 0.75 }}>
           <button
             type="button"
             onClick={() => {
@@ -1089,7 +1096,7 @@ const ChatMessageItemComponent: React.FC<ChatMessageProps> = ({
               display: 'flex',
               alignItems: 'center',
               gap: '4px',
-              fontSize: '10.5px',
+              fontSize: '10px',
               color: savedCorrectionSuccess ? 'var(--accent-green)' : 'var(--text-muted)',
               background: 'transparent',
               border: 'none',
@@ -1114,6 +1121,7 @@ const ChatMessageItemComponent: React.FC<ChatMessageProps> = ({
             )}
           </button>
         </div>
+        )}
 
         {showRememberModal && (
           <div
@@ -1721,13 +1729,13 @@ const ChatMessageItemComponent: React.FC<ChatMessageProps> = ({
         )}
 
         {/* 6. BOTTOM ACTIONS & HIDDEN METADATA DETAILS */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginTop: '12px', paddingTop: '8px', borderTop: '1px solid var(--border-subtle)', fontSize: '11px', color: 'var(--text-muted)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', marginTop: '12px', paddingTop: '8px', borderTop: '1px solid var(--border-subtle)', fontSize: '11px', color: 'var(--text-muted)' }}>
           {/* Left: Metadata Details Toggle (Prompt/Response token counts hidden by default) */}
           <div style={{ position: 'relative' }}>
             <button
               type="button"
               onClick={() => setShowDetails(!showDetails)}
-              style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', color: 'var(--text-muted)', background: 'transparent', cursor: 'pointer' }}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '10.5px', color: 'var(--text-muted)', background: 'transparent', border: 'none', padding: '2px 4px', borderRadius: '4px', cursor: 'pointer', whiteSpace: 'nowrap' }}
               title="Toggle execution & token telemetry details"
               onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text-primary)'; }}
               onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; }}
@@ -1749,7 +1757,7 @@ const ChatMessageItemComponent: React.FC<ChatMessageProps> = ({
                   ...(message.metadata?.firstTokenAt
                     ? [['Time to First Token', `${Math.max(0, message.metadata.firstTokenAt - message.timestamp)}ms`]]
                     : []),
-                  ...(message.content ? [['Est. Response Tokens', `~${Math.round(message.content.length / 4)}`]] : []),
+                  ...(cleanedAssistantContent ? [['Est. Response Tokens', `~${Math.round(cleanedAssistantContent.length / 4)}`]] : []),
                   ...(toolList.length > 0 ? [['Tools Executed', String(toolList.length)]] : [])
                 ].map(([label, value]) => (
                   <div key={label} style={{ display: 'flex', justifyContent: 'space-between', gap: '10px' }}>
@@ -1762,23 +1770,26 @@ const ChatMessageItemComponent: React.FC<ChatMessageProps> = ({
           </div>
 
           {/* Right: Quick actions (Copy, Regenerate) */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', position: 'relative' }}>
-            {message.content && (
+          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '10px', position: 'relative' }}>
+            {hasTextContent && (
               <button
                 type="button"
                 onClick={() => {
-                  setRememberRuleText(message.content);
+                  setRememberRuleText(cleanedAssistantContent);
                   setShowRememberModal(!showRememberModal);
                 }}
                 style={{
-                  display: 'flex',
+                  display: 'inline-flex',
                   alignItems: 'center',
                   gap: '4px',
-                  fontSize: '10px',
+                  fontSize: '10.5px',
                   color: savedCorrectionSuccess ? 'var(--accent-green)' : 'var(--text-muted)',
                   background: 'transparent',
                   border: 'none',
-                  cursor: 'pointer'
+                  padding: '2px 4px',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap'
                 }}
                 title="Remember this preference in workspace Correction Memory"
                 onMouseEnter={(e) => { e.currentTarget.style.color = '#e5a50a'; }}
@@ -1792,7 +1803,7 @@ const ChatMessageItemComponent: React.FC<ChatMessageProps> = ({
                 ) : (
                   <>
                     <Lightbulb size={11} style={{ color: '#e5a50a' }} />
-                    <span>Remember preference</span>
+                    <span>Remember</span>
                   </>
                 )}
               </button>
@@ -1916,11 +1927,11 @@ const ChatMessageItemComponent: React.FC<ChatMessageProps> = ({
               </div>
             )}
 
-            {message.content && (
+            {hasTextContent && (
               <button
                 type="button"
                 onClick={handleCopyMessage}
-                style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', color: 'var(--text-muted)', background: 'transparent', cursor: 'pointer' }}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '10.5px', color: 'var(--text-muted)', background: 'transparent', border: 'none', padding: '2px 4px', borderRadius: '4px', cursor: 'pointer', whiteSpace: 'nowrap' }}
                 title="Copy response"
                 onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text-primary)'; }}
                 onMouseLeave={(e) => { e.currentTarget.style.color = copiedMessage ? 'var(--accent-green)' : 'var(--text-muted)'; }}
@@ -1934,7 +1945,7 @@ const ChatMessageItemComponent: React.FC<ChatMessageProps> = ({
               <button
                 type="button"
                 onClick={onRegenerate}
-                style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', color: 'var(--text-muted)', background: 'transparent', cursor: 'pointer' }}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '10.5px', color: 'var(--text-muted)', background: 'transparent', border: 'none', padding: '2px 4px', borderRadius: '4px', cursor: 'pointer', whiteSpace: 'nowrap' }}
                 title="Regenerate last response"
                 onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text-primary)'; }}
                 onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; }}

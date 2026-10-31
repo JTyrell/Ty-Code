@@ -189,39 +189,41 @@ export class FCCModelMapper {
     const sidecarBaseUrl = fccSidecarManager.getBaseUrl();
     const chatUrl = `${sidecarBaseUrl}/chat/completions`;
 
-    try {
-      const response = await fetch(`${sidecarBaseUrl}/models`, {
-        method: 'GET',
-        headers: { Accept: 'application/json' },
-        signal: AbortSignal.timeout(3000)
-      });
-
-      if (response.ok) {
-        const json = await response.json();
-        const parsed: FCCModelListResponse = FCCModelListSchema.parse(json);
-
-        const mapped: FCCModelEntry[] = parsed.data.map((m) => {
-          const modelId = m.id.startsWith('fcc:') ? m.id : `fcc:${m.id}`;
-          const harness = m.harness || 'claude-code';
-          const name = m.name || `${m.id} (via FCC)`;
-          return {
-            modelId,
-            name,
-            url: chatUrl,
-            requiresKey: false,
-            providerId: 'fcc',
-            harness,
-            contextLength: m.context_length || 128000
-          };
+    if (fccSidecarManager.isActive()) {
+      try {
+        const response = await fetch(`${sidecarBaseUrl}/models`, {
+          method: 'GET',
+          headers: { Accept: 'application/json' },
+          signal: AbortSignal.timeout(600)
         });
 
-        this.cachedModels = mapped;
-        this.lastFetchTime = Date.now();
-        console.log(`[FCC-MODELS] Discovered ${mapped.length} FCC models from live sidecar.`);
-        return mapped;
+        if (response.ok) {
+          const json = await response.json();
+          const parsed: FCCModelListResponse = FCCModelListSchema.parse(json);
+
+          const mapped: FCCModelEntry[] = parsed.data.map((m) => {
+            const modelId = m.id.startsWith('fcc:') ? m.id : `fcc:${m.id}`;
+            const harness = m.harness || 'claude-code';
+            const name = m.name || `${m.id} (via FCC)`;
+            return {
+              modelId,
+              name,
+              url: chatUrl,
+              requiresKey: false,
+              providerId: 'fcc',
+              harness,
+              contextLength: m.context_length || 128000
+            };
+          });
+
+          this.cachedModels = mapped;
+          this.lastFetchTime = Date.now();
+          console.log(`[FCC-MODELS] Discovered ${mapped.length} FCC models from live sidecar.`);
+          return mapped;
+        }
+      } catch {
+        // Sidecar query timed out or unavailable; fallback to static catalog
       }
-    } catch {
-      // Sidecar query timed out or unavailable; fallback to static catalog
     }
 
     // Adapt static fallback URLs to the active sidecar port

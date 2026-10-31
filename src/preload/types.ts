@@ -28,6 +28,43 @@ import type {
   ResolvedMenu,
   ResolvedMenuRow
 } from '../shared/types/command-registry';
+import type {
+  FileDialogFilter,
+  FileDialogResult,
+  OpenFileDialogRequest,
+  SavePathDialogRequest
+} from '../shared/types/file-dialog';
+import type {
+  RunningTask,
+  TaskDefinition,
+  TaskListResult,
+  TaskRunIdRequest,
+  TaskRunRequest,
+  TaskRunResult
+} from '../shared/types/tasks';
+
+// Prompt 5b: the Terminal menu's task surface. Re-exported for the same reason
+// as the command and dialog types — the renderer's terminal handlers and the
+// menu-context publisher type their payloads from here rather than reaching
+// into shared/types directly.
+export type {
+  RunningTask,
+  TaskDefinition,
+  TaskListResult,
+  TaskRunIdRequest,
+  TaskRunRequest,
+  TaskRunResult
+};
+
+// Prompt 5: the two file dialogs the registry's File-menu rows need. Re-exported
+// alongside the command types for the same reason — renderer surfaces type their
+// payloads from here rather than reaching into shared/types directly.
+export type {
+  FileDialogFilter,
+  FileDialogResult,
+  OpenFileDialogRequest,
+  SavePathDialogRequest
+};
 
 // Prompt 5: the command registry. Re-exported so renderer surfaces type their
 // menu payloads from here rather than reaching into shared/types directly.
@@ -1303,6 +1340,17 @@ export interface ElectronAPI {
   getMainCommandContext: () => Promise<IpcResponse<MainCommandContext>>;
   /** Bounded execution ledger, metadata only, for the Reliability Panel. */
   getCommandAuditTrail: () => Promise<IpcResponse<CommandExecutionRecord[]>>;
+  /**
+   * Pick one file to open, for `workbench.openFile`.
+   *
+   * Optional because only windows with the desktop bridge have it. Unlike
+   * `selectWorkspaceFolder`, a dismissed picker is `success: true` with
+   * `data.canceled === true` rather than an error, so callers do not have to
+   * sniff the message text to avoid a red toast for a changed mind.
+   */
+  openFileDialog?: (request?: OpenFileDialogRequest) => Promise<IpcResponse<FileDialogResult>>;
+  /** Pick a save destination, for `workbench.saveAs`. Same cancellation shape. */
+  savePathDialog?: (request?: SavePathDialogRequest) => Promise<IpcResponse<FileDialogResult>>;
   getSettingsLayer: (scope: SettingsScope) => Promise<IpcResponse<SettingsData | WorkspaceSettingsPatch>>;
   saveSettingsLayer: (scope: SettingsScope, settings: SettingsPatch | WorkspaceSettingsPatch) => Promise<IpcResponse<void>>;
   getSecurityPolicy: () => Promise<IpcResponse<SecurityPolicySettings>>;
@@ -1429,6 +1477,27 @@ export interface ElectronAPI {
   onTerminalCommandDispatched: (callback: (data: { terminalId: string; cmd: string; execute: boolean }) => void) => () => void;
   onTerminalDispatchFailed: (callback: (data: { cmd: string; reason: string; opts?: TerminalRunCommandOptions; terminalId?: string }) => void) => () => void;
   onPtySessionCreated: (callback: (data: PtySessionInfo & { cwd?: string }) => void) => () => void;
+  /**
+   * Prompt 5b Terminal menu: the task surface backing Run Task…, Run Build
+   * Task…, the three group-G3 rows, and the two Configure rows.
+   *
+   * Optional because the same renderer bundle runs in windows without the
+   * desktop bridge and in unit tests with no `window.electronAPI` at all; the
+   * handlers have to be able to decline with a sentence instead of throwing a
+   * TypeError, which is what "Hidden > dead" asks of a row it cannot back.
+   */
+  taskList?: () => Promise<IpcResponse<TaskListResult>>;
+  /** Snapshot read for the initial `tasksRunning` context, before any push arrives. */
+  taskRunning?: () => Promise<IpcResponse<RunningTask[]>>;
+  taskRun?: (request: TaskRunRequest) => Promise<IpcResponse<TaskRunResult>>;
+  taskRestart?: (request: TaskRunIdRequest) => Promise<IpcResponse<TaskRunResult>>;
+  taskTerminate?: (request: TaskRunIdRequest) => Promise<IpcResponse<RunningTask>>;
+  /**
+   * Main → renderer push carrying the whole running list, not a delta. Returns
+   * an unsubscribe, like every other `on*` here, so the context publisher can
+   * release it on teardown rather than leaking a listener per window reload.
+   */
+  onTasksChanged?: (callback: (tasks: RunningTask[]) => void) => () => void;
   searchExtensions: (query: string) => Promise<IpcResponse<ExtensionMetadata[]>>;
   getExtensionDetails: (namespace: string, name: string) => Promise<IpcResponse<Record<string, unknown>>>;
   getAvailableSkills: (workspacePath: string) => Promise<IpcResponse<SkillDefinition[]>>;

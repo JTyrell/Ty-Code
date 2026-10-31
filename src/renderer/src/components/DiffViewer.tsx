@@ -1,8 +1,9 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { DiffEditor } from '@monaco-editor/react';
 import type * as Monaco from 'monaco-editor';
 import { Check, ChevronDown, ChevronUp, Columns, Minus, Plus, RotateCcw, Split, X } from 'lucide-react';
 import { ensureMonaco, useMonacoRuntime } from '../services/monaco-runtime';
+import { registerScmDiffNavigator } from '../services/scm-diff-navigation';
 import { useGitStore } from '../state/git-store';
 import { toast } from '../state/toast-store';
 import { useThemeSync, getMonacoTheme } from '../hooks/useThemeSync';
@@ -35,6 +36,57 @@ export const DiffViewer: React.FC = () => {
       void ensureMonaco().catch(() => undefined);
     }
   }, [activeDiff, monacoRuntime.status]);
+
+  // Go G7's "else SCM" half: publish a hunk stepper to the command layer while
+  // this overlay is open, so Alt+F3 / Shift+Alt+F3 walk git's hunks instead of
+  // falling through to whatever diff editor the editor service has registered.
+  //
+  // The stepper lives here rather than in the editor service because this
+  // component owns `hunkIndex`, and that same index drives the Stage / Unstage /
+  // Revert-hunk buttons below. Handing the Monaco diff editor to the editor
+  // service instead would let Alt+F3 move the cursor while `hunkIndex` still
+  // pointed at the previous hunk — so "Revert hunk" would destroy work the user
+  // is no longer looking at. Git's hunk list and the change list Monaco
+  // computes from the two strings it is handed are not 1:1 either, so the two
+  // cannot simply be swapped.
+  const hunkIndexRef = useRef(0);
+
+  useEffect(() => {
+    hunkIndexRef.current = hunkIndex;
+  }, [hunkIndex]);
+
+  /**
+   * Step to a hunk and centre it in the modified pane. Wraps at both ends, so
+   * repeated Alt+F3 cycles a long diff rather than stopping at the last change.
+   *
+   * Returns false when this diff has no hunks at all, which is how the Go
+   * handler learns there is nothing here to walk and should try the diff editor
+   * registered with the editor service instead.
+   */
+  const stepToHunk = useCallback(
+    (index: number): boolean => {
+      if (!activeHunks.length) return false;
+      const nextIndex = (index + activeHunks.length) % activeHunks.length;
+      setHunkIndex(nextIndex);
+      const selected = activeHunks[nextIndex];
+      const lineNumber = selected.newStart || selected.oldStart || 1;
+      diffEditorRef.current?.getModifiedEditor().revealLineInCenter(lineNumber);
+      return true;
+    },
+    [activeHunks]
+  );
+
+  // Withdrawn on close and on unmount, which restores the *previous* navigator
+  // rather than clearing it — so StrictMode's double mount and a popout window
+  // closing both leave the Go menu pointed at something real.
+  useEffect(() => {
+    if (!activeDiff) return;
+    const registration = registerScmDiffNavigator({
+      hunkCount: () => activeHunks.length,
+      step: (direction) => stepToHunk(hunkIndexRef.current + direction)
+    });
+    return () => registration.dispose();
+  }, [activeDiff, activeHunks, stepToHunk]);
 
   // Defer DiffEditor layout to rAF after visibility or diff change
   useEffect(() => {
@@ -72,15 +124,6 @@ export const DiffViewer: React.FC = () => {
   const language = languageByExtension[extension] || 'plaintext';
   const activeHunk = activeHunks[hunkIndex];
 
-  const revealHunk = (index: number) => {
-    if (!activeHunks.length) return;
-    const nextIndex = (index + activeHunks.length) % activeHunks.length;
-    setHunkIndex(nextIndex);
-    const selected = activeHunks[nextIndex];
-    const lineNumber = selected.newStart || selected.oldStart || 1;
-    diffEditorRef.current?.getModifiedEditor().revealLineInCenter(lineNumber);
-  };
-
   const handleDiscard = () => {
     const description = activeDiff.isUntracked ? 'Delete untracked file' : 'Discard all unstaged working-tree changes';
     toast.warning(`${description}?`, `Target: "${activeDiff.filePath}". This cannot be undone.`, {
@@ -100,9 +143,9 @@ export const DiffViewer: React.FC = () => {
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 2, marginRight: 5 }}>
-          <button aria-label="Previous diff hunk" title="Previous hunk" disabled={!activeHunks.length} onClick={() => revealHunk(hunkIndex - 1)} style={{ width: 23, height: 24, color: 'var(--text-secondary)' }}><ChevronUp size={13} /></button>
+          <button aria-label="Previous diff hunk" title="Previous hunk" disabled={!activeHunks.length} onClick={() => stepToHunk(hunkIndex - 1)} style={{ width: 23, height: 24, color: 'var(--text-secondary)' }}><ChevronUp size={13} /></button>
           <span aria-live="polite" style={{ minWidth: 35, color: 'var(--text-muted)', fontSize: 9, textAlign: 'center' }}>{activeHunks.length ? `${hunkIndex + 1} / ${activeHunks.length}` : '0 hunks'}</span>
-          <button aria-label="Next diff hunk" title="Next hunk" disabled={!activeHunks.length} onClick={() => revealHunk(hunkIndex + 1)} style={{ width: 23, height: 24, color: 'var(--text-secondary)' }}><ChevronDown size={13} /></button>
+          <button aria-label="Next diff hunk" title="Next hunk" disabled={!activeHunks.length} onClick={() => stepToHunk(hunkIndex + 1)} style={{ width: 23, height: 24, color: 'var(--text-secondary)' }}><ChevronDown size={13} /></button>
         </div>
         {activeHunk && <>
           {activeDiff.isStaged ? <button className="source-control-subtle-button" onClick={() => void applyHunk(activeHunk.id, 'unstage')} title="Unstage selected hunk"><Minus size={11} />Unstage hunk</button>

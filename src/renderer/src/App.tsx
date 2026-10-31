@@ -43,6 +43,11 @@ import { initWorkspaceSessionSync } from './state/workspace-session-store';
 import { initCanvasPreviewSync } from './state/canvas-preview-store';
 import { initContextAuditSync } from './state/context-audit-store';
 import { LazyModelManager } from './services/lazy-model-manager';
+import { installCommandContextSources } from './lib/command-contexts';
+import { installCommandRuntime } from './lib/command-runtime';
+import { registerEditorCommandHandlers } from './lib/editor-commands';
+import { registerTerminalCommandHandlers } from './lib/terminal-commands';
+import { registerWorkbenchCommandHandlers } from './lib/workbench-commands';
 
 import { Palette } from 'lucide-react';
 import { SketcherWindow } from './components/SketcherWindow';
@@ -74,11 +79,16 @@ const MainWorkbench: React.FC = () => {
   const [rightWidth, setRightWidth] = useState(380);
   const [isDraggingLeft, setIsDraggingLeft] = useState(false);
   const [isDraggingRight, setIsDraggingRight] = useState(false);
+  // Remembered widths, so a toggle restores whatever the user last dragged to
+  // rather than a hard-coded panel size. Declared above the callbacks that read
+  // them; they used to sit further down, which worked only because nothing ever
+  // invoked those callbacks during render.
+  const lastLeftWidthRef = useRef(260);
+  const lastRightWidthRef = useRef(380);
 
   // Zustand selector audit: subscribe to narrow slices only
   const initSettings = useChatStore((s) => s.initSettings);
   const toggleTerminal = useChatStore((s) => s.toggleTerminal);
-  const toggleSettings = useChatStore((s) => s.toggleSettings);
   const setWorkspacePath = useWorkspaceStore((s) => s.setWorkspacePath);
   const setFileTree = useWorkspaceStore((s) => s.setFileTree);
   const navigateTo = useEditorNavigationStore((state) => state.navigateTo);
@@ -155,12 +165,79 @@ const MainWorkbench: React.FC = () => {
     void transitionProfiler.endTransition(id, 'terminal_toggle');
   }, [toggleTerminal]);
 
-  const handleToggleSettings = useCallback(() => {
+  /**
+   * Open Settings, optionally straight to one of its tabs.
+   *
+   * `openSettings` and never `toggleSettings`: Ty-Code > Preferences is a menu
+   * row, and a row that closes the panel it names whenever that panel happens to
+   * be open is the same trap as a toggle wired to "Show Source Control". The
+   * scheduler promotion stays — the settings chunk hydrates lazily, so without
+   * it a cold open renders a skeleton for a beat.
+   */
+  const openPreferences = useCallback((tab?: string) => {
     const id = transitionProfiler.startTransition('settings_open');
     void window.electronAPI?.bootSchedulerPromote?.('settings_hydration');
-    toggleSettings();
+    useChatStore.getState().openSettings(tab);
     void transitionProfiler.endTransition(id, 'settings_open');
-  }, [toggleSettings]);
+  }, []);
+
+  const togglePrimarySidebar = useCallback(() => {
+    setLeftWidth((w) => {
+      if (w > 0) {
+        lastLeftWidthRef.current = w;
+        return 0;
+      }
+      return lastLeftWidthRef.current || 260;
+    });
+  }, []);
+
+  const toggleAssistantSidebar = useCallback(() => {
+    setRightWidth((w) => {
+      if (w > 0) {
+        lastRightWidthRef.current = w;
+        return 0;
+      }
+      return lastRightWidthRef.current || 380;
+    });
+  }, []);
+
+  /**
+   * Reveal an activity-bar view, opening the primary sidebar if it is shut.
+   *
+   * Deliberately not `handleTabChange`: clicking the already-active tab toggles
+   * the panel closed there, so a menu row wired straight to it would hide the
+   * very view it names. The old `Ctrl+Shift+F` binding had exactly that bug —
+   * it set the tab and left the sidebar shut, which made the shortcut look
+   * broken whenever the panel happened to be closed.
+   */
+  const showActivityView = useCallback((view: ActivityTab) => {
+    setLeftWidth((w) => (w > 0 ? w : lastLeftWidthRef.current || 260));
+    const eventName = view === 'extensions' ? 'extensions_open' : `panel_open:${view}`;
+    const id = transitionProfiler.startTransition(eventName);
+    if (view === 'extensions') {
+      void window.electronAPI?.bootSchedulerPromote?.('extension_host');
+    }
+    setActivityTab(view);
+    void transitionProfiler.endTransition(id, `panel_visible:${view}`);
+  }, []);
+
+  /**
+   * Open Quick Open with a mode prefix already typed: `''` lists files, `'#'`
+   * searches workspace symbols, `'@'` symbols in the active editor and `':'`
+   * jumps to a line.
+   *
+   * Opens rather than toggles, because four Go-menu rows share this one surface
+   * with different prefixes and a toggle would make Ctrl+P followed by Ctrl+G
+   * close the overlay the user had just asked for.
+   */
+  const openQuickOpenWith = useCallback((prefix: string) => {
+    setQuickOpenInitialQuery(prefix);
+    setIsQuickOpenOpen(true);
+  }, []);
+
+  const toggleCommandPalette = useCallback(() => {
+    setIsCommandPaletteOpen((prev) => !prev);
+  }, []);
 
   // Preload terminal module during background/idle (instance created on first open)
   useEffect(() => {
@@ -286,65 +363,38 @@ const MainWorkbench: React.FC = () => {
     };
   }, []);
 
-  const lastLeftWidthRef = useRef(260);
-  const lastRightWidthRef = useRef(380);
-
-  // Listen for custom workbench events from TitleBar and Status Bar
+  // Listen for custom workbench events from TitleBar and Status Bar.
+  //
+  // These listeners and the command handlers registered below now share one
+  // implementation per action. They used to be written out twice — once here,
+  // once inside the raw keydown chain — and the copies had already drifted:
+  // the chain's Ctrl+Shift+F set the activity tab without opening the sidebar,
+  // while this one opened the sidebar without touching the tab.
   useEffect(() => {
     const onShowBootTimeline = (): void => setIsBootTimelineOpen(true);
-    const onToggleLeft = (): void => {
-      setLeftWidth((w) => {
-        if (w > 0) {
-          lastLeftWidthRef.current = w;
-          return 0;
-        }
-        return lastLeftWidthRef.current || 260;
-      });
-    };
-    const onToggleRight = (): void => {
-      setRightWidth((w) => {
-        if (w > 0) {
-          lastRightWidthRef.current = w;
-          return 0;
-        }
-        return lastRightWidthRef.current || 380;
-      });
-    };
-    const onToggleAllPanels = (): void => {
-      setLeftWidth((lw) => {
-        if (lw > 0) {
-          lastLeftWidthRef.current = lw;
-          return 0;
-        }
-        return lastLeftWidthRef.current || 260;
-      });
-      setRightWidth((rw) => {
-        if (rw > 0) {
-          lastRightWidthRef.current = rw;
-          return 0;
-        }
-        return lastRightWidthRef.current || 380;
-      });
-    };
-    const onQuickOpen = (): void => setIsQuickOpenOpen(true);
+    const onQuickOpen = (): void => openQuickOpenWith('');
     const onCommandPalette = (): void => setIsCommandPaletteOpen(true);
+    const onToggleAllPanels = (): void => {
+      togglePrimarySidebar();
+      toggleAssistantSidebar();
+    };
 
     window.addEventListener('workbench:show-boot-timeline', onShowBootTimeline);
-    window.addEventListener('workbench:toggle-left-sidebar', onToggleLeft);
-    window.addEventListener('workbench:toggle-right-sidebar', onToggleRight);
+    window.addEventListener('workbench:toggle-left-sidebar', togglePrimarySidebar);
+    window.addEventListener('workbench:toggle-right-sidebar', toggleAssistantSidebar);
     window.addEventListener('workbench:toggle-all-panels', onToggleAllPanels);
     window.addEventListener('workbench:quick-open', onQuickOpen);
     window.addEventListener('workbench:command-palette', onCommandPalette);
 
     return () => {
       window.removeEventListener('workbench:show-boot-timeline', onShowBootTimeline);
-      window.removeEventListener('workbench:toggle-left-sidebar', onToggleLeft);
-      window.removeEventListener('workbench:toggle-right-sidebar', onToggleRight);
+      window.removeEventListener('workbench:toggle-left-sidebar', togglePrimarySidebar);
+      window.removeEventListener('workbench:toggle-right-sidebar', toggleAssistantSidebar);
       window.removeEventListener('workbench:toggle-all-panels', onToggleAllPanels);
       window.removeEventListener('workbench:quick-open', onQuickOpen);
       window.removeEventListener('workbench:command-palette', onCommandPalette);
     };
-  }, []);
+  }, [openQuickOpenWith, togglePrimarySidebar, toggleAssistantSidebar]);
 
   useEffect(() => {
     // Record renderer_first_paint after initial frame and paint
@@ -392,66 +442,38 @@ const MainWorkbench: React.FC = () => {
     })();
   }, [initSettings, setWorkspacePath, setFileTree]);
 
-  // Global Keyboard Shortcuts (Ctrl+P, Ctrl+Shift+P, Ctrl+Shift+F, Ctrl+Shift+G, Ctrl+`)
+  // Prompt 5: the shell's command handlers, registered from here because every
+  // one of them closes over this component's setters. A window with no
+  // workbench mounted therefore registers none, and its menu rows disappear
+  // instead of turning into dead clicks — which is the truth about that window.
+  //
+  // This replaces the raw `keydown` chain that used to sit here. Twelve of its
+  // branches are now registry entries, so a chord and the menu row it belongs to
+  // are a single declaration and can no longer drift apart. The thirteenth keeps
+  // its command but loses its chord: Ctrl+Shift+S meant "rescan workspace" here
+  // and means "Save As…" in the registry, because that is what the key means in
+  // every other editor. Rescan stays reachable from Show All Commands.
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'p') {
-        e.preventDefault();
-        setIsCommandPaletteOpen((prev) => !prev);
-      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'p') {
-        e.preventDefault();
-        setIsQuickOpenOpen((prev) => !prev);
-      } else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'f') {
-        e.preventDefault();
-        setActivityTab('search');
-      } else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'g') {
-        e.preventDefault();
-        setActivityTab('source-control');
-      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 't') {
-        e.preventDefault();
-        setQuickOpenInitialQuery('#');
-        setIsQuickOpenOpen(true);
-      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'g') {
-        e.preventDefault();
-        setQuickOpenInitialQuery(':');
-        setIsQuickOpenOpen(true);
-      } else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'o') {
-        e.preventDefault();
-        setQuickOpenInitialQuery('@');
-        setIsQuickOpenOpen(true);
-      } else if ((e.ctrlKey || e.metaKey) && e.key === ',') {
-        e.preventDefault();
-        handleToggleSettings();
-      } else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'x') {
-        e.preventDefault();
-        handleTabChange('extensions');
-      } else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'm') {
-        e.preventDefault();
-        useEditorNavigationStore.getState().runAction('toggleMinimap');
-      } else if ((e.ctrlKey || e.metaKey) && e.key === '`') {
-        e.preventDefault();
-        handleToggleTerminal();
-      } else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 's') {
-        e.preventDefault();
-        const currentPath = useWorkspaceStore.getState().workspacePath;
-        void (async () => {
-          try {
-            const res = await window.electronAPI.scanWorkspace(currentPath);
-            if (res.success && res.data) {
-              toast.success('Workspace synced', `${res.data.primaryLanguage} • ${res.data.architecture}`);
-            } else {
-              toast.error('Sync failed', res.error || 'Failed to scan workspace');
-            }
-          } catch (err: unknown) {
-            toast.error('Sync failed', err instanceof Error ? err.message : String(err));
-          }
-        })();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleToggleTerminal, handleToggleSettings, handleTabChange]);
+    const disposable = registerWorkbenchCommandHandlers({
+      toggleCommandPalette,
+      openQuickOpen: openQuickOpenWith,
+      showActivityView,
+      togglePrimarySidebar,
+      toggleAssistantSidebar,
+      toggleTerminal: handleToggleTerminal,
+      openBootTimeline: () => setIsBootTimelineOpen(true),
+      openPreferences
+    });
+    return () => disposable.dispose();
+  }, [
+    toggleCommandPalette,
+    openQuickOpenWith,
+    showActivityView,
+    togglePrimarySidebar,
+    toggleAssistantSidebar,
+    handleToggleTerminal,
+    openPreferences
+  ]);
 
   // Handle Left Sidebar Resizing
   const handleLeftMouseDown = (e: React.MouseEvent) => {
@@ -691,6 +713,35 @@ const MainWorkbench: React.FC = () => {
 
 export const App: React.FC = () => {
   useThemeSync();
+
+  // Prompt 5: one command runtime per window, installed before the hash router
+  // branches so a popout gets the same registry-driven keybindings bound to its
+  // own context instead of a second, hand-written copy of them.
+  //
+  // The order is load-bearing. `installCommandContextSources` has to run first,
+  // because `installCommandRuntime` resolves enablement against the contributor
+  // set on the way in — sources first means the very first paint already knows
+  // whether an editor is open, rather than greying every row out and flickering
+  // it back a frame later. Teardown unwinds in reverse for the same reason.
+  //
+  // The terminal and task handlers register here rather than in `MainWorkbench`
+  // with the workbench ones, even though the drawer only mounts there. They take
+  // no shell deps — they read the workspace store and the bridge directly — and
+  // a popout editor window that hid its Terminal menu entirely would leave the
+  // user with no way to learn where terminals live. Instead the rows paint and
+  // decline with `NO_TERMINAL_SURFACE`, which names the window to go to.
+  useEffect(() => {
+    const sources = installCommandContextSources();
+    const editorCommands = registerEditorCommandHandlers();
+    const terminalCommands = registerTerminalCommandHandlers();
+    const runtime = installCommandRuntime();
+    return () => {
+      runtime.dispose();
+      terminalCommands.dispose();
+      editorCommands.dispose();
+      sources.dispose();
+    };
+  }, []);
 
   const isSketcher = typeof window !== 'undefined' && (window.location.hash.includes('sketcher') || window.location.hash.includes('canvas'));
   if (isSketcher) {

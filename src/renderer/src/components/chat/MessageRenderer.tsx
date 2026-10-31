@@ -80,6 +80,34 @@ export function applyUkPunctuation(markdown: string): string {
   return normalisePunctuation(markdown);
 }
 
+/**
+ * Strips raw textual tool-call XML blocks (e.g. `<tool_call>`, `<dots_function_call>`,
+ * `<function_calls>`, `<invoke>`) and cleans up spacing artifacts around inline code
+ * so model tool markup never leaks into the rendered chat prose.
+ */
+export function sanitizeAssistantDisplayContent(raw: string, isStreaming = false): string {
+  if (!raw) return '';
+  let text = raw
+    // Strip fenced XML/JSON blocks wrapping tool calls
+    .replace(/```(?:xml|json|tool_call)?\s*<(?:tool_call|dots_function_call|function_calls|function_call|antml:function_calls)\b[\s\S]*?<\/(?:tool_call|dots_function_call|function_calls|function_call|antml:function_calls)>\s*```/gi, '')
+    // Strip closed XML tool call blocks
+    .replace(/<(?:tool_call|dots_function_call|function_calls|function_call|antml:function_calls)\b[^>]*>[\s\S]*?<\/(?:tool_call|dots_function_call|function_calls|function_call|antml:function_calls)>/gi, '')
+    .replace(/<invoke\b[^>]*>[\s\S]*?<\/invoke>/gi, '')
+    // Strip trailing unclosed tool-call block only when preceded by <dots_function_call> / <tool_call> / <function_calls> / <antml:function_calls>
+    .replace(/<(?:tool_call|dots_function_call|function_calls|antml:function_calls)\b[\s\S]*$/gi, '')
+    .replace(/<｜tool▁calls▁begin｜>[\s\S]*?(?:<｜tool▁calls▁end｜>|$)/g, '');
+
+  if (!isStreaming) {
+    text = text
+      // Clean up stray spaces before punctuation right after inline backtick code: `path` . -> `path`.
+      .replace(/(`[^`\n]+`)[ \t]+([.,;:!?])/g, '$1$2')
+      // Collapse 3+ consecutive blank lines into a clean paragraph break
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+  return text;
+}
+
 // Shared worker singletons (Step 2: eliminate freeze causes)
 // MessageRenderer is instantiated once per chat message — creating workers
 // per instance multiplied highlight.js grammar sets across dozens of V8
@@ -132,9 +160,16 @@ const MessageRendererImpl: React.FC<MessageRendererProps> = ({ content, isStream
   }, []);
 
   const normalizedContent = useMemo(
-    () => normalisePunctuation(content, { enabled: ukPunctuationEnabled }),
-    [content, ukPunctuationEnabled]
+    () => normalisePunctuation(sanitizeAssistantDisplayContent(content, isStreaming), { enabled: ukPunctuationEnabled }),
+    [content, isStreaming, ukPunctuationEnabled]
   );
+
+  // Ensure settlement never deadlocks if stream finishes with empty content
+  useEffect(() => {
+    if (!isStreaming && !normalizedContent) {
+      setIsSettled(true);
+    }
+  }, [isStreaming, normalizedContent]);
 
   // 1. Workers are shared singletons — never terminated per component
   // (the shared instance lives for the whole renderer lifetime).
@@ -293,7 +328,7 @@ const MessageRendererImpl: React.FC<MessageRendererProps> = ({ content, isStream
   const fallbackHtml = useMemo(() => {
     if (isStreaming || !normalizedContent) return null;
     try {
-      const parsed = marked.parse(normalizedContent, { gfm: true, breaks: true }) as string;
+      const parsed = marked.parse(normalizedContent, { gfm: true, breaks: false }) as string;
       return DOMPurify.sanitize(parsed, {
         USE_PROFILES: { html: true, mathMl: true, svg: true },
         ADD_TAGS: [
@@ -322,12 +357,14 @@ const MessageRendererImpl: React.FC<MessageRendererProps> = ({ content, isStream
       <div
         className="message-content-streaming contain-content"
         style={{
-          fontSize: 'var(--chat-font-size, 12px)',
-          lineHeight: 'var(--chat-line-height, 1.7)',
+          fontSize: 'var(--chat-font-size, 13px)',
+          lineHeight: 'var(--chat-line-height, 1.65)',
           color: 'var(--text-primary)',
           whiteSpace: 'pre-wrap',
           wordBreak: 'break-word',
+          overflowWrap: 'break-word',
           fontFamily: 'var(--chat-font-family, inherit)',
+          WebkitFontSmoothing: 'antialiased',
           userSelect: 'text',
           contain: 'content'
         }}
@@ -351,9 +388,10 @@ const MessageRendererImpl: React.FC<MessageRendererProps> = ({ content, isStream
     <div
       className="markdown-content chat-message-markdown-html prose prose-invert prose-sm max-w-none contain-content"
       style={{
-        fontSize: 'var(--chat-font-size, 12px)',
-        lineHeight: 'var(--chat-line-height, 1.7)',
+        fontSize: 'var(--chat-font-size, 13px)',
+        lineHeight: 'var(--chat-line-height, 1.65)',
         color: 'var(--text-primary)',
+        WebkitFontSmoothing: 'antialiased',
         userSelect: 'text',
         contain: 'content'
       }}

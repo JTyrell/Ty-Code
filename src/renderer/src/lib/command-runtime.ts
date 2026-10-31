@@ -507,7 +507,9 @@ export async function executeDynamicSubmenuItem(
  * Monaco's input area, the chat box, xterm's helper textarea — handles those
  * itself. Claiming them in a capture-phase listener would strip native editing
  * from every field in the product. They remain reachable from the Edit and
- * Selection menus, whose handler is focus-aware.
+ * Selection menus, whose handler is focus-aware — and `claimsNativeChord` below
+ * lets the module owning a handler take one chord back when the focused surface
+ * would do something wrong rather than merely something different.
  */
 const NATIVE_SURFACE_COMMANDS: ReadonlySet<string> = new Set(['edit.dispatch']);
 
@@ -559,6 +561,48 @@ export function shouldStandAside(command: string): boolean {
 }
 
 /**
+ * Asks whether a chord `shouldStandAside` would surrender is one Ty-Code has to
+ * win anyway.
+ *
+ * Registered by the module that owns the handler, so this file never has to
+ * learn about workspace-edit state. Returns a disposable that restores the
+ * previous predicate, which keeps a remount — StrictMode runs every effect
+ * twice — from leaving a stale one installed.
+ */
+export type NativeChordPreemption = (command: string, args: Record<string, unknown>) => boolean;
+
+let preemptNativeChord: NativeChordPreemption | null = null;
+
+export function setNativeChordPreemption(
+  preemption: NativeChordPreemption
+): CommandRuntimeDisposable {
+  const previous = preemptNativeChord;
+  preemptNativeChord = preemption;
+  return {
+    dispose() {
+      preemptNativeChord = previous;
+    }
+  };
+}
+
+/**
+ * Resolve the pre-emption, treating a throw as "do not preempt".
+ *
+ * That is the safe direction: failing to claim a chord costs one missed
+ * convenience, whereas claiming one on a bug strips native editing from
+ * whatever the user is actually typing in.
+ */
+function claimsNativeChord(command: string, args: Record<string, unknown>): boolean {
+  if (!preemptNativeChord) return false;
+  try {
+    return preemptNativeChord(command, args);
+  } catch (error) {
+    console.warn('[command-runtime] a chord pre-emption check threw', error);
+    return false;
+  }
+}
+
+/**
  * Bind every keybinding in the registry, globally, from the same entries the
  * menus render from.
  *
@@ -589,7 +633,10 @@ export function installCommandKeybindings(): CommandRuntimeDisposable {
     const match = matcher.match(keyEvent, getRegistryRuntimeState());
     if (match.kind === 'none') return;
 
-    if (shouldStandAside(match.binding.command)) {
+    if (
+      shouldStandAside(match.binding.command) &&
+      !claimsNativeChord(match.binding.command, match.binding.args ?? {})
+    ) {
       // Reset so a half-typed sequence is not left latched swallowing whatever
       // the user types next.
       matcher.reset();

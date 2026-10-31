@@ -155,10 +155,37 @@ export class OpenCodeBridge {
       const discovered = opencodeServiceManager.discoverOpencodeCli();
       cliPath = discovered;
       if (discovered) {
-        const versionProbe = spawnSync(discovered, ['--version'], {
-          encoding: 'utf8',
-          timeout: 5000,
-          windowsHide: true
+        const versionProbe = await new Promise<{ status: number | null; stdout: string; stderr: string }>((resolve) => {
+          let stdout = '';
+          let stderr = '';
+          let settled = false;
+          const finish = (status: number | null) => {
+            if (settled) return;
+            settled = true;
+            resolve({ status, stdout, stderr });
+          };
+          try {
+            const child = spawn(discovered, ['--version'], {
+              windowsHide: true,
+              stdio: ['ignore', 'pipe', 'pipe']
+            });
+            const timer = setTimeout(() => {
+              try { child.kill(); } catch { }
+              finish(null);
+            }, 1500);
+            child.stdout?.on('data', (chunk) => { stdout += String(chunk); });
+            child.stderr?.on('data', (chunk) => { stderr += String(chunk); });
+            child.on('error', () => {
+              clearTimeout(timer);
+              finish(null);
+            });
+            child.on('close', (code) => {
+              clearTimeout(timer);
+              finish(code);
+            });
+          } catch {
+            finish(null);
+          }
         });
         const outputText = `${versionProbe.stdout || ''}${versionProbe.stderr || ''}`.trim();
         if (versionProbe.status === 0 || outputText) {

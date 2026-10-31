@@ -21,7 +21,7 @@ import { useChatStore } from '../state/chat-store';
 import { useWorkspaceEditStore } from '../state/workspace-edit-store';
 import { useEditorNavigationStore } from '../state/editor-navigation-store';
 import { useLspStore } from '../state/lsp-store';
-import { handleAutoAppliedTransaction, undoWorkspaceEditFromEditor } from '../services/workspace-edit-commands';
+import { handleAutoAppliedTransaction } from '../services/workspace-edit-commands';
 import { toast } from '../state/toast-store';
 import { WelcomePage } from './WelcomePage';
 import { OnboardingTour } from './OnboardingTour';
@@ -68,7 +68,6 @@ export const EditorArea: React.FC = () => {
   const setActiveTab = useWorkspaceStore((s) => s.setActiveTab);
   const closeTab = useWorkspaceStore((s) => s.closeTab);
   const updateTabContent = useWorkspaceStore((s) => s.updateTabContent);
-  const saveActiveFile = useWorkspaceStore((s) => s.saveActiveFile);
   const saveFile = useWorkspaceStore((s) => s.saveFile);
   const diffReview = useWorkspaceStore((s) => s.diffReview);
   const closeDiffReview = useWorkspaceStore((s) => s.closeDiffReview);
@@ -250,37 +249,13 @@ export const EditorArea: React.FC = () => {
     if (splitState.isSplit && secondaryTab) syncDocumentWithLsp(secondaryTab.path, secondaryTab.language, secondaryTab.content);
   }, [splitState.isSplit, secondaryTab?.path]);
 
-  // Global Keyboard shortcuts in editor area
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
-        const editorNode = editorRef.current?.getDomNode?.() as HTMLElement | null;
-        const activeElement = document.activeElement;
-        const isEditorFocused = Boolean(editorNode?.contains(activeElement));
-        const isOtherTextField = !isEditorFocused && (activeElement instanceof HTMLInputElement || activeElement instanceof HTMLTextAreaElement || (activeElement instanceof HTMLElement && activeElement.isContentEditable));
-        const editState = useWorkspaceEditStore.getState();
-        if (!isOtherTextField && editState.lastAppliedTransactionId && editState.lastAppliedEditorRevision === editState.editorRevision) {
-          e.preventDefault();
-          e.stopImmediatePropagation();
-          void undoWorkspaceEditFromEditor();
-          return;
-        }
-      }
-      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-        e.preventDefault();
-        void saveActiveFile().then(() => setBlameRefreshKey((value) => value + 1));
-      } else if ((e.ctrlKey || e.metaKey) && e.key === '\\') {
-        e.preventDefault();
-        toggleSplit('vertical');
-      } else if (e.altKey && e.key.toLowerCase() === 'z') {
-        e.preventDefault();
-        setWordWrap((prev) => (prev === 'on' ? 'off' : 'on'));
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown, true);
-    return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [saveActiveFile, activeTab]);
-
+  // The four chords this component used to claim in its own capture-phase
+  // listener — Ctrl+Z, Ctrl+S, Ctrl+\ and Alt+Z — are registry entries now, so
+  // each chord and the menu row that names it are a single declaration and can
+  // no longer drift apart. Two left a residue worth naming: Ctrl+Z's
+  // workspace-edit rollback became a chord pre-emption in `editor-commands.ts`,
+  // and Ctrl+S's blame bump is registered as `refreshBlame` below so
+  // `workbench.save` can still reach it.
   useEffect(() => {
     return useEditorNavigationStore.getState().registerActions({
       toggleMinimap: () => setMinimapEnabled((value) => !value),
@@ -292,7 +267,13 @@ export const EditorArea: React.FC = () => {
       findReferences: () => { void editorRef.current?.getAction('editor.action.findReferences')?.run(); },
       goToDefinition: () => { void editorRef.current?.getAction('editor.action.goToDefinition')?.run(); },
       goToImplementation: () => { void editorRef.current?.getAction('editor.action.goToImplementation')?.run(); },
-      quickFix: () => { void editorRef.current?.getAction('editor.action.quickFix')?.run(); }
+      quickFix: () => { void editorRef.current?.getAction('editor.action.quickFix')?.run(); },
+      // Not a user toggle: the blame gutter refetches on [filePath, refreshKey],
+      // so saving has to bump the counter or the gutter keeps showing blame for
+      // the pre-save content. `workbench.save` calls this, which is what keeps
+      // the bump alive now that Ctrl+S arrives from the registry rather than
+      // from a listener owned by this component.
+      refreshBlame: () => setBlameRefreshKey((value) => value + 1)
     });
   }, [openTabs, activeTabPath]);
 

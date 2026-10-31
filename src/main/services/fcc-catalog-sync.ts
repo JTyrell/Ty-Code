@@ -29,7 +29,7 @@ import { localSupplyEndpoint } from './fcc/local-supply-endpoint';
 import { subscriptionOAuthService } from './fcc/subscription-oauth';
 
 const CACHE_TTL_MS = 30_000;
-const FETCH_TIMEOUT_MS = 6_000;
+const FETCH_TIMEOUT_MS = 800;
 const SUPPLY_OWNER_COPILOT = 'copilot-subscription';
 const SUPPLY_OWNER_PREFIX = 'ty-code-';
 
@@ -47,6 +47,7 @@ function sidecarBase(): string {
 
 /** Source 1: the FCC sidecar's own model list. */
 async function fetchSidecarModels(): Promise<VerifiedModelConfig[]> {
+  if (!isFccSidecarRunning()) return [];
   const base = sidecarBase();
   const res = await fetch(`${base}/v1/models`, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
   if (!res.ok) return [];

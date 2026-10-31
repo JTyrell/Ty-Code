@@ -440,11 +440,20 @@ export type CommandTarget = z.infer<typeof CommandTargetSchema>;
  * children that only exist at runtime (open tabs, editor groups, live tasks).
  * The registry still owns the parent entry and its grouping, so adding a menu
  * item remains a single registry change.
+ *
+ * One source per **verb**, not per subject. A published row carries the command
+ * it runs (`DynamicSubmenuItem.command`) and the resolver attaches rows to their
+ * parent verbatim, so a single `runningTasks` list shared by Show, Restart and
+ * Terminate would paint three identical menus that all did whichever one thing
+ * the publisher baked in. The three `runningTasks*` sources are the same
+ * computed rows published under three commands.
  */
 export const DYNAMIC_SUBMENU_SOURCES = [
   'openEditors',
   'editorGroups',
   'runningTasks',
+  'runningTasksRestart',
+  'runningTasksTerminate',
   'availableTasks',
   'breakpoints'
 ] as const;

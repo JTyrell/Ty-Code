@@ -190,8 +190,8 @@ export const ScrambleText: React.FC<ScrambleTextProps> = ({
       // 4. On transition to streaming === false ([DONE]):
       if (wasStreamingRef.current && !isCurrentlyStreaming) {
         wasStreamingRef.current = false;
-        if (arrival - lockedRef.current > 400) {
-          lockedRef.current = arrival - 400;
+        if (arrival - lockedRef.current > 180) {
+          lockedRef.current = arrival - 180;
         }
       } else if (!wasStreamingRef.current && isCurrentlyStreaming) {
         wasStreamingRef.current = true;
@@ -280,8 +280,8 @@ export const ScrambleText: React.FC<ScrambleTextProps> = ({
     // Transition to streaming === false ([DONE])
     if (wasStreamingRef.current && !isCurrentlyStreaming) {
       wasStreamingRef.current = false;
-      if (currentText.length - lockedRef.current > 400) {
-        lockedRef.current = currentText.length - 400;
+      if (currentText.length - lockedRef.current > 180) {
+        lockedRef.current = currentText.length - 180;
       }
     } else if (!wasStreamingRef.current && isCurrentlyStreaming) {
       wasStreamingRef.current = true;

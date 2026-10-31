@@ -305,99 +305,118 @@ function buildBakedModels(): VerifiedModelConfig[] {
 
 let cachedModels: VerifiedModelConfig[] | null = null;
 let cacheTimestamp = 0;
+let refreshModelsPromise: Promise<VerifiedModelConfig[]> | null = null;
 const CACHE_TTL_MS = 60_000;
 
-export async function getVerifiedModels(): Promise<VerifiedModelConfig[]> {
-  const fresh = cachedModels && Date.now() - cacheTimestamp < CACHE_TTL_MS;
-  if (fresh) {
-    return cachedModels!;
+async function refreshVerifiedModelsCatalog(): Promise<VerifiedModelConfig[]> {
+  if (refreshModelsPromise) {
+    return refreshModelsPromise;
   }
 
-  const [baked, localModels, fccModels, fccDiscovered] = await Promise.all([
-    Promise.resolve(buildBakedModels()),
-    detectLocalOllamaModels().catch(() => [] as VerifiedModelConfig[]),
-    fetchFCCCatalog().catch(() => [] as VerifiedModelConfig[]),
-    fccModelMapper.getDiscoveredModels().catch(() => [] as VerifiedModelConfig[])
-  ]);
+  refreshModelsPromise = (async () => {
+    const [baked, localModels, fccModels, fccDiscovered] = await Promise.all([
+      Promise.resolve(buildBakedModels()),
+      detectLocalOllamaModels().catch(() => [] as VerifiedModelConfig[]),
+      fetchFCCCatalog().catch(() => [] as VerifiedModelConfig[]),
+      fccModelMapper.getDiscoveredModels().catch(() => [] as VerifiedModelConfig[])
+    ]);
 
-  const merged = new Map<string, VerifiedModelConfig>();
-  for (const model of [...fccDiscovered, ...baked, ...fccModels, ...localModels]) {
-    if (!model.modelId || !model.url) continue;
-    const key = `${(model.providerId || '').toLowerCase()}::${model.modelId}`;
-    if (merged.has(key)) continue;
-    merged.set(key, model);
-  }
+    const merged = new Map<string, VerifiedModelConfig>();
+    for (const model of [...fccDiscovered, ...baked, ...fccModels, ...localModels]) {
+      if (!model.modelId || !model.url) continue;
+      const key = `${(model.providerId || '').toLowerCase()}::${model.modelId}`;
+      if (merged.has(key)) continue;
+      merged.set(key, model);
+    }
 
-  // OpenCode free tier (auto-discovery): free models present in the user's
-  // local opencode config, served by the real installed CLI through the
-  // subprocess bridge. Only ids that exist BOTH in the config AND when the
-  // CLI is actually runnable are surfaced — nothing is invented. Ids already
-  // covered by another provider (FCC community pool, Ollama, …) stay with
-  // their first source, so a synced id never double-lists in the UI. The
-  // availability check is the expensive part (one cached subprocess probe),
-  // so discovery is only touched when the CLI may still be missing.
-  const opencodeFreeIds = await discoverOpenCodeFreeModels().catch(() => [] as string[]);
-  if (opencodeFreeIds.length > 0) {
-    const { opencodeBridge } = await import('./opencode-bridge');
-    const cliAvailable = await opencodeBridge.isCliAvailable();
-    if (cliAvailable) {
-      const presentModelIds = new Set([...merged.values()].map((m) => m.modelId));
-      for (const modelId of opencodeFreeIds) {
-        if (!modelId || presentModelIds.has(modelId)) continue;
-        presentModelIds.add(modelId);
-        merged.set(`${OPENCODE_FREE_PROVIDER_ID}::${modelId}`, {
-          modelId,
-          name: modelId,
-          url: OPENCODE_BRIDGE_URL,
-          requiresKey: false,
-          providerId: OPENCODE_FREE_PROVIDER_ID
-        });
+    // OpenCode free tier (auto-discovery): free models present in the user's
+    // local opencode config, served by the real installed CLI through the
+    // subprocess bridge. Only ids that exist BOTH in the config AND when the
+    // CLI is actually runnable are surfaced — nothing is invented. Ids already
+    // covered by another provider (FCC community pool, Ollama, …) stay with
+    // their first source, so a synced id never double-lists in the UI. The
+    // availability check is the expensive part (one cached subprocess probe),
+    // so discovery is only touched when the CLI may still be missing.
+    const opencodeFreeIds = await discoverOpenCodeFreeModels().catch(() => [] as string[]);
+    if (opencodeFreeIds.length > 0) {
+      const { opencodeBridge } = await import('./opencode-bridge');
+      const cliAvailable = await opencodeBridge.isCliAvailable();
+      if (cliAvailable) {
+        const presentModelIds = new Set([...merged.values()].map((m) => m.modelId));
+        for (const modelId of opencodeFreeIds) {
+          if (!modelId || presentModelIds.has(modelId)) continue;
+          presentModelIds.add(modelId);
+          merged.set(`${OPENCODE_FREE_PROVIDER_ID}::${modelId}`, {
+            modelId,
+            name: modelId,
+            url: OPENCODE_BRIDGE_URL,
+            requiresKey: false,
+            providerId: OPENCODE_FREE_PROVIDER_ID
+          });
+        }
       }
     }
+
+    // Apply live catalog corrections: strip models no longer offered, update
+    // names/titles to live values, and append newly offered models.
+    let entries = [...merged.values()];
+    for (const [pid, corr] of Object.entries(catalogCorrections)) {
+      const removed = new Set(corr.removed || []);
+      if (removed.size > 0) {
+        entries = entries.filter((m) => !((m.providerId || '').toLowerCase() === pid && removed.has(m.modelId)));
+      }
+      for (const ren of corr.renamed || []) {
+        const target = entries.find((m) => (m.providerId || '').toLowerCase() === pid && m.modelId === ren.modelId);
+        if (target && ren.name) target.name = ren.name;
+      }
+      for (const add of corr.added || []) {
+        if (!add?.modelId || !add?.url) continue;
+        const key = `${pid}::${add.modelId}`;
+        if (merged.has(key)) continue;
+        merged.set(key, {
+          modelId: add.modelId,
+          name: add.name || add.modelId,
+          url: add.url,
+          requiresKey: Boolean(add.requiresKey),
+          providerId: pid
+        });
+        entries.push(merged.get(key)!);
+      }
+    }
+
+    cachedModels = entries;
+    cacheTimestamp = Date.now();
+    // ZeroFriction diagnosis (Prompt 3, Step 2): what the catalog actually
+    // contains - includes the community-keyed tier that uses requiresKey=true
+    // but is auto-supplied by the vault, so the plain !requiresKey list would
+    // otherwise hide it.
+    console.log(`[MODELS] Returning ${entries.length} verified models`);
+    console.log(`[MODELS] Free models: ${entries.filter((m) => !m.requiresKey).map((m) => m.modelId).join(', ')}`);
+    console.log(
+      `[MODELS] Community-keyed free (requiresKey but auto-supplied via ty-code-free): ${entries
+        .filter((m) => m.requiresKey && (m.providerId || '').toLowerCase().includes('ty-code-free'))
+        .map((m) => m.modelId)
+        .join(', ')}`
+    );
+    return cachedModels;
+  })().finally(() => {
+    refreshModelsPromise = null;
+  });
+
+  return refreshModelsPromise;
+}
+
+export async function getVerifiedModels(): Promise<VerifiedModelConfig[]> {
+  if (cachedModels) {
+    if (Date.now() - cacheTimestamp >= CACHE_TTL_MS && !refreshModelsPromise) {
+      // Stale-while-revalidate: return cached catalog immediately so chat
+      // requests never stall on background discovery probes.
+      void refreshVerifiedModelsCatalog().catch(() => {});
+    }
+    return cachedModels;
   }
 
-  // Apply live catalog corrections: strip models no longer offered, update
-  // names/titles to live values, and append newly offered models.
-  let entries = [...merged.values()];
-  for (const [pid, corr] of Object.entries(catalogCorrections)) {
-    const removed = new Set(corr.removed || []);
-    if (removed.size > 0) {
-      entries = entries.filter((m) => !((m.providerId || '').toLowerCase() === pid && removed.has(m.modelId)));
-    }
-    for (const ren of corr.renamed || []) {
-      const target = entries.find((m) => (m.providerId || '').toLowerCase() === pid && m.modelId === ren.modelId);
-      if (target && ren.name) target.name = ren.name;
-    }
-    for (const add of corr.added || []) {
-      if (!add?.modelId || !add?.url) continue;
-      const key = `${pid}::${add.modelId}`;
-      if (merged.has(key)) continue;
-      merged.set(key, {
-        modelId: add.modelId,
-        name: add.name || add.modelId,
-        url: add.url,
-        requiresKey: Boolean(add.requiresKey),
-        providerId: pid
-      });
-      entries.push(merged.get(key)!);
-    }
-  }
-
-  cachedModels = entries;
-  cacheTimestamp = Date.now();
-  // ZeroFriction diagnosis (Prompt 3, Step 2): what the catalog actually
-  // contains - includes the community-keyed tier that uses requiresKey=true
-  // but is auto-supplied by the vault, so the plain !requiresKey list would
-  // otherwise hide it.
-  console.log(`[MODELS] Returning ${entries.length} verified models`);
-  console.log(`[MODELS] Free models: ${entries.filter((m) => !m.requiresKey).map((m) => m.modelId).join(', ')}`);
-  console.log(
-    `[MODELS] Community-keyed free (requiresKey but auto-supplied via ty-code-free): ${entries
-      .filter((m) => m.requiresKey && (m.providerId || '').toLowerCase().includes('ty-code-free'))
-      .map((m) => m.modelId)
-      .join(', ')}`
-  );
-  return cachedModels;
+  return refreshVerifiedModelsCatalog();
 }
 
 export function clearModelCache(): void {

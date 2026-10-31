@@ -151,6 +151,20 @@ export const COMMAND_ENTRY_INPUTS: CommandEntryInput[] = [
   { id: 'view.usage-dashboard', label: 'Usage & Quota Dashboard', menu: 'View', group: 4, command: 'workbench.usageDashboard', category: 'View' },
   { id: 'view.boot-timeline', label: 'Boot Timeline', menu: 'View', group: 4, command: 'workbench.bootTimeline', category: 'View' },
 
+  // Palette-only (no menu): these keep three shortcuts that `App.tsx` bound by
+  // hand before the registry existed. Without entries here, retiring that
+  // keydown chain in favour of registry keybindings would silently delete a
+  // working feature — the opposite of the dead-click problem this registry
+  // exists to fix.
+  //
+  // Rescan loses its chord deliberately: `Ctrl+Shift+S` was workspace rescan
+  // here, but the registry gives that chord to Save As…, which is what the key
+  // means in every other editor. The command stays reachable from Show All
+  // Commands rather than being rebound to something nobody will remember.
+  { id: 'view.rescan-workspace', label: 'Rescan Workspace Files', command: 'workbench.rescanWorkspace', category: 'View' },
+  { id: 'view.source-control', label: 'Show Source Control', keybinding: 'Ctrl+Shift+G', command: 'workbench.showSourceControl', category: 'View' },
+  { id: 'view.extensions', label: 'Show Extensions', keybinding: 'Ctrl+Shift+X', command: 'workbench.showExtensions', category: 'View' },
+
   // =========================================================================
   // Go — Prompt 5b Step 2, groups G1..G7 exactly, top to bottom.
   // =========================================================================
@@ -214,8 +228,8 @@ export const COMMAND_ENTRY_INPUTS: CommandEntryInput[] = [
   { id: 'terminal.run-active-file', label: 'Run Active File', menu: 'Terminal', group: 2, when: 'editorOpen', disabledReason: 'Open a file to run it.', command: 'task.runActiveFile', category: 'Terminal' },
   { id: 'terminal.run-selected-text', label: 'Run Selected Text', menu: 'Terminal', group: 2, when: 'selectionActive', disabledReason: 'Select text in the editor first.', command: 'task.runSelectedText', category: 'Terminal' },
   { id: 'terminal.show-running-tasks', label: 'Show Running Tasks…', menu: 'Terminal', group: 3, when: 'tasksRunning', disabledReason: 'No task is currently running.', submenuSource: 'runningTasks', command: 'task.showRunning', category: 'Terminal' },
-  { id: 'terminal.restart-running-task', label: 'Restart Running Task…', menu: 'Terminal', group: 3, when: 'tasksRunning', disabledReason: 'No task is currently running.', submenuSource: 'runningTasks', command: 'task.restartRunning', category: 'Terminal' },
-  { id: 'terminal.terminate-task', label: 'Terminate Task…', menu: 'Terminal', group: 3, when: 'tasksRunning', disabledReason: 'No task is currently running.', submenuSource: 'runningTasks', command: 'task.terminate', category: 'Terminal' },
+  { id: 'terminal.restart-running-task', label: 'Restart Running Task…', menu: 'Terminal', group: 3, when: 'tasksRunning', disabledReason: 'No task is currently running.', submenuSource: 'runningTasksRestart', command: 'task.restartRunning', category: 'Terminal' },
+  { id: 'terminal.terminate-task', label: 'Terminate Task…', menu: 'Terminal', group: 3, when: 'tasksRunning', disabledReason: 'No task is currently running.', submenuSource: 'runningTasksTerminate', command: 'task.terminate', category: 'Terminal' },
   { id: 'terminal.configure-tasks', label: 'Configure Tasks…', menu: 'Terminal', group: 4, command: 'task.configure', category: 'Terminal' },
   { id: 'terminal.configure-default-build-task', label: 'Configure Default Build Task…', menu: 'Terminal', group: 4, command: 'task.configureDefaultBuild', category: 'Terminal' },
 

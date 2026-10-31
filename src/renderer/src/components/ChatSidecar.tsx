@@ -1154,14 +1154,8 @@ export const ChatSidecar: React.FC = () => {
       clearTimeout(commitTimerRef.current);
       commitTimerRef.current = null;
     }
-    const targetId = activeStreamTargetIdRef.current || lastAssistantId;
-    if (!targetId || !streamingTextRef.current) return;
 
     lastCommitTimeRef.current = performance.now();
-    updateMessage(targetId, {
-      content: streamingTextRef.current,
-      ...(isComplete ? { isStreaming: false, statusText: '' } : { isStreaming: true })
-    });
 
     if (isComplete) {
       streamingTextRef.current = '';
@@ -1169,8 +1163,10 @@ export const ChatSidecar: React.FC = () => {
     }
 
     // Step 2: Auto-follow on double-buffered flush if pinned
+    // (chat-store.ts is the single authoritative writer of message.content/statusText
+    // so we do not double-write updateMessage here and cause dedupeReplayAppend races)
     chatListRef.current?.autoFollow();
-  }, [lastAssistantId, updateMessage]);
+  }, []);
 
   const scheduleCommit = useCallback(() => {
     const elapsed = performance.now() - lastCommitTimeRef.current;

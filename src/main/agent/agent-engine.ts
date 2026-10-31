@@ -161,13 +161,24 @@ async function pickNextAgentProvider(
     });
     if (eligible.length === 0) return undefined;
 
-    const fccEntry = eligible.find(
-      (m) =>
-        normId(m.providerId) === 'fcc' ||
-        m.providerId.toLowerCase().trim() === 'fcc-proxy' ||
-        m.providerId.toLowerCase().trim() === 'anthropic-claude-free'
-    );
-    if (fccEntry) return { providerId: fccEntry.providerId, modelId: fccEntry.modelId };
+    const fccLive = (() => {
+      try {
+        const { canFccServeCompletions } = require('../services/fcc-catalog-sync') as typeof import('../services/fcc-catalog-sync');
+        const { fccSidecarManager } = require('../services/fcc-sidecar-manager') as typeof import('../services/fcc-sidecar-manager');
+        return canFccServeCompletions() || fccSidecarManager.isActive();
+      } catch {
+        return false;
+      }
+    })();
+    if (fccLive) {
+      const fccEntry = eligible.find(
+        (m) =>
+          normId(m.providerId) === 'fcc' ||
+          m.providerId.toLowerCase().trim() === 'fcc-proxy' ||
+          m.providerId.toLowerCase().trim() === 'anthropic-claude-free'
+      );
+      if (fccEntry) return { providerId: fccEntry.providerId, modelId: fccEntry.modelId };
+    }
 
     const failedModel = (failedModelId || '').toLowerCase();
     const sameModelElsewhere = eligible.find((m) => m.modelId.toLowerCase() === failedModel);
@@ -240,11 +251,15 @@ function looksLikeSimpleQuery(prompt: string): boolean {
   const lower = prompt.trim().toLowerCase();
 
   // Anything mentioning workspace tooling is a complex task.
-  if (/\b(read|write|edit|replace|create|delete|remove|file|folder|directory|run|command|terminal|shell|git|commit|push|pull|merge|branch|grep|search|fix|bug|implement|build|test|deploy|workspace|project|code|script)\b/i.test(lower)) return false;
+  if (/\b(read|write|edit|replace|create|delete|remove|file|folder|directory|run|command|terminal|shell|git|commit|push|pull|merge|branch|grep|search|fix|bug|implement|build|test|deploy|workspace|project|code|script|refactor|debug|install|package|component|function|class)\b/i.test(lower)) return false;
 
-  // Greetings / general questions.
-  if (/^(hi|hello|hey|yo|greetings|howdy)([,.!?]|\s|$)/i.test(lower)) return true;
-  if (/\b(what is|who is|where is|can you|could you|explain|define|meaning of|difference between|tell me about|help me understand|is it true|true or false)\b/i.test(lower)) return true;
+  // Greetings / conversational check-ins / general questions.
+  if (/^(hi|hello|hey|yo|greetings|howdy|sup|good\s+(morning|afternoon|evening)|thanks|thank\s+you|ok|okay|cool|nice)([,.!?]|\s|$)/i.test(lower)) return true;
+  if (/\b(how are you|what is|who is|where is|why is|how does|can you|could you|explain|define|meaning of|difference between|tell me about|help me understand|is it true|true or false|what can you do|who are you)\b/i.test(lower)) return true;
+
+  // Very short conversational prompts (<= 4 words, no paths or punctuation indicating code)
+  const words = lower.split(/\s+/).filter(Boolean);
+  if (words.length > 0 && words.length <= 4 && !/[\\/.:`_()-]/.test(lower)) return true;
 
   return false;
 }
@@ -382,21 +397,37 @@ export class AgentEngine {
 
     // ===== DYNAMIC SYSTEM PROMPT (Layer 0-3 assembler) =====
     // Rebuilt per task; profile build is lazy (<=200ms) and never blocks the first token.
-    let prefs: RolePreferences;
-    try {
-      prefs = await loadPreferences(workspacePath);
-    } catch {
-      prefs = {
-        version: 1,
-        defaultMode: 'BUILD',
-        roleOverrides: { pin: [], ban: [], prefer: {} },
-        scopeOverrides: {},
-        questGate: { autoApproveMedium: false, requireApprovalFrom: 'Large' },
-        tokenBudget: { systemPromptFraction: 0.12, maxRoles: 2 },
-        conventions: { autoExtract: true, refreshOnHeadChange: true },
-        modeBySignal: {}
-      };
-    }
+    const defaultPrefs: RolePreferences = {
+      version: 1,
+      defaultMode: 'BUILD',
+      roleOverrides: { pin: [], ban: [], prefer: {} },
+      scopeOverrides: {},
+      questGate: { autoApproveMedium: false, requireApprovalFrom: 'Large' },
+      tokenBudget: { systemPromptFraction: 0.12, maxRoles: 2 },
+      conventions: { autoExtract: true, refreshOnHeadChange: true },
+      modeBySignal: {}
+    };
+
+    const [prefs, profile, packageScripts, restoredSession, omniContext] = await Promise.all([
+      loadPreferences(workspacePath).catch(() => defaultPrefs),
+      isSimpleQuery
+        ? Promise.resolve<ProjectProfile | null>(null)
+        : buildProjectProfile(workspacePath)
+            .then((p) => {
+              void saveProjectProfileCache(workspacePath, p);
+              return p;
+            })
+            .catch(() => null),
+      isSimpleQuery
+        ? Promise.resolve<Record<string, string>>({})
+        : discoverPackageScripts(workspacePath).catch(() => ({} as Record<string, string>)),
+      params.resumeSessionId
+        ? sessionStore.loadSession(params.resumeSessionId).catch(() => null)
+        : Promise.resolve<AgentSessionState | null>(null),
+      isSimpleQuery
+        ? Promise.resolve('')
+        : modelRotationManager.getOmniContextInjection(workspacePath).catch(() => '')
+    ]);
 
     const classification = classify(prompt, envContext.activeFiles, {
       pin: prefs.roleOverrides?.pin,
@@ -409,13 +440,6 @@ export class AgentEngine {
     const roles = classification.roles;
     const classifiedMode: ModeId = (params as any).mode ?? classification.mode;
     const classifiedTaskClass: TaskClass = (params as any).taskClass ?? classification.taskClass;
-    let profile: ProjectProfile | null = null;
-    try {
-      profile = await buildProjectProfile(workspacePath);
-      void saveProjectProfileCache(workspacePath, profile);
-    } catch {
-      profile = null;
-    }
 
     const assembled = assembleSystemPrompt({
       taskId: params.taskId || `task_${Date.now()}`,
@@ -453,38 +477,14 @@ export class AgentEngine {
 
     console.log(`[PROMPT] task=${params.taskId} roles=[${roles.join(',')}] mode=${assembled.mode} taskClass=${assembled.taskClass} tokens=${assembled.tokenEstimate}/${assembled.budget} degraded=${assembled.degraded} cache=${assembled.cache}`);
 
-    // Background conventions extraction enriches the cached profile for subsequent turns.
-    void (async () => {
-      try {
-        if (profile && (prefs.conventions?.autoExtract ?? true)) {
-          const { providerId, modelId } = await pickProviderModel();
-          const conventions = await runConventionsExtractor(workspacePath, providerId, modelId);
-          if (conventions) {
-            await saveProjectProfileCache(workspacePath, profile);
-            invalidateAssemblyCache();
-          }
-        }
-      } catch {
-        // conventions extraction is best-effort only
-      }
-    })();
     const harnessType = params.harness || settings.activeHarness || 'claude-code';
     const harness = getHarness(harnessType);
 
     // Initialize Agent State Manager (shared singleton so IPC can inspect live state)
     const stateManager = agentStateManager;
     stateManager.resetRun();
-    stateManager.currentMode = AgentMode.Plan;
+    stateManager.currentMode = isSimpleQuery ? AgentMode.Execute : AgentMode.Plan;
 
-    let restoredSession: AgentSessionState | null = null;
-    if (params.resumeSessionId) {
-      try {
-        restoredSession = await sessionStore.loadSession(params.resumeSessionId);
-      } catch {
-        restoredSession = null;
-      }
-    }
-    const packageScripts = await discoverPackageScripts(workspacePath);
     stateManager.initializeCompletionContract({
       originalObjective: prompt,
       taskClass: classifiedTaskClass,
@@ -540,12 +540,14 @@ export class AgentEngine {
     );
     const isLocal = isLocalModel(settings?.activeProvider, settings?.activeModel);
 
-    let systemPrompt = harness.formatSystemPrompt(workspacePath, activeFilePath, activeFileContent) || assembled.systemPrompt;
+    let systemPrompt = isSimpleQuery
+      ? assembled.systemPrompt
+      : (harness.formatSystemPrompt(workspacePath, activeFilePath, activeFileContent) || assembled.systemPrompt);
 
-    if (isEccEnabled && !systemPrompt.includes('ADVANCED AGENT WORKFLOWS (ECC')) {
+    if (!isSimpleQuery && isEccEnabled && !systemPrompt.includes('ADVANCED AGENT WORKFLOWS (ECC')) {
       systemPrompt += `\n\n${getEccRulesPrompt(isLocal)}`;
     }
-    if (isSeoEnabled && !systemPrompt.includes('OPEN SEO & ANALYTICS MCP')) {
+    if (!isSimpleQuery && isSeoEnabled && !systemPrompt.includes('OPEN SEO & ANALYTICS MCP')) {
       systemPrompt += `\n\n${getSeoPromptGuidance(isLocal)}`;
     }
     if (!isSimpleQuery && !systemPrompt.includes('TASK SCOPING PROTOCOL')) {
@@ -560,13 +562,8 @@ export class AgentEngine {
     }
 
     // Omni-Orchestrator Injection: Workspace Profile and Correction Memory
-    try {
-      const omniContext = await modelRotationManager.getOmniContextInjection(workspacePath);
-      if (omniContext) {
-        systemPrompt += `\n\n${omniContext}`;
-      }
-    } catch {
-      // Best-effort
+    if (omniContext) {
+      systemPrompt += `\n\n${omniContext}`;
     }
 
     // Real-Time Learned Rules (live memory enforcement without restart or /sync)
@@ -629,8 +626,10 @@ export class AgentEngine {
     // Run the heavy workspace scan, file reading, and memory loading in the background.
     // The initial LLM request fires IMMEDIATELY without waiting for disk I/O.
     const openFilePaths = params.openFilePaths?.length ? params.openFilePaths : activeFilePath ? [activeFilePath] : [];
-    let lazyContextInjected = false;
-    const lazyScanPromise = (async () => {
+    let lazyContextInjected = isSimpleQuery;
+    const lazyScanPromise = isSimpleQuery
+      ? Promise.resolve<string | null>(null)
+      : (async () => {
       try {
         const [workspaceSummary, openFiles] = await Promise.all([
           getWorkspaceSummary(workspacePath),
@@ -902,12 +901,16 @@ export class AgentEngine {
         }
 
         // Refresh the pinned objective/evidence block before any compaction pass.
-        messages = upsertPinnedTaskContext(messages, stateManager.getPinnedTaskContext());
+        if (!isSimpleQuery) {
+          messages = upsertPinnedTaskContext(messages, stateManager.getPinnedTaskContext());
+        }
 
         // 1. Compact context when the estimated token budget crosses 85% capacity of the model limit
-        const activeModelLimit = await resolveModelContextLimit(activeProvider, activeModel);
         const preCompactTokens = estimateContextTokens(messages);
         stateManager.updateTokenUsage(preCompactTokens);
+        const activeModelLimit = preCompactTokens > 6_000
+          ? await resolveModelContextLimit(activeProvider, activeModel)
+          : MODEL_CONTEXT_LIMIT;
         if (shouldCompact(messages, activeModelLimit)) {
           console.log(`[AGENT] Context at ${preCompactTokens}/${activeModelLimit} tokens (${Math.round((preCompactTokens / activeModelLimit) * 100)}% capacity). Triggering auto-compaction pass.`);
           onChunk({ type: 'status', content: 'Compacting context…' });
@@ -929,7 +932,9 @@ export class AgentEngine {
         }
 
         // Stream status
-        onChunk({ type: 'status', content: `${stateManager.currentMode === 'plan' ? 'Planning' : 'Executing'}… (iteration ${stateManager.iterationCount + 1}/${stateManager.maxIterations})` });
+        if (!isSimpleQuery) {
+          onChunk({ type: 'status', content: `${stateManager.currentMode === 'plan' ? 'Planning' : 'Executing'}… (iteration ${stateManager.iterationCount + 1}/${stateManager.maxIterations})` });
+        }
 
         // 2. Send to LLM with current todos in system prompt
         // Prompt 1 Step 2: repair tool pairing BEFORE EVERY provider send so
@@ -939,7 +944,7 @@ export class AgentEngine {
         if (injectedSyntheticResults > 0) {
           console.log(`[AGENT] pairing repair: injected ${injectedSyntheticResults} synthetic tool result(s) after failover`);
         }
-        const messagesWithTodos = buildMessagesWithTodos(messages, stateManager.todos);
+        const messagesWithTodos = isSimpleQuery ? messages : buildMessagesWithTodos(messages, stateManager.todos);
 
         // Mid-turn failover snapshot: tracks the streamed output of this turn
         // so a throttle mid-stream can pin another provider without losing the
@@ -957,7 +962,7 @@ export class AgentEngine {
         let structuredCalls: GatewayToolCall[] = [];
         const llmCallStartedAt = Date.now();
         const llmTokensIn = estimateContextTokens(messagesWithTodos);
-        const streamText = await ProviderGateway.sendChatRequest(
+        let streamText = await ProviderGateway.sendChatRequest(
           activeProvider,
           activeModel,
           messagesWithTodos,
@@ -974,14 +979,21 @@ export class AgentEngine {
           (thought: string) => {
             streamThought += thought;
             failoverResumeManager.recordTokens(turnSnapshot, undefined, thought);
+            onChunk({ type: 'thought', content: thought });
           },
-          toolSchemas,
+          isSimpleQuery ? undefined : toolSchemas,
           (calls: GatewayToolCall[]) => {
             structuredCalls.push(...calls);
           },
           params.taskId,
           'chat'
         );
+        if ((!streamText || !streamText.trim()) && structuredCalls.length === 0 && streamThought.trim().length > 0) {
+          streamText = streamThought.trim();
+          savedPartialStream += streamText;
+          failoverResumeManager.recordTokens(turnSnapshot, streamText, undefined);
+          onChunk({ type: 'token', content: streamText });
+        }
         agentObservability.recordEvent({
           type: 'llm_call',
           provider: activeProvider,
@@ -992,7 +1004,7 @@ export class AgentEngine {
         });
 
         // Merge tool calls
-        const harnessToolCalls = harness.parseResponse(streamText, structuredCalls.map((call) => {
+        const parsedHarnessResponse = harness.parseResponse(streamText, structuredCalls.map((call) => {
           let parsedArgs: Record<string, unknown> = {};
           try {
             parsedArgs = typeof call.arguments === 'string' && call.arguments.trim()
@@ -1002,7 +1014,9 @@ export class AgentEngine {
             parsedArgs = {};
           }
           return { id: call.id, name: call.name, arguments: parsedArgs } as ToolCall;
-        })).toolCalls;
+        }));
+        const harnessToolCalls = parsedHarnessResponse.toolCalls;
+        const cleanedStreamText = parsedHarnessResponse.text;
 
         const deduped: ToolCall[] = [];
         const seenNames = new Set<string>();
@@ -1034,7 +1048,7 @@ export class AgentEngine {
           /\b(let me|i'll|i will|now i need to|i need to|let's|allow me to|i'm going to|i am going to|going to)\s+(read|check|search|run|execute|inspect|view|open|look at|examine|find|grep|list)\b/i.test(streamText || '');
 
         // Simple queries need no tools or scoping - answer directly and finish.
-        if (isSimpleQuery && !hasToolCalls) {
+        if (isSimpleQuery) {
           logAgentStop('simple_query');
           onChunk({ type: 'done' });
           persistSessionState(true);
@@ -1115,7 +1129,7 @@ export class AgentEngine {
         // Push assistant turn with tool calls into conversation
         messages.push({
           role: 'assistant',
-          content: streamText || '',
+          content: cleanedStreamText || '',
           ...(streamThought ? { reasoning_content: streamThought } : {}),
           tool_calls: toolCallsToExecute.map((toolCall) => ({
             id: toolCall.id,
