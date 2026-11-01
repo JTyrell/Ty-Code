@@ -35,16 +35,17 @@
  *
  * Deliberately **not** registered here, so their rows stay hidden per
  * Hidden > dead until something real backs them: `workbench.reliabilityPanel`
- * (no such surface exists in the renderer), `help.about`, `help.welcome`,
- * `help.playground`, `help.documentation`, `help.releaseNotes`, `help.license`
- * and `help.privacyPolicy` (all need the document viewer from Prompt 5b
- * Step 5), plus every `debug.*` key.
+ * (no such surface exists in the renderer), `help.playground` (this build ships
+ * no editor playground) and every `debug.*` key. `help.about` is registered by
+ * `TitleBar.tsx`, next to the modal it opens.
  */
 
 import type { CommandHandler } from '../../../main/services/command-executor';
 import type { ActivityTab } from '../components/ActivityBar';
 import { APP_THEMES, applyAppTheme, getStoredTheme } from '../hooks/useThemeSync';
+import { openAppDoc } from '../state/app-docs-store';
 import { useEditorNavigationStore, type EditorActionName } from '../state/editor-navigation-store';
+import { useOnboardingStore } from '../state/onboarding-store';
 import { useUsageDashboardStore } from '../state/usage-dashboard-store';
 import { useWorkspaceStore } from '../state/workspace-store';
 import {
@@ -387,10 +388,27 @@ export function buildWorkbenchHandlers(deps: WorkbenchUiDeps): Record<string, Co
     'workbench.editorSymbols': () => deps.openQuickOpen('@'),
     'workbench.gotoLine': () => deps.openQuickOpen(':'),
 
-    // Ty-Code and Help — all four land on a real settings tab.
+    // Ty-Code and Help — these three land on a real settings tab.
     'workbench.openSettings': () => deps.openPreferences(),
     'help.keyboardShortcuts': () => deps.openPreferences('shortcuts'),
-    'help.diagnostics': () => deps.openPreferences('diagnostics')
+    'help.diagnostics': () => deps.openPreferences('diagnostics'),
+
+    // Help rows backed by the document viewer (Prompt 5b Step 5, G1 and G2).
+    // `openAppDoc` is synchronous — it sets the store and returns, and the
+    // panel paints its own loading and error states. Returning a summary here
+    // would stack a toast on top of the panel that is already the visible
+    // result, and a failure is main's verbatim sentence naming every candidate
+    // path it tried, which belongs in the panel rather than paraphrased.
+    'help.documentation': () => openAppDoc('documentation'),
+    'help.releaseNotes': () => openAppDoc('release-notes'),
+    'help.license': () => openAppDoc('license'),
+    'help.privacyPolicy': () => openAppDoc('privacy-policy'),
+
+    // Help > Welcome. The step id is named rather than left to `openWizard()`'s
+    // default, because that default resolves to `auto_setup` once onboarding
+    // has been completed — which is exactly the state a returning user is in,
+    // and the row is labelled Welcome.
+    'help.welcome': () => useOnboardingStore.getState().openWizard('welcome')
   };
 }
 

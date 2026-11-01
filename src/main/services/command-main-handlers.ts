@@ -133,6 +133,15 @@ export interface MainCommandAdapters {
   checkForUpdates: () => Promise<UpdateCheckInput>;
   /** FCC sidecar state. */
   fccStatus: () => FccSidecarStatusInput;
+  /**
+   * Open (or re-focus) the process explorer's own window.
+   *
+   * Returns nothing because there is no failure worth reporting: the adapter
+   * either creates a window or focuses the one already open, and if Electron
+   * refuses to make a window the process is already in a state no toast can
+   * help with. The window appearing is the visible result.
+   */
+  openProcessExplorer: () => void;
   contexts: MainOwnedContextSources;
 }
 
@@ -150,7 +159,8 @@ export const MAIN_BACKED_COMMANDS = [
   'terminal.newWindow',
   'window.toggleDevTools',
   'app.checkForUpdates',
-  'fcc.sidecarStatus'
+  'fcc.sidecarStatus',
+  'window.openProcessExplorer'
 ] as const;
 
 /**
@@ -161,10 +171,13 @@ export const MAIN_BACKED_COMMANDS = [
  * dead" auditable: a test walks `listRequiredHandlers().main` and fails if a key
  * is neither backed nor accounted for below, so a row can never quietly become a
  * dead click as the registry grows.
+ *
+ * This table is empty on purpose, and an entry here is a debt rather than a
+ * design: every main-target key in the shipped registry is backed. Adding one
+ * back hides that menu row until the named backend lands, which is the correct
+ * behaviour for a row that would otherwise do nothing when clicked.
  */
-export const MAIN_DEFERRED_COMMANDS: Readonly<Record<string, string>> = {
-  'window.openProcessExplorer': 'Needs a process-explorer window and service (Help menu task).'
-};
+export const MAIN_DEFERRED_COMMANDS: Readonly<Record<string, string>> = {};
 
 /** Sentence the UI shows for an update check, whatever the outcome. */
 function describeUpdateCheck(result: UpdateCheckInput): string {
@@ -243,6 +256,13 @@ export function createMainCommandHandlers(
         ...status,
         summary: describeFccStatus(status)
       });
+    },
+
+    'window.openProcessExplorer': () => {
+      adapters.openProcessExplorer();
+      // No `summary`, so `reportOutcome` stays silent — a toast saying "opened"
+      // on top of a window that just appeared is noise, not a result.
+      return { opened: true };
     }
   };
 }

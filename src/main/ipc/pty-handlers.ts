@@ -111,6 +111,46 @@ export function observePtyExit(listener: PtyExitListener): () => void {
   return () => { exitObservers.delete(listener); };
 }
 
+/** One terminal in the registry, described well enough to be listed as a process. */
+export interface PtyProcessInfo {
+  ptyId: string;
+  /** The shell's OS pid, straight off the node-pty handle. */
+  pid: number;
+  shellId: string;
+  shellPath: string;
+  /** Exit code, once the child is gone. Absent while it is still running. */
+  exited?: number;
+}
+
+/**
+ * Every terminal in the registry, alive or not.
+ *
+ * A PTY's child is spawned with `child_process` semantics, not forked by
+ * Electron, so it never appears in `app.getAppMetrics()` — this is the only
+ * place its pid is known at all, which is why the process explorer reads it
+ * here rather than trying to recognise a shell among the utility processes.
+ *
+ * Exited sessions are returned rather than filtered out here, because leaving
+ * them in the registry is already this module's own doing: `onExit` only
+ * deletes a session that was `attached`, so a terminal that finished with its
+ * drawer closed keeps its row until the drawer next looks at it. A caller that
+ * means "what is running" must check `exited` itself — and the process
+ * explorer does, so a dead shell cannot be presented as a live one.
+ */
+export function listPtyProcesses(): PtyProcessInfo[] {
+  const rows: PtyProcessInfo[] = [];
+  for (const [ptyId, session] of activePtys) {
+    rows.push({
+      ptyId,
+      pid: session.process.pid,
+      shellId: session.shellId,
+      shellPath: session.shellPath,
+      exited: session.exited
+    });
+  }
+  return rows;
+}
+
 function shellExists(shellPath: string): boolean {
   try { return fs.statSync(shellPath).isFile(); } catch { return false; }
 }

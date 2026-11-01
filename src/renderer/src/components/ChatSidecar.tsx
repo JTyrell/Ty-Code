@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './ChatSidecar.css';
-import ReactMarkdown, { type Components } from 'react-markdown';
 import hljs from 'highlight.js/lib/core';
 import type { LanguageFn } from 'highlight.js';
 import bash from 'highlight.js/lib/languages/bash';
@@ -31,6 +30,7 @@ import { useChatInputStore } from '../state/chat-input-store';
 import { toast } from '../state/toast-store';
 import { ChatMessageItem } from './ChatMessage';
 import { ChatMessageList, type ChatMessageListHandle } from './chat/ChatMessageList';
+import { copyTextOrNotify } from '../lib/clipboard';
 import type { AgentToolApproval, ChatMessage, ToolCall, ToolExecutionStatus, ChatErrorCard as ChatErrorCardType, ProviderType } from '../../../preload/types';
 
 const languages: Record<string, LanguageFn> = {
@@ -50,47 +50,14 @@ for (const [name, language] of Object.entries(languages)) {
   if (!hljs.getLanguage(name)) hljs.registerLanguage(name, language);
 }
 
-interface CodeBlockProps { language?: string; value: string; }
-
-const CodeBlock: React.FC<CodeBlockProps> = ({ language, value }) => {
-  const [copied, setCopied] = useState(false);
-  const normalizedLanguage = language?.toLowerCase() || '';
-  const highlightLanguage = languages[normalizedLanguage] ? normalizedLanguage : '';
-  const highlighted = useMemo(() => highlightLanguage
-    ? hljs.highlight(value, { language: highlightLanguage }).value
-    : hljs.highlightAuto(value).value, [highlightLanguage, value]);
-
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(value);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1600);
-    } catch { setCopied(false); }
-  };
-
-  return <div className="code-block">
-    <div className="code-block-header"><span>{language || 'code'}</span>
-      <button onClick={() => void handleCopy()} title="Copy code" aria-label="Copy code block">
-        {copied ? <><Check size={11} color="var(--accent-green)" /><span>Copied</span></> : <><Copy size={11} /><span>Copy</span></>}
-      </button>
-    </div>
-    <pre><code className={`hljs${highlightLanguage ? ` language-${highlightLanguage}` : ''}`} dangerouslySetInnerHTML={{ __html: highlighted }} /></pre>
-  </div>;
-};
-
-const markdownComponents: Components = {
-  pre({ children }) { return <>{children}</>; },
-  code({ className, children, ...props }) {
-    const language = /language-([\w-]+)/.exec(className || '')?.[1];
-    const value = String(children).replace(/\n$/, '');
-    if (language || value.includes('\n')) return <CodeBlock language={language} value={value} />;
-    return <code className={className} {...props}>{children}</code>;
-  }
-};
-
-function MarkdownContent({ content }: { content: string }): React.ReactElement {
-  return <div className="markdown-content"><ReactMarkdown components={markdownComponents}>{content}</ReactMarkdown></div>;
-}
+// ---------------------------------------------------------------------------
+// Grammar registration only.
+// Chat message markdown is rendered by chat/MessageRenderer.tsx through the
+// shared markdown + highlight workers, whose HTML uses the .code-shelf* rule
+// family in ChatSidecar.css. The grammars registered here are the ones the
+// worker HTML relies on when it lands back on the main thread, so this loop
+// stays even though nothing in this file highlights code itself.
+// ---------------------------------------------------------------------------
 
 interface ToolCardProps { tool: ToolCall; status?: ToolExecutionStatus; output?: string; }
 
@@ -166,12 +133,9 @@ export const PresentationPreviewCard: React.FC<{ data: PresentationData }> = ({ 
   };
 
   const handleCopyPath = async () => {
-    try {
-      await navigator.clipboard.writeText(data.filePath);
+    if ((await copyTextOrNotify(data.filePath, 'chat.presentation-preview-path')).ok) {
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1500);
-    } catch {
-      setCopied(false);
     }
   };
 
@@ -1485,10 +1449,7 @@ export const ChatSidecar: React.FC = () => {
               onClick={() => setAgentMode('build')}
               title="Build Agent: Full access to read, write, edit files and execute commands (Default)"
               aria-pressed={agentMode === 'build'}
-              style={{
-                background: agentMode === 'build' ? 'var(--accent-primary)' : 'transparent',
-                color: agentMode === 'build' ? '#fff' : 'var(--text-muted)'
-              }}
+              className={`chat-agent-mode-btn is-build${agentMode === 'build' ? ' is-active' : ''}`}
             >
               <Hammer size={10} aria-hidden="true" />
               <span>Build</span>
@@ -1498,35 +1459,18 @@ export const ChatSidecar: React.FC = () => {
               onClick={() => setAgentMode('plan')}
               title="Plan Agent: Read-only exploration and planning. Refuses file edits, bash commands require permission."
               aria-pressed={agentMode === 'plan'}
-              style={{
-                background: agentMode === 'plan' ? 'var(--accent-amber)' : 'transparent',
-                color: agentMode === 'plan' ? '#fff' : 'var(--text-muted)'
-              }}
+              className={`chat-agent-mode-btn is-plan${agentMode === 'plan' ? ' is-active' : ''}`}
             >
               <Compass size={10} aria-hidden="true" />
               <span>Plan</span>
             </button>
           </div>
-          <div className="chat-header-model" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <div className="chat-header-model">
             {communityKeyStatus === 'degraded' && (
               <span
                 id="chip-community-key-degraded-chat"
-                className="bg-yellow-500/10 text-yellow-400 border border-yellow-500/30 text-[10px] px-2 py-0.5 rounded-full"
+                className="chat-flag-chip is-warn"
                 title="Free Tier Rate Limited (Using Anonymous Fallback)"
-                style={{
-                  backgroundColor: 'rgba(234, 179, 8, 0.1)',
-                  color: '#facc15',
-                  border: '1px solid rgba(234, 179, 8, 0.3)',
-                  fontSize: '10px',
-                  padding: '2px 8px',
-                  borderRadius: '9999px',
-                  whiteSpace: 'nowrap',
-                  fontWeight: 500,
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  flexShrink: 0
-                }}
               >
                 ⚠️ Free Tier Rate Limited (Using Anonymous Fallback)
               </span>

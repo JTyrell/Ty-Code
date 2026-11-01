@@ -23,11 +23,12 @@
  *  - **Fail closed.** A key with no real source in this build is simply not
  *    contributed, so it resolves to `false` through `emptyContext()` and its
  *    row greys out with the registry's own `disabledReason`. The debug keys are
- *    deliberately absent until their services land: Run's Stop greys with "No
- *    debug session is running." rather than firing into nothing. A window with
- *    no desktop bridge fails closed the same way — the task reads below return
- *    nothing and `tasksRunning` stays false, so Terminal's G3 group greys out
- *    instead of throwing during install.
+ *    contributed from main's pushed session and breakpoint snapshots, and a window
+ *    that cannot reach either — no bridge, or a main that predates the debug
+ *    channels — leaves all three false, so Run's Stop and stepping groups grey out
+ *    with "No debug session is running." rather than firing into nothing. The task
+ *    reads below fail closed the same way: `tasksRunning` stays false and Terminal's
+ *    G3 group greys out instead of throwing during install.
  *  - **Never publish a lie about a diff.** `diffOrScmChangesOpen` is driven by a
  *    real hunk count — the diff editor registered with the editor service, or
  *    the source-control overlay's own git hunks — not by "a diff panel is
@@ -36,18 +37,22 @@
  */
 
 import type {
+  Breakpoint,
   CommandContext,
   CommandMenuId,
+  DebugSession,
   DynamicSubmenuItem,
   DynamicSubmenuSource,
   RunningTask,
   TaskListResult
 } from '../../../preload/types';
+import { isSessionActive } from '../../../shared/types/debug-session';
 import {
   MONACO_BUILTIN_SYMBOL_LANGUAGES,
   getEditorServiceState,
   hasActiveSymbolProvider,
   listEditorGroups,
+  revealPosition,
   setSymbolProviderResolver,
   subscribeEditorService
 } from '../services/editor-service';
@@ -59,11 +64,13 @@ import { useCommandRuntimeStore } from '../state/command-runtime-store';
 import {
   baseName,
   noDiscoveredTasksSentence,
+  openInTab,
   requireBridgeMethod,
   unwrap
 } from './command-ipc';
 import {
   refreshCommandContexts,
+  refreshMainCommandContext,
   registerContextContributor,
   type CommandRuntimeDisposable
 } from './command-runtime';
@@ -450,16 +457,173 @@ function subscribeTaskChanges(): (() => void) | null {
 }
 
 /**
+ * Main's two debug snapshots, mirrored here for the reason the task lists are:
+ * `refreshCommandContexts()` walks its contributors with no `await` anywhere, and
+ * both facts live in main.
+ *
+ * Neither mirror is treated as authority. They enable rows and move a caret; every
+ * command still re-reads the truth from main's reply, because a push that raced a
+ * `Stop Debugging` is a push about a process that has already gone. The opening
+ * `{ status: 'inactive' }` is the fail-closed value rather than a guess.
+ */
+let debugSession: DebugSession = { status: 'inactive' };
+let debugBreakpoints: Breakpoint[] = [];
+
+/**
+ * The three Run-menu keys.
+ *
+ * `debugSessionActive` comes from `isSessionActive`, the same helper main uses,
+ * rather than from a list of statuses written here: `starting` has to count, since
+ * Stop is meaningful for a session that is still binding its port, and two
+ * definitions of "active" is how Stop greys out on a live process.
+ *
+ * `hasBreakpoints` counts entries, not enabled ones — the rule the store documents.
+ * A disabled breakpoint is still something the user set and can re-enable, so the
+ * Disable/Remove rows have to be reachable for it.
+ */
+function debugContexts(): Partial<CommandContext> {
+  return {
+    debugSessionActive: isSessionActive(debugSession.status),
+    debugPaused: debugSession.status === 'paused',
+    hasBreakpoints: debugBreakpoints.length > 0
+  };
+}
+
+/** Whether two spellings name one file, for comparisons only. */
+function sameDebugFile(a: string, b: string): boolean {
+  const fold = (value: string): string => value.split(/[\\/]/).join('/').toLowerCase();
+  return fold(a) === fold(b);
+}
+
+/**
+ * Move the caret to the line the runtime reported.
+ *
+ * This is the only thing that makes a pause visible: nothing in the editor paints a
+ * gutter dot or a stop-here highlight yet, so without it F5 on a script that prints
+ * nothing looks exactly like nothing happening. Called on the transition *into*
+ * `paused` and nowhere else, because re-revealing on every push would fight the
+ * user's own caret while they sat stopped at a breakpoint reading the code.
+ *
+ * The file is opened first when no tab holds it: a pause in a module the user never
+ * opened is a pause they cannot see, and `revealPosition` acts on the active editor
+ * — pointing it at a line in whichever file happens to be showing would be worse
+ * than doing nothing.
+ */
+function revealPausedLocation(session: DebugSession): void {
+  const location = session.pausedLocation;
+  if (!location) return;
+  const workspace = useWorkspaceStore.getState();
+  if (workspace.openTabs.some((tab) => sameDebugFile(tab.path, location.filePath))) {
+    revealPosition({ lineNumber: location.lineNumber, column: 1 });
+    return;
+  }
+  void openInTab(location.filePath)
+    .then(() => {
+      revealPosition({ lineNumber: location.lineNumber, column: 1 });
+    })
+    .catch(() => {
+      /* The runtime really did stop there; the file just is not readable any more. */
+    });
+}
+
+/** Take main's session push and update everything derived from it. */
+function applyDebugSession(session: DebugSession): void {
+  // The status the *previous* push carried, read before the mirror moves: a pause
+  // is revealed once, on the way in, and not again on every later push that happens
+  // to mention the same stop.
+  const previous = debugSession.status;
+  debugSession = session;
+  if (session.status === 'paused' && previous !== 'paused') revealPausedLocation(session);
+  refreshCommandContexts();
+}
+
+function applyDebugBreakpoints(breakpoints: Breakpoint[]): void {
+  debugBreakpoints = breakpoints;
+  refreshCommandContexts();
+}
+
+/** Read main's session, or `null` when this window has no way to ask. */
+async function readDebugSession(): Promise<DebugSession | null> {
+  const what = 'Reading the debug session';
+  try {
+    const read = requireBridgeMethod('debugSession', what);
+    return unwrap(await read(), what);
+  } catch (error) {
+    console.warn('[command-contexts] the debug-session snapshot is unavailable', error);
+    return null;
+  }
+}
+
+/** Read main's breakpoint set, or `null` when this window has no way to ask. */
+async function readBreakpointSet(): Promise<Breakpoint[] | null> {
+  const what = 'Reading the breakpoint set';
+  try {
+    const read = requireBridgeMethod('breakpointsList', what);
+    return unwrap(await read(), what);
+  } catch (error) {
+    console.warn('[command-contexts] the breakpoint snapshot is unavailable', error);
+    return null;
+  }
+}
+
+/**
+ * Prime both debug snapshots from main.
+ *
+ * The pushes make them current afterwards; this is what stops a window that
+ * reloaded while a program sat stopped at a breakpoint from painting every Run row
+ * greyed for a session that is very much alive.
+ */
+async function refreshDebugSnapshots(): Promise<void> {
+  const session = await readDebugSession();
+  if (session) applyDebugSession(session);
+  const breakpoints = await readBreakpointSet();
+  if (breakpoints) applyDebugBreakpoints(breakpoints);
+}
+
+/**
+ * Both debug feeds, or the subset this window can reach.
+ *
+ * A list of unsubscribes rather than one nullable function, so a window whose main
+ * predates the debug channels warns once per missing feed and greys Run's G1, G3
+ * and G5 groups out — the fail-closed outcome — with nothing left to tear down.
+ */
+function subscribeDebugChanges(): Array<() => void> {
+  const teardowns: Array<() => void> = [];
+  try {
+    const onSessionChanged = requireBridgeMethod('onDebugSessionChanged', 'Watching the debug session');
+    teardowns.push(onSessionChanged(applyDebugSession));
+  } catch (error) {
+    console.warn('[command-contexts] this window has no debug-session feed', error);
+  }
+  try {
+    const onBreakpointsChanged = requireBridgeMethod('onDebugBreakpointsChanged', 'Watching the breakpoint set');
+    teardowns.push(onBreakpointsChanged(applyDebugBreakpoints));
+  } catch (error) {
+    console.warn('[command-contexts] this window has no breakpoint feed', error);
+  }
+  return teardowns;
+}
+
+/**
  * A menu just opened.
  *
  * Called by `CommandMenuBar` from the effect that installs its click-outside
  * and Escape listeners, which runs exactly once per open and covers all three
  * ways a menu opens — a click, a hover while one is already open, and ArrowDown
- * on a focused button — without any of them having to know this exists. Only
- * the Terminal menu has anything to ask main about; every other menu's rows come
- * from stores this module already observes.
+ * on a focused button — without any of them having to know this exists.
+ *
+ * Every menu now asks main for its four keys. They are computed on demand and
+ * nothing in this window can see them change, so a `launch.json` created by Add
+ * Configuration… or an updater that became available would otherwise leave its row
+ * greyed about the world as it was at boot. One round trip for four booleans per
+ * menu open is not a cost worth a stale menu over.
+ *
+ * The Terminal menu additionally re-reads task *discovery*, which is not pushed:
+ * a `tasks.json` written after boot — including by Configure Tasks… itself — would
+ * leave Run Task… listing the previous world until the window reloaded.
  */
 export function notifyCommandMenuOpened(menu: CommandMenuId): void {
+  void refreshMainCommandContext();
   if (menu !== 'Terminal') return;
   void refreshTaskSnapshots();
 }
@@ -495,6 +659,9 @@ export function installCommandContextSources(): CommandRuntimeDisposable {
   const taskRegistration = registerContextContributor(taskContexts);
   teardowns.push(() => taskRegistration.dispose());
 
+  const debugRegistration = registerContextContributor(debugContexts);
+  teardowns.push(() => debugRegistration.dispose());
+
   // Disposing restores the conservative default resolver, so an uninstalled
   // window claims only Monaco's own TypeScript worker again.
   const resolver = setSymbolProviderResolver(resolveSymbolProvider);
@@ -529,8 +696,15 @@ export function installCommandContextSources(): CommandRuntimeDisposable {
   const taskFeed = subscribeTaskChanges();
   if (taskFeed) teardowns.push(taskFeed);
 
+  // The debug surface has no store either: main owns the session and the
+  // breakpoint set and pushes both. The feeds are what turn Run's stepping group on
+  // the moment a breakpoint is hit, and the priming read is what keeps a reload
+  // during a paused session from painting it as never having started.
+  teardowns.push(...subscribeDebugChanges());
+
   refresh();
   void refreshTaskSnapshots();
+  void refreshDebugSnapshots();
 
   let disposed = false;
   return {
@@ -554,6 +728,10 @@ export function installCommandContextSources(): CommandRuntimeDisposable {
       publishItems('runningTasks', []);
       publishItems('runningTasksRestart', []);
       publishItems('runningTasksTerminate', []);
+      // Drop the debug mirrors as well, so a disposed window cannot report a
+      // paused session it no longer has a feed for.
+      debugSession = { status: 'inactive' };
+      debugBreakpoints = [];
       refreshCommandContexts();
     }
   };

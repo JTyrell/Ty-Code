@@ -24,6 +24,7 @@ import { useCodeReviewStore } from '../state/code-review-store';
 import { usePairProgrammingStore } from '../state/pair-programming-store';
 import { toast } from '../state/toast-store';
 import { extensionHost } from '../services/extension-host';
+import { copyTextOrNotify } from '../lib/clipboard';
 
 export interface CommandItem {
   id: string;
@@ -451,8 +452,9 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
             contextCode: tab.content
           });
           if (res.success && res.data) {
-            await navigator.clipboard.writeText(res.data.code);
-            toast.success('Tests Generated & Copied to Clipboard', res.data.explanation);
+            if ((await copyTextOrNotify(res.data.code, 'palette.generate-tests')).ok) {
+              toast.success('Tests Generated & Copied to Clipboard', res.data.explanation);
+            }
           } else {
             toast.error('Test generation failed', res.error);
           }
@@ -478,8 +480,9 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
             contextCode: tab.content
           });
           if (res.success && res.data) {
-            await navigator.clipboard.writeText(res.data.code);
-            toast.success('Documentation Generated', 'Copied documentation comments to clipboard.');
+            if ((await copyTextOrNotify(res.data.code, 'palette.generate-docs')).ok) {
+              toast.success('Documentation Generated', 'Copied documentation comments to clipboard.');
+            }
           } else {
             toast.error('Doc generation failed', res.error);
           }
@@ -565,8 +568,9 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
             onNavigateToView?.('code-review');
             void useCodeReviewStore.getState().runReview(tab?.path, tab?.content);
           } else if (item.action === 'generate-code' && item.generatedCode) {
-            await navigator.clipboard.writeText(item.generatedCode);
-            toast.success('Code Generated', 'Snippet generated and copied to clipboard.');
+            if ((await copyTextOrNotify(item.generatedCode, 'palette.generate-code')).ok) {
+              toast.success('Code Generated', 'Snippet generated and copied to clipboard.');
+            }
           } else {
             toast.info('Ty-Code Command', item.message);
           }

@@ -42,6 +42,7 @@ import type {
 } from '../../../../preload/types';
 import { toast } from '../../state/toast-store';
 import { BraveIntegrationCard } from './BraveIntegrationCard';
+import { copyTextOrNotify } from '../../lib/clipboard';
 
 export const IntegrationsPanel: React.FC = () => {
   const [modules, setModules] = useState<ExternalModuleInfo[]>([]);
@@ -360,8 +361,9 @@ export const IntegrationsPanel: React.FC = () => {
   };
 
   const handleCopySnippet = (content: string, name: string) => {
-    navigator.clipboard.writeText(content);
-    toast.info('Copied to Clipboard', `${name} snippet copied to clipboard.`);
+    void copyTextOrNotify(content, 'settings.integration-snippet').then((result) => {
+      if (result.ok) toast.info('Copied to Clipboard', `${name} snippet copied to clipboard.`);
+    });
   };
 
   const handleToggleRunInBackground = async (enabled: boolean) => {
@@ -457,10 +459,13 @@ export const IntegrationsPanel: React.FC = () => {
 
   const handleCopyToken = () => {
     if (fccSupplyStatus?.authToken) {
-      void navigator.clipboard.writeText(fccSupplyStatus.authToken);
-      setCopiedToken(true);
-      toast.success('Token Copied', 'Supply endpoint bearer token copied to clipboard.');
-      setTimeout(() => setCopiedToken(false), 2000);
+      const token = fccSupplyStatus.authToken;
+      void copyTextOrNotify(token, 'settings.fcc-supply-token').then((result) => {
+        if (!result.ok) return;
+        setCopiedToken(true);
+        toast.success('Token Copied', 'Supply endpoint bearer token copied to clipboard.');
+        setTimeout(() => setCopiedToken(false), 2000);
+      });
     }
   };
 
@@ -1165,7 +1170,7 @@ export const IntegrationsPanel: React.FC = () => {
                   { id: 'deepseek', name: 'DeepSeek CLI', cliName: 'deepseek', installed: false, configSnippet: '' },
                   { id: 'grok', name: 'Grok Build Agent', cliName: 'grok', installed: false, configSnippet: '' },
                   { id: 'muse', name: 'Muse Code Assistant', cliName: 'muse', installed: false, configSnippet: '' },
-                  { id: 'vscode-chat', name: 'VS Code Chat Driver', cliName: 'code', installed: false, configSnippet: '' }
+                  { id: 'vscode-chat', name: 'VS Code Chat Driver', cliName: 'code', installed: false, configSnippet: '' } // brand-ok: a driver row for another editor; the name is the thing it drives
                 ]
             ).map((h) => {
               const isLaunching = launchingHarness === h.id;
@@ -1251,7 +1256,7 @@ export const IntegrationsPanel: React.FC = () => {
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <FileCode size={15} color="#38bdf8" />
               <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>
-                External Editor Exporters (VS Code, JetBrains, Neovim)
+                External Editor Exporters (VS Code, JetBrains, Neovim){/* brand-ok: this section writes Ty-Code's config into the editors it names */}
               </span>
             </div>
             <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
@@ -1280,7 +1285,7 @@ export const IntegrationsPanel: React.FC = () => {
             >
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)' }}>
-                  VS Code (Continue Extension)
+                  VS Code (Continue Extension){/* brand-ok: names the editor and plugin this card writes configuration for */}
                 </span>
                 <span style={{ fontSize: '10px', color: '#38bdf8', backgroundColor: 'rgba(56, 189, 248, 0.1)', padding: '1px 5px', borderRadius: '3px' }}>
                   ~/.continue/config.json
@@ -1314,7 +1319,7 @@ export const IntegrationsPanel: React.FC = () => {
                   type="button"
                   onClick={() => {
                     const snip = editorConfigs['vscode-continue'];
-                    if (snip) handleCopySnippet(snip.content, 'VS Code Continue');
+                    if (snip) handleCopySnippet(snip.content, 'VS Code Continue'); // brand-ok: names the snippet being copied, which is that editor's configuration
                   }}
                   style={{
                     padding: '4px 8px',
@@ -1349,10 +1354,10 @@ export const IntegrationsPanel: React.FC = () => {
             >
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)' }}>
-                  VS Code (Cline / Roo)
+                  VS Code (Cline / Roo){/* brand-ok: names the editor and extension this card writes configuration for */}
                 </span>
                 <span style={{ fontSize: '10px', color: '#c084fc', backgroundColor: 'rgba(192, 132, 252, 0.1)', padding: '1px 5px', borderRadius: '3px' }}>
-                  .vscode/settings.json
+                  .vscode/settings.json{/* brand-ok: the path on disk the other editor reads; renaming the text would point the user at a file that does not exist */}
                 </span>
               </div>
               <p style={{ margin: 0, fontSize: '11px', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
@@ -1383,7 +1388,7 @@ export const IntegrationsPanel: React.FC = () => {
                   type="button"
                   onClick={() => {
                     const snip = editorConfigs['vscode-cline'];
-                    if (snip) handleCopySnippet(snip.content, 'VS Code Cline');
+                    if (snip) handleCopySnippet(snip.content, 'VS Code Cline'); // brand-ok: names the snippet being copied, which is that editor's configuration
                   }}
                   style={{
                     padding: '4px 8px',
@@ -1418,14 +1423,14 @@ export const IntegrationsPanel: React.FC = () => {
             >
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)' }}>
-                  JetBrains IDEs (IntelliJ, WebStorm, PyCharm)
+                  JetBrains IDEs (IntelliJ, WebStorm, PyCharm){/* brand-ok: names the hosts this card writes configuration for */}
                 </span>
                 <span style={{ fontSize: '10px', color: '#f59e0b', backgroundColor: 'rgba(245, 158, 11, 0.1)', padding: '1px 5px', borderRadius: '3px' }}>
                   Continue / LLM
                 </span>
               </div>
               <p style={{ margin: 0, fontSize: '11px', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                Configures Continue plugin or OpenAI custom server in JetBrains tools.
+                Configures Continue plugin or OpenAI custom server in JetBrains tools.{/* brand-ok: describes where the configuration lands inside the other IDE */}
               </p>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: 'auto', paddingTop: '4px' }}>
                 <button
@@ -1452,7 +1457,7 @@ export const IntegrationsPanel: React.FC = () => {
                   type="button"
                   onClick={() => {
                     const snip = editorConfigs['jetbrains-continue'];
-                    if (snip) handleCopySnippet(snip.content, 'JetBrains Continue');
+                    if (snip) handleCopySnippet(snip.content, 'JetBrains Continue'); // brand-ok: names the snippet being copied, which is that IDE's configuration
                   }}
                   style={{
                     padding: '4px 8px',
@@ -1494,7 +1499,7 @@ export const IntegrationsPanel: React.FC = () => {
                 </span>
               </div>
               <p style={{ margin: 0, fontSize: '11px', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                Cursor-style AI inside Neovim backed by Ty-Code's local endpoint.
+                AI completions inside Neovim, backed by Ty-Code's local endpoint.
               </p>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: 'auto', paddingTop: '4px' }}>
                 <button
@@ -2068,7 +2073,7 @@ export const IntegrationsPanel: React.FC = () => {
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600, fontSize: '12px', color: '#38bdf8' }}>
                       <FileCode size={14} color="#38bdf8" />
-                      <span>Export AI History (Ty-Code, Cursor, Aider)</span>
+                      <span>Export AI History (Ty-Code, Cursor, Aider)</span>{/* brand-ok: lists the tools whose sessions this reads */}
                     </div>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>

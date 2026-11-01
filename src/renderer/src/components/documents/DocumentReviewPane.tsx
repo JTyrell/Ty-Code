@@ -37,6 +37,7 @@ import {
 import { useChatStore } from '../../state/chat-store';
 import type { AgentDocument, AgentDocumentSection } from '../../../../preload/types';
 import { useThemeSync, getMonacoTheme } from '../../hooks/useThemeSync';
+import { copyTextOrNotify } from '../../lib/clipboard';
 
 // Register highlight.js languages for code blocks
 const HLJS_LANGS: Record<string, LanguageFn> = {
@@ -86,8 +87,8 @@ const CodeBlock: React.FC<CodeBlockProps> = ({ language, codeString }) => {
     }
   }, [codeString, language]);
 
-  const handleCopy = () => {
-    void navigator.clipboard.writeText(codeString);
+  const handleCopy = async () => {
+    if (!(await copyTextOrNotify(codeString, 'document-review.body')).ok) return;
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };

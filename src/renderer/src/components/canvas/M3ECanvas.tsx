@@ -13,6 +13,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useWorkspaceSessionStore } from '../../state/workspace-session-store';
+import { copyTextOrNotify } from '../../lib/clipboard';
 import {
   Box,
   Braces,
@@ -1427,12 +1428,9 @@ export const M3ECanvas: React.FC = () => {
 
   const handleCopyCss = useCallback(async () => {
     if (!imageCss) return;
-    try {
-      await navigator.clipboard.writeText(imageCss.cssSource);
+    if ((await copyTextOrNotify(imageCss.cssSource, 'canvas.generated-css')).ok) {
       setCopiedCss(true);
       window.setTimeout(() => setCopiedCss(false), 2200);
-    } catch (err: unknown) {
-      console.warn('Clipboard write failed:', err);
     }
   }, [imageCss]);
 

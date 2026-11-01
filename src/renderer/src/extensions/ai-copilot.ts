@@ -9,7 +9,7 @@ type BuiltInApi = {
 
 export function activateAiCopilot(api: BuiltInApi, manifest: ExtensionManifest): void {
   const prefix = `${manifest.publisher}.${manifest.name}.`;
-  api.commands.registerCommand(`${prefix}generateCode`, 'AI Copilot: Generate Code at Cursor', async () => {
+  api.commands.registerCommand(`${prefix}generateCode`, 'AI Copilot: Generate Code at Caret', async () => {
     const document = await api.editor.getActiveDocument();
     if (!document) return;
     const request = await api.window.showInput('Describe the code change to request from the AI assistant.');

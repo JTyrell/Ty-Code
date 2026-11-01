@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import type { PreConfiguredProvider, DiscoveredModel, TestConnectionResult } from '../../../../preload/types';
 import { useChatStore } from '../../state/chat-store';
+import { copyTextOrNotify } from '../../lib/clipboard';
 
 export interface ProviderSetupFormProps {
   provider: PreConfiguredProvider;
@@ -336,9 +337,9 @@ export const ProviderSetupForm: React.FC<ProviderSetupFormProps> = ({
     }
   };
 
-  const handleCopyUserCode = () => {
+  const handleCopyUserCode = async () => {
     if (!copilotFlow?.userCode) return;
-    navigator.clipboard.writeText(copilotFlow.userCode);
+    if (!(await copyTextOrNotify(copilotFlow.userCode, 'settings.copilot-user-code')).ok) return;
     setCopiedCode(true);
     setTimeout(() => setCopiedCode(false), 2000);
   };

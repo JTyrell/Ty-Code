@@ -428,7 +428,7 @@ export class HistoryExtractor {
       current: 0,
       total: 0,
       percent: 5,
-      message: 'Scanning local directories for Ty-Code, Cursor, and Aider chat sessions...'
+      message: 'Scanning local directories for Ty-Code, Cursor, and Aider chat sessions...' // brand-ok: names the tools whose sessions this reads
     });
 
     const candidateFiles = await this.discoverChatFiles(homeDir, workspacePath, options.scanLocations);

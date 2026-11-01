@@ -262,9 +262,12 @@ describe('command registry — branding', () => {
   });
 
   it('is strict when scanning source text that has no entry to exempt it', () => {
-    // The CI guard calls findBrandToken without an id, so even the wording the
-    // registry is allowed to use is reported there and must be allowlisted by
-    // the guard itself rather than silently passing.
+    // The CI guard cannot import this file — it is plain .mjs and the vocabulary
+    // lives in TypeScript — so it parses FORBIDDEN_BRAND_TOKENS /
+    // AMBIGUOUS_BRAND_TOKENS / BRAND_TOKEN_EXEMPTIONS out of the source text and
+    // applies the same matching rule itself. Without an entry id to consult, no
+    // exemption applies here: wording the registry is allowed to use is still
+    // reported, and has to be excused by a `brand-ok:` marker at that site.
     expect(findBrandToken('Add Cursor Above')).toBe('Cursor');
     for (const token of FORBIDDEN_BRAND_TOKENS) {
       expect(findBrandToken(`open ${token}`, undefined), token).toBe(token);

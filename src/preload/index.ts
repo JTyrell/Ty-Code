@@ -1,10 +1,14 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { IpcRendererEvent } from 'electron';
 import type { AgentStreamChunk, CanvasAgentEventPayloadData, CanvasEditAppliedPayload, CanvasEditIntent, CanvasMessageData, CanvasPreviewProposedPayload, CanvasPreviewStatusPayload, CanvasSnapshotData, CanvasStructuralIntentPayload, CanvasUpdateNotificationData, CommandExecutionOptions, ElectronAPI, ExtensionMetadata, ProposedDiff, PtySessionInfo, PtySpawnOptions, RunningTask, TerminalRunCommandOptions } from './types';
+import type { Breakpoint, DebugSession } from './types';
 import { AgentDonePayloadSchema } from '../shared/types/agent-events';
 import { COMMAND_CHANNELS } from '../shared/types/command-registry';
+import { APP_DOC_CHANNELS } from '../shared/types/app-docs';
 import { FILE_DIALOG_CHANNELS } from '../shared/types/file-dialog';
+import { PROCESS_EXPLORER_CHANNELS } from '../shared/types/process-explorer';
 import { TASK_CHANNELS } from '../shared/types/tasks';
+import { DEBUG_CHANNELS } from '../shared/types/debug-session';
 import type { ReliabilityAdvisorPayload, ReliabilityHealthSnapshot } from '../shared/types/agent-events';
 
 // Echo suppression (Prompt: Break the Model-Sync Echo Loop): each renderer
@@ -191,6 +195,16 @@ const api: ElectronAPI = {
   // orphan one side and turn a click into a silent rejection.
   openFileDialog: (request) => ipcRenderer.invoke(FILE_DIALOG_CHANNELS.openFile, request ?? {}),
   savePathDialog: (request) => ipcRenderer.invoke(FILE_DIALOG_CHANNELS.savePath, request ?? {}),
+  // Prompt 5b Help > Open Process Explorer. Same shared-contract rule as the
+  // dialogs above: the channel name comes from the module main binds, so the two
+  // sides cannot drift apart into a silent rejection.
+  processExplorerList: (request) =>
+    ipcRenderer.invoke(PROCESS_EXPLORER_CHANNELS.list, request ?? {}),
+  // Prompt 5b Help > Documentation / Release Notes / License / Privacy Policy.
+  // The request is required rather than defaulted: there is no sensible document
+  // to guess at, and an empty object would only come back as a validation error
+  // that reads like a bug in the panel instead of a missing argument.
+  readAppDoc: (request) => ipcRenderer.invoke(APP_DOC_CHANNELS.read, request),
   // ===== Autonomous Free-Tier Reliability (Prompts 1-3) =====
   // Dev-only chaos injector (main registers the handler unpackaged builds
   // only; in production this invoke simply rejects).
@@ -447,6 +461,39 @@ const api: ElectronAPI = {
     const listener = (_event: IpcRendererEvent, tasks: RunningTask[]) => callback(tasks);
     ipcRenderer.on(TASK_CHANNELS.changed, listener);
     return () => ipcRenderer.removeListener(TASK_CHANNELS.changed, listener);
+  },
+  // Prompt 5b Step 3: the debug surface backing the Run menu's eighteen rows and
+  // the breakpoint rows F9 and the gutter drive. Channel names come from the same
+  // shared contract the main handler binds, for the same reason the task ones do —
+  // a rename must not orphan one side and turn a menu click into a silent
+  // rejection. Every subscription returns an unsubscribe so the context publisher
+  // can release it on teardown rather than leak a listener per window reload.
+  debugSession: () => ipcRenderer.invoke(DEBUG_CHANNELS.session),
+  debugStart: (request) => ipcRenderer.invoke(DEBUG_CHANNELS.start, request),
+  debugStop: () => ipcRenderer.invoke(DEBUG_CHANNELS.stop),
+  debugRestart: (request) => ipcRenderer.invoke(DEBUG_CHANNELS.restart, request),
+  debugPause: () => ipcRenderer.invoke(DEBUG_CHANNELS.pause),
+  debugResume: () => ipcRenderer.invoke(DEBUG_CHANNELS.resume),
+  debugStepOver: () => ipcRenderer.invoke(DEBUG_CHANNELS.stepOver),
+  debugStepInto: () => ipcRenderer.invoke(DEBUG_CHANNELS.stepInto),
+  debugStepOut: () => ipcRenderer.invoke(DEBUG_CHANNELS.stepOut),
+  debugConfigurations: () => ipcRenderer.invoke(DEBUG_CHANNELS.configurations),
+  debugAddConfiguration: () => ipcRenderer.invoke(DEBUG_CHANNELS.addConfiguration),
+  onDebugSessionChanged: (callback) => {
+    const listener = (_event: IpcRendererEvent, session: DebugSession) => callback(session);
+    ipcRenderer.on(DEBUG_CHANNELS.sessionChanged, listener);
+    return () => ipcRenderer.removeListener(DEBUG_CHANNELS.sessionChanged, listener);
+  },
+  breakpointsList: () => ipcRenderer.invoke(DEBUG_CHANNELS.breakpointsList),
+  breakpointsToggle: (request) => ipcRenderer.invoke(DEBUG_CHANNELS.breakpointsToggle, request),
+  breakpointsAdd: (request) => ipcRenderer.invoke(DEBUG_CHANNELS.breakpointsAdd, request),
+  breakpointsRemove: (request) => ipcRenderer.invoke(DEBUG_CHANNELS.breakpointsRemove, request),
+  breakpointsSetEnabled: (request) => ipcRenderer.invoke(DEBUG_CHANNELS.breakpointsSetEnabled, request),
+  breakpointsRemoveAll: () => ipcRenderer.invoke(DEBUG_CHANNELS.breakpointsRemoveAll),
+  onDebugBreakpointsChanged: (callback) => {
+    const listener = (_event: IpcRendererEvent, breakpoints: Breakpoint[]) => callback(breakpoints);
+    ipcRenderer.on(DEBUG_CHANNELS.breakpointsChanged, listener);
+    return () => ipcRenderer.removeListener(DEBUG_CHANNELS.breakpointsChanged, listener);
   },
   searchExtensions: (query: string) => ipcRenderer.invoke('extensions:search', query),
   getExtensionDetails: (namespace: string, name: string) => ipcRenderer.invoke('extensions:details', { namespace, name }),

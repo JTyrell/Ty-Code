@@ -19,16 +19,21 @@ import path from 'node:path';
 import { getUpdateManager } from './update-manager';
 import { fccManager } from './orchestration/fcc-manager';
 import { openEditorWindow, type EditorWindowReveal } from '../windows/editor-window';
+import { openProcessExplorerWindow } from '../windows/process-explorer-window';
 import type { MainCommandAdapters } from './command-main-handlers';
+import { LAUNCH_DIR_NAME, LAUNCH_FILE_NAME } from '../../shared/types/debug-session';
 
 /**
  * Where a workspace keeps its debug launch configuration.
  *
- * Exported so the debug-session work reads the same path instead of declaring a
- * second one — two definitions of "where launch configs live" is how a menu row
- * ends up greying out while a configuration the user can see does exist.
+ * Composed from the two halves the shared contract publishes rather than spelled
+ * again here, because the session service reads the same file: two definitions of
+ * "where launch configs live" is how a menu row ends up greying out while a
+ * configuration the user can see does exist. The name is kept exported because
+ * `hasLaunchConfiguration` below and the debug service's own join have to agree
+ * on the separator, and each process joins with its own.
  */
-export const LAUNCH_CONFIG_RELPATH = path.join('.ty-code', 'launch.json');
+export const LAUNCH_CONFIG_RELPATH = path.join(LAUNCH_DIR_NAME, LAUNCH_FILE_NAME);
 
 export interface MainCommandAdapterDeps {
   /** The primary window. Null before it is created and after it is destroyed. */
@@ -112,6 +117,12 @@ export function createElectronMainCommandAdapters(
     }),
 
     fccStatus: () => fccManager.getStatus(),
+
+    openProcessExplorer: () => {
+      // The window module owns the singleton and re-focuses an existing panel,
+      // so a second click on the menu row cannot stack a second one.
+      openProcessExplorerWindow();
+    },
 
     contexts: {
       devToolsAllowed: () => !app.isPackaged,

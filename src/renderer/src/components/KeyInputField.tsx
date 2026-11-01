@@ -24,6 +24,8 @@ import {
   WifiOff,
   ShieldCheck
 } from 'lucide-react';
+import { readClipboardText } from '../lib/clipboard';
+import { toast } from '../state/toast-store';
 
 export interface KeyValidationRule {
   expectedFormat: string;
@@ -240,19 +242,21 @@ export const KeyInputField: React.FC<KeyInputFieldProps> = ({
   );
 
   const handlePasteFromClipboard = async () => {
-    try {
-      const text = await navigator.clipboard.readText();
-      const clean = text.trim();
-      if (clean) {
-        onChange(clean);
-        // Auto-run test connection if format looks valid
-        const check = rule.validate(clean);
-        if (check.valid) {
-          void handleTestConnection(clean);
-        }
+    const clip = await readClipboardText('settings.api-key-paste');
+    if (!clip.ok) {
+      // Reading the clipboard is the one path a window can genuinely be denied,
+      // so the reason comes back from main instead of the button doing nothing.
+      toast.error('Paste Failed', clip.error || 'Could not read the clipboard.');
+      return;
+    }
+    const clean = clip.text.trim();
+    if (clean) {
+      onChange(clean);
+      // Auto-run test connection if format looks valid
+      const check = rule.validate(clean);
+      if (check.valid) {
+        void handleTestConnection(clean);
       }
-    } catch {
-      // Clipboard access denied / unsupported
     }
   };
 

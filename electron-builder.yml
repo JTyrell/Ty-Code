@@ -14,6 +14,18 @@ files:
   - node_modules/**/*
   - "!node_modules/**/*.map"
   - "!node_modules/*-test*/**"
+  # Prompt 5b Help menu: the four documents the doc viewer reads. They are
+  # listed here rather than under `extraResources` on purpose — the reader
+  # resolves its allowlist against two levels above `dist/main`, which is the
+  # asar root in an installed build and the repo root in dev. Keeping one path
+  # that works in both layouts is what stops "Ty-Code Documentation" from being
+  # a live click under `npm run dev` and a dead one in the packaged demo.
+  # The wildcards match the version-suffixed filenames the repo actually uses.
+  - README.md
+  - LICENSE
+  - RELEASE_NOTES_v*.md
+  - docs/GETTING_STARTED_v*.md
+  - docs/PRIVACY_POLICY.md
 
 extraResources:
   - from: build/icon.png

@@ -42,6 +42,39 @@ import type {
   TaskRunRequest,
   TaskRunResult
 } from '../shared/types/tasks';
+import type {
+  Breakpoint,
+  BreakpointIdRequest,
+  BreakpointToggleRequest,
+  BreakpointsEnabledRequest,
+  DebugConfiguration,
+  DebugConfigurationList,
+  DebugSession,
+  DebugStartRequest,
+  NewBreakpointRequest
+} from '../shared/types/debug-session';
+import type {
+  ProcessExplorerRequest,
+  ProcessExplorerSnapshot,
+  ProcessKind,
+  ProcessRow
+} from '../shared/types/process-explorer';
+import type { AppDoc, AppDocFormat, AppDocId, AppDocRequest } from '../shared/types/app-docs';
+
+// Prompt 5b: the Help menu's document rows. Re-exported for the same reason as
+// the process-explorer types — the panel types its props from here rather than
+// reaching into shared/types directly, so there is one import path per surface.
+export type { AppDoc, AppDocFormat, AppDocId, AppDocRequest };
+
+// Prompt 5b: the Help menu's process explorer. Re-exported for the same reason as
+// the task and dialog types — the panel window types its rows from here rather
+// than reaching into shared/types directly.
+export type {
+  ProcessExplorerRequest,
+  ProcessExplorerSnapshot,
+  ProcessKind,
+  ProcessRow
+};
 
 // Prompt 5b: the Terminal menu's task surface. Re-exported for the same reason
 // as the command and dialog types — the renderer's terminal handlers and the
@@ -54,6 +87,22 @@ export type {
   TaskRunIdRequest,
   TaskRunRequest,
   TaskRunResult
+};
+
+// Prompt 5b Step 3: the Run menu's debug surface. Re-exported for the same
+// reason as the task types — the renderer's debug handlers and the menu-context
+// publisher type their payloads from here, so a renderer never imports from
+// `src/main` and there is one import path per surface.
+export type {
+  Breakpoint,
+  BreakpointIdRequest,
+  BreakpointToggleRequest,
+  BreakpointsEnabledRequest,
+  DebugConfiguration,
+  DebugConfigurationList,
+  DebugSession,
+  DebugStartRequest,
+  NewBreakpointRequest
 };
 
 // Prompt 5: the two file dialogs the registry's File-menu rows need. Re-exported
@@ -1351,6 +1400,33 @@ export interface ElectronAPI {
   openFileDialog?: (request?: OpenFileDialogRequest) => Promise<IpcResponse<FileDialogResult>>;
   /** Pick a save destination, for `workbench.saveAs`. Same cancellation shape. */
   savePathDialog?: (request?: SavePathDialogRequest) => Promise<IpcResponse<FileDialogResult>>;
+  /**
+   * One process-explorer snapshot, for `window.openProcessExplorer`'s panel.
+   *
+   * Pull, never push. The panel polls in a chain — each read scheduled after the
+   * previous one resolves — so closing its window is what stops the reads and
+   * two platform reads can never overlap. A main-side interval would keep
+   * sampling a machine nobody is looking at.
+   *
+   * Optional because only the explorer window needs it, and an older preload
+   * must degrade to "unavailable" rather than to a renderer throwing on
+   * `undefined`.
+   */
+  processExplorerList?: (
+    request?: ProcessExplorerRequest
+  ) => Promise<IpcResponse<ProcessExplorerSnapshot>>;
+  /**
+   * One allowlisted Help document, for `help.documentation` and its three
+   * siblings.
+   *
+   * The request carries an id and never a path: the id-to-file mapping lives in
+   * main, so there is no channel by which a renderer frame could ask for a file
+   * outside it. A document this build does not ship comes back as
+   * `success: false` naming the paths that were tried, which is what lets the
+   * panel say "not found in this build" instead of showing prose that only looks
+   * like the real thing.
+   */
+  readAppDoc?: (request: AppDocRequest) => Promise<IpcResponse<AppDoc>>;
   getSettingsLayer: (scope: SettingsScope) => Promise<IpcResponse<SettingsData | WorkspaceSettingsPatch>>;
   saveSettingsLayer: (scope: SettingsScope, settings: SettingsPatch | WorkspaceSettingsPatch) => Promise<IpcResponse<void>>;
   getSecurityPolicy: () => Promise<IpcResponse<SecurityPolicySettings>>;
@@ -1498,6 +1574,46 @@ export interface ElectronAPI {
    * release it on teardown rather than leaking a listener per window reload.
    */
   onTasksChanged?: (callback: (tasks: RunningTask[]) => void) => () => void;
+  /**
+   * Prompt 5b Step 3: the debug surface backing the Run menu's eighteen rows.
+   *
+   * Optional for the same reason the task rows are: the same renderer bundle runs
+   * in windows without the desktop bridge and in unit tests with no
+   * `window.electronAPI` at all, and a row that cannot reach its backend must
+   * decline with a sentence rather than throw.
+   *
+   * `debugSession` is the only read; everything else is a command whose reply is
+   * the resulting session, because a stepping command that answered with a boolean
+   * would leave the menus guessing about where execution actually is.
+   */
+  debugSession?: () => Promise<IpcResponse<DebugSession>>;
+  debugStart?: (request: DebugStartRequest) => Promise<IpcResponse<DebugSession>>;
+  debugStop?: () => Promise<IpcResponse<DebugSession>>;
+  debugRestart?: (request?: DebugStartRequest) => Promise<IpcResponse<DebugSession>>;
+  debugPause?: () => Promise<IpcResponse<DebugSession>>;
+  debugResume?: () => Promise<IpcResponse<DebugSession>>;
+  debugStepOver?: () => Promise<IpcResponse<DebugSession>>;
+  debugStepInto?: () => Promise<IpcResponse<DebugSession>>;
+  debugStepOut?: () => Promise<IpcResponse<DebugSession>>;
+  /** Whatever `.ty-code/launch.json` offered, beside any note about reading it. */
+  debugConfigurations?: () => Promise<IpcResponse<DebugConfigurationList>>;
+  debugAddConfiguration?: () => Promise<IpcResponse<DebugConfigurationList>>;
+  /**
+   * Main → renderer push carrying the whole session, not a delta: a receiver that
+   * missed one message would otherwise be permanently wrong about whether
+   * `debugPaused` holds, and Continue would stay greyed on a program sitting at a
+   * breakpoint.
+   */
+  onDebugSessionChanged?: (callback: (session: DebugSession) => void) => () => void;
+  breakpointsList?: () => Promise<IpcResponse<Breakpoint[]>>;
+  /** Add-or-remove on one line, which is what F9 and a gutter click both mean. */
+  breakpointsToggle?: (request: BreakpointToggleRequest) => Promise<IpcResponse<Breakpoint[]>>;
+  breakpointsAdd?: (request: NewBreakpointRequest) => Promise<IpcResponse<Breakpoint[]>>;
+  breakpointsRemove?: (request: BreakpointIdRequest) => Promise<IpcResponse<Breakpoint[]>>;
+  breakpointsSetEnabled?: (request: BreakpointsEnabledRequest) => Promise<IpcResponse<Breakpoint[]>>;
+  breakpointsRemoveAll?: () => Promise<IpcResponse<Breakpoint[]>>;
+  /** Whole list, for the same reason as the session push above. */
+  onDebugBreakpointsChanged?: (callback: (breakpoints: Breakpoint[]) => void) => () => void;
   searchExtensions: (query: string) => Promise<IpcResponse<ExtensionMetadata[]>>;
   getExtensionDetails: (namespace: string, name: string) => Promise<IpcResponse<Record<string, unknown>>>;
   getAvailableSkills: (workspacePath: string) => Promise<IpcResponse<SkillDefinition[]>>;
@@ -2270,6 +2386,18 @@ export interface DebuggerStateSnapshotData {
   selectedRole: AnalysisRole;
   theme?: string;
   updatedAt?: number;
+  /**
+   * Epoch millis of the last completed diagnostics sweep, or null when none has
+   * ever run. Mirrors main's `DebuggerStateSnapshot.lastSweepAt`, which only
+   * `pushResults` advances — a renderer cannot set it, because
+   * `DebuggerSyncStatePayloadSchema` does not list the key and Zod strips
+   * unknown ones.
+   *
+   * Read this instead of inferring from `analysisResults.length`: an empty
+   * findings list is equally consistent with "found nothing" and with "has not
+   * been asked yet", and only the first may be reported as a clean workspace.
+   */
+  lastSweepAt?: number | null;
 }
 
 export type ModuleLlmCompatibility = 'hosted' | 'local' | 'both';
@@ -2807,6 +2935,19 @@ export interface AppInfo {
   platform: string;
   arch: string;
   isPackaged: boolean;
+  /**
+   * Short commit this build was made from, when it could be determined.
+   *
+   * Optional on purpose, and omitted rather than defaulted: a stamp written at
+   * build time or read from `.git/HEAD` in dev. There is no `'unknown'`
+   * fallback because About would then print a SHA-shaped lie, and the honest
+   * rendering of an absent commit is to leave the row out.
+   */
+  commit?: string;
+  /** Runtime versions, straight from `process.versions` — never hard-coded. */
+  electronVersion?: string;
+  nodeVersion?: string;
+  chromeVersion?: string;
 }
 
 export interface MyersDiffResult {

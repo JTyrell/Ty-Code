@@ -188,7 +188,7 @@ export class ExtensionManager {
           capabilities: ['commands.register', 'editor.read', 'editor.edit', 'window.messages', 'window.input', 'agent.request'],
           contributes: {
             commands: [
-              { command: 'ty-claude.ai-copilot.generateCode', title: 'AI Copilot: Generate Code at Cursor', category: 'AI Copilot' },
+              { command: 'ty-claude.ai-copilot.generateCode', title: 'AI Copilot: Generate Code at Caret', category: 'AI Copilot' },
               { command: 'ty-claude.ai-copilot.explainSelection', title: 'AI Copilot: Explain Selected Code', category: 'AI Copilot' },
               { command: 'ty-claude.ai-copilot.generateTests', title: 'AI Copilot: Generate Unit Tests', category: 'AI Copilot' }
             ],

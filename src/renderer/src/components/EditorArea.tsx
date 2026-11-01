@@ -51,6 +51,7 @@ import { LazyModelManager } from '../services/lazy-model-manager';
 import { useDocumentReviewStore } from '../state/document-review-store';
 import { DocumentReviewPane } from './documents/DocumentReviewPane';
 import { useThemeSync, getMonacoTheme } from '../hooks/useThemeSync';
+import { copyTextOrNotify } from '../lib/clipboard';
 
 interface SplitPaneState {
   isSplit: boolean;
@@ -1064,9 +1065,11 @@ export const EditorArea: React.FC = () => {
           <div style={{ height: '1px', backgroundColor: 'var(--border-subtle)', margin: '3px 0' }} />
           <button
             onClick={async () => {
-              await navigator.clipboard.writeText(tabContextMenu.path);
-              toast.success('Path copied', tabContextMenu.path);
+              const path = tabContextMenu.path;
               setTabContextMenu(null);
+              if ((await copyTextOrNotify(path, 'editor.tab-context-copy-path')).ok) {
+                toast.success('Path copied', path);
+              }
             }}
             style={{
               display: 'flex',

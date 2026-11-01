@@ -15,6 +15,7 @@ import {
 import type { BootTrace, OffenderItem, PerfMark, TransitionMetric } from '../../../shared/types/perf';
 import { transitionProfiler } from '../services/perf/transition-profiler';
 import styles from './BootTimeline.module.css';
+import { copyTextOrNotify } from '../lib/clipboard';
 
 /* ---------------------------------------------------------------------------
  * Hover help tip: 2.5s delay before showing, 7s auto fade, instant hide when
@@ -186,12 +187,9 @@ export const BootTimeline: React.FC<BootTimelineProps> = ({ isOpen, onClose }) =
 
   const handleCopyTrace = async () => {
     if (!trace) return;
-    try {
-      await navigator.clipboard.writeText(JSON.stringify(trace, null, 2));
+    if ((await copyTextOrNotify(JSON.stringify(trace, null, 2), 'boot.timeline-json')).ok) {
       setCopyFeedback(true);
       setTimeout(() => setCopyFeedback(false), 2000);
-    } catch {
-      // ignore clipboard error
     }
   };
 

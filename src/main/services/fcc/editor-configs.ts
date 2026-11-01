@@ -132,7 +132,7 @@ export class EditorConfigExporter {
         targetPath,
         content: JSON.stringify(settings, null, 2),
         fileType: 'json',
-        instructions: `Add these keys to your workspace or user .vscode/settings.json. Cline will route requests to Ty-Code.`
+        instructions: `Add these keys to your workspace or user .vscode/settings.json. Cline will route requests to Ty-Code.` // brand-ok: interop instruction; the file it tells you to edit belongs to the other editor
       };
     }
 
@@ -155,7 +155,7 @@ export class EditorConfigExporter {
       targetPath,
       content: JSON.stringify(genericSettings, null, 2),
       fileType: 'json',
-      instructions: `Save in .vscode/settings.json to point VS Code extensions to Ty-Code.`
+      instructions: `Save in .vscode/settings.json to point VS Code extensions to Ty-Code.` // brand-ok: interop instruction; the file it tells you to edit belongs to the other editor
     };
   }
 
@@ -171,7 +171,7 @@ export class EditorConfigExporter {
       const config = {
         models: [
           {
-            title: 'Ty-Code JetBrains Fleet',
+            title: 'Ty-Code JetBrains Fleet', // brand-ok: names the host this generated config is written for
             provider: 'openai',
             model: 'auto',
             apiBase: baseUrl,
@@ -179,7 +179,7 @@ export class EditorConfigExporter {
           }
         ],
         tabAutocompleteModel: {
-          title: 'Ty-Code JetBrains Autocomplete',
+          title: 'Ty-Code JetBrains Autocomplete', // brand-ok: names the host this generated config is written for
           provider: 'openai',
           model: 'qwen2.5-coder:latest',
           apiBase: baseUrl,
@@ -194,7 +194,7 @@ export class EditorConfigExporter {
         targetPath,
         content: JSON.stringify(config, null, 2),
         fileType: 'json',
-        instructions: `Configure Continue plugin in JetBrains (IntelliJ, PyCharm, WebStorm). Copy to ~/.continue/config.json.`
+        instructions: `Configure Continue plugin in JetBrains (IntelliJ, PyCharm, WebStorm). Copy to ~/.continue/config.json.` // brand-ok: interop instruction naming the plugins and hosts it targets
       };
     }
 
@@ -217,7 +217,7 @@ export class EditorConfigExporter {
       targetPath,
       content: xmlContent,
       fileType: 'xml',
-      instructions: `Add to your JetBrains .idea folder or set OpenAI Custom Server in Tools > AI Assistant / LLM to ${baseUrl}.`
+      instructions: `Add to your JetBrains .idea folder or set OpenAI Custom Server in Tools > AI Assistant / LLM to ${baseUrl}.` // brand-ok: interop instruction naming the menu path inside the other IDE
     };
   }
 

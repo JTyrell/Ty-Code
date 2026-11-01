@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env node
+#!/usr/bin/env node
 /**
  * Community Key END-TO-END diagnosis (ZeroFriction Prompt 4).
  *

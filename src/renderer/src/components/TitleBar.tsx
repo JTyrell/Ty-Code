@@ -89,6 +89,57 @@ const TyCodeMicrochipLogo: React.FC<{ size?: number; boxed?: boolean }> = ({ siz
   );
 };
 
+/**
+ * About's build-identity rows (Prompt 5b Step 5, group G4).
+ *
+ * Every value arrives from main's `app:get-info`, which reads
+ * `process.versions` and the build stamp — nothing here is a literal, so a dev
+ * run and an installed build each report their own truth.
+ *
+ * A row main could not determine is left out rather than printed as a
+ * placeholder: an absent commit rendered as `unknown` would be a SHA-shaped lie
+ * in a support screenshot, and the commit is genuinely absent whenever the
+ * build ran outside a git checkout with no stamp file. When no value at all is
+ * available — a window with no desktop bridge — the whole block disappears
+ * instead of rendering an empty grid that only adds a gap.
+ */
+const AboutBuildRows: React.FC<{ info: AppInfo | null }> = ({ info }) => {
+  const rows: [string, string][] = [];
+  if (info?.commit) rows.push(['Commit', info.commit]);
+  if (info?.electronVersion) rows.push(['Electron', info.electronVersion]);
+  if (info?.nodeVersion) rows.push(['Node.js', info.nodeVersion]);
+  if (info?.chromeVersion) rows.push(['Chromium', info.chromeVersion]);
+
+  if (rows.length === 0) return null;
+
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: 'auto 1fr',
+        gap: '3px 12px',
+        fontSize: '12px',
+        marginBottom: '16px'
+      }}
+    >
+      {rows.map(([label, value]) => (
+        <React.Fragment key={label}>
+          <span style={{ color: 'var(--text-muted, #94a3b8)' }}>{label}</span>
+          <span
+            style={{
+              fontFamily: 'var(--font-mono, monospace)',
+              color: 'var(--text-secondary, #cbd5e1)',
+              wordBreak: 'break-all'
+            }}
+          >
+            {value}
+          </span>
+        </React.Fragment>
+      ))}
+    </div>
+  );
+};
+
 // Panel & Layout control icons
 const LayoutAllIcon: React.FC<{ size?: number }> = ({ size = 14 }) => (
   <svg width={size} height={size} viewBox="0 0 16 16" fill="currentColor">
@@ -788,6 +839,8 @@ export const TitleBar: React.FC = () => {
             <p style={{ fontSize: '13px', color: 'var(--text-secondary, #cbd5e1)', lineHeight: '1.6', margin: '0 0 16px 0' }}>
               The high-performance, developer-first AI code editor with zero-cost model supply, real extension security, and local safeStorage.
             </p>
+
+            <AboutBuildRows info={appInfo} />
 
             <div
               style={{

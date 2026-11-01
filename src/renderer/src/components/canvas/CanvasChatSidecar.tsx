@@ -11,6 +11,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Copy, ExternalLink, Palette, Send, Sparkles } from 'lucide-react';
 import { serializeCanvasNode, useCanvasStore } from '../../state/canvas-store';
+import { copyTextOrNotify } from '../../lib/clipboard';
 
 interface SidecarMessage {
   id: string;
@@ -260,13 +261,11 @@ export const CanvasChatSidecar: React.FC<CanvasChatSidecarProps> = ({ onCanvasFo
               <button
                 type="button"
                 onClick={() => {
-                  void navigator.clipboard
-                    .writeText(generatedCode.code)
-                    .then(() => {
-                      setCodeCopied(true);
-                      window.setTimeout(() => setCodeCopied(false), 2000);
-                    })
-                    .catch((err: unknown) => console.warn('Copy failed:', err));
+                  void copyTextOrNotify(generatedCode.code, 'canvas.chat-code').then((result) => {
+                    if (!result.ok) return;
+                    setCodeCopied(true);
+                    window.setTimeout(() => setCodeCopied(false), 2000);
+                  });
                 }}
                 style={{
                   marginLeft: 'auto',

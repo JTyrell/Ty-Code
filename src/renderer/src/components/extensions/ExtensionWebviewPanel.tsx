@@ -89,7 +89,7 @@ export const ExtensionWebviewPanel: React.FC<ExtensionWebviewPanelProps> = ({
           window.addEventListener('message', function(event) {
             if (event.data && event.data.type === 'webview-init' && event.ports && event.ports[0]) {
               hostPort = event.ports[0];
-              window.vscode = {
+              window.vscode = { // brand-ok: the global name third-party extension code already looks for
                 postMessage: function(msg) {
                   if (hostPort) hostPort.postMessage(msg);
                 }

@@ -100,8 +100,11 @@ const NO_TERMINAL_SURFACE =
  * `fs` accepts either separator on Windows — but the resulting string is what
  * gets compared against `openTabs[].path` to prove the file landed, and a
  * mixed-separator path would never match a tab opened by any other route.
+ *
+ * Exported because the Run menu's debug rows open the same kind of file and must
+ * produce the same spelling: two joiners is how a tab comparison starts failing.
  */
-function joinPath(root: string, ...segments: string[]): string {
+export function joinPath(root: string, ...segments: string[]): string {
   const separator = root.includes('\\') && !root.includes('/') ? '\\' : '/';
   return [root.replace(/[\\/]+$/, ''), ...segments].join(separator);
 }
@@ -116,7 +119,9 @@ function joinPath(root: string, ...segments: string[]): string {
  * PowerShell, not an escape, so the path would no longer exist. Here `\` is safe
  * and `"` is doubled, which is how both Windows shells spell a literal quote,
  * and POSIX shells are never handed these strings because the runner commands
- * below are all single-token.
+ * below are all single-token. Run Without Debugging is deliberately *not* one of
+ * its callers: it passes its arguments to `spawn` as an argv array, so no shell
+ * ever sees them and no quoting rule applies.
  */
 function quoteForShell(value: string): string {
   if (value === '') return '""';
@@ -157,8 +162,14 @@ const RUNNERS: Record<string, string> = {
 /** Extensions that look runnable from a file list but are modules, not entry points. */
 const COMPONENT_EXTENSIONS = new Set(['tsx', 'jsx']);
 
-/** The lower-cased extension, or `''` when the name has none. */
-function extensionOf(filePath: string): string {
+/**
+ * The lower-cased extension, or `''` when the name has none.
+ *
+ * Exported because the Run menu's debug rows ask the same question about the same
+ * file paths and must reach the same answer: a case-folded extension written twice
+ * is how `.TS` stops being recognised in one menu and keeps working in the other.
+ */
+export function extensionOf(filePath: string): string {
   const name = baseName(filePath);
   const dot = name.lastIndexOf('.');
   return dot > 0 ? name.slice(dot + 1).toLowerCase() : '';
@@ -484,8 +495,9 @@ const configureDefaultBuild: CommandHandler = async () => {
  *
  * All eleven renderer-target keys, which is what makes their registry entries
  * paint at all: the resolver hides a row whose command has no handler, so an
- * omitted key would not be a dead click but an invisible menu item. `debug.*`
- * stays absent until the debug services land, and Run's rows stay hidden with it.
+ * omitted key would not be a dead click but an invisible menu item. The Run
+ * menu's `debug.*` keys are registered beside these in
+ * {@link ./debug-commands}, since both menus drive the same process surface.
  */
 export function registerTerminalCommandHandlers(): CommandRuntimeDisposable {
   return registerRendererCommands({

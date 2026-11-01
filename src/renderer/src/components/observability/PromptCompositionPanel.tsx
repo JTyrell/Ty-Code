@@ -35,6 +35,7 @@ import {
   useSetSelectedTaskId
 } from '../../state/observability-store';
 import type { AssemblyLayer } from '../../../../preload/types';
+import { copyTextOrNotify } from '../../lib/clipboard';
 
 function formatTokens(count: number): string {
   if (count >= 1000) return `${(count / 1000).toFixed(1)}k`;
@@ -80,16 +81,20 @@ export const PromptCompositionPanel: React.FC = () => {
 
   const handleCopyLayer = useCallback((text?: string) => {
     if (!text) return;
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    void copyTextOrNotify(text, 'observability.prompt-layer').then((result) => {
+      if (!result.ok) return;
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
   }, []);
 
   const handleCopyFullPrompt = useCallback(() => {
     if (!assembly?.systemPrompt) return;
-    navigator.clipboard.writeText(assembly.systemPrompt);
-    setCopiedFull(true);
-    setTimeout(() => setCopiedFull(false), 2000);
+    void copyTextOrNotify(assembly.systemPrompt, 'observability.full-prompt').then((result) => {
+      if (!result.ok) return;
+      setCopiedFull(true);
+      setTimeout(() => setCopiedFull(false), 2000);
+    });
   }, [assembly?.systemPrompt]);
 
   if (!assembly) {

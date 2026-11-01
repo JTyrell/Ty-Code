@@ -75,6 +75,7 @@ import { useChatStore } from '../../state/chat-store';
 import { GovernorPanel } from './GovernorPanel';
 import { ReliabilityHealthPanel } from './ReliabilityHealthPanel';
 import { trackRenders } from '../../dev/render-storm';
+import { copyText } from '../../lib/clipboard';
 import './DiagnosticsPanel.css';
 
 const STEP_LABELS: Record<DiagnosticStep, string> = {
@@ -93,27 +94,12 @@ const SCENARIO_ICONS: Record<string, React.ReactNode> = {
   reasoning: <Brain size={16} className="text-purple-400" />
 };
 
-// Clipboard write with execCommand fallback (navigator.clipboard can reject in some Electron contexts)
-const copyToClipboard = async (text: string): Promise<boolean> => {
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {
-    try {
-      const textarea = document.createElement('textarea');
-      textarea.value = text;
-      textarea.style.position = 'fixed';
-      textarea.style.opacity = '0';
-      document.body.appendChild(textarea);
-      textarea.select();
-      const ok = document.execCommand('copy');
-      document.body.removeChild(textarea);
-      return ok;
-    } catch {
-      return false;
-    }
-  }
-};
+// Clipboard write through the renderer's one copy pipeline: the async API, then
+// main-process clipboard, then a concrete reason for the failure. The local
+// `execCommand` fallback that used to live here reported success against a
+// hidden textarea while the system clipboard still held whatever was copied last.
+const copyToClipboard = async (text: string): Promise<boolean> =>
+  (await copyText(text, 'settings.diagnostics-panel')).ok;
 
 export const DiagnosticsPanel: React.FC = () => {
   trackRenders('settings:DiagnosticsPanel');
@@ -363,33 +349,31 @@ export const DiagnosticsPanel: React.FC = () => {
 
   // Copy single smoke test prompt
   const copySmokeStep = useCallback(async (text: string, id: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
+    if (await copyToClipboard(text)) {
       setCopiedSmokeId(id);
       toast.success(`Copied smoke prompt: "${text}"`);
       setTimeout(() => setCopiedSmokeId(null), 2500);
-    } catch {
+    } else {
       toast.error('Failed to copy to clipboard');
     }
   }, []);
 
   // Copy all 6 smoke test prompts as a formatted markdown script
   const copyAllSmokeSteps = useCallback(async () => {
-    try {
-      const fullScript = [
-        '# Ty-Code Manual Smoke-Test Script',
-        '',
-        ...SMOKE_TEST_STEPS.map(
-          (s) => `### Step ${s.stepNumber} (~${s.timeEstimateSec}s)\nSend: \`${s.send}\`\nExpect: ${s.expect}\n`
-        ),
-        '### Failure Protocol',
-        SMOKE_TEST_FAILURE_PROTOCOL
-      ].join('\n');
-      await navigator.clipboard.writeText(fullScript);
+    const fullScript = [
+      '# Ty-Code Manual Smoke-Test Script',
+      '',
+      ...SMOKE_TEST_STEPS.map(
+        (s) => `### Step ${s.stepNumber} (~${s.timeEstimateSec}s)\nSend: \`${s.send}\`\nExpect: ${s.expect}\n`
+      ),
+      '### Failure Protocol',
+      SMOKE_TEST_FAILURE_PROTOCOL
+    ].join('\n');
+    if (await copyToClipboard(fullScript)) {
       setCopiedAllSmoke(true);
       toast.success('Entire 6-step smoke-test script copied to clipboard!');
       setTimeout(() => setCopiedAllSmoke(false), 2500);
-    } catch {
+    } else {
       toast.error('Failed to copy smoke script');
     }
   }, []);
@@ -550,12 +534,11 @@ export const DiagnosticsPanel: React.FC = () => {
   // Copy Trace JSON
   const handleCopyTraceJson = useCallback(async () => {
     if (!traceReport) return;
-    try {
-      await navigator.clipboard.writeText(JSON.stringify(traceReport, null, 2));
+    if (await copyToClipboard(JSON.stringify(traceReport, null, 2))) {
       setTraceCopied(true);
       toast.success('Trace report JSON copied to clipboard!');
       setTimeout(() => setTraceCopied(false), 2500);
-    } catch {
+    } else {
       toast.error('Failed to copy trace JSON');
     }
   }, [traceReport]);

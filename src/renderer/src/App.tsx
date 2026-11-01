@@ -32,6 +32,7 @@ import { ExtensionTracePanel } from './components/extensions/ExtensionTracePanel
 import { transitionProfiler } from './services/perf/transition-profiler';
 import { useChatStore } from './state/chat-store';
 import { useUsageDashboardStore } from './state/usage-dashboard-store';
+import { useAppDocsStore } from './state/app-docs-store';
 import { initTypographyStore, useTypographyStore } from './state/typography-store';
 import { useWorkspaceStore } from './state/workspace-store';
 import { useEditorNavigationStore } from './state/editor-navigation-store';
@@ -46,6 +47,7 @@ import { LazyModelManager } from './services/lazy-model-manager';
 import { installCommandContextSources } from './lib/command-contexts';
 import { installCommandRuntime } from './lib/command-runtime';
 import { registerEditorCommandHandlers } from './lib/editor-commands';
+import { registerDebugCommandHandlers } from './lib/debug-commands';
 import { registerTerminalCommandHandlers } from './lib/terminal-commands';
 import { registerWorkbenchCommandHandlers } from './lib/workbench-commands';
 
@@ -53,6 +55,7 @@ import { Palette } from 'lucide-react';
 import { SketcherWindow } from './components/SketcherWindow';
 import { DebuggerWindow } from './components/debugger/DebuggerWindow';
 import { OmniDebugger } from './components/debugger/OmniDebugger';
+import { ProcessExplorerWindow } from './components/ProcessExplorerWindow';
 
 // Dynamic import() for Tier 2/3 heavy modules — no top-level static imports
 const TerminalDrawer = React.lazy(() => import('./components/TerminalDrawer').then((m) => ({ default: m.TerminalDrawer })));
@@ -62,6 +65,7 @@ const SettingsModal = React.lazy(() => import('./components/SettingsModal').then
 const UsageDashboard = React.lazy(() => import('./components/UsageDashboard').then((m) => ({ default: m.UsageDashboard })));
 const CodeReviewPanel = React.lazy(() => import('./components/CodeReviewPanel').then((m) => ({ default: m.CodeReviewPanel })));
 const DiffViewer = React.lazy(() => import('./components/DiffViewer').then((m) => ({ default: m.DiffViewer })));
+const DocViewerModal = React.lazy(() => import('./components/DocViewerModal').then((m) => ({ default: m.DocViewerModal })));
 
 const MainWorkbench: React.FC = () => {
   useActiveModelSync();
@@ -100,6 +104,9 @@ const MainWorkbench: React.FC = () => {
   const bootHydration = useBootStateStore((s) => s.hydration);
   const isSettingsOpen = useChatStore((s) => s.isSettingsOpen);
   const usageDashboardOpen = useUsageDashboardStore((s) => s.isOpen);
+  // Drives the doc viewer's Suspense fallback the same way as the two modals
+  // above: a skeleton may only stand in for a view that is genuinely open.
+  const docViewerOpen = useAppDocsStore((s) => s.activeId !== null);
   const prevPopOutRef = useRef(isPopOutMode);
 
   useEffect(() => {
@@ -683,6 +690,12 @@ const MainWorkbench: React.FC = () => {
             </React.Suspense>
           </ErrorBoundary>
 
+          <ErrorBoundary fallbackTitle="Document Viewer Error" onReset={() => useAppDocsStore.getState().closeDoc()}>
+            <React.Suspense fallback={docViewerOpen ? <ViewSkeleton type="modal" /> : null}>
+              <DocViewerModal />
+            </React.Suspense>
+          </ErrorBoundary>
+
           <ErrorBoundary fallbackTitle="Boot Timeline Error" onReset={() => setIsBootTimelineOpen(false)}>
             <React.Suspense fallback={null}>
               <BootTimeline
@@ -729,14 +742,19 @@ export const App: React.FC = () => {
   // no shell deps — they read the workspace store and the bridge directly — and
   // a popout editor window that hid its Terminal menu entirely would leave the
   // user with no way to learn where terminals live. Instead the rows paint and
-  // decline with `NO_TERMINAL_SURFACE`, which names the window to go to.
+  // decline with `NO_TERMINAL_SURFACE`, which names the window to go to. The Run
+  // menu's debug rows register here for the same reason: the session is main's,
+  // shared by every window, so a popout that could not reach it would be hiding
+  // rows whose state it can genuinely observe.
   useEffect(() => {
     const sources = installCommandContextSources();
     const editorCommands = registerEditorCommandHandlers();
     const terminalCommands = registerTerminalCommandHandlers();
+    const debugCommands = registerDebugCommandHandlers();
     const runtime = installCommandRuntime();
     return () => {
       runtime.dispose();
+      debugCommands.dispose();
       terminalCommands.dispose();
       editorCommands.dispose();
       sources.dispose();
@@ -750,6 +768,15 @@ export const App: React.FC = () => {
   const isDebugger = typeof window !== 'undefined' && window.location.hash.includes('debugger');
   if (isDebugger) {
     return <DebuggerWindow />;
+  }
+  // Help > Open Process Explorer gets its own window rather than a panel inside
+  // this one, because a memory readout rendered by the process it is measuring
+  // reports a number that includes itself — and goes blank at the exact moment
+  // main is the thing that is sick. It renders no menu bar and no command
+  // runtime: the hooks above still ran, so teardown is unchanged.
+  const isProcessExplorer = typeof window !== 'undefined' && window.location.hash.includes('process-explorer');
+  if (isProcessExplorer) {
+    return <ProcessExplorerWindow />;
   }
   return <MainWorkbench />;
 };

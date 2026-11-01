@@ -188,7 +188,7 @@ export const OverflowMenu: React.FC<OverflowMenuProps> = ({ className, isTelemet
               </div>
               <div className={styles.row}>
                 <div className={styles.rowLabel}>
-                  <span>Indentation / Cursor</span>
+                  <span>Indentation / Caret</span>
                 </div>
                 <span className={styles.rowValue}>
                   Spaces: {settings?.editor?.tabSize || 2} · Ln 1, Col 1

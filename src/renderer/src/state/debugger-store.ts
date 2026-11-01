@@ -28,6 +28,25 @@ export interface DebuggerState {
   selectedEngine: 'all' | AnalysisEngine;
   searchQuery: string;
   isAnalyzing: boolean;
+  /**
+   * Whether a diagnostics sweep has actually completed since this window booted.
+   *
+   * `analysisResults.length === 0` cannot answer that on its own — an empty list
+   * is equally consistent with "the engines found nothing" and with "nobody has
+   * asked the engines yet" — and the two deserve different copy. Only the first
+   * may be described as a clean workspace. Seeded from main's `lastSweepAt`,
+   * which only `pushResults` advances, so it is a real completion rather than a
+   * renderer's hope; set locally when a sweep this window asked for returns.
+   */
+  hasRunAnalysis: boolean;
+  /**
+   * Why the last sweep did not produce results, or null.
+   *
+   * Held as state rather than swallowed because the previous behaviour was a
+   * `setTimeout` that cleared the spinner and left the panel displaying whatever
+   * it already had, which read as success. See `runAnalysis`.
+   */
+  analysisError: string | null;
 
   // Required Actions:
   setActiveFile: (file: string | null) => void;
@@ -43,102 +62,28 @@ export interface DebuggerState {
   clearResults: () => void;
 }
 
-export const INITIAL_ANALYSIS_RESULTS: AnalysisResult[] = [
-  {
-    id: 'res-static-01',
-    severity: 'critical',
-    engine: 'static',
-    role: 'dev',
-    message: 'Potential unhandled Promise rejection in asynchronous stream pipeline.',
-    line: 87,
-    codeSnippet: 'const res = await ProviderGateway.streamChat(settings, messages);',
-    filePath: 'src/main/agent/agent-engine.ts',
-    ruleId: 'no-floating-promises',
-    suggestedFix: 'Wrap in try/catch block and dispatch AgentErrorPayloadSchema event to renderer.'
-  },
-  {
-    id: 'res-dyn-02',
-    severity: 'high',
-    engine: 'dynamic',
-    role: 'dev',
-    message: 'High re-render velocity detected: token stream listener not throttled to display VSync.',
-    line: 142,
-    codeSnippet: 'onChunk: (c) => set({ streamingText: state.streamingText + c.content })',
-    filePath: 'src/renderer/src/state/chat-store.ts',
-    ruleId: 'perf-excessive-renders',
-    suggestedFix: 'Use 24ms micro-batching buffer with requestAnimationFrame sync.'
-  },
-  {
-    id: 'res-arch-03',
-    severity: 'medium',
-    engine: 'arch',
-    role: 'dev',
-    message: 'Process boundary violation: Renderer attempting direct filesystem access without contextBridge.',
-    line: 45,
-    codeSnippet: 'import fs from "node:fs";',
-    filePath: 'src/renderer/src/components/EditorArea.tsx',
-    ruleId: 'arch-boundary-enforcement',
-    suggestedFix: 'Route through window.electronAPI.readWorkspaceFile IPC handler.'
-  },
-  {
-    id: 'res-qa-01',
-    severity: 'high',
-    engine: 'dynamic',
-    role: 'qa',
-    message: 'Edge case test failure: Empty API key for custom endpoint returns unhandled 500 instead of 400 Bad Request.',
-    line: 112,
-    codeSnippet: 'if (!apiKey) throw new Error("Missing key");',
-    filePath: 'src/main/providers/provider-gateway.ts',
-    ruleId: 'qa-boundary-validation',
-    suggestedFix: 'Add input schema validation using Zod with descriptive error card payload.'
-  },
-  {
-    id: 'res-qa-02',
-    severity: 'medium',
-    engine: 'static',
-    role: 'qa',
-    message: 'Zero-coverage path detected: autoCompactSession branch has no unit or live E2E test assertions.',
-    line: 264,
-    codeSnippet: 'if (compactCheck.shouldCompact) { await this.sessionStore.autoCompactSession(session); }',
-    filePath: 'src/main/services/orchestration/agent-manager.ts',
-    ruleId: 'qa-uncovered-branch',
-    suggestedFix: 'Add test case in scripts/verify-compact-coverage.mjs to assert token ratio threshold.'
-  },
-  {
-    id: 'res-pm-01',
-    severity: 'high',
-    engine: 'arch',
-    role: 'pm',
-    message: 'User Experience Risk: Rate limit backoff exceeds 8 seconds without visual progress or timeout cancel affordance.',
-    line: 198,
-    codeSnippet: 'await new Promise((r) => setTimeout(r, backoffMs));',
-    filePath: 'src/main/services/orchestration/model-router.ts',
-    ruleId: 'pm-ux-latency-threshold',
-    suggestedFix: 'Show indeterminate loader badge with "Cancel Task" or "Switch to Local Ollama" button.'
-  },
-  {
-    id: 'res-pm-02',
-    severity: 'low',
-    engine: 'static',
-    role: 'pm',
-    message: 'Accessibility Compliance: Terminal profile selector lacks ARIA live status announcer for screen readers.',
-    line: 1378,
-    codeSnippet: '<select value={defaultProfileId} onChange={...}>',
-    filePath: 'src/renderer/src/components/SettingsModal.tsx',
-    ruleId: 'pm-a11y-wcag2-aa',
-    suggestedFix: 'Add aria-describedby="default-profile-help" and announce active profile selection.'
-  }
-];
+// No seed findings. Every entry this store used to start with was invented in
+// source — fixed ids, invented severities, and file/line pairs asserted about
+// the user's own code without any engine having read it — and the panel rendered
+// them on first open because `analysisResults` was this array and `selectedRole`
+// defaulted to 'dev'. Findings arrive from the engines via `updateResults`, or
+// the panel says no sweep has run yet. `scripts/no-fake-debugger-findings.mjs`
+// keeps it that way.
 
 export const useDebuggerStore = create<DebuggerState>((set, get) => ({
-  activeFile: 'src/main/agent/agent-engine.ts',
-  analysisResults: INITIAL_ANALYSIS_RESULTS,
+  // Null rather than a checked-in path: a default here would both filter the
+  // first view onto a file the workspace may not contain and make the sweep
+  // button target that file instead of the workspace.
+  activeFile: null,
+  analysisResults: [],
   isPopOutMode: true,
   selectedRole: 'dev',
   selectedSeverity: 'all',
   selectedEngine: 'all',
   searchQuery: '',
   isAnalyzing: false,
+  hasRunAnalysis: false,
+  analysisError: null,
 
   setActiveFile: (file: string | null) => {
     set({ activeFile: file });
@@ -147,8 +92,16 @@ export const useDebuggerStore = create<DebuggerState>((set, get) => ({
     }
   },
 
+  /**
+   * Accept findings produced by main's engines.
+   *
+   * Reaching this means a sweep ran: `pushResults` on the main side is called
+   * only from inside `runAnalysis`, and the IPC mirror of it is the only route
+   * here. So a non-empty *or* empty payload both legitimately mark the store as
+   * swept — an empty sweep is a real result, not an absence of one.
+   */
   updateResults: (results: AnalysisResult[]) => {
-    set({ analysisResults: results, isAnalyzing: false });
+    set({ analysisResults: results, isAnalyzing: false, hasRunAnalysis: true });
     if (window.electronAPI?.debuggerSyncState) {
       void window.electronAPI.debuggerSyncState({ analysisResults: results });
     }
@@ -184,32 +137,63 @@ export const useDebuggerStore = create<DebuggerState>((set, get) => ({
   setEngineFilter: (engine: 'all' | AnalysisEngine) => set({ selectedEngine: engine }),
   setSearchQuery: (query: string) => set({ searchQuery: query }),
 
+  /**
+   * Ask main to run the static, dynamic, architectural and AI engines.
+   *
+   * Every exit names an outcome. The version this replaces had a branch
+   * commented "Fallback local simulated sweep if offline" that waited 600ms and
+   * then only cleared `isAnalyzing`, so a failed IPC left the spinner gone and
+   * the previous findings on screen — indistinguishable from a sweep that had
+   * just confirmed them. There is no local stand-in for the engines, and a
+   * missing bridge or a rejected payload is reported instead of rounded away.
+   *
+   * Prior findings are deliberately kept when a new sweep fails, paired with the
+   * error: they are stale but they were real, and clearing them would imply the
+   * workspace became clean because a button was pressed.
+   */
   runAnalysis: async (filePath?: string) => {
     const target = filePath || get().activeFile || 'all';
-    set({ isAnalyzing: true });
+    set({ isAnalyzing: true, analysisError: null });
+
+    const runAnalysisBridge = window.electronAPI?.debuggerRunAnalysis;
+    if (!runAnalysisBridge) {
+      set({
+        isAnalyzing: false,
+        analysisError:
+          'This window has no bridge to the diagnostics engines, so no sweep could run. Open the debugger from the main workbench window.'
+      });
+      return;
+    }
+
     try {
-      if (window.electronAPI?.debuggerRunAnalysis) {
-        const response = await window.electronAPI.debuggerRunAnalysis({
-          filePath: target,
-          role: get().selectedRole
-        });
-        if (response.success && response.data) {
-          get().updateResults(response.data as AnalysisResult[]);
-          return;
-        }
+      const response = await runAnalysisBridge({ filePath: target, role: get().selectedRole });
+      if (response?.success && response.data) {
+        get().updateResults(response.data as AnalysisResult[]);
+        set({ analysisError: null });
+        return;
       }
-      // Fallback local simulated sweep if offline
-      setTimeout(() => {
-        set({ isAnalyzing: false });
-      }, 600);
+      set({
+        isAnalyzing: false,
+        analysisError: response?.error || 'The diagnostics sweep returned no result.'
+      });
     } catch (err) {
       console.error('[OmniDebugger] Analysis run failed:', err);
-      set({ isAnalyzing: false });
+      set({
+        isAnalyzing: false,
+        analysisError: err instanceof Error ? err.message : String(err)
+      });
     }
   },
 
+  /**
+   * Withdraw the current findings from view.
+   *
+   * Also resets `hasRunAnalysis`: once nothing is on screen, "no sweep has run"
+   * is the honest state again, and leaving the flag true would let the empty
+   * panel claim a clean workspace that the user just asked it to forget.
+   */
   clearResults: () => {
-    set({ analysisResults: [] });
+    set({ analysisResults: [], hasRunAnalysis: false, analysisError: null });
     if (window.electronAPI?.debuggerSyncState) {
       void window.electronAPI.debuggerSyncState({ analysisResults: [] });
     }
@@ -227,6 +211,21 @@ export function useDebuggerStoreListener(): void {
 
   useEffect(() => {
     if (!window.electronAPI) return;
+
+    /**
+     * Copy a snapshot's swept marker into this window.
+     *
+     * Assigned from `lastSweepAt` rather than inferred from the array length, so
+     * that a genuinely clean sweep (zero findings) still reads as swept and a
+     * window that has merely never asked still does not. Written with `!==
+     * undefined` rather than truthiness because `null` is itself the meaningful
+     * answer "no sweep has run", and a missing key from an older main is left to
+     * speak for nothing.
+     */
+    const applySweptFlag = (state: { lastSweepAt?: number | null }): void => {
+      if (state.lastSweepAt === undefined) return;
+      useDebuggerStore.setState({ hasRunAnalysis: state.lastSweepAt !== null });
+    };
 
     // 1. Listen for dynamic diagnostic updates / analysis sweeps
     const unsubscribeUpdate = window.electronAPI.onDebuggerUpdate?.((data: any) => {
@@ -249,6 +248,7 @@ export function useDebuggerStoreListener(): void {
       if (state.isPopOutMode !== undefined) {
         useDebuggerStore.setState({ isPopOutMode: Boolean(state.isPopOutMode) });
       }
+      applySweptFlag(state);
       if (state.theme) {
         applyAppTheme(normalizeAppTheme(state.theme), true);
       }
@@ -265,6 +265,7 @@ export function useDebuggerStoreListener(): void {
         if (d.analysisResults?.length) useDebuggerStore.setState({ analysisResults: d.analysisResults });
         if (d.selectedRole) setRole(d.selectedRole);
         if (d.isPopOutMode !== undefined) useDebuggerStore.setState({ isPopOutMode: Boolean(d.isPopOutMode) });
+        applySweptFlag(d);
         if (d.theme) applyAppTheme(normalizeAppTheme(d.theme), false);
         // Contract (Workspace Session Bus, Prompt 1): initial debugger
         // snapshots may not adopt a workspace root either — same rule as above.

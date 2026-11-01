@@ -25,7 +25,7 @@ export const ExtensionInputDialog: React.FC = () => {
         aria-labelledby="extension-input-title"
         onSubmit={(event) => { event.preventDefault(); resolveInput(inputPrompt.value); }}
       >
-        <h2 id="extension-input-title">Extension input</h2>
+        <h2 id="extension-input-title">{inputPrompt.title ?? 'Extension input'}</h2>
         <label htmlFor="extension-input-value">{inputPrompt.prompt}</label>
         <input
           ref={inputRef}

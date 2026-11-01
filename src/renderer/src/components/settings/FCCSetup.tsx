@@ -61,7 +61,7 @@ export const FCCSetup: React.FC = () => {
     { id: 'deepseek', name: 'DeepSeek Native', description: 'DeepSeek V3 & R1 native chain-of-thought synthesis' },
     { id: 'grok-build', name: 'Grok Build', description: 'Rapid prototyping and project bootstrapping' },
     { id: 'muse-code', name: 'Muse Code', description: 'Creative UI design and frontend synthesis' },
-    { id: 'vscode-chat', name: 'VS Code Chat', description: 'VS Code Language Model API compliant conversation' }
+    { id: 'vscode-chat', name: 'VS Code Chat', description: 'VS Code Language Model API compliant conversation' } // brand-ok: a driver for another editor; the name is the thing it drives
   ];
 
   useEffect(() => {

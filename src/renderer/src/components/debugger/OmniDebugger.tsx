@@ -30,7 +30,8 @@ import {
   X,
   ShieldCheck,
   Gauge,
-  Globe
+  Globe,
+  type LucideIcon
 } from 'lucide-react';
 import {
   useDebuggerStore,
@@ -48,13 +49,104 @@ import { WorkspaceGate } from '../common/WorkspaceGate';
 import { SessionPresenceStrip } from '../common/SessionPresenceStrip';
 import { useWorkspaceStore } from '../../state/workspace-store';
 import { BraveTestingView } from '../testing/BraveTestingView';
+import { ENGINE_CAPABILITY_CARDS, ROLE_BREAKDOWN } from './engineCapabilities';
 import './OmniDebugger.css';
+import { copyTextOrNotify } from '../../lib/clipboard';
 
 interface OmniDebuggerProps {
   isStandalone?: boolean;
 }
 
 type ViewTab = 'findings' | 'engines' | 'metrics' | 'testing';
+
+const SEVERITY_BAR_ORDER: AnalysisSeverity[] = ['critical', 'high', 'medium', 'low', 'info'];
+
+const SEVERITY_BAR_COLORS: Record<AnalysisSeverity, string> = {
+  critical: 'var(--accent-red)',
+  high: '#f97316',
+  medium: 'var(--accent-amber)',
+  low: 'var(--accent-cyan)',
+  info: 'var(--text-muted)'
+};
+
+/**
+ * How one role's findings divide by severity, as shares of that role's total.
+ *
+ * Replaces three hardcoded bar widths. The block this sits in used to render
+ * `width: '82%'`, `'74%'` and `'89%'` under the headings "Developer (DEV)
+ * Readiness", "Quality Assurance (QA) Coverage" and "Product Experience (PM)
+ * Quality" — fixed literals that never moved, so the panel reported a steady
+ * health index for any workspace, including one it had never analysed. A
+ * readiness *score* has no denominator here: the engines report findings, not how
+ * many checks passed, so any single number would be invented. What can be stated
+ * is the distribution of what was actually found.
+ */
+function severitySplit(results: AnalysisResult[]): Array<{ severity: AnalysisSeverity; count: number; share: number }> {
+  const total = results.length;
+  return SEVERITY_BAR_ORDER.map((severity) => {
+    const count = results.filter((result) => result.severity === severity).length;
+    return { severity, count, share: total === 0 ? 0 : count / total };
+  });
+}
+
+const ENGINE_ICONS: Record<AnalysisEngine, LucideIcon> = {
+  static: Code2,
+  dynamic: Activity,
+  arch: ShieldCheck,
+  ai: Sparkles
+};
+
+/**
+ * One engine card, drawn from the capability record rather than prose typed out
+ * beside this component.
+ *
+ * Four near-identical blocks used to sit in the Engines tab, each carrying its own
+ * description and its own list of rule names, and that is exactly how they drifted
+ * out of true: the text kept being written while the engines kept changing. A rule
+ * id is now stated once, in `engineCapabilities.ts`, and
+ * `scripts/no-fake-debugger-findings.mjs` checks every listed id against the engine
+ * source it claims to come from.
+ *
+ * A plain function rather than a component: it takes no state, and wrapping it in
+ * one would only add a reconcile step for four cards that never update on their own.
+ */
+function renderEngineCard(engine: AnalysisEngine): React.ReactElement {
+  const card = ENGINE_CAPABILITY_CARDS.find((entry) => entry.engine === engine);
+  if (!card) {
+    // Throwing rather than rendering nothing: a missing card means the grid would
+    // silently show three engines and the reader has no way to tell the fourth
+    // was dropped by a refactor.
+    throw new Error(`No engine capability card declared for "${engine}".`);
+  }
+  const Icon = ENGINE_ICONS[engine];
+  return (
+    <div className={`omni-engine-card card-${engine}`}>
+      <div className="omni-engine-card-top">
+        <div className="omni-engine-title-group">
+          <div className="omni-engine-icon-wrap" style={{ background: card.iconBackground, color: card.accent }}>
+            <Icon size={18} />
+          </div>
+          <div>
+            <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>
+              {card.title}
+            </h4>
+            <span style={{ fontSize: '10px', color: card.accent, fontWeight: 600 }}>{card.subtitle}</span>
+          </div>
+        </div>
+        <span className={`omni-badge badge-engine engine-${engine}`}>{card.badge}</span>
+      </div>
+      <p className="omni-engine-card-desc">{card.description}</p>
+      <div className="omni-engine-rules-list">
+        {card.rules.map((rule) => (
+          <div key={rule.ruleId} className="omni-engine-rule-item">
+            <span>{rule.aspect}:</span>
+            <strong style={{ color: card.accent }}>{rule.ruleId}</strong>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false }) => {
   // Mount store listener for IPC synchronization
@@ -77,6 +169,8 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
     selectedEngine,
     searchQuery,
     isAnalyzing,
+    hasRunAnalysis,
+    analysisError,
     setActiveFile,
     togglePopOutMode,
     setRole,
@@ -164,16 +258,6 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
 
   // Pre-aggregated list of workspace files & modules with findings
   const fileNodes = useMemo(() => {
-    const defaultModules = [
-      'src/main/agent/agent-engine.ts',
-      'src/renderer/src/state/chat-store.ts',
-      'src/renderer/src/components/EditorArea.tsx',
-      'src/main/providers/provider-gateway.ts',
-      'src/main/services/orchestration/agent-manager.ts',
-      'src/main/services/orchestration/model-router.ts',
-      'src/renderer/src/components/SettingsModal.tsx'
-    ];
-
     const fileMap: Record<string, { count: number; maxSeverity: AnalysisSeverity }> = {};
 
     analysisResults.forEach((res) => {
@@ -194,8 +278,12 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
       }
     });
 
-    const set = new Set([...defaultModules, ...Object.keys(fileMap)]);
-    return Array.from(set).map((pathStr) => ({
+    // Only files a sweep actually reported on are listed. The tree used to be
+    // seeded with seven hardcoded module paths merged in alongside the real
+    // findings, so the sidebar presented a fixed file list on a workspace that
+    // had never been analysed — and those paths were checked-in guesses about
+    // this repository, not observations of the user's.
+    return Object.keys(fileMap).map((pathStr) => ({
       path: pathStr,
       name: pathStr.split('/').pop() || pathStr,
       dir: pathStr.substring(0, pathStr.lastIndexOf('/')),
@@ -246,6 +334,29 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
     });
   }, [analysisResults, selectedRole, activeFile, selectedSeverity, selectedEngine, onlyActionable, searchQuery]);
 
+  /**
+   * What "nothing to show" means here.
+   *
+   * Collapsed into one value because the panel used to render a single message
+   * for all of these — "All Diagnostics Passing Cleanly… Zero critical
+   * violations detected across Static AST, Dynamic Runtime profiling, and
+   * Architectural boundaries" — for a sweep that had never run and for a filter
+   * that merely hidden one. Ordered so a failed sweep is never read as a clean
+   * one, and an unrun workspace is never read as an inspected one.
+   *
+   * `analysisResults` rather than `filteredResults` decides 'clean' vs
+   * 'filtered': only an empty *sweep* entitles the panel to claim the code is
+   * clear, whereas findings that the current filters excluded are about the
+   * filters.
+   */
+  const emptyFindingsState: 'error' | 'unrun' | 'clean' | 'filtered' = analysisError
+    ? 'error'
+    : !hasRunAnalysis
+      ? 'unrun'
+      : analysisResults.length === 0
+        ? 'clean'
+        : 'filtered';
+
   // Counts summary by severity for currently selected role
   const roleResults = useMemo(() => {
     return analysisResults.filter((r) => r.role === selectedRole);
@@ -284,8 +395,9 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
   // Handlers
   const handleCopySnippet = (item: AnalysisResult) => {
     const text = item.suggestedFix || item.codeSnippet || item.message;
-    void navigator.clipboard.writeText(text);
-    setCopiedId(item.id);
+    void copyTextOrNotify(text, 'debugger.suggested-fix').then((result) => {
+      if (result.ok) setCopiedId(item.id);
+    });
   };
 
   const handleApplyFix = (id: string) => {
@@ -415,28 +527,45 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
       <div className="omni-hud-bar">
         {/* Quality Score Ring */}
         <div className="omni-score-badge">
-          <div className={`omni-score-ring ${healthGrade.class}`}>{healthGrade.letter}</div>
-          <div className="omni-score-label">
-            <strong>{healthScore}/100 Health</strong>
-            <span>{healthGrade.label}</span>
-          </div>
+          {hasRunAnalysis ? (
+            <>
+              <div className={`omni-score-ring ${healthGrade.class}`}>{healthGrade.letter}</div>
+              <div className="omni-score-label">
+                <strong>{healthScore}/100 Health</strong>
+                <span>{healthGrade.label}</span>
+              </div>
+            </>
+          ) : (
+            <>
+              {/* The score is 100 with an empty findings list, which is why this is
+                  gated: an un-analysed workspace and a swept-clean one both score 100,
+                  but only one of them earned it. Showing the ring before a sweep read
+                  "A+ / Optimal" for code no engine had opened. */}
+              <div className="omni-score-ring grade-c">—</div>
+              <div className="omni-score-label">
+                <strong>Not yet swept</strong>
+                <span>Health needs a completed sweep</span>
+              </div>
+            </>
+          )}
         </div>
 
-        {/* 4 Active Engines Status Chips */}
+        {/* Engine status chips — titles describe what each engine does, matching
+            the capability cards so the two cannot drift apart. */}
         <div className="omni-engines-status-strip">
-          <div className="omni-engine-chip chip-static" title="Static AST & Syntax Rule Analyzer">
+          <div className="omni-engine-chip chip-static" title="Static AST analyzer — reads the syntax tree without executing the file">
             <span className="dot" />
             <span>Static AST</span>
           </div>
-          <div className="omni-engine-chip chip-dynamic" title="Dynamic Runtime & Re-render Profiler">
+          <div className="omni-engine-chip chip-dynamic" title="Dynamic profiler — runs the file in a sandbox and reports errors, crashes and memory growth">
             <span className="dot" />
             <span>Profiler</span>
           </div>
-          <div className="omni-engine-chip chip-arch" title="Process Isolation & Architectural Boundary Engine">
+          <div className="omni-engine-chip chip-arch" title="Architecture engine — import graph, circular dependencies and structural drift">
             <span className="dot" />
             <span>Arch Boundary</span>
           </div>
-          <div className="omni-engine-chip chip-ai" title="AI Deep Reasoning Code Health Analyst">
+          <div className="omni-engine-chip chip-ai" title="AI analyst — interprets the other engines' findings per role">
             <span className="dot" />
             <span>AI Analyst</span>
           </div>
@@ -812,22 +941,76 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
                         width: '48px',
                         height: '48px',
                         borderRadius: '50%',
-                        background: 'rgba(16, 185, 129, 0.15)',
-                        border: '1px solid rgba(16, 185, 129, 0.35)',
+                        background:
+                          emptyFindingsState === 'clean'
+                            ? 'rgba(16, 185, 129, 0.15)'
+                            : emptyFindingsState === 'error'
+                              ? 'rgba(239, 68, 68, 0.15)'
+                              : 'var(--surface-2)',
+                        border:
+                          emptyFindingsState === 'clean'
+                            ? '1px solid rgba(16, 185, 129, 0.35)'
+                            : emptyFindingsState === 'error'
+                              ? '1px solid rgba(239, 68, 68, 0.35)'
+                              : '1px solid var(--border-subtle)',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        color: 'var(--accent-green)',
+                        color:
+                          emptyFindingsState === 'clean'
+                            ? 'var(--accent-green)'
+                            : emptyFindingsState === 'error'
+                              ? 'var(--accent-red)'
+                              : 'var(--text-muted)',
                         marginBottom: '12px'
                       }}
                     >
-                      <CheckCircle2 size={24} />
+                      {emptyFindingsState === 'clean' ? (
+                        <CheckCircle2 size={24} />
+                      ) : emptyFindingsState === 'error' ? (
+                        <AlertTriangle size={24} />
+                      ) : emptyFindingsState === 'filtered' ? (
+                        <Search size={24} />
+                      ) : (
+                        <Gauge size={24} />
+                      )}
                     </div>
                     <h4 style={{ margin: '0 0 6px 0', fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)' }}>
-                      All Diagnostics Passing Cleanly
+                      {emptyFindingsState === 'error'
+                        ? 'Sweep Did Not Complete'
+                        : emptyFindingsState === 'unrun'
+                          ? 'No Diagnostic Sweep Yet'
+                          : emptyFindingsState === 'filtered'
+                            ? 'No Findings Match These Filters'
+                            : 'All Diagnostics Passing Cleanly'}
                     </h4>
                     <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-muted)', maxWidth: '380px', lineHeight: 1.5 }}>
-                      Zero critical violations detected across Static AST, Dynamic Runtime profiling, and Architectural boundaries for <strong style={{ color: 'var(--text-primary)', textTransform: 'uppercase' }}>{selectedRole}</strong>.
+                      {emptyFindingsState === 'error' ? (
+                        <>{analysisError}</>
+                      ) : emptyFindingsState === 'unrun' ? (
+                        <>
+                          The static, dynamic, architectural and AI engines have not been run for{' '}
+                          <strong style={{ color: 'var(--text-primary)' }}>
+                            {activeFile ? activeFile.split('/').pop() : 'this workspace'}
+                          </strong>
+                          . Nothing has been checked, so there is nothing to report either way.
+                        </>
+                      ) : emptyFindingsState === 'filtered' ? (
+                        <>
+                          {analysisResults.length}{' '}
+                          {analysisResults.length === 1 ? 'finding was' : 'findings were'} reported by the
+                          engines; the current filters hide {analysisResults.length === 1 ? 'it' : 'all of them'}.
+                        </>
+                      ) : (
+                        <>
+                          Zero violations detected across Static AST, Dynamic Runtime profiling, and
+                          Architectural boundaries for{' '}
+                          <strong style={{ color: 'var(--text-primary)', textTransform: 'uppercase' }}>
+                            {selectedRole}
+                          </strong>
+                          .
+                        </>
+                      )}
                     </p>
                     <button
                       type="button"
@@ -836,7 +1019,7 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
                       style={{ marginTop: '16px' }}
                     >
                       <RotateCw size={13} />
-                      <span>Re-Sweep Scope</span>
+                      <span>{hasRunAnalysis ? 'Re-Sweep Scope' : 'Run Diagnostic Sweep'}</span>
                     </button>
                   </div>
                 ) : (
@@ -1000,145 +1183,13 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
           {/* ================================================================= */}
           {activeTab === 'engines' && (
             <div className="omni-engine-matrix-grid">
-              {/* Static AST Engine */}
-              <div className="omni-engine-card card-static">
-                <div className="omni-engine-card-top">
-                  <div className="omni-engine-title-group">
-                    <div className="omni-engine-icon-wrap" style={{ background: 'rgba(99, 102, 241, 0.2)', color: 'var(--accent-primary)' }}>
-                      <Code2 size={18} />
-                    </div>
-                    <div>
-                      <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>
-                        Static AST Engine
-                      </h4>
-                      <span style={{ fontSize: '10px', color: 'var(--accent-primary)', fontWeight: 600 }}>AST / Syntax / Linter</span>
-                    </div>
-                  </div>
-                  <span className="omni-badge badge-engine engine-static">Active</span>
-                </div>
-                <p className="omni-engine-card-desc">
-                  Performs deep abstract syntax tree traverses on TypeScript and JavaScript code without executing it, flagging floating promises, unhandled rejection branches, and dead paths.
-                </p>
-                <div className="omni-engine-rules-list">
-                  <div className="omni-engine-rule-item">
-                    <span>Promise Handling:</span>
-                    <strong style={{ color: 'var(--accent-primary)' }}>no-floating-promises</strong>
-                  </div>
-                  <div className="omni-engine-rule-item">
-                    <span>Async Concurrency:</span>
-                    <strong style={{ color: 'var(--accent-primary)' }}>race-condition-guard</strong>
-                  </div>
-                  <div className="omni-engine-rule-item">
-                    <span>Dead Code:</span>
-                    <strong style={{ color: 'var(--accent-primary)' }}>unreachable-branches</strong>
-                  </div>
-                </div>
-              </div>
+              {renderEngineCard('static')}
 
-              {/* Dynamic Profiler Engine */}
-              <div className="omni-engine-card card-dynamic">
-                <div className="omni-engine-card-top">
-                  <div className="omni-engine-title-group">
-                    <div className="omni-engine-icon-wrap" style={{ background: 'rgba(168, 85, 247, 0.2)', color: 'var(--accent-primary)' }}>
-                      <Activity size={18} />
-                    </div>
-                    <div>
-                      <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>
-                        Dynamic Profiler
-                      </h4>
-                      <span style={{ fontSize: '10px', color: 'var(--accent-primary)', fontWeight: 600 }}>VSync / Memory / Latency</span>
-                    </div>
-                  </div>
-                  <span className="omni-badge badge-engine engine-dynamic">Hooked</span>
-                </div>
-                <p className="omni-engine-card-desc">
-                  Monitors re-render velocity, IPC frame buffering, and garbage collection pressure to maintain a 60 FPS silky smooth developer experience.
-                </p>
-                <div className="omni-engine-rules-list">
-                  <div className="omni-engine-rule-item">
-                    <span>Render Frequency:</span>
-                    <strong style={{ color: 'var(--accent-primary)' }}>24ms micro-batching</strong>
-                  </div>
-                  <div className="omni-engine-rule-item">
-                    <span>Stream Profiling:</span>
-                    <strong style={{ color: 'var(--accent-primary)' }}>rAF synchronization</strong>
-                  </div>
-                  <div className="omni-engine-rule-item">
-                    <span>Memory Footprint:</span>
-                    <strong style={{ color: 'var(--accent-primary)' }}>no-listener-leaks</strong>
-                  </div>
-                </div>
-              </div>
+              {renderEngineCard('dynamic')}
 
-              {/* Architecture Boundary Engine */}
-              <div className="omni-engine-card card-arch">
-                <div className="omni-engine-card-top">
-                  <div className="omni-engine-title-group">
-                    <div className="omni-engine-icon-wrap" style={{ background: 'rgba(16, 185, 129, 0.2)', color: 'var(--accent-green)' }}>
-                      <ShieldCheck size={18} />
-                    </div>
-                    <div>
-                      <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>
-                        Arch Boundary Engine
-                      </h4>
-                      <span style={{ fontSize: '10px', color: 'var(--accent-green)', fontWeight: 600 }}>IPC / Isolation / Security</span>
-                    </div>
-                  </div>
-                  <span className="omni-badge badge-engine engine-arch">Enforced</span>
-                </div>
-                <p className="omni-engine-card-desc">
-                  Guarantees complete process boundary isolation between Electron main and renderer processes, preventing raw filesystem exfiltration and enforcing contextBridge security.
-                </p>
-                <div className="omni-engine-rules-list">
-                  <div className="omni-engine-rule-item">
-                    <span>Process Boundary:</span>
-                    <strong style={{ color: 'var(--accent-green)' }}>contextBridge IPC</strong>
-                  </div>
-                  <div className="omni-engine-rule-item">
-                    <span>Zero Exfiltration:</span>
-                    <strong style={{ color: 'var(--accent-green)' }}>safeStorage keyring</strong>
-                  </div>
-                  <div className="omni-engine-rule-item">
-                    <span>Credential Shield:</span>
-                    <strong style={{ color: 'var(--accent-green)' }}>no-plaintext-keys</strong>
-                  </div>
-                </div>
-              </div>
+              {renderEngineCard('arch')}
 
-              {/* AI Deep Reasoning Analyst */}
-              <div className="omni-engine-card card-ai">
-                <div className="omni-engine-card-top">
-                  <div className="omni-engine-title-group">
-                    <div className="omni-engine-icon-wrap" style={{ background: 'rgba(236, 72, 153, 0.2)', color: 'var(--accent-primary)' }}>
-                      <Sparkles size={18} />
-                    </div>
-                    <div>
-                      <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>
-                        AI Analyst Engine
-                      </h4>
-                      <span style={{ fontSize: '10px', color: 'var(--accent-primary)', fontWeight: 600 }}>Multi-Perspective Reasoning</span>
-                    </div>
-                  </div>
-                  <span className="omni-badge badge-engine engine-ai">Ready</span>
-                </div>
-                <p className="omni-engine-card-desc">
-                  Autonomous LLM-driven analyzer evaluating the codebase from DEV, QA, and PM perspectives simultaneously, detecting subtle edge-cases and WCAG AA accessibility compliance issues.
-                </p>
-                <div className="omni-engine-rules-list">
-                  <div className="omni-engine-rule-item">
-                    <span>Role DEV:</span>
-                    <strong style={{ color: 'var(--accent-primary)' }}>API contracts &amp; concurrency</strong>
-                  </div>
-                  <div className="omni-engine-rule-item">
-                    <span>Role QA:</span>
-                    <strong style={{ color: 'var(--accent-primary)' }}>Boundary conditions &amp; edge cases</strong>
-                  </div>
-                  <div className="omni-engine-rule-item">
-                    <span>Role PM:</span>
-                    <strong style={{ color: 'var(--accent-primary)' }}>UX fallbacks &amp; accessibility</strong>
-                  </div>
-                </div>
-              </div>
+              {renderEngineCard('ai')}
             </div>
           )}
 
@@ -1151,12 +1202,25 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
               <div className="omni-metrics-hero">
                 <div className="omni-metric-tile">
                   <span className="omni-metric-tile-title">Health Index</span>
-                  <span className="omni-metric-tile-value" style={{ color: healthScore >= 80 ? 'var(--accent-green)' : 'var(--accent-amber)' }}>
-                    {healthScore}%
-                  </span>
-                  <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                    Grade {healthGrade.letter} ({healthGrade.label})
-                  </span>
+                  {hasRunAnalysis ? (
+                    <>
+                      <span className="omni-metric-tile-value" style={{ color: healthScore >= 80 ? 'var(--accent-green)' : 'var(--accent-amber)' }}>
+                        {healthScore}%
+                      </span>
+                      <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                        Grade {healthGrade.letter} ({healthGrade.label})
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="omni-metric-tile-value" style={{ color: 'var(--text-muted)' }}>
+                        —
+                      </span>
+                      <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                        No sweep has run to score
+                      </span>
+                    </>
+                  )}
                 </div>
 
                 <div className="omni-metric-tile">
@@ -1180,7 +1244,7 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
                 </div>
               </div>
 
-              {/* Role-Specific Readiness Bars */}
+              {/* Per-role severity distribution */}
               <div
                 style={{
                   background: 'var(--surface-2)',
@@ -1193,47 +1257,61 @@ export const OmniDebugger: React.FC<OmniDebuggerProps> = ({ isStandalone = false
                 }}
               >
                 <h4 style={{ margin: 0, fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>
-                  Perspective Readiness Breakdown
+                  Findings by Severity, per Perspective
                 </h4>
 
-                {/* DEV */}
-                <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11.5px', marginBottom: '4px' }}>
-                    <span style={{ color: 'var(--accent-primary)', fontWeight: 600 }}>Developer (DEV) Readiness</span>
-                    <span style={{ color: 'var(--text-muted)' }}>
-                      {analysisResults.filter((r) => r.role === 'dev').length} issues
-                    </span>
-                  </div>
-                  <div style={{ height: '6px', borderRadius: '3px', background: 'var(--surface-2)', overflow: 'hidden' }}>
-                    <div style={{ height: '100%', width: '82%', background: 'var(--accent-primary)' }} />
-                  </div>
-                </div>
-
-                {/* QA */}
-                <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11.5px', marginBottom: '4px' }}>
-                    <span style={{ color: 'var(--accent-amber)', fontWeight: 600 }}>Quality Assurance (QA) Coverage</span>
-                    <span style={{ color: 'var(--text-muted)' }}>
-                      {analysisResults.filter((r) => r.role === 'qa').length} issues
-                    </span>
-                  </div>
-                  <div style={{ height: '6px', borderRadius: '3px', background: 'var(--surface-2)', overflow: 'hidden' }}>
-                    <div style={{ height: '100%', width: '74%', background: 'var(--accent-amber)' }} />
-                  </div>
-                </div>
-
-                {/* PM */}
-                <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11.5px', marginBottom: '4px' }}>
-                    <span style={{ color: 'var(--accent-primary)', fontWeight: 600 }}>Product Experience (PM) Quality</span>
-                    <span style={{ color: 'var(--text-muted)' }}>
-                      {analysisResults.filter((r) => r.role === 'pm').length} issues
-                    </span>
-                  </div>
-                  <div style={{ height: '6px', borderRadius: '3px', background: 'var(--surface-2)', overflow: 'hidden' }}>
-                    <div style={{ height: '100%', width: '89%', background: 'var(--accent-primary)' }} />
-                  </div>
-                </div>
+                {!hasRunAnalysis ? (
+                  <p style={{ margin: 0, fontSize: '11.5px', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                    No sweep has completed for this workspace yet, so there is nothing to
+                    divide up. These rows describe findings the engines reported; with none
+                    on record they would be empty for every workspace, which is the fact
+                    worth showing rather than a bar pretending to be a score.
+                  </p>
+                ) : (
+                  ROLE_BREAKDOWN.map(({ role, label, accent }) => {
+                    // `roleRow` rather than `roleResults`: the outer scope already holds a
+                    // filtered list under that name, and two different filters in one file
+                    // reading alike is how the wrong one gets used later.
+                    const roleRow = analysisResults.filter((result) => result.role === role);
+                    const split = severitySplit(roleRow).filter((entry) => entry.count > 0);
+                    return (
+                      <div key={role}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11.5px', marginBottom: '4px' }}>
+                          <span style={{ color: accent, fontWeight: 600 }}>{label}</span>
+                          <span style={{ color: 'var(--text-muted)' }}>
+                            {roleRow.length === 0
+                              ? 'no findings'
+                              : `${roleRow.length} ${roleRow.length === 1 ? 'finding' : 'findings'}`}
+                          </span>
+                        </div>
+                        {roleRow.length === 0 ? (
+                          <div style={{ height: '6px', borderRadius: '3px', background: 'var(--surface-3)' }} />
+                        ) : (
+                          <>
+                            <div style={{ display: 'flex', height: '6px', borderRadius: '3px', overflow: 'hidden', background: 'var(--surface-3)' }}>
+                              {split.map((entry) => (
+                                <div
+                                  key={entry.severity}
+                                  title={`${entry.count} ${entry.severity}`}
+                                  style={{
+                                    height: '100%',
+                                    width: `${entry.share * 100}%`,
+                                    background: SEVERITY_BAR_COLORS[entry.severity]
+                                  }}
+                                />
+                              ))}
+                            </div>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '5px', fontSize: '10px', color: 'var(--text-muted)' }}>
+                              {split.map((entry) => (
+                                <span key={entry.severity}>{`${entry.severity} ${entry.count}`}</span>
+                              ))}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
               </div>
             </div>
           )}

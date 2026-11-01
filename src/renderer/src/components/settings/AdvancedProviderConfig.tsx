@@ -26,6 +26,7 @@ import {
   Lock
 } from 'lucide-react';
 import type { CustomProviderConfig } from '../../../../shared/types/byok';
+import { copyTextOrNotify } from '../../lib/clipboard';
 
 export interface AdvancedProviderConfigProps {
   initialConfig?: Partial<CustomProviderConfig>;
@@ -99,7 +100,7 @@ export const AdvancedProviderConfig: React.FC<AdvancedProviderConfigProps> = ({
   };
 
   const handleCopyJson = async () => {
-    await navigator.clipboard.writeText(jsonText);
+    if (!(await copyTextOrNotify(jsonText, 'settings.advanced-provider-json')).ok) return;
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };

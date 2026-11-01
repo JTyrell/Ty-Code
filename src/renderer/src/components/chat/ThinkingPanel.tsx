@@ -17,6 +17,11 @@ export interface ThinkingPanelProps {
  * 2. While streaming: panel expanded, last line shimmering. Subscribes via atomic Zustand
  *    selector so high-frequency reasoning token updates only re-render this component.
  * 3. On finalization: collapses to a summary row ("Thought for Ns · M steps") that expands on click.
+ *
+ * Presentation lives entirely in ChatSidecar.css (.thinking-panel* /
+ * .thought-step-line). The component used to carry inline styles plus its own
+ * <style> tag, which re-injected a duplicate @keyframes block for every streamed
+ * message and kept these surfaces off the panel's token ladder.
  */
 export const ThinkingPanel: React.FC<ThinkingPanelProps> = ({
   messageId: _messageId,
@@ -52,92 +57,36 @@ export const ThinkingPanel: React.FC<ThinkingPanelProps> = ({
   const summaryLabel = `Thought for ${duration}s · ${stepCount} step${stepCount === 1 ? '' : 's'}`;
 
   return (
-    <div
-      className="thinking-panel-container contain-content"
-      style={{
-        margin: '6px 0 10px 0',
-        borderRadius: '8px',
-        border: '1px solid var(--border-subtle, rgba(255, 255, 255, 0.08))',
-        background: 'var(--surface-2, rgba(255, 255, 255, 0.02))',
-        overflow: 'hidden',
-        fontSize: '11px',
-        contain: 'content'
-      }}
-    >
-      <style>{`
-        @keyframes thoughtShimmer {
-          0% { opacity: 0.5; }
-          50% { opacity: 1; color: var(--accent-primary, #60a5fa); }
-          100% { opacity: 0.5; }
-        }
-        .thought-step-line {
-          display: block;
-          margin: 4px 0;
-          font-style: italic;
-          color: var(--text-muted, #94a3b8);
-          line-height: 1.6;
-          word-break: break-word;
-          user-select: text;
-        }
-        .thought-step-line.shimmering-last {
-          animation: thoughtShimmer 1.8s ease-in-out infinite;
-          font-weight: 500;
-        }
-      `}</style>
-
+    <div className="thinking-panel-container contain-content">
       {/* Header / Summary Row */}
       <button
         type="button"
+        className="thinking-panel-header"
         onClick={() => setUserExpanded(!isExpanded)}
-        style={{
-          display: 'flex',
-          width: '100%',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: '8px',
-          padding: '6px 12px',
-          cursor: 'pointer',
-          color: 'var(--text-secondary, #cbd5e1)',
-          background: 'transparent',
-          border: 'none',
-          textAlign: 'left',
-          userSelect: 'none'
-        }}
         title={isExpanded ? 'Click to collapse thoughts' : 'Click to expand thought process'}
         aria-expanded={isExpanded}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <span className="thinking-panel-label">
           <Sparkles
             size={11}
-            style={{
-              color: 'var(--accent-primary, #60a5fa)',
-              flexShrink: 0,
-              ...(isStreaming ? { animation: 'pulse 1.4s ease-in-out infinite' } : {})
-            }}
+            className={`thinking-panel-icon${isStreaming ? ' is-streaming' : ''}`}
+            aria-hidden="true"
           />
-          <span style={{ fontWeight: 600, fontSize: '11px' }}>
+          <span className="thinking-panel-title">
             {isStreaming ? `Thinking (${stepCount} step${stepCount === 1 ? '' : 's'})…` : summaryLabel}
           </span>
-        </div>
+        </span>
 
         {isExpanded ? (
-          <ChevronDown size={11} style={{ color: 'var(--text-muted, #94a3b8)', flexShrink: 0 }} />
+          <ChevronDown size={11} className="thinking-panel-chevron" aria-hidden="true" />
         ) : (
-          <ChevronRight size={11} style={{ color: 'var(--text-muted, #94a3b8)', flexShrink: 0 }} />
+          <ChevronRight size={11} className="thinking-panel-chevron" aria-hidden="true" />
         )}
       </button>
 
       {/* Expanded Thought Elements: Each element is its own distinct block line */}
       {isExpanded && (
-        <div
-          className="thinking-panel-body"
-          style={{
-            padding: '6px 12px 10px',
-            borderTop: '1px solid var(--border-subtle, rgba(255, 255, 255, 0.06))',
-            maxHeight: '260px',
-            overflowY: 'auto'
-          }}
-        >
+        <div className="thinking-panel-body">
           {thoughts.map((step, idx) => {
             const isLast = idx === thoughts.length - 1;
             const isShimmering = isStreaming && isLast;

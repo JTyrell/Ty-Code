@@ -64,6 +64,21 @@ jobs:
       - name: Anti-Phantom Guard 7: Verify Extension Evidence Artifacts Integrity
         run: node scripts/verify-extension-artifacts.mjs
 
+      - name: Anti-Phantom Guard 8: Verify No Fabricated Debugger Findings
+        run: node scripts/no-fake-debugger-findings.mjs
+
+      - name: Anti-Phantom Guard 9: Verify No Third-Party IDE Branding In UI Text
+        run: node scripts/no-third-party-branding.mjs
+
+      - name: Anti-Phantom Guard 10: Verify Prompt Assembler Stays Zero-Network Pure-RAM
+        run: node scripts/no-network-scanner.mjs
+
+      - name: Anti-Phantom Guard 11: Verify No Enterprise Policy Bypasses
+        run: node scripts/no-policy-bypass.mjs
+
+      - name: Anti-Phantom Guard 12: Verify One Copy Path In The Renderer
+        run: node scripts/no-copy-bypass.mjs
+
       - name: Live Validation Gate: Run Real Network & Disk E2E Suite
         run: npm run test:live
 

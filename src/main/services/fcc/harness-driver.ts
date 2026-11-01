@@ -76,7 +76,7 @@ const HARNESS_DEFINITIONS: {
   { id: 'deepseek', name: 'DeepSeek CLI', cliName: 'deepseek', commandSnippet: 'deepseek-cli' },
   { id: 'grok-build', name: 'Grok Build', cliName: 'grok', commandSnippet: 'grok-build' },
   { id: 'muse-code', name: 'Muse Code', cliName: 'muse', commandSnippet: 'muse-code' },
-  { id: 'vscode-chat', name: 'VS Code Chat', cliName: 'code', commandSnippet: 'code' }
+  { id: 'vscode-chat', name: 'VS Code Chat', cliName: 'code', commandSnippet: 'code' } // brand-ok: a driver for another editor; its name is the thing it drives
 ];
 
 export class HarnessDriverService {

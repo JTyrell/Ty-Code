@@ -15,7 +15,7 @@ export type ChatFontFamily = 'sans' | 'serif' | 'mono' | 'plex';
 export const CHAT_FONT_FAMILY_OPTIONS: Array<{ value: ChatFontFamily; label: string }> = [
   { value: 'sans', label: 'System Sans' },
   { value: 'serif', label: 'Serif (Georgia)' },
-  { value: 'mono', label: 'Monospace (JetBrains Mono / Cascadia Code)' },
+  { value: 'mono', label: 'Monospace (JetBrains Mono / Cascadia Code)' }, // brand-ok: names the font families the stack actually loads
   { value: 'plex', label: 'IBM Plex Sans' }
 ];
 

@@ -38,6 +38,7 @@ import {
 import type { FreeProvider } from '../../../../shared/types/free-providers';
 import type { DiscoveredModel, TestConnectionResult } from '../../../../preload/types';
 import { HoverMarquee } from '../ui/HoverMarquee';
+import { copyTextOrNotify } from '../../lib/clipboard';
 
 export interface BYOKWizardProps {
   freeProviders: FreeProvider[];
@@ -233,7 +234,7 @@ export const BYOKWizard: React.FC<BYOKWizardProps> = ({
 
   const handleCopySignupUrl = async () => {
     if (selectedProvider?.signup_url) {
-      await navigator.clipboard.writeText(selectedProvider.signup_url);
+      if (!(await copyTextOrNotify(selectedProvider.signup_url, 'byok.sign-up-url')).ok) return;
       setCopiedUrl(true);
       setTimeout(() => setCopiedUrl(false), 2000);
     }

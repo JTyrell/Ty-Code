@@ -34,6 +34,7 @@ interface AdapterCalls {
   closed: Array<number | undefined>;
   quits: number;
   devToolsToggles: Array<number | undefined>;
+  explorersOpened: number;
 }
 
 function healthyFcc(): FccSidecarStatusInput {
@@ -53,7 +54,13 @@ function healthyFcc(): FccSidecarStatusInput {
 }
 
 function createFakeAdapters(overrides: Partial<MainCommandAdapters> = {}) {
-  const calls: AdapterCalls = { opened: [], closed: [], quits: 0, devToolsToggles: [] };
+  const calls: AdapterCalls = {
+    opened: [],
+    closed: [],
+    quits: 0,
+    devToolsToggles: [],
+    explorersOpened: 0
+  };
   const adapters: MainCommandAdapters = {
     openWindow: (reveal) => {
       calls.opened.push(reveal);
@@ -71,6 +78,9 @@ function createFakeAdapters(overrides: Partial<MainCommandAdapters> = {}) {
     },
     checkForUpdates: async () => ({ updateAvailable: false, currentVersion: '1.0.0' }),
     fccStatus: () => healthyFcc(),
+    openProcessExplorer: () => {
+      calls.explorersOpened += 1;
+    },
     contexts: {
       devToolsAllowed: () => true,
       updatersAvailable: () => true,
@@ -120,10 +130,26 @@ describe('main command handler coverage', () => {
     }
   });
 
-  it('leaves the deferred process explorer unregistered so the row is hidden', () => {
-    const { adapters } = createFakeAdapters();
-    const handlers = createMainCommandHandlers(adapters);
-    expect(handlers).not.toHaveProperty('window.openProcessExplorer');
+  it('defers nothing, so no menu row hides behind an unimplemented backend', () => {
+    // The mirror image of the audit above. `MAIN_DEFERRED_COMMANDS` is how a row
+    // stays hidden while its backend is missing; an empty table means every
+    // main-target key in the shipped registry is backed, which is the goal
+    // rather than a gap being tolerated. A new entry here should be a deliberate
+    // edit that also updates this expectation.
+    expect(Object.keys(MAIN_DEFERRED_COMMANDS)).toEqual([]);
+  });
+
+  it('opens the process explorer and reports no summary', async () => {
+    const { adapters, calls } = createFakeAdapters();
+    const result = await createMainCommandHandlers(adapters)['window.openProcessExplorer'](
+      {},
+      handlerContext('help.process-explorer')
+    );
+    expect(calls.explorersOpened).toBe(1);
+    // A bare `{ opened: true }` is deliberate: `reportOutcome` stays silent for
+    // a success carrying no summary, because the window appearing *is* the
+    // visible result and a toast on top of it would be noise.
+    expect(result).toEqual({ opened: true });
   });
 });
 

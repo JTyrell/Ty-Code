@@ -1,5 +1,6 @@
 import React, { Component, type ErrorInfo, type ReactNode } from 'react';
 import { AlertTriangle, RotateCcw, RefreshCw, Copy, Check } from 'lucide-react';
+import { copyTextOrNotify } from '../../lib/clipboard';
 
 export interface ErrorBoundaryProps {
   children: ReactNode;
@@ -44,9 +45,12 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   handleCopy = (): void => {
     const { error, errorInfo } = this.state;
     const text = `Error: ${error?.message || 'Unknown error'}\n\nStack:\n${error?.stack || ''}\n\nComponent Stack:\n${errorInfo?.componentStack || ''}`;
-    void navigator.clipboard.writeText(text);
-    this.setState({ copied: true });
-    setTimeout(() => this.setState({ copied: false }), 2000);
+    // A crash report the user cannot copy is a crash report nobody can file.
+    void copyTextOrNotify(text, 'error-boundary.crash-report').then((result) => {
+      if (!result.ok) return;
+      this.setState({ copied: true });
+      setTimeout(() => this.setState({ copied: false }), 2000);
+    });
   };
 
   render(): ReactNode {

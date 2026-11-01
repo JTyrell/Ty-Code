@@ -35,6 +35,7 @@ import {
 import type { ChatErrorCard } from '../../../preload/types';
 import { useChatStore } from '../state/chat-store';
 import { toast } from '../state/toast-store';
+import { readClipboardText } from '../lib/clipboard';
 
 export interface ProviderSetupCardProps {
   errorCard: ChatErrorCard;
@@ -141,14 +142,14 @@ export const ProviderSetupCard: React.FC<ProviderSetupCardProps> = ({
   const activeModel = settings?.activeModel || meta.defaultModel;
 
   const handlePaste = async () => {
-    try {
-      const text = await navigator.clipboard.readText();
-      if (text) {
-        setApiKey(text.trim());
-        setErrorMessage(null);
-      }
-    } catch {
-      // Clipboard access denied
+    const clip = await readClipboardText('provider-setup.api-key-paste');
+    if (!clip.ok) {
+      setErrorMessage(clip.error || 'Could not read the clipboard.');
+      return;
+    }
+    if (clip.text) {
+      setApiKey(clip.text.trim());
+      setErrorMessage(null);
     }
   };
 

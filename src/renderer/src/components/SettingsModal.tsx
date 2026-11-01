@@ -76,6 +76,7 @@ import { PanelBoundary, RenderStormWatch } from './settings/PanelBoundary';
 import { trackRenders } from '../dev/render-storm';
 import type { FreeProvider } from '../../../shared/types/free-providers';
 import type { StoredKeySummary, CustomProviderConfig } from '../../../shared/types/byok';
+import { copyTextOrNotify } from '../lib/clipboard';
 
 type UpdateChannelPreference = 'stable' | 'beta' | 'nightly';
 type SettingsTab = 'apikeys' | 'providers' | 'byok' | 'usage' | 'openkilo' | 'opencode' | 'integrations' | 'orchestration' | 'fcc' | 'rules' | 'endpoints' | 'params' | 'terminal' | 'lsp' | 'editor' | 'shortcuts' | 'extensions' | 'security' | 'privacy' | 'diagnostics';
@@ -760,12 +761,11 @@ export const SettingsModal: React.FC = () => {
   };
 
   const copyLspInstallCommand = async (languageId: string, platform: string, command: string) => {
-    try {
-      await navigator.clipboard.writeText(command);
+    if ((await copyTextOrNotify(command, 'settings.lsp-install-command')).ok) {
       const key = `${languageId}:${platform}`;
       setCopiedLspCommand(key);
       window.setTimeout(() => setCopiedLspCommand((current) => current === key ? null : current), 1600);
-    } catch {
+    } else {
       setError('Clipboard access failed. Select and copy the install command manually.');
     }
   };
@@ -863,11 +863,10 @@ export const SettingsModal: React.FC = () => {
   const handleCopyTelemetryData = async (event?: TelemetryPreview['events'][number]) => {
     setPrivacyError('');
     setPrivacyNotice('');
-    try {
-      const payload = event || telemetryPreview?.events || [];
-      await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
+    const payload = event || telemetryPreview?.events || [];
+    if ((await copyTextOrNotify(JSON.stringify(payload, null, 2), 'settings.telemetry-json')).ok) {
       setPrivacyNotice(event ? 'Telemetry event JSON copied.' : 'Queued telemetry JSON copied.');
-    } catch {
+    } else {
       setPrivacyError('Clipboard access failed. Select and copy the JSON manually.');
     }
   };
@@ -2473,7 +2472,7 @@ export const SettingsModal: React.FC = () => {
                 <div>
                   <strong style={{ fontSize: '13px', color: 'var(--text-primary)' }}>Export AI Chat History</strong>
                   <p style={{ margin: '3px 0 0 0', fontSize: '11px', color: 'var(--text-secondary)' }}>
-                    Export and backup conversations from Ty-Code, Cursor, and Aider into normalized JSON and Markdown.
+                    Export and backup conversations from Ty-Code, Cursor, and Aider into normalized JSON and Markdown.{/* brand-ok: lists the tools whose conversations this exports */}
                   </p>
                 </div>
                 <button
@@ -2535,14 +2534,11 @@ export const SettingsModal: React.FC = () => {
                 id="copy-settings-error-detail-btn"
                 onClick={async () => {
                   const lastErr = useChatStore.getState().lastSaveError;
-                  const copyText = lastErr
+                  const errorDetail = lastErr
                     ? `[${lastErr.code}] ${lastErr.message}\n\nDetail:\n${lastErr.detail}`
                     : error;
-                  try {
-                    await navigator.clipboard.writeText(copyText);
+                  if ((await copyTextOrNotify(errorDetail, 'settings.error-detail')).ok) {
                     toast.success('Copied', 'Error details copied to clipboard.');
-                  } catch {
-                    toast.error('Copy Failed', 'Could not copy to clipboard.');
                   }
                 }}
                 style={{

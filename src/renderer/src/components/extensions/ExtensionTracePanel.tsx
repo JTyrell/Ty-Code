@@ -7,6 +7,7 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { copyTextOrNotify } from '../../lib/clipboard';
 import {
   Activity,
   CheckCircle2,
@@ -90,9 +91,11 @@ export const ExtensionTracePanel: React.FC<ExtensionTracePanelProps> = ({
 
   const handleCopyJson = () => {
     if (!report) return;
-    void navigator.clipboard.writeText(JSON.stringify(report, null, 2));
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    void copyTextOrNotify(JSON.stringify(report, null, 2), 'extensions.trace-json').then((result) => {
+      if (!result.ok) return;
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
   };
 
   return (

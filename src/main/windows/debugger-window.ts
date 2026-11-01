@@ -43,6 +43,20 @@ export interface DebuggerStateSnapshot {
   theme?: string;
   workspacePath?: string | null;
   updatedAt: number;
+  /**
+   * When a diagnostics sweep last completed, or null if none ever has.
+   *
+   * Separate from `updatedAt` on purpose: `updatedAt` moves whenever any field
+   * is mirrored between windows, so it cannot answer "did an engine actually
+   * run". A window needs that distinction because an empty `analysisResults`
+   * means two very different things depending on the answer — "nothing was
+   * found" versus "nothing has been tried yet" — and only one of them entitles
+   * the UI to claim the workspace is clean.
+   *
+   * Written solely by `pushResults`. Deliberately absent from `applyUpdate`, so
+   * a renderer mirroring its own state cannot promote itself into looking swept.
+   */
+  lastSweepAt: number | null;
 }
 
 export interface IpcResult<T = unknown> {
@@ -64,6 +78,7 @@ export class DebuggerSyncManager {
   private theme = 'dark';
   private workspacePath: string | null = null;
   private updatedAt = Date.now();
+  private lastSweepAt: number | null = null;
   private windowResolver: (() => WebContents[]) | null = null;
   private isTrustedSender: TrustedSenderCheck | null = null;
   private registered = false;
@@ -84,7 +99,8 @@ export class DebuggerSyncManager {
       selectedRole: this.selectedRole,
       theme: this.theme,
       workspacePath: this.workspacePath,
-      updatedAt: this.updatedAt
+      updatedAt: this.updatedAt,
+      lastSweepAt: this.lastSweepAt
     };
   }
 
@@ -114,6 +130,11 @@ export class DebuggerSyncManager {
   pushResults(results: AnalysisResult[], exclude?: WebContents): void {
     this.analysisResults = results;
     this.updatedAt = Date.now();
+    // Every caller of this method is inside `runAnalysis`, so reaching it is
+    // itself the proof that engines produced these findings (or that a sweep
+    // failed and produced the failure record). Both stages of a single sweep
+    // land here, so the timestamp advances to the most recent completion.
+    this.lastSweepAt = Date.now();
     this.broadcast('debugger:update', results, exclude);
     this.broadcast('debugger:state-synced', this.getSnapshot(), exclude);
   }

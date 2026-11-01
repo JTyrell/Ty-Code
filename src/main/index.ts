@@ -107,7 +107,7 @@ import { MyersDiff } from './services/myers-diff';
 import { getWorkspaceEditPreviewService, setWorkspaceEditPreviewWorkspace } from './services/workspace-edit-preview';
 import { fromFileUri } from './services/lsp-path-utils';
 import { loadDocument, persistDocument, parseMarkdownSections, listDocuments, type AgentDocument } from './services/document-parser';
-import type { CommandExecutionOptions, ProposedDiff, PtySpawnOptions, ReplaceInFilesOptions, SearchInFilesOptions, TelemetryEvent, WorkspaceEditOrigin } from '../preload/types';
+import type { AppInfo, CommandExecutionOptions, ProposedDiff, PtySpawnOptions, ReplaceInFilesOptions, SearchInFilesOptions, TelemetryEvent, WorkspaceEditOrigin } from '../preload/types';
 import { fileURLToPath } from 'url';
 
 import { initAiFeatureServices, updateAiServicesWorkspace, registerAiFeatureHandlers, getInlineService } from './ipc/ai-features-handlers';
@@ -294,7 +294,11 @@ import { registerCanvasPreviewHandlers } from './ipc/canvas-preview-handlers';
 import { registerPromptAssemblerHandlers } from './ipc/preferences-handlers';
 import { registerCommandHandlers } from './ipc/command-handlers';
 import { registerFileDialogHandlers } from './ipc/file-dialog-handlers';
+import { registerProcessExplorerHandlers } from './ipc/process-explorer-handlers';
+import { registerAppDocHandlers } from './ipc/app-docs-handlers';
+import { readBuildStamp, shortCommit } from './services/build-info';
 import { registerTaskHandlers } from './ipc/task-handlers';
+import { registerDebugHandlers, retireDebugBreakpointsFor } from './ipc/debug-handlers';
 import { createElectronMainCommandAdapters } from './services/command-main-adapters';
 import {
   createMainCommandHandlers,
@@ -735,10 +739,40 @@ function registerIpcHandlers(): void {
     getWorkspacePath: () => currentWorkspacePath
   });
 
+  // Run > Start Debugging and the fifteen other `run.*` rows speak the Chrome
+  // DevTools Protocol to a real spawned process. Both services are Electron-free
+  // and get their workspace root as a getter for the same reason the task runner
+  // does: `currentWorkspacePath` changes every time a folder is opened, and a
+  // launch configuration read from the wrong root is a program the user never
+  // asked to run.
+  registerDebugHandlers({
+    isTrustedSender: isTrustedExtensionFrame,
+    getMainWindow: () => mainWindow,
+    getWorkspacePath: () => currentWorkspacePath
+  });
+
+  // Help > Open Process Explorer. One request channel and no push: the panel
+  // polls in a chain, so closing its window stops the reads and there is no
+  // main-side interval left sampling a machine nobody is watching. No window
+  // getter is needed either — the snapshot describes processes, not frames, and
+  // `BrowserWindow.getAllWindows()` inside the handler reads the live list.
+  registerProcessExplorerHandlers({
+    isTrustedSender: isTrustedExtensionFrame
+  });
+
+  // Help > Documentation / Release Notes / License / Privacy Policy. One pull
+  // channel and no window getter: the documents describe the application, not a
+  // frame, so any trusted window may ask and the answer does not depend on which
+  // one did.
+  registerAppDocHandlers({
+    isTrustedSender: isTrustedExtensionFrame
+  });
+
   ipcMain.handle('fs:select-workspace', async () => {
     const targetWin = BrowserWindow.getFocusedWindow() || mainWindow;
     const response = await workspaceManager.openFolderDialog(targetWin);
     if (response.success && response.data) {
+      retireDebugBreakpointsFor(currentWorkspacePath, response.data);
       currentWorkspacePath = response.data;
       setWorkspaceEditPreviewWorkspace(response.data);
       debuggerSyncManager.pushStateUpdate({ workspacePath: response.data });
@@ -750,6 +784,7 @@ function registerIpcHandlers(): void {
     const targetWin = BrowserWindow.getFocusedWindow() || mainWindow;
     const response = await workspaceManager.openFolderDialog(targetWin);
     if (response.success && response.data) {
+      retireDebugBreakpointsFor(currentWorkspacePath, response.data);
       currentWorkspacePath = response.data;
       setWorkspaceEditPreviewWorkspace(response.data);
       debuggerSyncManager.pushStateUpdate({ workspacePath: response.data });
@@ -761,6 +796,7 @@ function registerIpcHandlers(): void {
     if (!folderPath) return { success: false, error: 'Invalid folder path' };
     const result = await workspaceManager.openWorkspace(folderPath);
     if (result.success) {
+      retireDebugBreakpointsFor(currentWorkspacePath, workspaceManager.currentWorkspacePath);
       currentWorkspacePath = workspaceManager.currentWorkspacePath;
       setWorkspaceEditPreviewWorkspace(workspaceManager.currentWorkspacePath);
       debuggerSyncManager.pushStateUpdate({ workspacePath: workspaceManager.currentWorkspacePath });
@@ -3506,16 +3542,31 @@ function registerIpcHandlers(): void {
   });
 
   // System & Application Information
-  ipcMain.handle('app:get-info', () => ({
-    success: true,
-    data: {
+  //
+  // Backs Help > About (Prompt 5b Step 5, G4), which has to name the commit and
+  // the runtime versions alongside the product version. The three runtime fields
+  // come straight from `process.versions` rather than from a constant, so they
+  // cannot drift from the Electron this build actually shipped with; `commit`
+  // comes from `build-info.ts`, which reads the build stamp and falls back to
+  // `.git` in dev. Every added field is optional on `AppInfo` — `SettingsModal`
+  // already consumes this shape for its privacy panel and must keep compiling.
+  ipcMain.handle('app:get-info', () => {
+    const stamp = readBuildStamp(__dirname);
+    const data: AppInfo = {
       name: 'Ty-Code',
       version: app?.getVersion ? app.getVersion() : '1.0.0',
       platform: process.platform,
       arch: process.arch,
-      isPackaged: Boolean(app?.isPackaged)
-    }
-  }));
+      isPackaged: Boolean(app?.isPackaged),
+      electronVersion: process.versions.electron,
+      nodeVersion: process.versions.node,
+      chromeVersion: process.versions.chrome
+    };
+    // Omitted, not defaulted. About renders no commit row rather than printing a
+    // placeholder that looks like a SHA and resolves to nothing.
+    if (stamp.commit) data.commit = shortCommit(stamp.commit);
+    return { success: true, data };
+  });
 
   // Phase 7: Advanced AI Features & Competitive Differentiation
   initAiFeatureServices(currentWorkspacePath);

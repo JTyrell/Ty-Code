@@ -196,7 +196,11 @@ export const COMMAND_ENTRY_INPUTS: CommandEntryInput[] = [
   { id: 'go.previous-change', label: 'Previous Change', menu: 'Go', group: 7, keybinding: 'Shift+Alt+F3', when: 'editorOpen && diffOrScmChangesOpen', disabledReason: 'No diff or pending source-control change to jump to.', command: 'editor.previousChange', category: 'Go' },
 
   // =========================================================================
-  // Run — Prompt 5b Step 3, wired to the Omni-Debugger orchestrator.
+  // Run — Prompt 5b Step 3, wired to the CDP debug session in
+  // `main/services/debug-session-service.ts`. The handlers live in
+  // `renderer/src/lib/debug-commands.ts`, and `debug.installDebuggers` is left
+  // unregistered there on purpose: Ty-Code ships no debugger installer, so the row
+  // below stays hidden rather than become a click that opens nothing.
   // =========================================================================
   { id: 'run.start-debugging', label: 'Start Debugging', menu: 'Run', group: 1, keybinding: 'F5', when: '!debugPaused', disabledReason: 'The debugger is paused — use Continue to resume.', command: 'debug.start', category: 'Run' },
   { id: 'run.run-without-debugging', label: 'Run Without Debugging', menu: 'Run', group: 1, keybinding: 'Ctrl+F5', command: 'debug.runWithoutDebugging', category: 'Run' },

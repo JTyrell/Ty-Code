@@ -125,13 +125,13 @@ const harnesses: Record<AgentHarnessType, AgentHarness> = {
   }),
   'vscode-chat': new GenericHarness({
     id: 'vscode-chat',
-    name: 'VS Code Chat Harness',
+    name: 'VS Code Chat Harness', // brand-ok: names the client protocol this harness implements
     cliName: 'vscode-chat',
-    description: 'VS Code Language Model API compliant conversation harness',
+    description: 'VS Code Language Model API compliant conversation harness', // brand-ok: names the API this harness speaks
     defaultModel: 'claude-3-5-sonnet-20241022',
     promptFormat: 'vscode-lm-api',
     toolProtocol: 'json-function',
-    systemPromptRole: 'VS Code Companion Assistant',
+    systemPromptRole: 'Ty-Code Companion Assistant',
     supportedFeatures: ['editor-selection', 'inline-chat', 'quick-fix']
   })
 };

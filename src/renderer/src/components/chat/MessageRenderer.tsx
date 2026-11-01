@@ -26,6 +26,7 @@ import HighlightWorker from '../../workers/highlight.worker?worker';
 import type { MarkdownWorkerResponse } from '../../workers/markdown-parser.worker';
 import type { HighlightWorkerResponse } from '../../workers/highlight.worker';
 import { useTypographyStore } from '../../state/typography-store';
+import { copyTextOrNotify } from '../../lib/clipboard';
 import { MatrixDecode } from './MatrixDecode';
 import { ScrambleText } from './ScrambleText';
 import { normalisePunctuation } from '../../services/punctuation-normaliser';
@@ -55,19 +56,21 @@ function escapeHtml(text: string): string {
     .replace(/'/g, '&#39;');
 }
 
+// Markup only — every visual property lives in the .code-shelf* rule family in
+// ChatSidecar.css. `data-code` is load-bearing: handleContainerClick reads it.
 function buildCodeShelfHtml(rawCode: string, language: string, highlightedHtml: string): string {
   const displayLang = language || 'code';
   const encoded = encodeURIComponent(rawCode);
   return `
-<div class="code-shelf contain-content" style="margin: 10px 0; border-radius: 10px; border: 1px solid var(--border-strong); background: #0d0e11; overflow: hidden; font-size: 11px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12); contain: content;">
-  <div class="code-shelf-header" style="display: flex; align-items: center; justify-content: space-between; padding: 5px 10px; background: rgba(255, 255, 255, 0.03); border-bottom: 1px solid var(--border-strong); font-size: 11px; color: var(--text-muted); user-select: none;">
-    <span class="code-shelf-lang" style="font-family: var(--font-mono); font-size: 10.5px; color: var(--text-muted); letter-spacing: 0.02em;">${escapeHtml(displayLang)}</span>
-    <button type="button" class="code-shelf-copy-btn" data-code="${encoded}" style="display: flex; align-items: center; gap: 4px; padding: 2px 7px; border-radius: 5px; font-size: 10.5px; color: var(--text-muted); background: transparent; border: 1px solid transparent; cursor: pointer;">
+<div class="code-shelf contain-content">
+  <div class="code-shelf-header">
+    <span class="code-shelf-lang">${escapeHtml(displayLang)}</span>
+    <button type="button" class="code-shelf-copy-btn" data-code="${encoded}">
       Copy
     </button>
   </div>
-  <pre style="margin: 0; padding: 12px; overflow-x: auto; color: var(--text-primary); font-family: var(--font-mono); line-height: 1.6; font-size: 11.5px; user-select: text;">
-    <code class="hljs ${displayLang ? 'language-' + escapeHtml(displayLang) : ''}" style="background: transparent;">${highlightedHtml}</code>
+  <pre class="code-shelf-pre">
+    <code class="hljs ${displayLang ? 'language-' + escapeHtml(displayLang) : ''}">${highlightedHtml}</code>
   </pre>
 </div>
 `.trim();
@@ -198,15 +201,19 @@ const MessageRendererImpl: React.FC<MessageRendererProps> = ({ content, isStream
     const rawCode = target.getAttribute('data-code');
     if (rawCode) {
       const code = decodeURIComponent(rawCode);
-      navigator.clipboard.writeText(code).then(() => {
+      // One pipeline for every copy surface: the async API, then main, and a
+      // toast with Retry if both fail. A swallowed rejection here is how a code
+      // block ends up looking copied while the clipboard holds yesterday's text.
+      void copyTextOrNotify(code, 'chat.code-shelf').then((result) => {
+        if (!result.ok) return;
         const oldHtml = target.innerHTML;
         target.textContent = 'Copied';
-        (target as HTMLElement).style.color = 'var(--accent-green)';
+        target.classList.add('is-copied');
         setTimeout(() => {
           target.innerHTML = oldHtml;
-          (target as HTMLElement).style.color = 'var(--text-muted)';
+          target.classList.remove('is-copied');
         }, 1600);
-      }).catch(() => undefined);
+      });
     }
   }, []);
 

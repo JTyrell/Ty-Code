@@ -44,7 +44,7 @@ const MOCK_EXTENSIONS: (MarketplaceExtensionEntry | InstalledExtension)[] = [
   {
     id: 'esbenp.prettier-vscode',
     namespace: 'esbenp',
-    name: 'prettier-vscode',
+    name: 'prettier-vscode', // brand-ok: the published name of somebody else's extension, shown as they spelled it
     displayName: 'Prettier - Code Formatter',
     shortDescription: 'Code formatter using prettier for JavaScript, TypeScript, CSS, HTML, Vue, JSON, and Markdown.',
     version: '11.0.0',

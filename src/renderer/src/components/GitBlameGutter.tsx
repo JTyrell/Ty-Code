@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { GitCommit, User, Calendar, Hash, Copy, Check, ExternalLink } from 'lucide-react';
 import type { GitBlameHunk } from '../../../preload/types';
+import { copyTextOrNotify } from '../lib/clipboard';
 
 interface GitBlameProps {
   filePath: string;
@@ -51,9 +52,11 @@ export const GitBlameGutter: React.FC<GitBlameProps> = ({ filePath, currentLine 
   const activeHunk = isDirty ? undefined : blameHunks.find((hunk) => currentLine >= hunk.lineStart && currentLine < hunk.lineStart + hunk.lineCount);
 
   const handleCopyHash = (hash: string) => {
-    void navigator.clipboard.writeText(hash);
-    setCopiedHash(true);
-    setTimeout(() => setCopiedHash(false), 2000);
+    void copyTextOrNotify(hash, 'git.blame-commit-hash').then((result) => {
+      if (!result.ok) return;
+      setCopiedHash(true);
+      setTimeout(() => setCopiedHash(false), 2000);
+    });
   };
 
   if (!activeHunk) return null;

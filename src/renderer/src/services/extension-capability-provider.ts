@@ -6,6 +6,7 @@ import { useGitStore } from '../state/git-store';
 import { useWorkspaceStore } from '../state/workspace-store';
 import { toast } from '../state/toast-store';
 import { useExtensionPromptStore } from '../state/extension-prompt-store';
+import { copyText } from '../lib/clipboard';
 
 export type ExtensionCapabilityMethod =
   | 'workspace.read-file' | 'workspace.write-file'
@@ -132,7 +133,10 @@ export class ElectronCapabilityProvider implements ProviderContract {
     copyRemoteUrl: async (): Promise<string> => {
       this.requireCapability(this.currentExtensionId(), 'git.read');
       const remoteUrl = useGitStore.getState().status?.remoteUrl || '';
-      if (remoteUrl) await navigator.clipboard.writeText(remoteUrl);
+      // The extension gets the URL back either way, so a clipboard failure here
+      // is recorded in the client trail rather than turned into a toast the
+      // extension never asked for. It still goes through the one pipeline.
+      if (remoteUrl) await copyText(remoteUrl, `extension:${this.currentExtensionId() || 'unknown'}.git-copy-remote-url`);
       return remoteUrl;
     }
   };

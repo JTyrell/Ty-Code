@@ -16,6 +16,7 @@ import {
 import { useWorkspaceStore } from '../state/workspace-store';
 import { toast } from '../state/toast-store';
 import type { FileNode, FlatFileNodeEntry } from '../../../preload/types';
+import { copyTextOrNotify } from '../lib/clipboard';
 
 export interface FlatFileNode {
   node: FileNode;
@@ -345,9 +346,10 @@ export const VirtualFileTree: React.FC<VirtualFileTreeProps> = ({ rootNode, flat
   const handleCopyPath = async (relative = false) => {
     if (!contextMenu) return;
     const text = relative ? contextMenu.node.relativePath : contextMenu.node.path;
-    await navigator.clipboard.writeText(text);
-    toast.success('Path copied to clipboard', text);
     setContextMenu(null);
+    if ((await copyTextOrNotify(text, 'explorer.context-copy-path')).ok) {
+      toast.success('Path copied to clipboard', text);
+    }
   };
 
   const handleDelete = async () => {
