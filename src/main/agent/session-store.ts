@@ -1,7 +1,25 @@
-import fs from 'fs/promises';
-import os from 'os';
-import path from 'path';
+/**
+ * Agent session state — now a thin adapter over the unified encrypted store.
+ *
+ * Historically this wrote a plaintext `~/.tycode/sessions/{id}.json`. The unified
+ * store is the single forward writer, so agent runtime state (todos, mode,
+ * iteration, recent tool calls, completion contract) is folded into the SAME
+ * encrypted `SessionPayload` the chat writes to — via `patchSession`, a
+ * read-modify-write that never clobbers the other subsystem's fields.
+ *
+ * There is NO plaintext path here anymore. If secure storage is unavailable the
+ * unified store refuses to write and records a failure; agent state simply stays
+ * in memory for the run rather than leaking to disk in the clear.
+ *
+ * `loadSession`/`deleteSession` take a `workspaceRoot` because the unified store
+ * shards by `wsHash(workspaceRoot)`. `listSummaries` reads only sidecars, so it
+ * enumerates sessions (title/mode/todo count/updated) without a single decrypt.
+ */
+
+import path from 'node:path';
 import type { CompletionContractState, TodoItem } from './agent-state-manager';
+import { unifiedSessionStore, type UnifiedSessionStore } from '../services/session/unified-session-store';
+import type { SessionPayload } from '../../shared/types/session-envelope';
 
 export type AgentSessionMode = 'plan' | 'execute' | 'hybrid';
 
@@ -18,120 +36,134 @@ export interface AgentSessionState {
   completionContract?: CompletionContractState;
 }
 
-const SESSIONS_DIR = path.join(os.homedir(), '.tycode', 'sessions');
-const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-const SAVE_DEBOUNCE_MS = 1_500;
-const LIST_LIMIT_DEFAULT = 10;
+export interface AgentSessionSummary {
+  sessionId: string;
+  workspacePath: string;
+  mode: AgentSessionMode;
+  todoCount: number;
+  updatedAt: number;
+}
 
-function sessionFilePath(sessionId: string): string {
-  return path.join(SESSIONS_DIR, `${sessionId.replace(/[^\w.-]/g, '_')}.json`);
+function toAgentMode(mode: SessionPayload['agentMode']): AgentSessionMode {
+  if (mode === 'plan' || mode === 'hybrid' || mode === 'execute') return mode;
+  return 'execute';
+}
+
+function toSessionMode(mode: AgentSessionMode): SessionPayload['agentMode'] {
+  // 'build' is a chat-side default; agent modes map onto plan/execute/hybrid.
+  return mode;
+}
+
+function payloadToAgentState(payload: SessionPayload, workspaceRoot: string): AgentSessionState {
+  return {
+    sessionId: payload.sessionId,
+    workspacePath: payload.workspacePath || path.resolve(workspaceRoot),
+    mode: toAgentMode(payload.agentMode),
+    todos: (payload.todos ?? []) as unknown as TodoItem[],
+    iterationCount: payload.agentIterationCount ?? 0,
+    recentToolCalls: (payload.agentToolCalls ?? []).map((t) => ({ tool: t.tool, timestamp: t.timestamp })),
+    createdAt: payload.createdAt,
+    updatedAt: payload.updatedAt,
+    completed: payload.completed,
+    completionContract: payload.completionContract as CompletionContractState | undefined
+  };
 }
 
 export class SessionStore {
-  private writeTimers = new Map<string, ReturnType<typeof setTimeout>>();
-  private pendingWrites = new Map<string, AgentSessionState>();
-  private readonly bootCleanup: ReturnType<typeof setTimeout>;
+  constructor(private readonly store: UnifiedSessionStore = unifiedSessionStore) {}
 
-  constructor() {
-    this.bootCleanup = setTimeout(() => {
-      void this.cleanupExpired().catch(() => undefined);
-    }, 5_000);
-  }
-
+  /** No timers/intervals to unwind now that persistence is delegated. */
   dispose(): void {
-    clearTimeout(this.bootCleanup);
-    for (const timer of this.writeTimers.values()) clearTimeout(timer);
-    this.writeTimers.clear();
+    /* intentionally empty — the unified store owns the debounce timers. */
   }
 
+  /** Fold an agent snapshot into the encrypted payload; never writes plaintext. */
   saveSession(state: AgentSessionState): void {
-    this.pendingWrites.set(state.sessionId, state);
-    if (this.writeTimers.has(state.sessionId)) return;
-    const timer = setTimeout((sessionId: string) => {
-      this.writeTimers.delete(sessionId);
-      const pending = this.pendingWrites.get(sessionId);
-      this.pendingWrites.delete(sessionId);
-      if (!pending) return;
-      void this.writeSession(pending).catch(() => undefined);
-    }, SAVE_DEBOUNCE_MS, state.sessionId);
-    this.writeTimers.set(state.sessionId, timer);
+    void this.store
+      .patchSession(
+        state.workspacePath,
+        state.sessionId,
+        (payload) => {
+          payload.todos = state.todos as unknown as Record<string, unknown>[];
+          payload.agentMode = toSessionMode(state.mode);
+          payload.agentIterationCount = state.iterationCount;
+          payload.agentToolCalls = state.recentToolCalls.map((t) => ({ tool: t.tool, timestamp: t.timestamp }));
+          if (state.completionContract) {
+            payload.completionContract = state.completionContract as unknown as Record<string, unknown>;
+          }
+          if (state.completed) payload.completed = true;
+          if (state.updatedAt) payload.updatedAt = state.updatedAt;
+        },
+        { agentMode: toSessionMode(state.mode) }
+      )
+      .catch(() => undefined);
   }
 
-  async writeSession(state: AgentSessionState): Promise<void> {
-    await fs.mkdir(SESSIONS_DIR, { recursive: true });
-    const filePath = sessionFilePath(state.sessionId);
-    const tmpPath = `${filePath}.${process.pid}.tmp`;
-    await fs.writeFile(tmpPath, JSON.stringify(state, null, 2), 'utf-8');
-    await fs.rename(tmpPath, filePath);
-  }
-
-  async loadSession(sessionId: string): Promise<AgentSessionState | null> {
-    try {
-      const raw = await fs.readFile(sessionFilePath(sessionId), 'utf-8');
-      const parsed = JSON.parse(raw) as AgentSessionState;
-      if (!parsed || typeof parsed.sessionId !== 'string' || !Array.isArray(parsed.todos)) return null;
-      return parsed;
-    } catch {
-      return null;
-    }
-  }
-
-  async listSessions(limit: number = LIST_LIMIT_DEFAULT): Promise<AgentSessionState[]> {
-    await this.cleanupExpired();
-    let entries: string[];
-    try {
-      entries = await fs.readdir(SESSIONS_DIR);
-    } catch {
-      return [];
-    }
-    const sessions: AgentSessionState[] = [];
-    for (const entry of entries) {
-      if (!entry.endsWith('.json')) continue;
-      try {
-        const raw = await fs.readFile(path.join(SESSIONS_DIR, entry), 'utf-8');
-        const parsed = JSON.parse(raw) as AgentSessionState;
-        if (parsed && typeof parsed.sessionId === 'string' && typeof parsed.updatedAt === 'number') {
-          sessions.push(parsed);
+  /** Immediate (non-debounced) persist, used at task-completion boundaries. */
+  async persistNow(state: AgentSessionState): Promise<void> {
+    await this.store.patchSession(
+      state.workspacePath,
+      state.sessionId,
+      (payload) => {
+        payload.todos = state.todos as unknown as Record<string, unknown>[];
+        payload.agentMode = toSessionMode(state.mode);
+        payload.agentIterationCount = state.iterationCount;
+        payload.agentToolCalls = state.recentToolCalls.map((t) => ({ tool: t.tool, timestamp: t.timestamp }));
+        if (state.completionContract) {
+          payload.completionContract = state.completionContract as unknown as Record<string, unknown>;
         }
-      } catch {
-        continue;
-      }
-    }
-    sessions.sort((a, b) => b.updatedAt - a.updatedAt);
-    return sessions.slice(0, Math.max(1, limit));
+        if (state.completed) payload.completed = true;
+      },
+      { agentMode: toSessionMode(state.mode) }
+    );
+    // Force the debounced write to land now.
+    await this.store.flushOnExit();
   }
 
-  async deleteSession(sessionId: string): Promise<void> {
-    try {
-      await fs.unlink(sessionFilePath(sessionId));
-    } catch {
-      return;
-    }
+  async loadSession(sessionId: string, workspaceRoot: string): Promise<AgentSessionState | null> {
+    if (!workspaceRoot) return null;
+    const opened = await this.store.secureOpen(workspaceRoot, sessionId);
+    if (!opened || opened.locked) return null;
+    return payloadToAgentState(opened.payload, workspaceRoot);
   }
 
+  /** Enumerate a workspace's sessions from sidecars only — zero decryption. */
+  async listSummaries(workspaceRoot: string, limit = 20): Promise<AgentSessionSummary[]> {
+    if (!workspaceRoot) return [];
+    const sidecars = await this.store.listSidecars(workspaceRoot);
+    return sidecars.slice(0, Math.max(1, limit)).map((s) => ({
+      sessionId: s.sessionId,
+      workspacePath: path.resolve(workspaceRoot),
+      mode: toAgentMode(s.agentMode ?? 'execute'),
+      todoCount: s.todoCount ?? 0,
+      updatedAt: s.updatedAt
+    }));
+  }
+
+  /** Back-compat shim: returns state-shaped rows built from sidecars (no transcript). */
+  async listSessions(limit: number = 20, workspaceRoot?: string): Promise<AgentSessionState[]> {
+    if (!workspaceRoot) return [];
+    const summaries = await this.listSummaries(workspaceRoot, limit);
+    return summaries.map((s) => ({
+      sessionId: s.sessionId,
+      workspacePath: s.workspacePath,
+      mode: s.mode,
+      todos: new Array(s.todoCount) as unknown as TodoItem[],
+      iterationCount: 0,
+      recentToolCalls: [],
+      createdAt: s.updatedAt,
+      updatedAt: s.updatedAt
+    }));
+  }
+
+  async deleteSession(sessionId: string, workspaceRoot: string): Promise<void> {
+    if (!workspaceRoot) return;
+    await this.store.deleteSession(workspaceRoot, sessionId);
+  }
+
+  /** No-op: TTL cleanup is obsolete now that originals are quarantined by migration. */
   async cleanupExpired(): Promise<number> {
-    let removed = 0;
-    let entries: string[];
-    try {
-      entries = await fs.readdir(SESSIONS_DIR);
-    } catch {
-      return 0;
-    }
-    const cutoff = Date.now() - SESSION_TTL_MS;
-    for (const entry of entries) {
-      if (!entry.endsWith('.json')) continue;
-      const filePath = path.join(SESSIONS_DIR, entry);
-      try {
-        const stat = await fs.stat(filePath);
-        if (stat.mtimeMs < cutoff) {
-          await fs.unlink(filePath);
-          removed++;
-        }
-      } catch {
-        continue;
-      }
-    }
-    return removed;
+    return 0;
   }
 }
 

@@ -435,17 +435,18 @@ export async function applyDiff(workspacePath: string, diff: ProposedDiff): Prom
 
 export async function listAgentSessions(workspacePath?: string): Promise<IpcResponse<AgentSessionSummary[]>> {
   try {
-    const sessions = await sessionStore.listSessions(20);
-    const summaries: AgentSessionSummary[] = sessions
-      .filter((session) => !workspacePath || session.workspacePath === workspacePath)
+    // The unified store shards by workspace, so a listing needs the root. Reads
+    // only the plaintext sidecars — no transcript is ever decrypted to enumerate.
+    if (!workspacePath) return { success: true, data: [] };
+    const summaries = (await sessionStore.listSummaries(workspacePath, 20))
+      .slice(0, 6)
       .map((session) => ({
         sessionId: session.sessionId,
         workspacePath: session.workspacePath,
         mode: session.mode,
-        todoCount: session.todos.length,
+        todoCount: session.todoCount,
         updatedAt: session.updatedAt
-      }))
-      .slice(0, 6);
+      })) as unknown as AgentSessionSummary[];
     return { success: true, data: summaries };
   } catch (err: unknown) {
     return { success: false, error: err instanceof Error ? err.message : String(err) };

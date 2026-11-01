@@ -70,7 +70,9 @@ export const COMMAND_CONTEXT_KEYS = [
   'historyCanGoBack',
   'historyCanGoForward',
   'hasRunningTasks',
-  'hasOpenTabs'
+  'hasOpenTabs',
+  // --- Phase 2 (Inline Assist) --------------------------------------------
+  'inlineAssistOpen'
 ] as const;
 
 export type CommandContextKey = (typeof COMMAND_CONTEXT_KEYS)[number];

@@ -1,0 +1,135 @@
+/**
+ * Phase 4 Step 3 — Context Meter footer styles.
+ *
+ * Uses the shared design tokens (surface/border/text/accent/warn) with
+ * semantic band colors driven by the `data-band` attribute the component sets
+ * from `bandForRatio`. No raw hex in the rules themselves — every color falls
+ * back to a token so themes stay intact.
+ */
+
+.chat-context-meter {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  font-size: 11px;
+  color: var(--text-muted, #9ca3af);
+  border-top: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+  background: var(--surface-veil, rgba(255, 255, 255, 0.03));
+}
+
+.chat-context-meter-bar {
+  position: relative;
+  flex: 0 0 88px;
+  height: 6px;
+  border-radius: var(--chat-radius-pill, 999px);
+  background: var(--surface-veil-strong, rgba(255, 255, 255, 0.06));
+  overflow: hidden;
+}
+
+.chat-context-meter-fill {
+  height: 100%;
+  border-radius: inherit;
+  transition: width 240ms ease, background-color 240ms ease;
+}
+
+.chat-context-meter-text {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.chat-context-meter-count {
+  color: var(--text-primary, #e5e7eb);
+}
+
+.chat-context-meter-pct {
+  color: var(--text-muted, #9ca3af);
+}
+
+/* Band colors: safe = accent, warn = amber, danger/critical = red family. */
+.chat-context-meter[data-band='safe'] .chat-context-meter-fill {
+  background: var(--accent-primary, #a5b4fc);
+}
+
+.chat-context-meter[data-band='warn'] .chat-context-meter-fill {
+  background: var(--warn-border, rgba(234, 179, 8, 0.85));
+}
+
+.chat-context-meter[data-band='danger'] .chat-context-meter-fill,
+.chat-context-meter[data-band='critical'] .chat-context-meter-fill {
+  background: var(--danger, #f87171);
+}
+
+.chat-context-meter[data-band='critical'] .chat-context-meter-pct {
+  color: var(--danger, #f87171);
+  font-weight: 600;
+}
+
+.chat-context-meter-compact {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  padding: 3px 9px;
+  font-size: 11px;
+  border-radius: var(--chat-radius-pill, 999px);
+  background: var(--accent-veil, rgba(99, 102, 241, 0.14));
+  color: var(--accent-primary, #a5b4fc);
+  border: 1px solid var(--accent-border, rgba(99, 102, 241, 0.28));
+  cursor: pointer;
+  transition: background-color 160ms ease, opacity 160ms ease;
+}
+
+.chat-context-meter-compact:hover:not(:disabled) {
+  background: var(--accent-veil-strong, rgba(99, 102, 241, 0.22));
+}
+
+.chat-context-meter-compact:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.chat-context-meter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  padding: 3px 6px 3px 10px;
+  font-size: 11px;
+  border-radius: var(--chat-radius-sm, 6px);
+  background: var(--surface-veil-strong, rgba(255, 255, 255, 0.06));
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.10));
+  color: var(--text-primary, #e5e7eb);
+}
+
+.chat-context-meter-chip-summary {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-context-meter-chip-delta {
+  color: var(--text-muted, #9ca3af);
+  font-variant-numeric: tabular-nums;
+}
+
+.chat-context-meter-chip-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  border: none;
+  border-radius: var(--chat-radius-xs, 4px);
+  background: transparent;
+  color: var(--text-muted, #6b7280);
+  cursor: pointer;
+}
+
+.chat-context-meter-chip-close:hover {
+  color: var(--text-primary, #e5e7eb);
+  background: var(--surface-veil, rgba(255, 255, 255, 0.04));
+}

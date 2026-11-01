@@ -118,6 +118,12 @@ export const COMMAND_ENTRY_INPUTS: CommandEntryInput[] = [
   { id: 'edit.toggle-line-comment', label: 'Toggle Line Comment', menu: 'Edit', group: 4, keybinding: 'Ctrl+/', when: 'editorOpen', disabledReason: 'Open a file to comment lines.', command: 'editor.monacoAction', args: { actionId: 'editor.action.commentLine' }, category: 'Edit' },
   { id: 'edit.toggle-block-comment', label: 'Toggle Block Comment', menu: 'Edit', group: 4, keybinding: 'Shift+Alt+A', when: 'editorOpen', disabledReason: 'Open a file to comment a block.', command: 'editor.monacoAction', args: { actionId: 'editor.action.blockComment' }, category: 'Edit' },
   { id: 'edit.format-document', label: 'Format Document', menu: 'Edit', group: 4, keybinding: 'Shift+Alt+F', when: 'editorOpen', disabledReason: 'Open a file to format.', command: 'editor.monacoAction', args: { actionId: 'editor.action.formatDocument' }, category: 'Edit' },
+  // Phase 2 (Inline Assist): Ctrl+I / Cmd+I opens the Monaco-anchored assist
+  // widget on the current selection. The renderer handler owns the widget and
+  // routes apply through the Safe Edit Review Gate (>5 lines) or the direct
+  // snippet preview (<=5 lines). Plan mode is enforced by the widget itself,
+  // not by an extra `when` clause, so the palette entry stays discoverable.
+  { id: 'edit.inline-assist', label: 'Inline Assist…', menu: 'Edit', group: 5, keybinding: 'Ctrl+I', when: 'editorOpen && selectionActive', disabledReason: 'Select some code to run Inline Assist.', command: 'edit.inline-assist', category: 'Edit' },
 
   // =========================================================================
   // Selection — multi-cursor and column mode delegate to Monaco actions.

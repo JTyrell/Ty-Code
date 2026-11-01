@@ -9,6 +9,11 @@ import { FILE_DIALOG_CHANNELS } from '../shared/types/file-dialog';
 import { PROCESS_EXPLORER_CHANNELS } from '../shared/types/process-explorer';
 import { TASK_CHANNELS } from '../shared/types/tasks';
 import { DEBUG_CHANNELS } from '../shared/types/debug-session';
+import { SESSION_CHANNELS } from '../shared/types/session-channels';
+import { INLINE_ASSIST_CHANNELS } from '../shared/types/inline-assist-channels';
+import { CONTEXT_METER_CHANNELS } from '../shared/types/context-meter';
+import type { CompactedEvent } from '../shared/types/context-meter';
+import { CHECKPOINT_CHANNELS } from '../shared/types/checkpoint';
 import type { ReliabilityAdvisorPayload, ReliabilityHealthSnapshot } from '../shared/types/agent-events';
 
 // Echo suppression (Prompt: Break the Model-Sync Echo Loop): each renderer
@@ -494,6 +499,73 @@ const api: ElectronAPI = {
     const listener = (_event: IpcRendererEvent, breakpoints: Breakpoint[]) => callback(breakpoints);
     ipcRenderer.on(DEBUG_CHANNELS.breakpointsChanged, listener);
     return () => ipcRenderer.removeListener(DEBUG_CHANNELS.breakpointsChanged, listener);
+  },
+  // Unified encrypted chat-session store. Every call maps to a Zod-guarded
+  // `session:*` channel; the payload is validated in main BEFORE disk is touched.
+  // `onChatSessionChanged` listens for the cross-window active-session broadcast
+  // (main excludes the originating window, so this never echoes back to the sender)
+  // and returns an unsubscribe so a reload does not leak a listener per window.
+  session: {
+    list: (workspaceRoot: string) => ipcRenderer.invoke(SESSION_CHANNELS.list, { workspaceRoot }),
+    open: (workspaceRoot: string, sessionId: string) =>
+      ipcRenderer.invoke(SESSION_CHANNELS.open, { workspaceRoot, sessionId }),
+    create: (workspaceRoot: string, opts?: Record<string, unknown>) =>
+      ipcRenderer.invoke(SESSION_CHANNELS.create, { workspaceRoot, ...(opts ?? {}) }),
+    switch: (workspaceRoot: string, sessionId: string | null) =>
+      ipcRenderer.invoke(SESSION_CHANNELS.switch, { workspaceRoot, sessionId }),
+    rename: (workspaceRoot: string, sessionId: string, title: string) =>
+      ipcRenderer.invoke(SESSION_CHANNELS.rename, { workspaceRoot, sessionId, title }),
+    remove: (workspaceRoot: string, sessionId: string) =>
+      ipcRenderer.invoke(SESSION_CHANNELS.delete, { workspaceRoot, sessionId }),
+    fork: (workspaceRoot: string, sessionId: string, uptoMessageId: string) =>
+      ipcRenderer.invoke(SESSION_CHANNELS.fork, { workspaceRoot, sessionId, uptoMessageId }),
+    search: (workspaceRoot: string, query: string) =>
+      ipcRenderer.invoke(SESSION_CHANNELS.search, { workspaceRoot, query }),
+    save: (workspaceRoot: string, payload: unknown) =>
+      ipcRenderer.invoke(SESSION_CHANNELS.save, { workspaceRoot, payload }),
+    getActive: (workspaceRoot: string) => ipcRenderer.invoke(SESSION_CHANNELS.activeGet, { workspaceRoot }),
+    flush: () => ipcRenderer.invoke(SESSION_CHANNELS.flush),
+    onChatSessionChanged: (
+      callback: (event: { workspaceRoot: string; sessionId: string | null; renamed?: boolean }) => void
+    ) => {
+      const listener = (_event: IpcRendererEvent, payload: { workspaceRoot: string; sessionId: string | null; renamed?: boolean }) =>
+        callback(payload);
+      ipcRenderer.on(SESSION_CHANNELS.changedEvent, listener);
+      return () => ipcRenderer.removeListener(SESSION_CHANNELS.changedEvent, listener);
+    }
+  },
+  inlineAssist: {
+    saveThread: (workspaceRoot: string, thread: unknown) =>
+      ipcRenderer.invoke(INLINE_ASSIST_CHANNELS.saveThread, { workspaceRoot, thread }),
+    loadThread: (workspaceRoot: string, threadId: string) =>
+      ipcRenderer.invoke(INLINE_ASSIST_CHANNELS.loadThread, { workspaceRoot, threadId }),
+    listThreads: (workspaceRoot: string, sessionId: string) =>
+      ipcRenderer.invoke(INLINE_ASSIST_CHANNELS.listThreads, { workspaceRoot, sessionId }),
+    deleteThread: (workspaceRoot: string, threadId: string) =>
+      ipcRenderer.invoke(INLINE_ASSIST_CHANNELS.deleteThread, { workspaceRoot, threadId })
+  },
+  contextMeter: {
+    compactNow: (workspaceRoot: string, sessionId: string, limit?: number) =>
+      ipcRenderer.invoke(CONTEXT_METER_CHANNELS.compactNow, { workspaceRoot, sessionId, limit }),
+    getState: (workspaceRoot: string, sessionId: string) =>
+      ipcRenderer.invoke(CONTEXT_METER_CHANNELS.getState, { workspaceRoot, sessionId }),
+    onCompacted: (callback: (event: CompactedEvent) => void) => {
+      const listener = (_e: unknown, data: CompactedEvent) => callback(data);
+      ipcRenderer.on(CONTEXT_METER_CHANNELS.compactedEvent, listener);
+      return () => { ipcRenderer.removeListener(CONTEXT_METER_CHANNELS.compactedEvent, listener); };
+    }
+  },
+  checkpoint: {
+    list: (workspaceRoot: string, taskId?: string) =>
+      ipcRenderer.invoke(CHECKPOINT_CHANNELS.list, { workspaceRoot, taskId }),
+    capture: (workspaceRoot: string, taskId: string, edits: unknown, summary?: string) =>
+      ipcRenderer.invoke(CHECKPOINT_CHANNELS.capture, { workspaceRoot, taskId, edits, summary }),
+    restorePreview: (workspaceRoot: string, checkpointId: string) =>
+      ipcRenderer.invoke(CHECKPOINT_CHANNELS.restorePreview, { workspaceRoot, checkpointId, mode: 'review' }),
+    restore: (workspaceRoot: string, checkpointId: string, mode: 'force' | 'keep-mine' | 'review') =>
+      ipcRenderer.invoke(CHECKPOINT_CHANNELS.restore, { workspaceRoot, checkpointId, mode }),
+    purge: (workspaceRoot: string, olderThanMs: number) =>
+      ipcRenderer.invoke(CHECKPOINT_CHANNELS.purgeOlderThan, { workspaceRoot, olderThanMs })
   },
   searchExtensions: (query: string) => ipcRenderer.invoke('extensions:search', query),
   getExtensionDetails: (namespace: string, name: string) => ipcRenderer.invoke('extensions:details', { namespace, name }),

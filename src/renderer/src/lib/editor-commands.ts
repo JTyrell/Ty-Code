@@ -375,6 +375,12 @@ export function registerEditorCommandHandlers(): CommandRuntimeDisposable {
   const preemption = setNativeChordPreemption(preemptsNativeChord);
   const handlers = registerRendererCommands({
     'edit.dispatch': editDispatch,
+    'edit.inline-assist': async () => {
+      // Phase 2: dynamically imported so the widget/DOM listener cost is paid
+      // only when a user actually presses Ctrl+I on a real selection.
+      const { handleInlineAssist } = await import('./inline-assist');
+      return handleInlineAssist();
+    },
     'editor.monacoAction': monacoAction,
     'editor.navigateBack': navigateBackHandler,
     'editor.navigateForward': navigateForwardHandler,

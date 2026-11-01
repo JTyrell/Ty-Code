@@ -23,6 +23,11 @@ import { agentStateManager, AgentMode, discoverPackageScripts, type TodoItem } f
 import { compactMessages, estimateContextTokens, estimateTokenCount, generateSummary, shouldCompact, buildFallbackSummary, upsertPinnedTaskContext, MODEL_CONTEXT_LIMIT } from './context-compactor';
 import { fileMemoryManager, extractKeySymbols, extractDependencies, isFileMemoryEnabled } from './file-memory';
 import { sessionStore, buildSessionSnapshot, type AgentSessionState } from './session-store';
+import path from 'node:path';
+import fsp from 'node:fs/promises';
+import { checkpointService } from '../services/checkpoints/checkpoint-service';
+import { unifiedSessionStore } from '../services/session/unified-session-store';
+import type { CheckpointManifest } from '../../shared/types/checkpoint';
 import { toolApprovalManager, type ApprovalRule } from './tool-approval-manager';
 import { backgroundAgentOrchestrator } from './background-agent-orchestrator';
 import { ShellSandbox } from './shell-sandbox';
@@ -422,7 +427,7 @@ export class AgentEngine {
         ? Promise.resolve<Record<string, string>>({})
         : discoverPackageScripts(workspacePath).catch(() => ({} as Record<string, string>)),
       params.resumeSessionId
-        ? sessionStore.loadSession(params.resumeSessionId).catch(() => null)
+        ? sessionStore.loadSession(params.resumeSessionId, workspacePath).catch(() => null)
         : Promise.resolve<AgentSessionState | null>(null),
       isSimpleQuery
         ? Promise.resolve('')
@@ -1556,8 +1561,58 @@ export class AgentEngine {
             continue;
           }
 
+          // Phase 3 (Checkpoints): capture a reversible point for a file
+          // mutation BEFORE it touches disk. A checkpoint failure must never
+          // abort the user's edit, so the whole block is best-effort. The
+          // encrypted bundle (git-ref when available) is the restore source;
+          // the id is appended to the session's encrypted checkpointRefs.
+          let checkpointManifest: CheckpointManifest | null = null;
+          let checkpointRelPath = '';
+          if (
+            fileReview &&
+            (toolCall.name === 'write_file' || toolCall.name === 'replace_file_content' || toolCall.name === 'edit_file')
+          ) {
+            try {
+              checkpointRelPath = path.relative(workspacePath, fileReview.filePath).replace(/\\/g, '/');
+              if (checkpointRelPath && !checkpointRelPath.startsWith('..')) {
+                const kind = fileReview.originalExists ? 'modify' : 'create';
+                checkpointManifest = await checkpointService.capture(
+                  workspacePath,
+                  activeTaskId,
+                  [{ path: checkpointRelPath, kind }],
+                  `${toolCall.name}: ${checkpointRelPath}`
+                );
+                const manifestForRef = checkpointManifest;
+                onChunk({ type: 'status', content: `Checkpoint #${manifestForRef.n} captured (${manifestForRef.backend}).` });
+                void unifiedSessionStore
+                  .patchSession(workspacePath, sessionId, (p) => {
+                    const refs = p.checkpointRefs ?? [];
+                    if (!refs.includes(manifestForRef.id)) refs.push(manifestForRef.id);
+                    p.checkpointRefs = refs;
+                  })
+                  .catch(() => undefined);
+              }
+            } catch {
+              /* degrade silently — the edit proceeds even if checkpointing failed */
+            }
+          }
+
           onChunk({ type: 'status', content: `Running ${toolCall.name}…` });
           const result: ToolExecutionResponse = await this.executeWithSandbox(toolCall, approvedExecutionArgs, abortSignal);
+
+          // Finalize the checkpoint with the agent's resulting content so a later
+          // restore can distinguish "only the agent changed this" from a genuine
+          // user edit (three-way conflict).
+          if (checkpointManifest && checkpointRelPath) {
+            try {
+              const after = await fsp.readFile(fileReview!.filePath, 'utf8').catch(() => null);
+              await checkpointService.finalize(workspacePath, checkpointManifest, [
+                { path: checkpointRelPath, content: after }
+              ]);
+            } catch {
+              /* best-effort finalize */
+            }
+          }
           
           // Record tool call in state manager
           stateManager.recordToolCall(toolCall.name, toolCall.arguments, result.output);

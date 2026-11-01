@@ -11,6 +11,8 @@ import type { FreeProvider, ModelTier, TierClassification, ProviderHealthStatus 
 import type { DetectedApiKey, CustomProviderConfig, StoredKeySummary, ByokExportBundle, ByokImportResult, KeyDetectionSource } from '../shared/types/byok';
 import type { OpenCodeDetectionResult, OpenCodeFreeTierSummary, OpenCodeImportResult, AgentFramework } from '../shared/types/opencode-sync';
 import type { DevChaosFault, DevChaosRequest, ReliabilityAdvisorPayload, ReliabilityHealthSnapshot } from '../shared/types/agent-events';
+import type { OpenedSession, SessionPayload, SessionSidecar } from '../shared/types/session-envelope';
+export type { OpenedSession, SessionPayload, SessionSidecar };
 import type {
   CommandContext,
   CommandContextKey,
@@ -1614,6 +1616,83 @@ export interface ElectronAPI {
   breakpointsRemoveAll?: () => Promise<IpcResponse<Breakpoint[]>>;
   /** Whole list, for the same reason as the session push above. */
   onDebugBreakpointsChanged?: (callback: (breakpoints: Breakpoint[]) => void) => () => void;
+  /**
+   * Unified encrypted chat-session store. Every method maps to a Zod-guarded
+   * `session:*` channel; `onChatSessionChanged` subscribes to the cross-window
+   * active-session broadcast and returns an unsubscribe so a reload never leaks a
+   * listener. Listing/search never decrypts; `open` returns a `locked` record on a
+   * DPAPI failure rather than throwing or exposing plaintext.
+   */
+  session?: {
+    list: (workspaceRoot: string) => Promise<IpcResponse<SessionSidecar[]>>;
+    open: (workspaceRoot: string, sessionId: string) => Promise<IpcResponse<OpenedSession | null>>;
+    create: (
+      workspaceRoot: string,
+      opts?: { title?: string; agentMode?: SessionPayload['agentMode']; contextLimit?: number; lockRouteId?: string | null }
+    ) => Promise<IpcResponse<{ sessionId: string }>>;
+    switch: (workspaceRoot: string, sessionId: string | null) => Promise<IpcResponse<boolean>>;
+    rename: (workspaceRoot: string, sessionId: string, title: string) => Promise<IpcResponse<SessionPayload | null>>;
+    remove: (workspaceRoot: string, sessionId: string) => Promise<IpcResponse<boolean>>;
+    fork: (workspaceRoot: string, sessionId: string, uptoMessageId: string) => Promise<IpcResponse<{ sessionId: string } | null>>;
+    search: (workspaceRoot: string, query: string) => Promise<IpcResponse<SessionSidecar[]>>;
+    save: (workspaceRoot: string, payload: SessionPayload) => Promise<IpcResponse<true>>;
+    getActive: (workspaceRoot: string) => Promise<IpcResponse<string | null>>;
+    flush: () => Promise<IpcResponse<true>>;
+    onChatSessionChanged: (
+      callback: (event: { workspaceRoot: string; sessionId: string | null; renamed?: boolean }) => void
+    ) => () => void;
+  };
+  inlineAssist?: {
+    saveThread: (
+      workspaceRoot: string,
+      thread: import('../shared/types/inline-assist-channels').InlineThread
+    ) => Promise<IpcResponse<true>>;
+    loadThread: (
+      workspaceRoot: string,
+      threadId: string
+    ) => Promise<IpcResponse<import('../shared/types/inline-assist-channels').InlineThread | null>>;
+    listThreads: (
+      workspaceRoot: string,
+      sessionId: string
+    ) => Promise<IpcResponse<import('../shared/types/inline-assist-channels').InlineThread[]>>;
+    deleteThread: (workspaceRoot: string, threadId: string) => Promise<IpcResponse<true>>;
+  };
+  contextMeter?: {
+    compactNow: (
+      workspaceRoot: string,
+      sessionId: string,
+      limit?: number
+    ) => Promise<IpcResponse<import('../shared/types/context-meter').CompactedEvent>>;
+    getState: (
+      workspaceRoot: string,
+      sessionId: string
+    ) => Promise<IpcResponse<import('../shared/types/context-meter').MeterState>>;
+    onCompacted: (
+      callback: (event: import('../shared/types/context-meter').CompactedEvent) => void
+    ) => () => void;
+  };
+  checkpoint?: {
+    list: (
+      workspaceRoot: string,
+      taskId?: string
+    ) => Promise<IpcResponse<import('../shared/types/checkpoint').CheckpointManifest[]>>;
+    capture: (
+      workspaceRoot: string,
+      taskId: string,
+      edits: import('../shared/types/checkpoint').PlannedEdit[],
+      summary?: string
+    ) => Promise<IpcResponse<import('../shared/types/checkpoint').CheckpointManifest>>;
+    restorePreview: (
+      workspaceRoot: string,
+      checkpointId: string
+    ) => Promise<IpcResponse<import('../shared/types/checkpoint').RestoreResult>>;
+    restore: (
+      workspaceRoot: string,
+      checkpointId: string,
+      mode: import('../shared/types/checkpoint').RestoreMode
+    ) => Promise<IpcResponse<import('../shared/types/checkpoint').RestoreResult>>;
+    purge: (workspaceRoot: string, olderThanMs: number) => Promise<IpcResponse<number>>;
+  };
   searchExtensions: (query: string) => Promise<IpcResponse<ExtensionMetadata[]>>;
   getExtensionDetails: (namespace: string, name: string) => Promise<IpcResponse<Record<string, unknown>>>;
   getAvailableSkills: (workspacePath: string) => Promise<IpcResponse<SkillDefinition[]>>;

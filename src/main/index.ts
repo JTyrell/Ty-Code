@@ -299,6 +299,12 @@ import { registerAppDocHandlers } from './ipc/app-docs-handlers';
 import { readBuildStamp, shortCommit } from './services/build-info';
 import { registerTaskHandlers } from './ipc/task-handlers';
 import { registerDebugHandlers, retireDebugBreakpointsFor } from './ipc/debug-handlers';
+import { registerSessionHandlers } from './ipc/session-handlers';
+import { registerInlineAssistHandlers } from './ipc/inline-assist-handlers';
+import { registerContextMeterHandlers } from './ipc/context-meter-handlers';
+import { registerCheckpointHandlers } from './ipc/checkpoint-handlers';
+import { runRealSessionMigration } from './services/session/migration-wiring';
+import { unifiedSessionStore } from './services/session/unified-session-store';
 import { createElectronMainCommandAdapters } from './services/command-main-adapters';
 import {
   createMainCommandHandlers,
@@ -715,6 +721,29 @@ function registerIpcHandlers(): void {
 
   registerWorkspaceSessionHandlers();
   registerCanvasPreviewHandlers();
+
+  // Unified encrypted session store IPC. Every payload is Zod-validated before
+  // main touches disk, and `session:switch` broadcasts the active id to every
+  // OTHER window (excluding the sender) so tabs stay in sync across windows
+  // without an echo loop. A decrypt failure returns a `locked` record, never a
+  // crash and never plaintext.
+  registerSessionHandlers({ isTrustedSender: isTrustedExtensionFrame });
+  
+  // Phase 2 (Inline Assist): persistence channels for sub-conversations.
+  registerInlineAssistHandlers({
+    isTrustedSender: isTrustedExtensionFrame,
+    getWorkspacePath: () => null
+  });
+
+  // Phase 4 (Context Meter): manual compaction against the unified store's
+  // decrypted transcript. Reads/estimates tokens and compacts in one place so
+  // the footer never disagrees with the persisted session.
+  registerContextMeterHandlers({ isTrustedSender: isTrustedExtensionFrame });
+
+  // Phase 3 (Checkpoints): capture/restore channels. The agent loop calls the
+  // service directly for capture; these channels back the sidecar's Details list
+  // and the "Restore to here" confirm-diff preview.
+  registerCheckpointHandlers({ isTrustedSender: isTrustedExtensionFrame });
 
   // File > Open File… and File > Save As… are registry rows whose handlers live
   // in the renderer, but a renderer cannot open a native picker. The window is
@@ -4629,6 +4658,13 @@ function cleanupAllResources(): void {
   } catch {
     // Ignore tray destruction error
   }
+  // Flush any debounced encrypted session writes so a quit never drops the last
+  // turn. Fire-and-forget: before-quit must not block on disk.
+  try {
+    void unifiedSessionStore.flushOnExit().catch(() => undefined);
+  } catch {
+    // Ignore session flush error
+  }
 }
 
 function createWindow(): void {
@@ -4900,6 +4936,32 @@ app.whenReady().then(async () => {
       const lastSession = bootScheduler.getWarmCache('lastSession');
       if (lastSession) {
         // Last-session metadata available
+      }
+    }
+  );
+
+  // One-shot, idempotent migration into the unified encrypted session store.
+  // Deferred to idle so it never delays first paint. In-flight preservation runs
+  // BEFORE any legacy file is quarantined; if capture fails the migration aborts
+  // and the legacy writers keep serving. Safe to call on every boot (journal-gated).
+  bootScheduler.register(
+    'session_migration',
+    'Unified Session Store Migration',
+    3,
+    'stores',
+    async () => {
+      if (!currentWorkspacePath) return;
+      try {
+        const result = await runRealSessionMigration({ workspaceRoot: currentWorkspacePath });
+        if (!result.alreadyDone) {
+          console.log(
+            `[session-migration] imported=${result.imported} quarantined=${result.quarantined}` +
+              (result.aborted ? ` aborted=${result.reason ?? 'unknown'}` : '')
+          );
+        }
+      } catch (err) {
+        // Never let a migration error abort boot; legacy writers remain authoritative.
+        console.warn('[session-migration] skipped:', err);
       }
     }
   );

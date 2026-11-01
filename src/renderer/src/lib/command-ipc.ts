@@ -104,7 +104,7 @@ export function requireBridgeMethod<K extends keyof ElectronAPI>(
   if (typeof candidate !== 'function') {
     throw new Error(`${what} needs the bridge's '${String(method)}', which this window does not expose.`);
   }
-  return candidate as NonNullable<ElectronAPI[K]>;
+  return candidate as unknown as NonNullable<ElectronAPI[K]>;
 }
 
 // ---------------------------------------------------------------------------

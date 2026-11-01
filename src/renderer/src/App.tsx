@@ -41,6 +41,7 @@ import { useActiveModelSync } from './state/active-model-store';
 import { useThemeSync } from './hooks/useThemeSync';
 import { initDocumentProposedListener } from './state/document-review-store';
 import { initWorkspaceSessionSync } from './state/workspace-session-store';
+import { initSessionSync } from './state/session-store';
 import { initCanvasPreviewSync } from './state/canvas-preview-store';
 import { initContextAuditSync } from './state/context-audit-store';
 import { LazyModelManager } from './services/lazy-model-manager';
@@ -268,10 +269,12 @@ const MainWorkbench: React.FC = () => {
   useEffect(() => {
     const disposeAuditSync = initContextAuditSync();
     const disposeSessionSync = initWorkspaceSessionSync();
+    const disposeMultiSessionSync = initSessionSync();
     const disposeCanvasPreviewSync = initCanvasPreviewSync();
     return () => {
       disposeAuditSync();
       disposeSessionSync();
+      disposeMultiSessionSync();
       disposeCanvasPreviewSync();
     };
   }, []);

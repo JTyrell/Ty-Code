@@ -79,6 +79,9 @@ jobs:
       - name: Anti-Phantom Guard 12: Verify One Copy Path In The Renderer
         run: node scripts/no-copy-bypass.mjs
 
+      - name: Anti-Phantom Guard 13: Verify No Plaintext Session Or Checkpoint Bundle Writes
+        run: node scripts/no-plaintext-session-bundle.mjs
+
       - name: Live Validation Gate: Run Real Network & Disk E2E Suite
         run: npm run test:live
 

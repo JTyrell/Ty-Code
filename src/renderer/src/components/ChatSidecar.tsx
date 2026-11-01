@@ -13,9 +13,11 @@ import powershell from 'highlight.js/lib/languages/powershell';
 import python from 'highlight.js/lib/languages/python';
 import typescript from 'highlight.js/lib/languages/typescript';
 import yaml from 'highlight.js/lib/languages/yaml';
-import { Send, Square, Sparkles, Trash2, ChevronRight, ChevronDown, Terminal, FileCode, Check, Eye, AlertCircle, Copy, RotateCcw, Loader2, ShieldCheck, X, Users, Lightbulb, Hammer, Compass, Info, Palette, Presentation, Play, ExternalLink, Settings, Activity, Key, WifiOff, Clock, RefreshCw, Zap, MessageSquare } from 'lucide-react';
+import { Send, Square, Sparkles, Trash2, ChevronDown, FileCode, Check, Eye, AlertCircle, Copy, RotateCcw, Loader2, ShieldCheck, X, Users, Lightbulb, Hammer, Compass, Info, Palette, Presentation, Play, ExternalLink, Settings, Activity, Key, WifiOff, Clock, RefreshCw, Zap, MessageSquare, History } from 'lucide-react';
 import { useChatStore, groupMessagesByTask } from '../state/chat-store';
 import { useWorkspaceStore } from '../state/workspace-store';
+import { useSessionStore } from '../state/session-store';
+import { HistoryBrowser } from './session/HistoryBrowser';
 import { usePairProgrammingStore } from '../state/pair-programming-store';
 import { useOnboardingStore } from '../state/onboarding-store';
 import { useSettingsStore } from '../state/settings-store';
@@ -25,13 +27,14 @@ import { ProviderSetupCard } from './ProviderSetupCard';
 import { ChatErrorCard } from './ChatErrorCard';
 import { BackgroundAgentsPanel } from './agent/BackgroundAgentsPanel';
 import { ChatInput } from './chat/ChatInput';
+import { ContextMeter } from './chat/ContextMeter';
 import { ReliabilityAdvisorCard } from './chat/ReliabilityAdvisorCard';
 import { useChatInputStore } from '../state/chat-input-store';
 import { toast } from '../state/toast-store';
 import { ChatMessageItem } from './ChatMessage';
 import { ChatMessageList, type ChatMessageListHandle } from './chat/ChatMessageList';
 import { copyTextOrNotify } from '../lib/clipboard';
-import type { AgentToolApproval, ChatMessage, ToolCall, ToolExecutionStatus, ChatErrorCard as ChatErrorCardType, ProviderType } from '../../../preload/types';
+import type { AgentToolApproval, ChatMessage, ChatErrorCard as ChatErrorCardType, ProviderType } from '../../../preload/types';
 
 const languages: Record<string, LanguageFn> = {
   bash, shell: bash, sh: bash,
@@ -59,8 +62,6 @@ for (const [name, language] of Object.entries(languages)) {
 // stays even though nothing in this file highlights code itself.
 // ---------------------------------------------------------------------------
 
-interface ToolCardProps { tool: ToolCall; status?: ToolExecutionStatus; output?: string; }
-
 interface PresentationData {
   topic: string;
   filePath: string;
@@ -68,36 +69,6 @@ interface PresentationData {
   slideCount: number;
   outline: string[];
   previewUrl?: string;
-}
-
-function parsePresentationData(toolArgs: Record<string, unknown>, output?: string): PresentationData | null {
-  try {
-    if (output) {
-      const parsed = JSON.parse(output);
-      if (parsed && typeof parsed === 'object' && parsed.success !== false) {
-        return {
-          topic: String(parsed.topic || toolArgs.topic || 'Presentation'),
-          filePath: String(parsed.filePath || toolArgs.outputPath || 'presentation.html'),
-          absolutePath: parsed.absolutePath ? String(parsed.absolutePath) : undefined,
-          slideCount: typeof parsed.slideCount === 'number' ? parsed.slideCount : (Array.isArray(toolArgs.outline) ? toolArgs.outline.length + 1 : 1),
-          outline: Array.isArray(parsed.outline) ? parsed.outline.map(String) : (Array.isArray(toolArgs.outline) ? toolArgs.outline.map(String) : []),
-          previewUrl: parsed.previewUrl ? String(parsed.previewUrl) : undefined
-        };
-      }
-    }
-  } catch {
-    // not JSON
-  }
-  if (toolArgs && toolArgs.topic) {
-    const outlineArr = Array.isArray(toolArgs.outline) ? toolArgs.outline.map(String) : [];
-    return {
-      topic: String(toolArgs.topic),
-      filePath: String(toolArgs.outputPath || 'presentation.html'),
-      slideCount: outlineArr.length + 1,
-      outline: outlineArr
-    };
-  }
-  return null;
 }
 
 export const PresentationPreviewCard: React.FC<{ data: PresentationData }> = ({ data }) => {
@@ -206,51 +177,6 @@ export const PresentationPreviewCard: React.FC<{ data: PresentationData }> = ({ 
     </div>
   );
 };
-
-const ToolCard: React.FC<ToolCardProps> = ({ tool, status, output }) => {
-  const [expanded, setExpanded] = useState(false);
-  const isError = status === 'error';
-  const isPresentation = tool.name === 'generate_presentation';
-  const presentationData = isPresentation ? parsePresentationData(tool.arguments || {}, output) : null;
-
-  return <section className="tool-card">
-    <button className="tool-header" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded} aria-label={`${expanded ? 'Collapse' : 'Expand'} ${tool.name} tool details`} style={{ color: isError ? 'var(--accent-red)' : status === 'running' ? 'var(--accent-primary)' : 'var(--text-primary)' }}>
-      <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-        {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-        {isPresentation ? <Presentation size={12} color="var(--accent-cyan)" /> : <Terminal size={12} color="var(--accent-primary)" />}
-        <strong>{tool.name}</strong><span style={{ color: 'var(--text-muted)' }}>({Object.keys(tool.arguments || {}).length} args)</span>
-      </span>
-      <span style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
-        {status === 'running' && <span className="tool-status is-running"><Loader2 size={11} className="animate-spin" />Running</span>}
-        {status === 'success' && <span className="tool-status is-success"><Check size={11} />Success</span>}
-        {status === 'error' && <span className="tool-status is-error"><AlertCircle size={11} />Failed</span>}
-        {status === 'cancelled' && <span className="tool-status is-cancelled">Stopped</span>}
-      </span>
-    </button>
-    {status === 'success' && presentationData && (
-      <PresentationPreviewCard data={presentationData} />
-    )}
-    {expanded && <div className="tool-body">
-      <div style={{ marginBottom: 8, color: 'var(--accent-cyan)' }}><strong>Input:</strong>{' '}{JSON.stringify(tool.arguments, null, 2)}</div>
-      {output !== undefined && <div><strong style={{ color: isError ? 'var(--accent-red)' : 'var(--text-secondary)' }}>Output:</strong><div style={{ marginTop: 4 }}>{output}</div></div>}
-    </div>}
-  </section>;
-};
-
-function DiffCard({ diff: proposedDiff, onInspect, onApply }: {
-  diff: NonNullable<ChatMessage['proposedDiffs']>[number]; onInspect: () => void; onApply: () => void;
-}): React.ReactElement {
-  return <div className="diff-card">
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, fontSize: 11, fontWeight: 600 }}><FileCode size={13} color="var(--accent-primary)" /><span style={{ overflowWrap: 'anywhere' }}>{proposedDiff.filePath}</span></div>
-      <span style={{ flexShrink: 0, color: 'var(--accent-amber)', fontSize: 10 }}>Ready to review</span>
-    </div>
-    <div className="diff-actions">
-      <button onClick={onInspect} style={{ padding: '4px 8px', background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)', fontSize: 11 }}><Eye size={12} />Inspect</button>
-      <button onClick={onApply} style={{ padding: '4px 8px', background: 'var(--accent-green)', color: '#fff', fontSize: 11 }}><Check size={12} />Apply</button>
-    </div>
-  </div>;
-}
 
 // 1. Connect Provider Card (CONFIG_MISSING: In-chat key input)
 export const ConnectProviderCard: React.FC<{ errorCard: ChatErrorCardType; onRetry?: () => void }> = ({ errorCard, onRetry }) => {
@@ -365,7 +291,7 @@ export const ConnectProviderCard: React.FC<{ errorCard: ChatErrorCardType; onRet
               <span>{saving ? 'Saving…' : saved ? 'Connected! Retrying…' : 'Save & Connect'}</span>
             </button>
           </div>
-          {saveError && <div style={{ color: 'var(--accent-red)', fontSize: '11px', marginTop: '6px' }}>{saveError}</div>}
+          {saveError && <div className="chat-error-inline-msg">{saveError}</div>}
         </form>
 
         <div className="chat-error-helper-links">
@@ -474,8 +400,8 @@ export const QuotaExhaustedCard: React.FC<{ errorCard: ChatErrorCardType; onRetr
     <div className="chat-error-card is-rate-limited" role="alert">
       <div className="chat-error-card-header">
         <div className="chat-error-card-badge">
-          <Clock size={14} style={{ color: 'var(--accent-amber)' }} />
-          <span className="chat-error-code" style={{ color: 'var(--accent-amber)' }}>
+          <Clock size={14} />
+          <span className="chat-error-code">
             [{errorCard.taxonomyCode}] Quota Exhausted / Rate Limited
           </span>
         </div>
@@ -493,42 +419,18 @@ export const QuotaExhaustedCard: React.FC<{ errorCard: ChatErrorCardType; onRetr
 
         {/* Anonymous 429 Upsell Hook */}
         {isAnonymousRateLimit && (
-          <div
-            style={{
-              marginTop: '12px',
-              padding: '12px 14px',
-              background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(168, 85, 247, 0.15))',
-              border: '1px solid rgba(99, 102, 241, 0.4)',
-              borderRadius: '8px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '8px'
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--accent-primary)', fontWeight: 600, fontSize: '13px' }}>
+          <div className="chat-upsell">
+            <div className="chat-upsell-heading">
               <Sparkles size={16} />
               <span>Anonymous tier limit reached — connect your free OpenRouter account for 10x more requests</span>
             </div>
-            <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-secondary)' }}>
+            <p className="chat-upsell-body">
               Take 2 minutes to connect your free OpenRouter, Groq, or Google AI Studio accounts. No credit card required.
             </p>
             <button
               type="button"
+              className="chat-upsell-btn chat-upsell-start"
               onClick={() => openWizard('openrouter')}
-              style={{
-                alignSelf: 'flex-start',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '6px',
-                padding: '6px 14px',
-                background: 'var(--accent-primary, #6366f1)',
-                color: '#ffffff',
-                border: 'none',
-                borderRadius: '6px',
-                fontSize: '12px',
-                fontWeight: 600,
-                cursor: 'pointer'
-              }}
             >
               <span>Connect Free Accounts Now →</span>
             </button>
@@ -538,60 +440,27 @@ export const QuotaExhaustedCard: React.FC<{ errorCard: ChatErrorCardType; onRetr
         {/* Subscription Upsell Card */}
         <div
           id="quota-exhausted-subscription-upsell"
-          style={{
-            marginTop: '12px',
-            padding: '12px 14px',
-            background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.12), rgba(56, 189, 248, 0.12))',
-            border: '1px solid rgba(16, 185, 129, 0.35)',
-            borderRadius: '8px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '8px'
-          }}
+          className="chat-upsell is-subscription"
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--accent-green)', fontWeight: 600, fontSize: '13px' }}>
+          <div className="chat-upsell-heading">
             <Sparkles size={16} />
             <span>Connect your Copilot subscription — no extra cost</span>
           </div>
-          <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-secondary)' }}>
+          <p className="chat-upsell-body">
             Never hit rate limits. Ty-Code supports device-flow authentication for GitHub Copilot and ChatGPT OAuth. Zero API billing.
           </p>
-          <div style={{ display: 'flex', gap: '8px', marginTop: '2px' }}>
+          <div className="chat-upsell-actions">
             <button
               type="button"
+              className="chat-upsell-btn chat-upsell-success"
               onClick={() => openWizard('subscriptions')}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '6px',
-                padding: '6px 14px',
-                background: 'var(--accent-green)',
-                color: '#ffffff',
-                border: 'none',
-                borderRadius: '6px',
-                fontSize: '12px',
-                fontWeight: 600,
-                cursor: 'pointer'
-              }}
             >
               <span>Connect Copilot (via your Copilot — no extra cost)</span>
             </button>
             <button
               type="button"
+              className="chat-upsell-btn is-quiet"
               onClick={() => openSettings('providers')}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '6px',
-                padding: '6px 14px',
-                background: 'rgba(255, 255, 255, 0.08)',
-                color: 'var(--text-secondary)',
-                border: '1px solid rgba(255, 255, 255, 0.15)',
-                borderRadius: '6px',
-                fontSize: '12px',
-                fontWeight: 500,
-                cursor: 'pointer'
-              }}
             >
               <span>Manage Subscriptions</span>
             </button>
@@ -822,18 +691,6 @@ export const ErrorCard: React.FC<{ errorCard: ChatErrorCardType; onRetry?: () =>
   return <ChatErrorCard errorCard={errorCard} onRetry={onRetry} />;
 };
 
-const planReviewButtonBase: React.CSSProperties = {
-  padding: '8px 14px',
-  borderRadius: '8px',
-  fontSize: '12.5px',
-  fontWeight: 600,
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: '6px',
-  cursor: 'pointer',
-  transition: 'opacity 0.15s ease'
-};
-
 interface PlanReviewCardProps {
   approval: AgentToolApproval;
   sending: boolean;
@@ -856,128 +713,58 @@ const PlanReviewCard: React.FC<PlanReviewCardProps> = ({ approval, sending, onAp
     <article
       role="alert"
       aria-label="Task Scoping Report review"
-      style={{
-        margin: '10px 0',
-        padding: '14px',
-        borderRadius: '12px',
-        border: '1px solid var(--accent-blue, #3b82f6)',
-        background: 'linear-gradient(180deg, rgba(59, 130, 246, 0.10), rgba(59, 130, 246, 0.03))',
-        boxShadow: '0 8px 24px -12px rgba(59, 130, 246, 0.45)',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '10px'
-      }}
+      className="chat-plan-card"
     >
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
-        <div
-          style={{
-            padding: '8px',
-            borderRadius: '10px',
-            background: 'rgba(59, 130, 246, 0.15)',
-            color: 'var(--accent-blue, #3b82f6)',
-            display: 'flex',
-            flexShrink: 0
-          }}
-        >
+      <div className="chat-plan-head">
+        <div className="chat-plan-icon">
           <Compass size={16} />
         </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <strong style={{ fontSize: '13px', color: 'var(--text-primary, #f3f4f6)' }}>Task Scoping Report</strong>
-          <div style={{ fontSize: '11px', color: 'var(--text-secondary, #9ca3af)', marginTop: '2px', overflowWrap: 'anywhere' }}>{approval.reason}</div>
+        <div className="chat-plan-heading">
+          <strong className="chat-plan-title">Task Scoping Report</strong>
+          <div className="chat-plan-subtitle">{approval.reason}</div>
         </div>
-        <span
-          style={{
-            fontSize: '10px',
-            fontWeight: 700,
-            textTransform: 'uppercase',
-            letterSpacing: '0.06em',
-            padding: '3px 8px',
-            borderRadius: '999px',
-            background: 'rgba(59, 130, 246, 0.18)',
-            color: 'var(--accent-blue, #3b82f6)',
-            border: '1px solid rgba(59, 130, 246, 0.4)',
-            flexShrink: 0
-          }}
-        >
+        <span className="chat-plan-state">
           Plan review
         </span>
       </div>
       {report.trim().length > 0 && (
-        <pre
-          style={{
-            margin: 0,
-            maxHeight: '300px',
-            overflowY: 'auto',
-            whiteSpace: 'pre-wrap',
-            wordBreak: 'break-word',
-            padding: '10px 12px',
-            borderRadius: '8px',
-            background: 'var(--bg-primary, #121316)',
-            border: '1px solid var(--border-subtle, #262833)',
-            fontFamily: 'var(--font-mono, monospace)',
-            fontSize: '11.5px',
-            lineHeight: 1.55,
-            color: 'var(--text-primary, #f3f4f6)'
-          }}
-        >
+        <pre className="chat-plan-report">
           {report}
         </pre>
       )}
       {approval.checkpoint && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11.5px', color: 'var(--text-secondary, #9ca3af)' }}>
+        <div className="chat-plan-checkpoint">
           <Info size={13} />
           <span>
-            <strong style={{ color: 'var(--text-primary, #f3f4f6)' }}>Checkpoint:</strong> {approval.checkpoint}
+            <strong>Checkpoint:</strong> {approval.checkpoint}
           </span>
         </div>
       )}
       {reviseOpen && (
         <textarea
+          className="chat-plan-revise"
           value={reviseText}
           onChange={(e) => setReviseText(e.target.value)}
           placeholder="Describe what should change in the plan (missing phases, wrong files, tighter scope...)"
           rows={3}
-          style={{
-            width: '100%',
-            boxSizing: 'border-box',
-            resize: 'vertical',
-            padding: '8px 10px',
-            borderRadius: '8px',
-            background: 'var(--bg-primary, #121316)',
-            border: '1px solid var(--border-subtle, #262833)',
-            color: 'var(--text-primary, #f3f4f6)',
-            fontSize: '12px',
-            fontFamily: 'var(--font-sans, system-ui, sans-serif)'
-          }}
         />
       )}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+      <div className="chat-plan-actions">
         <button
+          type="button"
+          className="chat-plan-btn"
           disabled={sending}
           onClick={() => void onApprove()}
-          style={{
-            ...planReviewButtonBase,
-            background: 'var(--accent-green, #10b981)',
-            color: '#ffffff',
-            border: 'none',
-            boxShadow: '0 2px 8px rgba(16, 185, 129, 0.35)',
-            cursor: sending ? 'not-allowed' : 'pointer',
-            opacity: sending ? 0.6 : 1
-          }}
         >
           <Check size={13} />
           <span>Approve &amp; Execute</span>
         </button>
         {!reviseOpen && (
           <button
+            type="button"
+            className="chat-plan-btn chat-plan-btn-secondary"
             disabled={sending}
             onClick={() => setReviseOpen(true)}
-            style={{
-              ...planReviewButtonBase,
-              background: 'transparent',
-              color: 'var(--text-primary, #f3f4f6)',
-              border: '1px solid var(--border-strong, #3b3e4f)'
-            }}
           >
             <RotateCcw size={13} />
             <span>Revise Plan</span>
@@ -985,16 +772,10 @@ const PlanReviewCard: React.FC<PlanReviewCardProps> = ({ approval, sending, onAp
         )}
         {reviseOpen && (
           <button
+            type="button"
+            className="chat-plan-btn chat-plan-btn-send"
             disabled={sending || reviseText.trim().length === 0}
             onClick={sendFeedback}
-            style={{
-              ...planReviewButtonBase,
-              background: 'var(--accent-blue, #3b82f6)',
-              color: '#ffffff',
-              border: 'none',
-              cursor: sending || reviseText.trim().length === 0 ? 'not-allowed' : 'pointer',
-              opacity: sending || reviseText.trim().length === 0 ? 0.6 : 1
-            }}
           >
             <Send size={13} />
             <span>Send feedback</span>
@@ -1002,21 +783,16 @@ const PlanReviewCard: React.FC<PlanReviewCardProps> = ({ approval, sending, onAp
         )}
         {reviseOpen && (
           <button
+            type="button"
+            className="chat-plan-btn chat-plan-btn-ghost"
             disabled={sending}
             onClick={() => setReviseOpen(false)}
-            style={{
-              ...planReviewButtonBase,
-              background: 'transparent',
-              color: 'var(--text-secondary, #9ca3af)',
-              border: '1px solid transparent',
-              padding: '8px 10px'
-            }}
           >
             <span>Cancel</span>
           </button>
         )}
       </div>
-      <span style={{ fontSize: '10.5px', color: 'var(--text-muted, #6b7280)' }}>
+      <span className="chat-plan-note">
         Execution tools stay locked until a plan is approved. Plan reviews remain open for up to ten minutes.
       </span>
     </article>
@@ -1068,7 +844,14 @@ function formatHeaderStatus(status: string, maxLen = 23): string {
 
 export const ChatSidecar: React.FC = () => {
   const [input, setInput] = useState('');
-  const [sidecarTab, setSidecarTab] = useState<'chat' | 'pair'>('chat');
+  const [sidecarTab, setSidecarTab] = useState<'chat' | 'pair' | 'history'>('chat');
+  // Phase 1: keep the encrypted session store pointed at the current workspace.
+  const setSessionWorkspace = useSessionStore((s) => s.setWorkspaceRoot);
+  const activeSessionId = useSessionStore((s) => s.activeSessionId);
+  const activeSidecar = useSessionStore((s) => {
+    if (!s.activeSessionId) return null;
+    return s.sidecars.find((sc) => sc.sessionId === s.activeSessionId) ?? null;
+  });
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const chatListRef = useRef<ChatMessageListHandle>(null);
   const { messages, isRunning, currentTaskId, activeAssistantMessageId, currentStatus, currentThought, streamingText, pendingApproval, sendMessage, stopTask, respondToApproval, clearChat, agentMode, setAgentMode, draftPrompt, setDraftPrompt, activeErrorCard, dismissErrorCard, contextTokens, recentSessions, pendingResume, loadRecentSessions, acceptSessionResume, dismissSessionResume, updateMessage } = useChatStore();
@@ -1083,6 +866,11 @@ export const ChatSidecar: React.FC = () => {
   const communityKeyStatus = useSettingsStore((s) => s.communityKeyStatus);
   const [approvalSending, setApprovalSending] = useState(false);
   const { workspacePath, activeTabPath, openTabs, openDiffReview, applyDiff, hasWorkspace } = useWorkspaceStore();
+  // Phase 1: point the encrypted session store at the current workspace so tabs,
+  // listing, and history search all operate within the right wsHash shard.
+  useEffect(() => {
+    setSessionWorkspace(workspacePath ?? null);
+  }, [workspacePath, setSessionWorkspace]);
   const activeTab = openTabs.find((tab) => tab.path === activeTabPath);
   const groupedMessages = useMemo(() => groupMessagesByTask(messages), [messages]);
 
@@ -1431,6 +1219,17 @@ export const ChatSidecar: React.FC = () => {
             <span>Pair Mode</span>
             {isPairActive && <span className="chat-pair-active-dot" aria-label="Pair session active" />}
           </button>
+          <button
+            type="button"
+            aria-pressed={sidecarTab === 'history'}
+            onClick={() => setSidecarTab('history')}
+            className={`chat-header-tab${sidecarTab === 'history' ? ' is-active' : ''}`}
+            title={activeSidecar ? `Session: ${activeSidecar.title}` : 'Session history'}
+          >
+            <History size={13} aria-hidden="true" />
+            <span>{activeSidecar ? activeSidecar.title.slice(0, 18) : 'Sessions'}</span>
+            {activeSessionId && <span className="chat-header-tab-dot" aria-hidden="true" />}
+          </button>
         </div>
         <div className="chat-header-actions">
           {currentStatus && <span className="chat-status" title={currentStatus}><Loader2 size={10} className="animate-spin" /><span>{formatHeaderStatus(currentStatus)}</span></span>}
@@ -1483,59 +1282,21 @@ export const ChatSidecar: React.FC = () => {
 
     {/* Step 2: Review-Awaiting Banner */}
     {activeDocument && isDocumentTabOpen && docReviewStatus === 'pending' && (
-      <div
-        id="review-awaiting-banner"
-        style={{
-          padding: '8px 12px',
-          background: 'linear-gradient(90deg, rgba(99, 102, 241, 0.12), rgba(168, 85, 247, 0.08))',
-          borderBottom: '1px solid rgba(99, 102, 241, 0.25)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: '8px',
-          fontSize: '11px',
-          color: 'var(--text-primary)',
-          lineHeight: '1.4'
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '7px', minWidth: 0, overflow: 'hidden' }}>
-          <span
-            style={{
-              fontSize: '9px',
-              fontWeight: 700,
-              padding: '1px 5px',
-              borderRadius: '3px',
-              textTransform: 'uppercase',
-              letterSpacing: '0.04em',
-              backgroundColor: activeDocument.kind === 'plan' ? 'rgba(99, 102, 241, 0.25)' : 'rgba(16, 185, 129, 0.25)',
-              color: activeDocument.kind === 'plan' ? '#a5b4fc' : '#6ee7b7'
-            }}
-          >
+      <div id="review-awaiting-banner" className="chat-review-banner">
+        <div className="chat-review-banner-label">
+          <span className={`chat-review-kind-chip is-${activeDocument.kind}`}>
             {activeDocument.kind}
           </span>
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            Awaiting your review: <strong style={{ color: '#fff' }}>{activeDocument.title}</strong>
+          <span className="chat-review-title-text">
+            Awaiting your review: <strong>{activeDocument.title}</strong>
           </span>
         </div>
         <button
           type="button"
+          className="chat-review-open-btn"
           onClick={() => {
             openDocument(activeDocument);
             setDocTabActive(true);
-          }}
-          style={{
-            flexShrink: 0,
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '4px',
-            padding: '3px 8px',
-            borderRadius: '4px',
-            background: 'var(--accent-primary, #6366f1)',
-            color: '#ffffff',
-            border: 'none',
-            fontSize: '10.5px',
-            fontWeight: 600,
-            cursor: 'pointer'
           }}
         >
           <span>Open in Editor</span>
@@ -1545,79 +1306,62 @@ export const ChatSidecar: React.FC = () => {
     )}
 
     {sidecarTab === 'chat' && agentMode === 'plan' && (
-      <div
-        style={{
-          padding: '6px 10px',
-          background: 'rgba(245, 158, 11, 0.1)',
-          borderBottom: '1px solid rgba(245, 158, 11, 0.25)',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '6px',
-          fontSize: '11px',
-          color: 'var(--accent-amber)',
-          lineHeight: '1.3'
-        }}
-      >
-        <Compass size={13} style={{ flexShrink: 0 }} />
+      <div className="chat-plan-agent-notice">
+        <Compass size={13} />
         <span><strong>Plan Agent Active (Read-Only):</strong> File edits are refused; bash commands require permission. Switch to Build mode to apply changes.</span>
       </div>
     )}
 
     {!hasWorkspace && (
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', background: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)', borderRadius: 6, fontSize: 11, color: 'var(--text-secondary)', marginBottom: 8 }}>
+      <div className="chat-workspace-tip">
         <Lightbulb size={12} />
         <span>💡 Tip: Open a workspace (Ctrl+O) to unlock full AI file editing and terminal capabilities.</span>
       </div>
     )}
 
-    {sidecarTab === 'pair' ? (
-      <div className="chat-feed" style={{ padding: '12px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, padding: '8px 10px', background: 'var(--bg-secondary)', borderRadius: 6, border: '1px solid var(--border-subtle)' }}>
+    {sidecarTab === 'history' ? (
+      <div className="chat-feed chat-history-feed">
+        <HistoryBrowser />
+      </div>
+    ) : sidecarTab === 'pair' ? (
+      <div className="chat-feed chat-pair-panel">
+        <div className="chat-pair-header">
           <div>
-            <div style={{ fontWeight: 600, fontSize: 12 }}>AI Pair Programmer</div>
-            <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{isPairActive ? 'Active and watching editor edits' : 'Paused'}</div>
+            <div className="chat-pair-title">AI Pair Programmer</div>
+            <div className="chat-pair-subtitle">{isPairActive ? 'Active and watching editor edits' : 'Paused'}</div>
           </div>
           <button
             type="button"
+            className={`chat-pair-toggle${isPairActive ? ' is-active' : ''}`}
             onClick={togglePairMode}
-            style={{
-              padding: '4px 8px',
-              fontSize: 11,
-              fontWeight: 600,
-              borderRadius: 4,
-              background: isPairActive ? 'rgba(239, 68, 68, 0.2)' : 'rgba(34, 197, 94, 0.2)',
-              color: isPairActive ? 'var(--accent-red)' : 'var(--accent-green)',
-              border: `1px solid ${isPairActive ? 'rgba(239, 68, 68, 0.4)' : 'rgba(34, 197, 94, 0.4)'}`,
-              cursor: 'pointer'
-            }}
           >
             {isPairActive ? 'Pause' : 'Start'}
           </button>
         </div>
 
         {suggestions.length === 0 ? (
-          <div style={{ padding: '30px 10px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 11 }}>
-            <Lightbulb size={24} style={{ color: 'var(--text-muted)', margin: '0 auto 8px auto' }} />
-            <p style={{ fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>Pair programming is listening</p>
+          <div className="chat-pair-empty">
+            <Lightbulb size={24} className="chat-pair-empty-icon" />
+            <p className="chat-pair-empty-title">Pair programming is listening</p>
             <p>Start writing functions, interfaces, or classes in the editor. Ty-Code will suggest next steps, bug warnings, and test-driven development workflows in real time.</p>
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div className="chat-pair-suggestion-list">
             {suggestions.map((sug) => (
-              <div key={sug.id} style={{ padding: 10, borderRadius: 6, background: 'var(--bg-primary)', border: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: sug.type === 'bug-alert' ? 'var(--accent-red)' : sug.type === 'tdd-step' ? 'var(--accent-amber)' : 'var(--accent-cyan)' }}>{sug.title}</span>
-                  <button type="button" onClick={() => dismissSuggestion(sug.id)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 2 }}><X size={11} /></button>
+              <div key={sug.id} className="chat-pair-suggestion">
+                <div className="chat-pair-suggestion-head">
+                  <span className={`chat-pair-suggestion-title is-${sug.type}`}>{sug.title}</span>
+                  <button type="button" className="chat-pair-suggestion-dismiss" onClick={() => dismissSuggestion(sug.id)}><X size={11} /></button>
                 </div>
-                <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{sug.message}</div>
+                <div className="chat-pair-suggestion-msg">{sug.message}</div>
                 {sug.actionLabel && (
                   <button
                     type="button"
+                    className="chat-pair-suggestion-action"
                     onClick={() => {
                       setSidecarTab('chat');
                       sendPrompt(`Let's execute: ${sug.title}. Detail: ${sug.message}`);
                     }}
-                    style={{ alignSelf: 'flex-start', padding: '3px 8px', fontSize: 10, fontWeight: 600, borderRadius: 4, background: 'var(--accent-primary)', color: '#fff', cursor: 'pointer', marginTop: 4 }}
                   >
                     {sug.actionLabel}
                   </button>
@@ -1792,7 +1536,7 @@ export const ChatSidecar: React.FC = () => {
             )}
 
             {activeErrorCard && (
-              <div className="chat-active-error-banner" style={{ margin: '8px 0' }}>
+              <div className="chat-active-error-banner">
                 <ChatErrorCard
                   errorCard={activeErrorCard}
                   onRetry={handleRegenerate}
@@ -1809,90 +1553,35 @@ export const ChatSidecar: React.FC = () => {
 
     {/* Step 3: Queued Section Comments Shelf */}
     {queuedMessages.length > 0 && (
-      <div
-        id="queued-messages-shelf"
-        style={{
-          padding: '8px 12px',
-          background: 'var(--bg-secondary)',
-          borderTop: '1px solid var(--border-subtle)',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '6px',
-          maxHeight: '140px',
-          overflowY: 'auto'
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '10.5px', color: 'var(--text-muted)' }}>
-          <span style={{ display: 'flex', alignItems: 'center', gap: '5px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-            <MessageSquare size={11} className="text-indigo-400" />
+      <div id="queued-messages-shelf" className="chat-queued-shelf">
+        <div className="chat-queued-header">
+          <span className="chat-queued-title">
+            <MessageSquare size={11} />
             Queued Feedback ({queuedMessages.length})
           </span>
           <button
             type="button"
+            className="chat-queued-clear"
             onClick={clearQueuedMessages}
-            style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '10px' }}
             title="Clear queued feedback"
           >
             Clear all
           </button>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+        <div className="chat-queued-list">
           {queuedMessages.map((msg, idx) => {
             const match = msg.match(/^\[FEEDBACK ON SECTION:\s*([^\]]+)\]\s*(.*)$/s);
             if (match) {
               const [, heading, text] = match;
               return (
-                <div
-                  key={idx}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    padding: '4px 8px',
-                    borderRadius: '6px',
-                    background: 'rgba(99, 102, 241, 0.1)',
-                    border: '1px solid rgba(99, 102, 241, 0.25)',
-                    fontSize: '11px',
-                    color: 'var(--text-primary)'
-                  }}
-                >
-                  <span
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '3px',
-                      padding: '1px 6px',
-                      borderRadius: '4px',
-                      background: 'rgba(99, 102, 241, 0.25)',
-                      color: '#c7d2fe',
-                      fontWeight: 600,
-                      fontSize: '10px',
-                      flexShrink: 0
-                    }}
-                  >
-                    § {heading}
-                  </span>
-                  <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text-secondary)' }}>
-                    {text}
-                  </span>
+                <div key={idx} className="chat-queued-item">
+                  <span className="chat-queued-section-chip">§ {heading}</span>
+                  <span className="chat-queued-text">{text}</span>
                 </div>
               );
             }
             return (
-              <div
-                key={idx}
-                style={{
-                  padding: '4px 8px',
-                  borderRadius: '6px',
-                  background: 'var(--bg-tertiary)',
-                  border: '1px solid var(--border-subtle)',
-                  fontSize: '11px',
-                  color: 'var(--text-secondary)',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap'
-                }}
-              >
+              <div key={idx} className="chat-queued-plain">
                 {msg}
               </div>
             );
@@ -1902,6 +1591,8 @@ export const ChatSidecar: React.FC = () => {
     )}
 
     <ReliabilityAdvisorCard />
+
+    {sidecarTab === 'chat' && <ContextMeter />}
 
     <ChatInput
       input={input}
