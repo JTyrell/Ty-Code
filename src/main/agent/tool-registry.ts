@@ -17,6 +17,8 @@ const WORKSPACE_TOOLS = new Set([
   'list_dir',
   'list_directory',
   'grep_search',
+  'load_rule',
+  'semantic_search',
   'git_status',
   'git_diff',
   'git_commit',
@@ -29,6 +31,8 @@ const WORKSPACE_TOOLS = new Set([
 const READ_ONLY_TOOLS = new Set([
   'read_file',
   'grep_search',
+  'load_rule',
+  'semantic_search',
   'list_dir',
   'list_directory',
   'git_log',

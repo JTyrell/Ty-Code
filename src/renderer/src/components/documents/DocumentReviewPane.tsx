@@ -35,6 +35,7 @@ import {
   type DocumentReviewStatus
 } from '../../state/document-review-store';
 import { useChatStore } from '../../state/chat-store';
+import { toast } from '../../state/toast-store';
 import type { AgentDocument, AgentDocumentSection } from '../../../../preload/types';
 import { useThemeSync, getMonacoTheme } from '../../hooks/useThemeSync';
 import { copyTextOrNotify } from '../../lib/clipboard';
@@ -413,6 +414,27 @@ export const DocumentReviewPane: React.FC = () => {
   const handleProceed = async () => {
     if (!activeDocument) return;
 
+    // Prompt B: a Quest spec's approval is the run gate. Approving starts the
+    // isolated worktree quest — it must NEVER fall through to a main-workspace
+    // build (that would break the worktrees-only rule).
+    const questId = activeDocument.questId;
+    if (questId) {
+      setStatus('approved');
+      try {
+        const res = await window.electronAPI.quest?.approve(questId);
+        if (res && !res.success) {
+          setStatus('pending');
+          toast.error('Could not start quest', res.error || 'Approval failed.');
+        } else {
+          toast.success('Quest approved', 'Running in an isolated worktree — track it in the Quests panel.');
+        }
+      } catch (err: unknown) {
+        setStatus('pending');
+        toast.error('Could not start quest', err instanceof Error ? err.message : String(err));
+      }
+      return;
+    }
+
     // 1. Resolve pending approval IPC if waiting
     if (pendingApproval) {
       await respondToApproval(true);
@@ -437,6 +459,28 @@ export const DocumentReviewPane: React.FC = () => {
   // Handle request changes / request revision
   const handleRequestRevision = () => {
     if (!activeDocument) return;
+
+    // Prompt B: collect the reviewer's section comments and have the agent
+    // re-draft the Spec. The new draft reopens this pane via the spec event.
+    const questId = activeDocument.questId;
+    if (questId) {
+      const feedback = Object.values(comments).flat();
+      void (async () => {
+        try {
+          const res = await window.electronAPI.quest?.revise(questId, feedback);
+          if (res && res.success) {
+            setStatus('pending');
+            toast.info('Revision requested', 'The agent is redrafting the Spec with your notes.');
+          } else {
+            toast.error('Could not revise spec', (res && !res.success && res.error) || 'Revision failed.');
+          }
+        } catch (err: unknown) {
+          toast.error('Could not revise spec', err instanceof Error ? err.message : String(err));
+        }
+      })();
+      return;
+    }
+
     const isPlan = activeDocument.kind === 'plan';
     const contextPrefix = `Regarding ${isPlan ? 'Execution Plan' : 'Report'} "${activeDocument.title}": `;
     setDraftPrompt(contextPrefix);
@@ -473,6 +517,7 @@ export const DocumentReviewPane: React.FC = () => {
 
   const isApproved = status === 'approved';
   const isPlan = activeDocument.kind === 'plan';
+  const isQuest = Boolean(activeDocument.questId);
 
   return (
     <div className="flex h-full w-full flex-col doc-review-pane bg-[#0f1115] text-gray-100 overflow-hidden font-sans select-text">
@@ -526,7 +571,7 @@ export const DocumentReviewPane: React.FC = () => {
           ) : isApproved ? (
             <div className="flex items-center gap-2 px-3 py-1 rounded bg-emerald-950/30 border border-emerald-800/40 text-emerald-300 text-xs font-medium">
               <CheckCircle2 size={14} className="text-emerald-400" />
-              <span>Approved — executing</span>
+              <span>{isQuest ? 'Approved — running in worktree' : 'Approved — executing'}</span>
               {currentTaskId && (
                 <span className="text-[10px] text-emerald-400/80 font-mono flex items-center gap-1 ml-1">
                   ({currentTaskId})
@@ -541,10 +586,10 @@ export const DocumentReviewPane: React.FC = () => {
                   type="button"
                   onClick={handleProceed}
                   className="flex items-center gap-1.5 px-3.5 py-1.5 rounded text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 transition-colors shadow-sm shadow-emerald-950/50"
-                  title="Approve this plan and proceed with execution"
+                  title={isQuest ? 'Approve the Spec and run this quest in an isolated git worktree' : 'Approve this plan and proceed with execution'}
                 >
                   <CheckCircle2 size={13} />
-                  <span>Proceed with Execution</span>
+                  <span>{isQuest ? 'Approve & Run Quest' : 'Proceed with Execution'}</span>
                 </button>
               )}
 
@@ -565,7 +610,7 @@ export const DocumentReviewPane: React.FC = () => {
                 title={isPlan ? 'Request changes to this plan' : 'Request a revision for this report'}
               >
                 {isPlan ? <MessageSquare size={13} /> : <RotateCcw size={13} />}
-                <span>{isPlan ? 'Request Changes' : 'Request Revision'}</span>
+                <span>{isQuest ? 'Request Revision' : isPlan ? 'Request Changes' : 'Request Revision'}</span>
               </button>
             </>
           )}

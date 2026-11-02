@@ -255,7 +255,13 @@ class CheckpointService {
   /** Cap 50 checkpoints or 512 MB per workspace; prune oldest first. */
   async enforceRetention(workspaceRoot: string): Promise<void> {
     const manifests = await snapshotBackend.list(workspaceRoot);
-    let remaining = manifests.slice().sort((a, b) => b.createdAt - a.createdAt); // newest first
+    // Newest first. `createdAt` is only millisecond-resolution, so rapid captures
+    // collide on the same ms; tie-break on the per-task monotonic `n` so the
+    // truly-oldest bundle is deterministically at the tail (otherwise pruning
+    // could drop a newer checkpoint while an older one survives).
+    let remaining = manifests
+      .slice()
+      .sort((a, b) => (b.createdAt !== a.createdAt ? b.createdAt - a.createdAt : b.n - a.n));
     let totalBytes = remaining.reduce((sum, m) => sum + (m.sizeBytes || 0), 0);
 
     const toRemove: CheckpointManifest[] = [];

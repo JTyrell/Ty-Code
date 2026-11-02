@@ -72,6 +72,9 @@ import { DiagnosticsPanel } from './settings/DiagnosticsPanel';
 import { ProvidersModelsTab } from './settings/ProvidersModelsTab';
 import { UsageLedgerView } from './dashboard/UsageLedgerView';
 import { CorrectionsManager } from './settings/CorrectionsManager';
+import { RulesManager } from './settings/RulesManager';
+import { McpSettingsPanel } from './settings/McpSettingsPanel';
+import { MemoryManager } from './settings/MemoryManager';
 import { PanelBoundary, RenderStormWatch } from './settings/PanelBoundary';
 import { trackRenders } from '../dev/render-storm';
 import type { FreeProvider } from '../../../shared/types/free-providers';
@@ -79,7 +82,7 @@ import type { StoredKeySummary, CustomProviderConfig } from '../../../shared/typ
 import { copyTextOrNotify } from '../lib/clipboard';
 
 type UpdateChannelPreference = 'stable' | 'beta' | 'nightly';
-type SettingsTab = 'apikeys' | 'providers' | 'byok' | 'usage' | 'openkilo' | 'opencode' | 'integrations' | 'orchestration' | 'fcc' | 'rules' | 'endpoints' | 'params' | 'terminal' | 'lsp' | 'editor' | 'shortcuts' | 'extensions' | 'security' | 'privacy' | 'diagnostics';
+type SettingsTab = 'apikeys' | 'providers' | 'byok' | 'usage' | 'openkilo' | 'opencode' | 'integrations' | 'orchestration' | 'fcc' | 'rules' | 'mcp' | 'endpoints' | 'params' | 'terminal' | 'lsp' | 'editor' | 'shortcuts' | 'extensions' | 'security' | 'privacy' | 'diagnostics';
 
 const DEFAULT_SECURITY_SETTINGS: SecurityPolicySettings = {
   terminalPolicy: 'restricted',
@@ -1144,6 +1147,15 @@ export const SettingsModal: React.FC = () => {
             <Sparkles size={13} color="#c084fc" />Project Rules &amp; Memory
           </button>
           <button
+            className={activeTab === 'mcp' ? 'is-active' : ''}
+            onClick={() => setActiveTab('mcp')}
+            style={{ color: activeTab === 'mcp' ? 'var(--accent-primary)' : undefined }}
+            id="tab-btn-mcp"
+            data-tab="mcp"
+          >
+            <Activity size={13} color="#38bdf8" />Model Context Servers
+          </button>
+          <button
             className={activeTab === 'endpoints' ? 'is-active' : ''}
             onClick={() => setActiveTab('endpoints')}
             id="tab-btn-endpoints"
@@ -1539,7 +1551,20 @@ export const SettingsModal: React.FC = () => {
 
           {/* Tab: Universal Correction Memory & Project Rules (Learning Loop) */}
           {renderTabPanel(activeTab, 'rules', (
-            <CorrectionsManager />
+            <div className="space-y-8">
+              <MemoryManager />
+              <div className="pt-2 border-t border-[#202230]">
+                <RulesManager />
+              </div>
+              <div className="pt-2 border-t border-[#202230]">
+                <CorrectionsManager />
+              </div>
+            </div>
+          ))}
+
+          {/* Tab: Live MCP client management (Prompt E Step 2) */}
+          {renderTabPanel(activeTab, 'mcp', (
+            <McpSettingsPanel />
           ))}
 
           {/* Tab: Smart Orchestration & Unified Experience (Layer 6) */}

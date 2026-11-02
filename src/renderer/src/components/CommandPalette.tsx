@@ -15,7 +15,8 @@ import {
   Zap,
   Bookmark,
   Sparkles,
-  Activity
+  Activity,
+  Rocket
 } from 'lucide-react';
 import { useWorkspaceStore } from '../state/workspace-store';
 import { useChatStore } from '../state/chat-store';
@@ -68,7 +69,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   const inputRef = useRef<HTMLInputElement>(null);
 
   const { saveActiveFile, activeTabPath, openTabs } = useWorkspaceStore();
-  const { toggleTerminal, toggleSettings } = useChatStore();
+  const { toggleTerminal, toggleSettings, setDraftPrompt } = useChatStore();
 
   useEffect(() => {
     if (isOpen) {
@@ -87,6 +88,18 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   // Generate complete command list
   const getCommands = (): CommandItem[] => {
     const commands: CommandItem[] = [
+      {
+        id: 'tycode.quest.delegate',
+        title: 'Ty-Code: Delegate as Quest',
+        category: 'General',
+        icon: <Rocket size={14} color="var(--accent-primary)" />,
+        action: () => {
+          // Pre-fill the chat composer with the /quest command; the agent then
+          // drafts a Spec for approval before anything runs in a worktree.
+          setDraftPrompt('/quest ');
+          onClose();
+        }
+      },
       {
         id: 'tycode.extension.traceInstall',
         title: 'Ty-Code: Trace Extension Install',

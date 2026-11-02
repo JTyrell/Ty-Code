@@ -210,6 +210,18 @@ const MainWorkbench: React.FC = () => {
   }, []);
 
   /**
+   * Open the Assistant panel without ever closing it.
+   *
+   * Prompt E quick actions route answers into the sidecar; dispatching the
+   * toggle event for that would shut the panel whenever it already happened
+   * to be open. Same reveal-only shape as `showActivityView` uses for the
+   * left sidebar.
+   */
+  const ensureAssistantSidebar = useCallback(() => {
+    setRightWidth((w) => (w > 0 ? w : lastRightWidthRef.current || 380));
+  }, []);
+
+  /**
    * Reveal an activity-bar view, opening the primary sidebar if it is shut.
    *
    * Deliberately not `handleTabChange`: clicking the already-active tab toggles
@@ -392,6 +404,8 @@ const MainWorkbench: React.FC = () => {
     window.addEventListener('workbench:show-boot-timeline', onShowBootTimeline);
     window.addEventListener('workbench:toggle-left-sidebar', togglePrimarySidebar);
     window.addEventListener('workbench:toggle-right-sidebar', toggleAssistantSidebar);
+    const onEnsureAssistant = (): void => ensureAssistantSidebar();
+    window.addEventListener('workbench:ensure-assistant', onEnsureAssistant);
     window.addEventListener('workbench:toggle-all-panels', onToggleAllPanels);
     window.addEventListener('workbench:quick-open', onQuickOpen);
     window.addEventListener('workbench:command-palette', onCommandPalette);
@@ -400,11 +414,12 @@ const MainWorkbench: React.FC = () => {
       window.removeEventListener('workbench:show-boot-timeline', onShowBootTimeline);
       window.removeEventListener('workbench:toggle-left-sidebar', togglePrimarySidebar);
       window.removeEventListener('workbench:toggle-right-sidebar', toggleAssistantSidebar);
+      window.removeEventListener('workbench:ensure-assistant', onEnsureAssistant);
       window.removeEventListener('workbench:toggle-all-panels', onToggleAllPanels);
       window.removeEventListener('workbench:quick-open', onQuickOpen);
       window.removeEventListener('workbench:command-palette', onCommandPalette);
     };
-  }, [openQuickOpenWith, togglePrimarySidebar, toggleAssistantSidebar]);
+  }, [openQuickOpenWith, togglePrimarySidebar, toggleAssistantSidebar, ensureAssistantSidebar]);
 
   useEffect(() => {
     // Record renderer_first_paint after initial frame and paint

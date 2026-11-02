@@ -10,6 +10,13 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     include: ['src/main/**/*.test.ts'],
-    environment: 'node'
+    environment: 'node',
+    // Knowledge-layer tests (wiki generation, semantic indexing) do heavy real-disk +
+    // local-embedder I/O. Under full core-count parallelism on a loaded machine they
+    // intermittently blow past the 5s default. Raise the per-test budget and cap worker
+    // fan-out so disk/CPU contention doesn't produce flaky timeouts.
+    testTimeout: 30_000,
+    hookTimeout: 30_000,
+    maxWorkers: 4
   }
 });

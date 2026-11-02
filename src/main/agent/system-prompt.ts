@@ -336,6 +336,35 @@ export const AGENT_TOOLS_DEFINITIONS = [
   {
     type: 'function',
     function: {
+      name: 'load_rule',
+      description: 'Read the full text of a project rule (from .tycode/rules/) by its name. Use when a rule is listed as available on demand and its guidance is relevant to the current change.',
+      parameters: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: 'The rule name/slug as listed in the available-rules catalog.' }
+        },
+        required: ['name']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'semantic_search',
+      description: 'Search the workspace by MEANING using the local semantic code index. Unlike grep_search this finds code whose identifiers were renamed or that only matches conceptually (shared intent, not literal text). Returns ranked source chunks with file paths and line numbers. Prefer it when you know WHAT the code does but not the exact symbol name; fall back to grep_search for literal text.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Natural-language or keyword description of the code you are looking for.' },
+          limit: { type: 'number', description: 'Maximum number of ranked chunks to return (1-30, default 8).' }
+        },
+        required: ['query']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'git_status',
       description: 'Get current Git repository status including current branch, ahead/behind counts, and staged/unstaged/untracked files.',
       parameters: {

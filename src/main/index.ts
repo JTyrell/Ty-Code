@@ -303,6 +303,13 @@ import { registerSessionHandlers } from './ipc/session-handlers';
 import { registerInlineAssistHandlers } from './ipc/inline-assist-handlers';
 import { registerContextMeterHandlers } from './ipc/context-meter-handlers';
 import { registerCheckpointHandlers } from './ipc/checkpoint-handlers';
+import { registerWikiHandlers } from './ipc/wiki-handlers';
+import { registerRulesHandlers } from './ipc/rules-handlers';
+import { registerIndexHandlers } from './ipc/index-handlers';
+import { registerMemoryHandlers } from './ipc/memory-handlers';
+import { registerQuestHandlers } from './ipc/quest-handlers';
+import { registerMcpHandlers } from './ipc/mcp-handlers';
+import { mcpClientService } from './services/mcp-client-service';
 import { runRealSessionMigration } from './services/session/migration-wiring';
 import { unifiedSessionStore } from './services/session/unified-session-store';
 import { createElectronMainCommandAdapters } from './services/command-main-adapters';
@@ -745,6 +752,32 @@ function registerIpcHandlers(): void {
   // and the "Restore to here" confirm-diff preview.
   registerCheckpointHandlers({ isTrustedSender: isTrustedExtensionFrame });
 
+  // Prompt C (Knowledge Layer — Step 1): Project Wiki status / regeneration /
+  // section search channels. Generation runs through the locked route in the
+  // service; docs stay local in `.tycode/wiki/` (git-shareable).
+  registerWikiHandlers({ isTrustedSender: isTrustedExtensionFrame });
+
+  // Prompt C (Knowledge Layer — Step 2): Rules engine channels. Rules live in
+  // the project-local `.tycode/rules/` directory and drive system-prompt injection.
+  registerRulesHandlers({ isTrustedSender: isTrustedExtensionFrame });
+  
+    // Prompt C (Knowledge Layer — Step 3): Semantic code index channels. Embeddings
+    // come only from the local provider chain and the index persists in `.tycode/index/`.
+  registerIndexHandlers({ isTrustedSender: isTrustedExtensionFrame });
+
+  // Prompt C (Knowledge Layer — Step 4): Auto-memory confirmation queue. Distilled
+  // candidates await approval before joining correction memory; storage stays local.
+  registerMemoryHandlers({ isTrustedSender: isTrustedExtensionFrame });
+
+  // Prompt B (Quest Mode): spec-first autonomous delegation. Quests run only in
+  // isolated git worktrees and reach the main workspace solely via merge review.
+  registerQuestHandlers({ isTrustedSender: isTrustedExtensionFrame });
+
+  // Prompt E (Step 2): live MCP client management. Health is decided by real
+  // JSON-RPC handshakes; connections are only opened on user intent (panel
+  // subscribe / enable / add), and children are torn down on quit.
+  registerMcpHandlers({ isTrustedSender: isTrustedExtensionFrame });
+
   // File > Open File… and File > Save As… are registry rows whose handlers live
   // in the renderer, but a renderer cannot open a native picker. The window is
   // passed as a getter for the same reason the command adapters get one:
@@ -1143,6 +1176,23 @@ function registerIpcHandlers(): void {
   });
   ipcMain.handle('workspace-edit:apply', async (_event, previewId: string) => {
     try { return { success: true, data: await getWorkspaceEditPreviewService().applyPreview(previewId) }; }
+    catch (error) { return { success: false, error: error instanceof Error ? error.message : String(error) }; }
+  });
+  // Phase 4 per-hunk accept/reject: compose the reviewer's kept hunks into ONE patch
+  // and land it through the same Gate transaction pipeline. `acceptedHunksByPath` maps a
+  // preview-relative path to the kept hunk indices; omitted files apply in full.
+  ipcMain.handle('workspace-edit:apply-composed', async (_event, previewId: string, acceptedHunksByPath: Record<string, number[]>) => {
+    try {
+      if (typeof previewId !== 'string' || !previewId) throw new Error('A preview id is required.');
+      const sanitized: Record<string, number[]> = {};
+      if (acceptedHunksByPath && typeof acceptedHunksByPath === 'object') {
+        for (const [filePath, indices] of Object.entries(acceptedHunksByPath)) {
+          if (!Array.isArray(indices)) continue;
+          sanitized[filePath] = indices.filter((i) => Number.isInteger(i) && i >= 0);
+        }
+      }
+      return { success: true, data: await getWorkspaceEditPreviewService().applyPreviewComposed(previewId, sanitized) };
+    }
     catch (error) { return { success: false, error: error instanceof Error ? error.message : String(error) }; }
   });
   ipcMain.handle('workspace-edit:cancel', (_event, previewId: string) => {
@@ -5395,6 +5445,8 @@ app.whenReady().then(async () => {
 let isQuittingApp = false;
 app.on('before-quit', () => {
   isQuittingApp = true;
+  // Prompt E: no orphaned MCP child processes on exit (stdio servers).
+  void mcpClientService.disposeAll().catch(() => undefined);
   cleanupAllResources();
 });
 

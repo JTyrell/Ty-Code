@@ -111,3 +111,20 @@
   .workspace-edit-review__actions { align-self: flex-end; }
   .workspace-edit-review__body { grid-template-columns: minmax(140px, 36%) minmax(0, 1fr); }
 }
+
+/* Phase 4 per-hunk review toolbar */
+.workspace-edit-review__diff { display: flex; flex-direction: column; min-height: 0; }
+.workspace-edit-review__diff > :last-child { flex: 1; min-height: 0; }
+.workspace-edit-review__hunk-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 10px;
+  cursor: pointer;
+}
+.workspace-edit-review__hunk-all:hover { color: var(--text-primary); border-color: var(--accent-primary); }

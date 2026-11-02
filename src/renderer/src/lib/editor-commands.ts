@@ -381,6 +381,14 @@ export function registerEditorCommandHandlers(): CommandRuntimeDisposable {
       const { handleInlineAssist } = await import('./inline-assist');
       return handleInlineAssist();
     },
+    // Prompt E (Step 1): AI quick actions. One shared module owns the prompt
+    // builders and routing; the lazy import keeps the chat/workspace store
+    // wiring out of the boot path, same reasoning as inline-assist above.
+    'ai.explain': async () => (await import('./ai-quick-actions')).runQuickAction('explain'),
+    'ai.fix': async () => (await import('./ai-quick-actions')).runQuickAction('fix'),
+    'ai.refactor': async () => (await import('./ai-quick-actions')).runQuickAction('refactor'),
+    'ai.generateTests': async () => (await import('./ai-quick-actions')).runQuickAction('tests'),
+    'ai.addToChat': async () => (await import('./ai-quick-actions')).runQuickAction('addToChat'),
     'editor.monacoAction': monacoAction,
     'editor.navigateBack': navigateBackHandler,
     'editor.navigateForward': navigateForwardHandler,

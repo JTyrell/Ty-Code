@@ -119,7 +119,9 @@ export const zDocument = z.object({
   title: z.string(),
   markdown: z.string(),
   sections: z.array(zDocumentSection),
-  createdAt: z.number()
+  createdAt: z.number(),
+  /** Prompt B: present when the document is a Quest spec (approval gate rides on it). */
+  questId: z.string().optional()
 });
 export type AgentDocumentPayload = z.infer<typeof zDocument>;
 

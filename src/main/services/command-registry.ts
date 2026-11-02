@@ -141,6 +141,18 @@ export const COMMAND_ENTRY_INPUTS: CommandEntryInput[] = [
   { id: 'selection.add-cursor-below', label: 'Add Cursor Below', menu: 'Selection', group: 3, keybinding: 'Ctrl+Alt+Down', when: 'editorOpen', disabledReason: 'Open a file to add a cursor.', command: 'editor.monacoAction', args: { actionId: 'editor.action.insertCursorBelow' }, category: 'Selection' },
   { id: 'selection.column-mode', label: 'Column Selection Mode', menu: 'Selection', group: 4, when: 'editorOpen', disabledReason: 'Open a file to use column selection.', command: 'editor.monacoAction', args: { actionId: 'editor.action.toggleColumnSelectionMode' }, category: 'Selection' },
 
+  // Prompt E (Step 1): AI quick actions on the current selection. Registry-
+  // backed only — the Monaco context-menu entries and the selection hover
+  // toolbar both dispatch these ids through `executeCommandEntry`, so hidden >
+  // dead and the `when` re-check apply to every surface at once. The renderer
+  // handlers live in `lib/ai-quick-actions.ts` via `lib/editor-commands.ts`.
+  // Inline Assist itself is unchanged (`edit.inline-assist`, Ctrl+I).
+  { id: 'selection.ai-explain', label: 'Explain Selection', menu: 'Selection', group: 5, when: 'editorOpen && selectionActive', disabledReason: 'Select code to explain.', command: 'ai.explain', category: 'AI' },
+  { id: 'selection.ai-fix', label: 'Fix Selection', menu: 'Selection', group: 5, when: 'editorOpen && selectionActive', disabledReason: 'Select code to fix.', command: 'ai.fix', category: 'AI' },
+  { id: 'selection.ai-refactor', label: 'Refactor Selection', menu: 'Selection', group: 5, when: 'editorOpen && selectionActive', disabledReason: 'Select code to refactor.', command: 'ai.refactor', category: 'AI' },
+  { id: 'selection.ai-generate-tests', label: 'Generate Tests for Selection', menu: 'Selection', group: 5, when: 'editorOpen && selectionActive', disabledReason: 'Select code to test.', command: 'ai.generateTests', category: 'AI' },
+  { id: 'selection.ai-add-to-chat', label: 'Add Selection to Chat', menu: 'Selection', group: 5, when: 'editorOpen && selectionActive', disabledReason: 'Select code to attach to the chat.', command: 'ai.addToChat', category: 'AI' },
+
   // =========================================================================
   // View
   // =========================================================================

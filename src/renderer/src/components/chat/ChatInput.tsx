@@ -1,6 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AtSign, FileText, Image as ImageIcon, Mic, Plus, Send, Slash, Square, X } from 'lucide-react';
-import type { FlatFileNodeEntry } from '../../../../preload/types';
+import { AtSign, BookOpen, FileDiff, FileText, FolderOpen, GitCommit, Image as ImageIcon, Mic, Plus, ScrollText, Send, Slash, Square, X } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
+import type { FlatFileNodeEntry, GitCommitInfo } from '../../../../preload/types';
+import type { WikiSectionId, WikiSectionMeta } from '../../../../shared/types/wiki';
+import type { RuleMeta } from '../../../../shared/types/rules';
 import { useWorkspaceStore } from '../../state/workspace-store';
 import { useChatInputStore, MAX_ATTACHMENTS, type Attachment } from '../../state/chat-input-store';
 import { toast } from '../../state/toast-store';
@@ -15,6 +18,7 @@ const VOICE_MAX_RECORDING_MS = 90_000;
 
 const SLASH_COMMANDS: Array<{ command: string; description: string; template: string }> = [
   { command: '/sync', description: 'Rescan workspace and sync stack profile', template: '/sync' },
+  { command: '/quest', description: 'Delegate a long-horizon quest (draft spec → approve → run in isolated worktree)', template: '/quest ' },
   { command: '/review', description: 'Review focused code for bugs and security issues', template: '/review ' },
   { command: '/test', description: 'Generate tests with happy, edge, and error coverage', template: '/test ' },
   { command: '/refactor', description: 'Refactor while preserving behavior', template: '/refactor ' }
@@ -31,6 +35,33 @@ interface ChatInputProps {
 }
 
 type MenuMode = 'root' | 'mentions' | 'actions';
+
+/** Prompt C Step 5: submenus pick a concrete commit / wiki section / rule. */
+type SubProvider = 'gitCommit' | 'wiki' | 'rule';
+
+interface ContextProviderEntry {
+  token: string;
+  hint: string;
+  icon: LucideIcon;
+  submenu?: SubProvider;
+}
+
+const CONTEXT_PROVIDERS: ContextProviderEntry[] = [
+  { token: 'codeChanges', hint: 'Uncommitted working-tree changes', icon: FileDiff },
+  { token: 'gitCommit', hint: 'Pick a commit and attach its diff', icon: GitCommit, submenu: 'gitCommit' },
+  { token: 'openFiles', hint: 'Currently open editor tabs', icon: FolderOpen },
+  { token: 'wiki', hint: 'Attach a generated wiki section', icon: BookOpen, submenu: 'wiki' },
+  { token: 'rule', hint: 'Attach a rule from .tycode/rules', icon: ScrollText, submenu: 'rule' }
+];
+
+function capText(value: string, limit: number): string {
+  return value.length > limit ? `${value.slice(0, limit)}\n… [truncated ${value.length - limit} chars]` : value;
+}
+
+function previewLine(value: string, limit: number): string {
+  const first = (value.split('\n')[0] || '').trim();
+  return first.length > limit ? `${first.slice(0, limit)}…` : first;
+}
 
 function isImageMime(mimeType: string): boolean {
   return typeof mimeType === 'string' && mimeType.startsWith('image/');
@@ -71,6 +102,7 @@ export function ChatInput({ input, inputRef, onInputChange, onKeyDown, onSubmit,
   const addAttachment = useChatInputStore((state) => state.addAttachment);
   const removeAttachment = useChatInputStore((state) => state.removeAttachment);
   const flatTree = useWorkspaceStore((state) => state.flatTree);
+  const workspacePath = useWorkspaceStore((state) => state.workspacePath);
 
   const mediaPickerRef = useRef<HTMLInputElement | null>(null);
   const dragDepthRef = useRef(0);
@@ -78,6 +110,11 @@ export function ChatInput({ input, inputRef, onInputChange, onKeyDown, onSubmit,
   const [menuMode, setMenuMode] = useState<MenuMode | null>(null);
   const [mentionQuery, setMentionQuery] = useState('');
   const [dragActive, setDragActive] = useState(false);
+  const [subMenu, setSubMenu] = useState<SubProvider | null>(null);
+  const [subLoading, setSubLoading] = useState(false);
+  const [commitItems, setCommitItems] = useState<GitCommitInfo[]>([]);
+  const [wikiItems, setWikiItems] = useState<WikiSectionMeta[]>([]);
+  const [ruleItems, setRuleItems] = useState<RuleMeta[]>([]);
 
   type MicState = 'idle' | 'recording' | 'transcribing';
   const [micState, setMicState] = useState<MicState>('idle');
@@ -111,9 +148,19 @@ export function ChatInput({ input, inputRef, onInputChange, onKeyDown, onSubmit,
       .slice(0, 8);
   }, [menuMode, mentionQuery, workspaceFiles]);
 
+  // Virtual context providers (@codeChanges/@gitCommit/@openFiles/@wiki/@rule) are
+  // surfaced above workspace-file matches; submenus own the picker instead.
+  const providerMatches = useMemo(() => {
+    if (menuMode !== 'mentions' || subMenu !== null) return [];
+    const query = mentionQuery.trim().toLowerCase();
+    if (!query) return CONTEXT_PROVIDERS;
+    return CONTEXT_PROVIDERS.filter((provider) => provider.token.toLowerCase().includes(query));
+  }, [menuMode, mentionQuery, subMenu]);
+
   const closeMenus = useCallback(() => {
     setMenuMode(null);
     setMentionQuery('');
+    setSubMenu(null);
   }, []);
 
   // '@' typed in the composer opens the mention dropdown; '/' at the start opens actions.
@@ -123,6 +170,7 @@ export function ChatInput({ input, inputRef, onInputChange, onKeyDown, onSubmit,
     if (atIdx !== -1 && !/\s/.test(value.slice(atIdx + 1))) {
       setMenuMode('mentions');
       setMentionQuery(value.slice(atIdx + 1));
+      setSubMenu(null);
       return;
     }
     if (value.startsWith('/') && !/\s/.test(value)) {
@@ -228,6 +276,190 @@ export function ChatInput({ input, inputRef, onInputChange, onKeyDown, onSubmit,
     void attachWorkspacePath(entry.path, 'mention', clearToken);
   }, [input, mentionQuery, onInputChange, closeMenus, attachWorkspacePath]);
 
+  // Prompt C Step 5: context providers reuse the existing mention attachment
+  // pipeline, so ChatSidecar's "@name\ncontent" composition picks them up
+  // without any extra plumbing on the send path.
+  const clearMentionToken = useCallback(() => {
+    const atIdx = input.lastIndexOf('@');
+    if (atIdx !== -1 && !/\s/.test(input.slice(atIdx + 1))) {
+      onInputChange((input.slice(0, atIdx) + input.slice(atIdx + 1 + mentionQuery.length)).trimStart());
+    }
+  }, [input, mentionQuery, onInputChange]);
+
+  const attachContextMention = useCallback((name: string, content: string) => {
+    if (useChatInputStore.getState().attachments.length >= MAX_ATTACHMENTS) {
+      toast.warning('Attachment limit', 'Up to 7 attachments per message.');
+      return;
+    }
+    addAttachment({ id: '', type: 'mention', name, content });
+    clearMentionToken();
+    closeMenus();
+  }, [addAttachment, clearMentionToken, closeMenus]);
+
+  const attachCodeChanges = useCallback(async () => {
+    try {
+      const repoPath = workspacePath || undefined;
+      const statusRes = await window.electronAPI.gitGetStatus({ repoPath });
+      if (!statusRes.success || !statusRes.data) {
+        toast.error('Cannot read git status', statusRes.error || 'Is this a git repository?');
+        return;
+      }
+      const status = statusRes.data;
+      if (!status.isRepo) {
+        toast.error('Not a git repository', '@codeChanges needs a git workspace.');
+        return;
+      }
+      const diffRes = await window.electronAPI.gitGetDiff({ repoPath });
+      const diff = diffRes.success ? (diffRes.data || '') : '';
+      const summary = [
+        `Branch ${status.currentBranch || 'unknown'} (${status.isClean ? 'clean' : 'has changes'})`,
+        `Staged: ${status.stagedFiles.map((f) => f.path).join(', ') || 'none'}`,
+        `Unstaged: ${status.unstagedFiles.map((f) => f.path).join(', ') || 'none'}`,
+        `Untracked: ${status.untrackedFiles.map((f) => f.path).join(', ') || 'none'}`
+      ].join('\n');
+      const body = diff.trim() ? `UNSTAGED DIFF (working tree):\n${capText(diff, 16000)}` : '(no unstaged diff content)';
+      attachContextMention('codeChanges', `UNCOMMITTED CHANGES\n${summary}\n\n${body}`);
+    } catch (err: any) {
+      toast.error('Cannot read code changes', err?.message || String(err));
+    }
+  }, [workspacePath, attachContextMention]);
+
+  const attachOpenFiles = useCallback(() => {
+    const tabs = useWorkspaceStore.getState().openTabs;
+    if (tabs.length === 0) {
+      toast.warning('No open files', 'Open editor tabs will be attached as context.');
+      return;
+    }
+    const body = tabs
+      .map((tab) => `--- ${tab.name} (${tab.path})${tab.isDirty ? ' • unsaved' : ''} ---\n${capText(tab.content, 8000)}`)
+      .join('\n\n');
+    attachContextMention('openFiles', `OPEN EDITOR TABS (${tabs.length})\n${capText(body, 40000)}`);
+  }, [attachContextMention]);
+
+  const openSubmenu = useCallback(async (submenu: SubProvider) => {
+    setSubMenu(submenu);
+    setSubLoading(true);
+    try {
+      if (submenu === 'gitCommit') {
+        const res = await window.electronAPI.gitGetLog({ maxCount: 30, repoPath: workspacePath || undefined });
+        if (!res.success) {
+          toast.error('Cannot read commit history', res.error || 'Is this a git repository?');
+          setSubMenu(null);
+          return;
+        }
+        setCommitItems(res.data || []);
+      } else if (submenu === 'wiki') {
+        if (!workspacePath) {
+          toast.error('No workspace open', '@wiki needs an open workspace.');
+          setSubMenu(null);
+          return;
+        }
+        const res = await window.electronAPI.wiki?.status(workspacePath);
+        if (!res?.success) {
+          toast.error('Cannot read wiki status', res?.error || 'Wiki service unavailable.');
+          setSubMenu(null);
+          return;
+        }
+        setWikiItems(res.data && res.data.exists ? res.data.sections : []);
+      } else {
+        if (!workspacePath) {
+          toast.error('No workspace open', '@rule needs an open workspace.');
+          setSubMenu(null);
+          return;
+        }
+        const res = await window.electronAPI.rules?.list(workspacePath);
+        if (!res?.success) {
+          toast.error('Cannot read rules', res?.error || 'Rules service unavailable.');
+          setSubMenu(null);
+          return;
+        }
+        setRuleItems(res.data || []);
+      }
+    } catch (err: any) {
+      toast.error('Cannot load context', err?.message || String(err));
+      setSubMenu(null);
+    } finally {
+      setSubLoading(false);
+    }
+  }, [workspacePath]);
+
+  const attachGitCommit = useCallback(async (commit: GitCommitInfo) => {
+    try {
+      const res = await window.electronAPI.gitGetCommitDetail({ hash: commit.hash, repoPath: workspacePath || undefined });
+      if (!res.success || !res.data) {
+        toast.error('Cannot read commit', res.error || String(res.data));
+        return;
+      }
+      const detail = res.data;
+      const files = detail.files.map((f) => `${f.status} ${f.path}`).join('\n') || '(no files listed)';
+      const text = [
+        `COMMIT ${detail.commit.shortHash} — ${detail.commit.message}`,
+        `Author: ${detail.commit.authorName} <${detail.commit.authorEmail}>  Date: ${detail.commit.date}`,
+        '',
+        'FILES',
+        files,
+        '',
+        'DIFF',
+        capText(detail.diff || '', 20000)
+      ].join('\n');
+      attachContextMention(`gitCommit:${detail.commit.shortHash}`, text);
+    } catch (err: any) {
+      toast.error('Cannot read commit', err?.message || String(err));
+    }
+  }, [workspacePath, attachContextMention]);
+
+  const attachWikiSection = useCallback(async (section: WikiSectionId) => {
+    if (!workspacePath) return;
+    try {
+      const res = await window.electronAPI.wiki?.read(workspacePath, section);
+      if (!res?.success) {
+        toast.error('Cannot read wiki section', res?.error || 'Wiki service unavailable.');
+        return;
+      }
+      const content = res.data?.content;
+      if (!content) {
+        toast.warning('Section not generated', 'Regenerate the wiki from the Wiki tab first.');
+        return;
+      }
+      attachContextMention(`wiki:${section}`, capText(content, 30000));
+    } catch (err: any) {
+      toast.error('Cannot read wiki section', err?.message || String(err));
+    }
+  }, [workspacePath, attachContextMention]);
+
+  const attachRule = useCallback(async (ruleName: string) => {
+    if (!workspacePath) return;
+    try {
+      const res = await window.electronAPI.rules?.read(workspacePath, ruleName);
+      if (!res?.success) {
+        toast.error('Cannot read rule', res?.error || 'Rules service unavailable.');
+        return;
+      }
+      const rule = res.data;
+      if (!rule) {
+        toast.warning('Rule not found', `'${ruleName}' no longer exists in .tycode/rules.`);
+        return;
+      }
+      attachContextMention(`rule:${ruleName}`, `RULE ${rule.title} (mode: ${rule.mode})\n\n${capText(rule.body, 20000)}`);
+    } catch (err: any) {
+      toast.error('Cannot read rule', err?.message || String(err));
+    }
+  }, [workspacePath, attachContextMention]);
+
+  const handleProviderSelected = useCallback((provider: ContextProviderEntry) => {
+    if (provider.submenu) {
+      void openSubmenu(provider.submenu);
+      return;
+    }
+    if (provider.token === 'codeChanges') {
+      void attachCodeChanges();
+      return;
+    }
+    if (provider.token === 'openFiles') {
+      attachOpenFiles();
+    }
+  }, [openSubmenu, attachCodeChanges, attachOpenFiles]);
+
   const handleSlashSelected = useCallback((template: string) => {
     onInputChange(template);
     closeMenus();
@@ -281,12 +513,18 @@ export function ChatInput({ input, inputRef, onInputChange, onKeyDown, onSubmit,
   };
 
   const handleComposerKeyDown = useCallback((event: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key === 'Escape' && menuMode !== null) {
-      closeMenus();
-      return;
+    if (event.key === 'Escape') {
+      if (subMenu !== null) {
+        setSubMenu(null);
+        return;
+      }
+      if (menuMode !== null) {
+        closeMenus();
+        return;
+      }
     }
     onKeyDown(event);
-  }, [menuMode, closeMenus, onKeyDown]);
+  }, [menuMode, subMenu, closeMenus, onKeyDown]);
 
   const teardownVoiceCapture = useCallback(() => {
     if (micMaxTimerRef.current !== null) {
@@ -502,7 +740,7 @@ export function ChatInput({ input, inputRef, onInputChange, onKeyDown, onSubmit,
                     <button type="button" className="chat-context-menu-item" onClick={() => setMenuMode('mentions')}>
                       <AtSign size={12} aria-hidden="true" />
                       <span>Mentions</span>
-                      <small>workspace files</small>
+                      <small>files &amp; context</small>
                     </button>
                     <button type="button" className="chat-context-menu-item" onClick={() => setMenuMode('actions')}>
                       <Slash size={12} aria-hidden="true" />
@@ -511,11 +749,30 @@ export function ChatInput({ input, inputRef, onInputChange, onKeyDown, onSubmit,
                     </button>
                   </>
                 )}
-                {menuMode === 'mentions' && (
+                {menuMode === 'mentions' && subMenu === null && (
                   <>
-                    <div className="chat-context-menu-title">Mention a workspace file</div>
+                    <div className="chat-context-menu-title">Mention context or a workspace file</div>
+                    {providerMatches.map((provider) => {
+                      const ProviderIcon = provider.icon;
+                      return (
+                        <button
+                          type="button"
+                          key={provider.token}
+                          className="chat-context-menu-item"
+                          role="menuitem"
+                          onClick={() => handleProviderSelected(provider)}
+                          title={provider.hint}
+                        >
+                          <ProviderIcon size={12} aria-hidden="true" />
+                          <span className="chat-context-menu-name">@{provider.token}</span>
+                          <small>{provider.hint}</small>
+                        </button>
+                      );
+                    })}
                     {mentionMatches.length === 0 ? (
-                      <div className="chat-context-empty">No matching files</div>
+                      providerMatches.length === 0 ? (
+                        <div className="chat-context-empty">No matching context or files</div>
+                      ) : null
                     ) : (
                       mentionMatches.map((entry) => (
                         <button
@@ -533,6 +790,76 @@ export function ChatInput({ input, inputRef, onInputChange, onKeyDown, onSubmit,
                       ))
                     )}
                     <button type="button" className="chat-context-menu-item chat-context-back" onClick={() => setMenuMode('root')}>
+                      Back
+                    </button>
+                  </>
+                )}
+                {menuMode === 'mentions' && subMenu !== null && (
+                  <>
+                    <div className="chat-context-menu-title">
+                      {subMenu === 'gitCommit' ? 'Attach a commit (last 30)' : subMenu === 'wiki' ? 'Attach a wiki section' : 'Attach a project rule'}
+                    </div>
+                    {subLoading ? (
+                      <div className="chat-context-empty">Loading…</div>
+                    ) : subMenu === 'gitCommit' ? (
+                      commitItems.length === 0 ? (
+                        <div className="chat-context-empty">No commits found</div>
+                      ) : (
+                        commitItems.slice(0, 15).map((commit) => (
+                          <button
+                            type="button"
+                            key={commit.hash}
+                            className="chat-context-menu-item"
+                            role="menuitem"
+                            onClick={() => void attachGitCommit(commit)}
+                            title={`${commit.message}\n${commit.authorName} • ${commit.date}`}
+                          >
+                            <GitCommit size={12} aria-hidden="true" />
+                            <span className="chat-context-menu-name">{commit.shortHash} {previewLine(commit.message, 44)}</span>
+                            <small>{previewLine(commit.date, 24)}</small>
+                          </button>
+                        ))
+                      )
+                    ) : subMenu === 'wiki' ? (
+                      wikiItems.length === 0 ? (
+                        <div className="chat-context-empty">No wiki generated yet — build it from the Wiki tab</div>
+                      ) : (
+                        wikiItems.map((section) => (
+                          <button
+                            type="button"
+                            key={section.id}
+                            className="chat-context-menu-item"
+                            role="menuitem"
+                            onClick={() => void attachWikiSection(section.id)}
+                            title={section.file}
+                          >
+                            <BookOpen size={12} aria-hidden="true" />
+                            <span className="chat-context-menu-name">@wiki:{section.id}</span>
+                            <small>{section.title}</small>
+                          </button>
+                        ))
+                      )
+                    ) : (
+                      ruleItems.length === 0 ? (
+                        <div className="chat-context-empty">No rules in .tycode/rules yet</div>
+                      ) : (
+                        ruleItems.map((ruleMeta) => (
+                          <button
+                            type="button"
+                            key={ruleMeta.name}
+                            className="chat-context-menu-item"
+                            role="menuitem"
+                            onClick={() => void attachRule(ruleMeta.name)}
+                            title={ruleMeta.description || ruleMeta.file}
+                          >
+                            <ScrollText size={12} aria-hidden="true" />
+                            <span className="chat-context-menu-name">@rule:{ruleMeta.name}</span>
+                            <small>{ruleMeta.mode} • {previewLine(ruleMeta.description, 48)}</small>
+                          </button>
+                        ))
+                      )
+                    )}
+                    <button type="button" className="chat-context-menu-item chat-context-back" onClick={() => setSubMenu(null)}>
                       Back
                     </button>
                   </>

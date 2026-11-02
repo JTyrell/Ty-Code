@@ -117,12 +117,17 @@ async function main() {
 
   // 4. No plaintext session/bundle write anywhere else under src/main.
   //    Keyed on the WRITE TARGET, not incidental keywords: a file is dangerous
-  //    only when a write call points at a sessions/.tycode/.bundle path AND the
+  //    only when a write call points at a sessions/.bundle path AND the
   //    file never routes through encryptJson/SessionEnvelope. This keeps the boot
   //    orchestrator (index.ts, which writes workspace files and merely *references*
   //    sessions for logging) from tripping a whole-file keyword match.
   console.log('\n4. Scanning all of src/main for an unauthorized plaintext session/bundle write...');
-  const SESSION_TARGET = /sessions|SESSIONS_ROOT|\.bundle|\.tycode/;
+  // NOTE: bare `.tycode` is deliberately NOT a session marker. The knowledge layer
+  // (wiki, rules, memory queue) intentionally persists plaintext, git-shareable
+  // files under `.tycode/` — they are project config, not conversation data.
+  // Real session writes always land under a `sessions`/SESSIONS_ROOT path or in a
+  // `.bundle`, which this regex still catches.
+  const SESSION_TARGET = /sessions|SESSIONS_ROOT|\.bundle/;
   const files = await walk(path.join(PROJECT_ROOT, 'src/main'));
   let scanned = 0;
   for (const abs of files) {

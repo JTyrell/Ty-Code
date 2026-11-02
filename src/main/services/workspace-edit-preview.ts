@@ -12,6 +12,7 @@ import type {
 import { searchInWorkspaceFiles, buildSearchRegex } from '../ipc/fs-handlers';
 import { getLspManager } from '../ipc/lsp-handlers';
 import { MyersDiff } from './myers-diff';
+import { composeMyersAccepted } from './git-hunk-compose';
 import { fromFileUri } from './lsp-path-utils';
 import { gitService } from './git-service';
 import type { LspManager } from './lsp-manager';
@@ -400,37 +401,93 @@ export class WorkspaceEditPreviewService {
   }
 
   public async applyPreview(previewId: string, autoApplied = false): Promise<WorkspaceEditTransactionResult> {
-    if (this.transactionInFlight) throw new Error('Another workspace edit transaction is in progress.');
+    const stored = this.getLivePreview(previewId);
+    return this.runTransaction(stored, (file) => file.modifiedContent, autoApplied);
+  }
+
+  /**
+   * Phase 4 partial accept — apply a subset of each file's hunks. `acceptedHunksByPath`
+   * maps a preview-relative file path to the indices (into that file's `diff.hunks`) the
+   * reviewer kept. Files absent from the map apply in full; a file whose accepted list is
+   * empty reverts to its original content. Every accepted combination is composed by the
+   * pure `composeAcceptedHunks` and lands as ONE patch through the same transaction
+   * pipeline (freshness checks, undo entry, LSP sync) as a full apply.
+   */
+  public async applyPreviewComposed(
+    previewId: string,
+    acceptedHunksByPath: Record<string, number[]>
+  ): Promise<WorkspaceEditTransactionResult> {
+    const stored = this.getLivePreview(previewId);
+    const resolve = (file: PreviewFileSnapshot): string => {
+      const accepted = acceptedHunksByPath[file.filePath];
+      if (!accepted) return file.modifiedContent;
+      if (accepted.length === file.diff.hunks.length) return file.modifiedContent;
+      if (accepted.length === 0) return file.originalContent;
+      const acceptedSet = new Set(accepted.map((index) => String(index)));
+      return composeMyersAccepted(file.originalContent, file.diff.hunks, acceptedSet);
+    };
+    return this.runTransaction(stored, resolve, false);
+  }
+
+  private getLivePreview(previewId: string): StoredPreview {
     const stored = this.previews.get(previewId);
     if (!stored || stored.publicPreview.expiresAt <= Date.now()) {
       this.previews.delete(previewId);
       throw new Error('This edit preview expired. Create a new preview before applying.');
     }
     if (stored.files.length === 0) throw new Error('No changes to apply.');
+    return stored;
+  }
+
+  /**
+   * Shared transaction core. `resolveContent` decides the bytes written for each
+   * snapshot file, so a full apply and a per-hunk composed apply differ only here
+   * while keeping every other guarantee (rollback, undo, LSP versioning) identical.
+   */
+  private async runTransaction(
+    stored: StoredPreview,
+    resolveContent: (file: PreviewFileSnapshot) => string,
+    autoApplied: boolean
+  ): Promise<WorkspaceEditTransactionResult> {
+    if (this.transactionInFlight) throw new Error('Another workspace edit transaction is in progress.');
+    const { files, publicPreview } = stored;
     this.transactionInFlight = true;
     try {
-      for (const file of stored.files) await this.validateFreshness(file, stored.publicPreview.origin);
+      const contents = files.map(resolveContent);
+      for (const file of files) await this.validateFreshness(file, publicPreview.origin);
       const transactionId = randomUUID();
-      const undoFiles = stored.files.map((file) => ({ ...file, afterContent: file.modifiedContent, afterHash: hashContent(file.modifiedContent) }));
-      const undoEntry: UndoEntry = { transactionId, origin: stored.publicPreview.origin, createdAt: Date.now(), autoApplied, status: 'pending', files: undoFiles };
+      const undoFiles = files.map((file, index) => {
+        const content = contents[index];
+        const composedDiff = content === file.modifiedContent
+          ? file.diff
+          : MyersDiff.diff(file.originalContent, content);
+        return {
+          ...file,
+          modifiedContent: content,
+          editCount: content === file.originalContent ? 0 : composedDiff.additions + composedDiff.deletions,
+          afterContent: content,
+          afterHash: hashContent(content)
+        };
+      });
+      const undoEntry: UndoEntry = { transactionId, origin: publicPreview.origin, createdAt: Date.now(), autoApplied, status: 'pending', files: undoFiles };
       this.undoEntries.push(undoEntry);
-      const writeFiles = stored.files.map((file) => ({ absolutePath: file.absolutePath, content: file.modifiedContent, rollbackContent: file.originalDiskContent, mode: file.mode }));
+      const writeFiles = files.map((file, index) => ({ absolutePath: file.absolutePath, content: contents[index], rollbackContent: file.originalDiskContent, mode: file.mode }));
       try {
         await this.commitContents(writeFiles, transactionId, async (nextIndex) => {
-          for (const file of stored.files.slice(nextIndex)) await this.validateFreshness(file, stored.publicPreview.origin);
+          for (const file of files.slice(nextIndex)) await this.validateFreshness(file, publicPreview.origin);
         });
       } catch (error) {
         this.undoEntries = this.undoEntries.filter((item) => item !== undoEntry);
         throw error;
       }
-      for (const file of stored.files) this.lspManager?.applyDocumentContent(file.absolutePath, file.modifiedContent, file.modifiedContent);
+      for (let index = 0; index < files.length; index++) this.lspManager?.applyDocumentContent(files[index].absolutePath, contents[index], contents[index]);
       undoEntry.files = undoFiles.map((file) => ({ ...file, afterDocumentVersion: this.lspManager?.getTrackedDocument(file.absolutePath)?.version }));
       undoEntry.status = 'applied';
       if (this.undoEntries.length > 20) this.undoEntries.shift();
-      this.previews.delete(previewId);
+      this.previews.delete(publicPreview.previewId);
       return {
         transactionId,
-        origin: stored.publicPreview.origin,
+        origin: publicPreview.origin,
         autoApplied,
         files: undoFiles.map((file) => ({ filePath: file.filePath, content: file.modifiedContent, isDirty: false })),
         fileCount: undoFiles.length,

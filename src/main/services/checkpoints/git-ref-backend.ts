@@ -22,7 +22,10 @@ import { checkpointRefName } from '../../../shared/types/checkpoint';
 function gitFor(workspaceRoot: string) {
   const options: Partial<SimpleGitOptions> = {
     baseDir: path.resolve(workspaceRoot),
-    maxConcurrentProcesses: 1
+    maxConcurrentProcesses: 1,
+    // simple-git blocks arbitrary env vars unless allow-listed; without this the
+    // guard throws and EVERY git-ref checkpoint silently fails into snapshots.
+    allowEnvironment: ['GIT_OPTIONAL_LOCKS']
   };
   // GIT_OPTIONAL_LOCKS=0 keeps read-ish plumbing from writing junk locks.
   return simpleGit(options).env({ GIT_OPTIONAL_LOCKS: '0' });

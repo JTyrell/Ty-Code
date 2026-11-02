@@ -14,6 +14,12 @@ import { INLINE_ASSIST_CHANNELS } from '../shared/types/inline-assist-channels';
 import { CONTEXT_METER_CHANNELS } from '../shared/types/context-meter';
 import type { CompactedEvent } from '../shared/types/context-meter';
 import { CHECKPOINT_CHANNELS } from '../shared/types/checkpoint';
+import { WIKI_CHANNELS } from '../shared/types/wiki';
+import { RULE_CHANNELS } from '../shared/types/rules';
+import { INDEX_CHANNELS } from '../shared/types/semantic';
+import { MEMORY_CHANNELS } from '../shared/types/memory';
+import { QUEST_CHANNELS } from '../shared/types/quest';
+import { MCP_CHANNELS } from '../shared/types/mcp';
 import type { ReliabilityAdvisorPayload, ReliabilityHealthSnapshot } from '../shared/types/agent-events';
 
 // Echo suppression (Prompt: Break the Model-Sync Echo Loop): each renderer
@@ -567,6 +573,114 @@ const api: ElectronAPI = {
     purge: (workspaceRoot: string, olderThanMs: number) =>
       ipcRenderer.invoke(CHECKPOINT_CHANNELS.purgeOlderThan, { workspaceRoot, olderThanMs })
   },
+  wiki: {
+    status: (workspaceRoot: string) =>
+      ipcRenderer.invoke(WIKI_CHANNELS.status, { workspaceRoot }),
+    generate: (workspaceRoot: string, force?: boolean) =>
+      ipcRenderer.invoke(WIKI_CHANNELS.generate, { workspaceRoot, force: force === true }),
+    read: (workspaceRoot: string, section: string) =>
+      ipcRenderer.invoke(WIKI_CHANNELS.read, { workspaceRoot, section }),
+    search: (workspaceRoot: string, query: string, limit?: number) =>
+      ipcRenderer.invoke(WIKI_CHANNELS.search, { workspaceRoot, query, limit: limit ?? 5 }),
+    onProgress: (callback: (event: { workspaceRoot: string; section: string; phase: string; message?: string }) => void) => {
+      const listener = (_e: unknown, data: any) => callback(data);
+      ipcRenderer.on(WIKI_CHANNELS.progress, listener);
+      return () => { ipcRenderer.removeListener(WIKI_CHANNELS.progress, listener); };
+    }
+  },
+  rules: {
+    list: (workspaceRoot: string) =>
+      ipcRenderer.invoke(RULE_CHANNELS.list, { workspaceRoot }),
+    read: (workspaceRoot: string, name: string) =>
+      ipcRenderer.invoke(RULE_CHANNELS.read, { workspaceRoot, name }),
+    save: (payload: { workspaceRoot: string; name: string; title: string; description: string; mode: string; globs: string[]; body: string }) =>
+      ipcRenderer.invoke(RULE_CHANNELS.save, payload),
+    remove: (workspaceRoot: string, name: string) =>
+      ipcRenderer.invoke(RULE_CHANNELS.remove, { workspaceRoot, name }),
+    test: (workspaceRoot: string, filePath: string) =>
+      ipcRenderer.invoke(RULE_CHANNELS.test, { workspaceRoot, filePath })
+  },
+  index: {
+    status: (workspaceRoot: string) =>
+      ipcRenderer.invoke(INDEX_CHANNELS.status, { workspaceRoot }),
+    rebuild: (workspaceRoot: string, force?: boolean) =>
+      ipcRenderer.invoke(INDEX_CHANNELS.rebuild, { workspaceRoot, force: force === true }),
+    search: (workspaceRoot: string, query: string, limit?: number) =>
+      ipcRenderer.invoke(INDEX_CHANNELS.search, { workspaceRoot, query, limit: limit ?? 8 }),
+    onProgress: (callback: (event: { workspaceRoot: string; phase: string; detail?: string; done?: number; total?: number }) => void) => {
+      const listener = (_e: unknown, data: any) => callback(data);
+      ipcRenderer.on(INDEX_CHANNELS.progress, listener);
+      return () => { ipcRenderer.removeListener(INDEX_CHANNELS.progress, listener); };
+    }
+  },
+  memory: {
+    pending: (workspaceRoot: string) =>
+      ipcRenderer.invoke(MEMORY_CHANNELS.pending, { workspaceRoot }),
+    distill: (workspaceRoot: string, prompt: string, response: string) =>
+      ipcRenderer.invoke(MEMORY_CHANNELS.distill, { workspaceRoot, prompt, response }),
+    approve: (workspaceRoot: string, candidateId: string, scope: 'project' | 'global', editedRule?: string) =>
+      ipcRenderer.invoke(MEMORY_CHANNELS.approve, { workspaceRoot, candidateId, scope, editedRule }),
+    dismiss: (workspaceRoot: string, candidateId: string) =>
+      ipcRenderer.invoke(MEMORY_CHANNELS.dismiss, { workspaceRoot, candidateId }),
+    update: (workspaceRoot: string, candidateId: string, patch: { title?: string; rule?: string; scope?: 'project' | 'global'; category?: string }) =>
+      ipcRenderer.invoke(MEMORY_CHANNELS.update, { workspaceRoot, candidateId, ...patch }),
+    stored: (workspaceRoot: string) =>
+      ipcRenderer.invoke(MEMORY_CHANNELS.stored, { workspaceRoot }),
+    remove: (workspaceRoot: string, scope: 'project' | 'global', id: string) =>
+      ipcRenderer.invoke(MEMORY_CHANNELS.remove, { workspaceRoot, scope, id })
+  },
+  quest: {
+    subscribe: (workspaceRoot: string) =>
+      ipcRenderer.invoke(QUEST_CHANNELS.subscribe, { workspaceRoot }),
+    list: (workspaceRoot: string) =>
+      ipcRenderer.invoke(QUEST_CHANNELS.list, { workspaceRoot }),
+    detail: (questId: string) =>
+      ipcRenderer.invoke(QUEST_CHANNELS.detail, { questId }),
+    draft: (workspaceRoot: string, objective: string, originSessionId?: string) =>
+      ipcRenderer.invoke(QUEST_CHANNELS.draft, { workspaceRoot, objective, ...(originSessionId ? { originSessionId } : {}) }),
+    revise: (questId: string, feedback: string[]) =>
+      ipcRenderer.invoke(QUEST_CHANNELS.revise, { questId, feedback }),
+    approve: (questId: string) =>
+      ipcRenderer.invoke(QUEST_CHANNELS.approve, { questId }),
+    cancel: (questId: string) =>
+      ipcRenderer.invoke(QUEST_CHANNELS.cancel, { questId }),
+    discard: (questId: string) =>
+      ipcRenderer.invoke(QUEST_CHANNELS.discard, { questId }),
+    fileDiff: (questId: string, filePath: string) =>
+      ipcRenderer.invoke(QUEST_CHANNELS.fileDiff, { questId, path: filePath }),
+    acceptFiles: (questId: string, paths: string[]) =>
+      ipcRenderer.invoke(QUEST_CHANNELS.acceptFiles, { questId, paths }),
+    finish: (questId: string, mode: 'accept-commit' | 'cherry-pick') =>
+      ipcRenderer.invoke(QUEST_CHANNELS.finish, { questId, mode }),
+    onEvent: (callback: (event: any) => void) => {
+      const listener = (_e: unknown, data: any) => callback(data);
+      ipcRenderer.on(QUEST_CHANNELS.events, listener);
+      return () => { ipcRenderer.removeListener(QUEST_CHANNELS.events, listener); };
+    }
+  },
+  // Prompt E (Step 2): live MCP management. Named `mcpManage` (not `mcp`) so
+  // it cannot collide with the flat legacy mcp* SEO-config channels above.
+  mcpManage: {
+    subscribe: (workspacePath: string) =>
+      ipcRenderer.invoke(MCP_CHANNELS.subscribe, { workspacePath }),
+    unsubscribe: () => ipcRenderer.invoke(MCP_CHANNELS.unsubscribe),
+    list: (workspacePath: string) =>
+      ipcRenderer.invoke(MCP_CHANNELS.list, { workspacePath }),
+    addStdio: (request: any) => ipcRenderer.invoke(MCP_CHANNELS.add, request),
+    addSse: (request: any) => ipcRenderer.invoke(MCP_CHANNELS.add, request),
+    remove: (workspacePath: string, id: string, scope: 'workspace' | 'global') =>
+      ipcRenderer.invoke(MCP_CHANNELS.remove, { workspacePath, id, scope }),
+    setEnabled: (workspacePath: string, id: string, enabled: boolean) =>
+      ipcRenderer.invoke(MCP_CHANNELS.setEnabled, { workspacePath, id, enabled }),
+    reconnect: (workspacePath: string, id: string) =>
+      ipcRenderer.invoke(MCP_CHANNELS.reconnect, { workspacePath, id }),
+    liveTools: () => ipcRenderer.invoke(MCP_CHANNELS.liveTools),
+    onEvent: (callback: (event: any) => void) => {
+      const listener = (_e: unknown, data: any) => callback(data);
+      ipcRenderer.on(MCP_CHANNELS.events, listener);
+      return () => { ipcRenderer.removeListener(MCP_CHANNELS.events, listener); };
+    }
+  },
   searchExtensions: (query: string) => ipcRenderer.invoke('extensions:search', query),
   getExtensionDetails: (namespace: string, name: string) => ipcRenderer.invoke('extensions:details', { namespace, name }),
   getAvailableSkills: (workspacePath: string) => ipcRenderer.invoke('skills:get', workspacePath),
@@ -638,6 +752,8 @@ const api: ElectronAPI = {
   replaceInFiles: (options: any) => ipcRenderer.invoke('fs:replace-in-files', options),
   previewReplace: (options: any) => ipcRenderer.invoke('fs:preview-replace', options),
   applyWorkspaceEdit: (previewId: string) => ipcRenderer.invoke('workspace-edit:apply', previewId),
+  applyComposedWorkspaceEdit: (previewId: string, acceptedHunksByPath: Record<string, number[]>) =>
+    ipcRenderer.invoke('workspace-edit:apply-composed', previewId, acceptedHunksByPath),
   previewLspWorkspaceEdit: (params: { edit: unknown; title: string; origin: 'lsp-rename' | 'refactor'; forcePreview?: boolean }) => ipcRenderer.invoke('workspace-edit:preview-lsp', params),
   previewSnippetEdit: (params: any) => ipcRenderer.invoke('workspace-edit:preview-snippet', params),
   cancelWorkspaceEdit: (previewId: string) => ipcRenderer.invoke('workspace-edit:cancel', previewId),

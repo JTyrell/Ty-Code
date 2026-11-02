@@ -906,6 +906,8 @@ export interface AgentDocument {
   markdown: string;
   sections: AgentDocumentSection[];
   createdAt: number;
+  /** Prompt B: set when this document is a Quest spec awaiting approval. */
+  questId?: string;
 }
 
 export interface AgentStreamChunk {
@@ -1693,6 +1695,114 @@ export interface ElectronAPI {
     ) => Promise<IpcResponse<import('../shared/types/checkpoint').RestoreResult>>;
     purge: (workspaceRoot: string, olderThanMs: number) => Promise<IpcResponse<number>>;
   };
+  wiki?: {
+    status: (workspaceRoot: string) => Promise<IpcResponse<import('../shared/types/wiki').WikiStatus>>;
+    generate: (
+      workspaceRoot: string,
+      force?: boolean
+    ) => Promise<IpcResponse<import('../shared/types/wiki').GenerateWikiResult>>;
+    read: (
+      workspaceRoot: string,
+      section: import('../shared/types/wiki').WikiSectionId
+    ) => Promise<IpcResponse<{ section: string; content: string | null }>>;
+    search: (
+      workspaceRoot: string,
+      query: string,
+      limit?: number
+    ) => Promise<IpcResponse<import('../shared/types/wiki').WikiSearchHit[]>>;
+    onProgress: (
+      callback: (event: { workspaceRoot: string; section: string; phase: string; message?: string }) => void
+    ) => () => void;
+  };
+  rules?: {
+    list: (workspaceRoot: string) => Promise<IpcResponse<import('../shared/types/rules').RuleMeta[]>>;
+    read: (
+      workspaceRoot: string,
+      name: string
+    ) => Promise<IpcResponse<import('../shared/types/rules').RuleFile | null>>;
+    save: (payload: {
+      workspaceRoot: string;
+      name: string;
+      title: string;
+      description: string;
+      mode: import('../shared/types/rules').RuleMode;
+      globs: string[];
+      body: string;
+    }) => Promise<IpcResponse<import('../shared/types/rules').RuleMeta>>;
+    remove: (workspaceRoot: string, name: string) => Promise<IpcResponse<boolean>>;
+    test: (
+      workspaceRoot: string,
+      filePath: string
+    ) => Promise<IpcResponse<import('../shared/types/rules').RuleTestResult>>;
+  };
+  index?: {
+    status: (workspaceRoot: string) => Promise<IpcResponse<import('../shared/types/semantic').IndexStatus>>;
+    rebuild: (
+      workspaceRoot: string,
+      force?: boolean
+    ) => Promise<IpcResponse<import('../shared/types/semantic').RebuildIndexResult>>;
+    search: (
+      workspaceRoot: string,
+      query: string,
+      limit?: number
+    ) => Promise<IpcResponse<import('../shared/types/semantic').SemanticHit[]>>;
+    onProgress: (
+      callback: (event: { workspaceRoot: string; phase: string; detail?: string; done?: number; total?: number }) => void
+    ) => () => void;
+  };
+  memory?: {
+    pending: (workspaceRoot: string) => Promise<IpcResponse<import('../shared/types/memory').MemoryCandidate[]>>;
+    distill: (
+      workspaceRoot: string,
+      prompt: string,
+      response: string
+    ) => Promise<IpcResponse<import('../shared/types/memory').DistillResult>>;
+    approve: (
+      workspaceRoot: string,
+      candidateId: string,
+      scope: 'project' | 'global',
+      editedRule?: string
+    ) => Promise<IpcResponse<{ ok: boolean }>>;
+    dismiss: (workspaceRoot: string, candidateId: string) => Promise<IpcResponse<boolean>>;
+    update: (
+      workspaceRoot: string,
+      candidateId: string,
+      patch: { title?: string; rule?: string; scope?: 'project' | 'global'; category?: string }
+    ) => Promise<IpcResponse<import('../shared/types/memory').MemoryCandidate | null>>;
+    stored: (workspaceRoot: string) => Promise<IpcResponse<import('../shared/types/memory').StoredMemory[]>>;
+    remove: (workspaceRoot: string, scope: 'project' | 'global', id: string) => Promise<IpcResponse<boolean>>;
+  };
+  quest?: {
+    subscribe: (workspaceRoot: string) => Promise<IpcResponse<import('../shared/types/quest').QuestStateSnapshot>>;
+    list: (workspaceRoot: string) => Promise<IpcResponse<import('../shared/types/quest').QuestMeta[]>>;
+    detail: (questId: string) => Promise<IpcResponse<{ quest: import('../shared/types/quest').QuestMeta; log: import('../shared/types/quest').QuestLogLine[] } | null>>;
+    draft: (workspaceRoot: string, objective: string, originSessionId?: string) => Promise<IpcResponse<import('../shared/types/quest').QuestMeta>>;
+    revise: (questId: string, feedback: string[]) => Promise<IpcResponse<import('../shared/types/quest').QuestMeta>>;
+    approve: (questId: string) => Promise<IpcResponse<import('../shared/types/quest').QuestMeta>>;
+    cancel: (questId: string) => Promise<IpcResponse<import('../shared/types/quest').QuestMeta>>;
+    discard: (questId: string) => Promise<IpcResponse<import('../shared/types/quest').QuestMeta>>;
+    fileDiff: (questId: string, filePath: string) => Promise<IpcResponse<import('../shared/types/quest').QuestFileDiff>>;
+    acceptFiles: (questId: string, paths: string[]) => Promise<IpcResponse<import('../shared/types/quest').QuestMeta>>;
+    finish: (questId: string, mode: 'accept-commit' | 'cherry-pick') => Promise<IpcResponse<import('../shared/types/quest').QuestMeta>>;
+    onEvent: (callback: (event: import('../shared/types/quest').QuestEvent) => void) => () => void;
+  };
+  /**
+   * Prompt E (Step 2): live MCP client management (health, tools, enable/add/
+   * remove). Optional because only windows with the desktop bridge have it; the
+   * panel probes it and shows an honest "bridge unavailable" state without it.
+   */
+  mcpManage?: {
+    subscribe: (workspacePath: string) => Promise<IpcResponse<import('../shared/types/mcp').McpServerStatus[]>>;
+    unsubscribe: () => Promise<IpcResponse<boolean>>;
+    list: (workspacePath: string) => Promise<IpcResponse<import('../shared/types/mcp').McpServerStatus[]>>;
+    addStdio: (request: import('../shared/types/mcp').McpAddStdioRequest) => Promise<IpcResponse<import('../shared/types/mcp').McpServerStatus>>;
+    addSse: (request: import('../shared/types/mcp').McpAddSseRequest) => Promise<IpcResponse<import('../shared/types/mcp').McpServerStatus>>;
+    remove: (workspacePath: string, id: string, scope: 'workspace' | 'global') => Promise<IpcResponse<true>>;
+    setEnabled: (workspacePath: string, id: string, enabled: boolean) => Promise<IpcResponse<import('../shared/types/mcp').McpServerStatus>>;
+    reconnect: (workspacePath: string, id: string) => Promise<IpcResponse<import('../shared/types/mcp').McpServerStatus>>;
+    liveTools: () => Promise<IpcResponse<Array<{ serverId: string; tool: string }>>>;
+    onEvent: (callback: (event: import('../shared/types/mcp').McpEvent) => void) => () => void;
+  };
   searchExtensions: (query: string) => Promise<IpcResponse<ExtensionMetadata[]>>;
   getExtensionDetails: (namespace: string, name: string) => Promise<IpcResponse<Record<string, unknown>>>;
   getAvailableSkills: (workspacePath: string) => Promise<IpcResponse<SkillDefinition[]>>;
@@ -1762,6 +1872,7 @@ export interface ElectronAPI {
   replaceInFiles: (options: ReplaceInFilesOptions) => Promise<IpcResponse<{ replacedCount: number; filesChanged: number; results: ReplaceResult[] }>>;
   previewReplace: (options: ReplaceInFilesOptions) => Promise<IpcResponse<WorkspaceEditFlowResult>>;
   applyWorkspaceEdit: (previewId: string) => Promise<IpcResponse<WorkspaceEditTransactionResult>>;
+  applyComposedWorkspaceEdit: (previewId: string, acceptedHunksByPath: Record<string, number[]>) => Promise<IpcResponse<WorkspaceEditTransactionResult>>;
   previewLspWorkspaceEdit: (params: { edit: unknown; title: string; origin: 'lsp-rename' | 'refactor'; forcePreview?: boolean }) => Promise<IpcResponse<WorkspaceEditFlowResult>>;
   previewSnippetEdit: (params: SnippetEditPreviewRequest) => Promise<IpcResponse<WorkspaceEditFlowResult>>;
   cancelWorkspaceEdit: (previewId: string) => Promise<IpcResponse<void>>;

@@ -128,7 +128,9 @@ export async function persistDocument(document: AgentDocument): Promise<void> {
     kind: document.kind,
     title: document.title,
     sections: document.sections,
-    createdAt: document.createdAt
+    createdAt: document.createdAt,
+    // Prompt B: quest specs keep their quest link across restore.
+    ...(document.questId ? { questId: document.questId } : {})
   };
 
   await Promise.all([
@@ -157,7 +159,8 @@ export async function loadDocument(id: string): Promise<AgentDocument | null> {
       title: metadata.title || 'Document',
       markdown,
       sections: metadata.sections || parseMarkdownSections(markdown),
-      createdAt: metadata.createdAt || Date.now()
+      createdAt: metadata.createdAt || Date.now(),
+      ...(typeof metadata.questId === 'string' ? { questId: metadata.questId } : {})
     };
   } catch {
     return null;

@@ -12,6 +12,8 @@ import { settingsManager } from '../services/settings-manager';
 import { mcpManager } from '../services/mcp-manager';
 import { SmartFileReader } from '../services/tools/smart-file-reader';
 import { parseMarkdownSections, persistDocument } from '../services/document-parser';
+import { rulesService } from '../services/knowledge/rules-service';
+import { semanticIndexService } from '../services/knowledge/semantic-index-service';
 
 export interface ToolExecutionResponse {
   output: string;
@@ -59,6 +61,8 @@ export class ToolExecutor {
         case 'list_directory':
           return await this.listDir(args);
         case 'grep_search': return await this.grepSearch(args);
+        case 'load_rule': return await this.loadRule(args);
+        case 'semantic_search': return await this.semanticSearch(args);
         case 'git_status': return await this.gitStatus();
         case 'git_diff': return await this.gitDiff(args);
         case 'git_commit': return await this.gitCommit(args);
@@ -84,6 +88,36 @@ export class ToolExecutor {
       const message = err instanceof Error ? err.message : String(err);
       return { output: `Error executing tool "${name}": ${message}`, isError: true };
     }
+  }
+
+  private async loadRule(args: Record<string, unknown>): Promise<ToolExecutionResponse> {
+    const name = String(args.name || '').trim();
+    if (!name) return { output: 'Error: name is required', isError: true };
+    const text = await rulesService.resolveRuleText(this.workspaceRoot, name);
+    if (text === null) {
+      return { output: `No rule named "${name}" was found in .tycode/rules/.`, isError: true };
+    }
+    return { output: `Rule "${name}":\n\n${text}` };
+  }
+
+  private async semanticSearch(args: Record<string, unknown>): Promise<ToolExecutionResponse> {
+    const query = String(args.query || '').trim();
+    if (!query) return { output: 'Error: query is required', isError: true };
+    const rawLimit = Number(args.limit);
+    const limit = Number.isFinite(rawLimit) ? Math.max(1, Math.min(30, Math.trunc(rawLimit))) : 8;
+    let hits;
+    try {
+      hits = await semanticIndexService.search(this.workspaceRoot, query, limit);
+    } catch (err) {
+      return { output: `semantic_search failed: ${err instanceof Error ? err.message : String(err)}`, isError: true };
+    }
+    if (hits.length === 0) {
+      return { output: `No semantic matches for "${query}". The index may be empty or stale — ask the user to rebuild it (Index panel) or use grep_search for literal text.` };
+    }
+    const lines = hits.map((h) =>
+      `${h.relPath}:${h.startLine} (score ${h.score.toFixed(3)})\n${h.snippet.split('\n').slice(0, 6).join('\n')}`
+    );
+    return { output: `semantic_search "${query}" (${hits.length} chunks):\n\n${lines.join('\n\n---\n\n')}` };
   }
 
   public async submitDocument(name: string, args: Record<string, unknown>): Promise<ToolExecutionResponse> {

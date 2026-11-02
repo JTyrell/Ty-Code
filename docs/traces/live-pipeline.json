@@ -1,9 +1,9 @@
 {
   "phase": "RealConnect 1",
   "title": "End-to-End Chat Request Pipeline Trace Across All IPC Hops",
-  "timestamp": "2026-11-01T16:12:45.196Z",
-  "epoch": 1793549565,
-  "gitCommit": "238f305cdd71e98d27dcc8c7af2d3e50fc50d97b",
+  "timestamp": "2026-11-01T22:25:55.795Z",
+  "epoch": 1793571955,
+  "gitCommit": "b689f83a1875abebc213344064e7e996f5ef63cc",
   "command": "node scripts/run-live-e2e.mjs",
   "status": "VERIFIED_PASS",
   "requestDetails": {

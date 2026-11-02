@@ -7,6 +7,8 @@ import { ToolExecutor, type ToolExecutionResponse } from './tool-executor';
 import { parseMarkdownSections, persistDocument } from '../services/document-parser';
 import { ChatErrorCardSchema, zDocumentProposed } from '../../shared/types/agent-events';
 import { getAvailableTools, isToolAvailable, isDocsOnlyWrite } from './tool-registry';
+import { rulesService } from '../services/knowledge/rules-service';
+import { autoMemoryService } from '../services/knowledge/auto-memory-service';
 import { workspaceManager } from '../services/workspace-manager';
 import { assembleSystemPrompt, classify, buildProjectProfile, saveProjectProfileCache, runConventionsExtractor, pickProviderModel, loadPreferences, invalidateAssemblyCache, type ProjectProfile, type ModeId, type ToolScope, type TaskClass, type RolePreferences } from './prompt-assembler';
 import { getHarness } from '../services/orchestration/harnesses';
@@ -576,6 +578,32 @@ export class AgentEngine {
     const liveRules = Array.from(runtimeRulesByWorkspace.get(currentWorkspaceHash) || []);
     if (liveRules.length > 0) {
       systemPrompt += `\n\n[LIVE LEARNED RULES]\n${liveRules.map((r) => `- ${r}`).join('\n')}`;
+    }
+
+    // Prompt C (Knowledge Layer — Step 2): Project Rules engine. always rules are
+    // injected verbatim, glob rules inject when a matching file is in context, and
+    // model-decision rules are surfaced as an on-demand catalog (fetched via the
+    // load_rule tool). Manual rules arrive only through an explicit @rule mention.
+    if (!isSimpleQuery) {
+      try {
+        const rulesBlock = await rulesService.buildInjection(workspacePath, envContext.activeFiles || []);
+        if (rulesBlock) systemPrompt += `\n\n${rulesBlock}`;
+      } catch {
+        /* rule injection is best-effort; never block the first token */
+      }
+    }
+
+    // Prompt C (Knowledge Layer — Step 4): Auto-memory relevance injection. Global-scope
+    // learned preferences are embedded locally and only the top-K most relevant to this
+    // task are injected, keeping the block bounded. Project-scope rules already arrive
+    // through the omni-context correction injection above, so nothing is double-counted.
+    if (!isSimpleQuery) {
+      try {
+        const memoryBlock = await autoMemoryService.buildRelevantInjection(prompt);
+        if (memoryBlock) systemPrompt += `\n\n${memoryBlock}`;
+      } catch {
+        /* memory injection is best-effort; never block the first token */
+      }
     }
 
     // Build initial messages immediately with lightweight system prompt

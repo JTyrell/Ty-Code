@@ -13,11 +13,16 @@ import powershell from 'highlight.js/lib/languages/powershell';
 import python from 'highlight.js/lib/languages/python';
 import typescript from 'highlight.js/lib/languages/typescript';
 import yaml from 'highlight.js/lib/languages/yaml';
-import { Send, Square, Sparkles, Trash2, ChevronDown, FileCode, Check, Eye, AlertCircle, Copy, RotateCcw, Loader2, ShieldCheck, X, Users, Lightbulb, Hammer, Compass, Info, Palette, Presentation, Play, ExternalLink, Settings, Activity, Key, WifiOff, Clock, RefreshCw, Zap, MessageSquare, History } from 'lucide-react';
+import { Send, Square, Sparkles, Trash2, ChevronDown, FileCode, Check, Eye, AlertCircle, Copy, RotateCcw, Loader2, ShieldCheck, X, Users, Lightbulb, Hammer, Compass, Info, Palette, Presentation, Play, ExternalLink, Settings, Activity, Key, WifiOff, Clock, RefreshCw, Zap, MessageSquare, History, BookOpen, Layers, Rocket } from 'lucide-react';
 import { useChatStore, groupMessagesByTask } from '../state/chat-store';
 import { useWorkspaceStore } from '../state/workspace-store';
 import { useSessionStore } from '../state/session-store';
 import { HistoryBrowser } from './session/HistoryBrowser';
+import { CheckpointPanel } from './session/CheckpointPanel';
+import { WikiPanel } from './session/WikiPanel';
+import { IndexPanel } from './session/IndexPanel';
+import { QuestsPanel } from './session/QuestsPanel';
+import { initQuestSubscription } from '../state/quest-store';
 import { usePairProgrammingStore } from '../state/pair-programming-store';
 import { useOnboardingStore } from '../state/onboarding-store';
 import { useSettingsStore } from '../state/settings-store';
@@ -844,7 +849,7 @@ function formatHeaderStatus(status: string, maxLen = 23): string {
 
 export const ChatSidecar: React.FC = () => {
   const [input, setInput] = useState('');
-  const [sidecarTab, setSidecarTab] = useState<'chat' | 'pair' | 'history'>('chat');
+  const [sidecarTab, setSidecarTab] = useState<'chat' | 'pair' | 'history' | 'checkpoints' | 'wiki' | 'index' | 'quests'>('chat');
   // Phase 1: keep the encrypted session store pointed at the current workspace.
   const setSessionWorkspace = useSessionStore((s) => s.setWorkspaceRoot);
   const activeSessionId = useSessionStore((s) => s.activeSessionId);
@@ -871,6 +876,12 @@ export const ChatSidecar: React.FC = () => {
   useEffect(() => {
     setSessionWorkspace(workspacePath ?? null);
   }, [workspacePath, setSessionWorkspace]);
+  // Prompt B: one disposable quest subscription for the whole sidecar, so the
+  // Quests projection (and completion toasts) stay warm even when the tab is closed.
+  useEffect(() => {
+    if (!workspacePath) return;
+    return initQuestSubscription(workspacePath);
+  }, [workspacePath]);
   const activeTab = openTabs.find((tab) => tab.path === activeTabPath);
   const groupedMessages = useMemo(() => groupMessagesByTask(messages), [messages]);
 
@@ -1135,6 +1146,34 @@ export const ChatSidecar: React.FC = () => {
       })();
       return;
     }
+    // Prompt B: "/quest <objective>" delegates a long-horizon task. The agent
+    // drafts a Spec (which opens in the Document Review Pane for approval);
+    // nothing runs until the spec is approved, and then only in a worktree.
+    const rawInput = input.trim();
+    if (rawInput.toLowerCase() === '/quest' || rawInput.toLowerCase().startsWith('/quest ')) {
+      const objective = rawInput.replace(/^\/quest\s*/i, '').trim();
+      historyIndexRef.current = -1;
+      useChatInputStore.getState().clearAttachments();
+      setInput('');
+      if (!objective) {
+        toast.info('Describe the quest', 'Usage: /quest <the task to delegate>.');
+        return;
+      }
+      if (!window.electronAPI?.quest) {
+        toast.error('Quests unavailable', 'This build does not expose the Quest API.');
+        return;
+      }
+      setSidecarTab('quests');
+      void (async () => {
+        try {
+          const res = await window.electronAPI!.quest!.draft(workspacePath, objective, activeSessionId || undefined);
+          if (!res.success) toast.error('Could not draft quest', res.error || 'Quest drafting failed.');
+        } catch (err: unknown) {
+          toast.error('Could not draft quest', err instanceof Error ? err.message : String(err));
+        }
+      })();
+      return;
+    }
     const images = media.length > 0 ? media.map((attachment) => attachment.content) : undefined;
     if (!composedPrompt && !images) return;
     if (composedPrompt) rememberPrompt(composedPrompt);
@@ -1230,6 +1269,45 @@ export const ChatSidecar: React.FC = () => {
             <span>{activeSidecar ? activeSidecar.title.slice(0, 18) : 'Sessions'}</span>
             {activeSessionId && <span className="chat-header-tab-dot" aria-hidden="true" />}
           </button>
+          <button
+            type="button"
+            aria-pressed={sidecarTab === 'checkpoints'}
+            onClick={() => setSidecarTab('checkpoints')}
+            className={`chat-header-tab${sidecarTab === 'checkpoints' ? ' is-active' : ''}`}
+          >
+            <RotateCcw size={13} aria-hidden="true" />
+            <span>Checkpoints</span>
+          </button>
+          <button
+            type="button"
+            aria-pressed={sidecarTab === 'wiki'}
+            onClick={() => setSidecarTab('wiki')}
+            className={`chat-header-tab${sidecarTab === 'wiki' ? ' is-active' : ''}`}
+            title="Project Wiki"
+          >
+            <BookOpen size={13} aria-hidden="true" />
+            <span>Wiki</span>
+          </button>
+          <button
+            type="button"
+            aria-pressed={sidecarTab === 'index'}
+            onClick={() => setSidecarTab('index')}
+            className={`chat-header-tab${sidecarTab === 'index' ? ' is-active' : ''}`}
+            title="Semantic Index"
+          >
+            <Layers size={13} aria-hidden="true" />
+            <span>Index</span>
+          </button>
+          <button
+            type="button"
+            aria-pressed={sidecarTab === 'quests'}
+            onClick={() => setSidecarTab('quests')}
+            className={`chat-header-tab${sidecarTab === 'quests' ? ' is-active' : ''}`}
+            title="Quests — delegated autonomous tasks"
+          >
+            <Rocket size={13} aria-hidden="true" />
+            <span>Quests</span>
+          </button>
         </div>
         <div className="chat-header-actions">
           {currentStatus && <span className="chat-status" title={currentStatus}><Loader2 size={10} className="animate-spin" /><span>{formatHeaderStatus(currentStatus)}</span></span>}
@@ -1322,6 +1400,22 @@ export const ChatSidecar: React.FC = () => {
     {sidecarTab === 'history' ? (
       <div className="chat-feed chat-history-feed">
         <HistoryBrowser />
+      </div>
+    ) : sidecarTab === 'checkpoints' ? (
+      <div className="chat-feed chat-history-feed">
+        <CheckpointPanel />
+      </div>
+    ) : sidecarTab === 'wiki' ? (
+      <div className="chat-feed chat-history-feed">
+        <WikiPanel />
+      </div>
+    ) : sidecarTab === 'index' ? (
+      <div className="chat-feed chat-history-feed">
+        <IndexPanel />
+      </div>
+    ) : sidecarTab === 'quests' ? (
+      <div className="chat-feed chat-history-feed">
+        <QuestsPanel />
       </div>
     ) : sidecarTab === 'pair' ? (
       <div className="chat-feed chat-pair-panel">

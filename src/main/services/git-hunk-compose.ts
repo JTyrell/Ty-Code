@@ -24,6 +24,36 @@ export interface ComposeHunk {
 }
 
 /**
+ * Minimal structural view of a unified-diff hunk (matches `myers-diff`'s
+ * `DiffHunk`). Declared here so this pure module needs no diff-engine import.
+ */
+export interface DiffHunkLike {
+  readonly oldStart: number;
+  readonly oldCount: number;
+  readonly newStart: number;
+  readonly newCount: number;
+  readonly header: string;
+  readonly lines: readonly string[];
+}
+
+/**
+ * Phase 4 per-hunk review — convert context-bearing unified-diff hunks into the
+ * compose range model. A hunk's `oldStart` is the first ORIGINAL (context or
+ * deleted) line it touches; a hunk that carries no original lines (a pure
+ * insertion against an empty original) leaves `oldStart` at 0, so we map it to 1
+ * and let compose insert the new lines at the top.
+ */
+export function toComposeHunks(hunks: readonly DiffHunkLike[]): ComposeHunk[] {
+  return hunks.map((hunk, index) => ({
+    id: String(index),
+    oldStart: hunk.oldStart === 0 ? 1 : hunk.oldStart,
+    oldLines: hunk.oldCount,
+    // Replacement region = context (' ') + additions ('+'); deletions ('-') drop.
+    newLines: hunk.lines.filter((line) => !line.startsWith('-')).map((line) => line.slice(1))
+  }));
+}
+
+/**
  * Compose the accepted subset of `hunks` onto `originalText`.
  *
  * @throws if hunk ranges overlap, run off either end of the file, or arrive
@@ -63,6 +93,46 @@ export function composeAcceptedHunks(
   // Rejoin preserving each line's original EOL where possible; the caller
   // gets one consistent string, and mixed-EOL files stay mixed-EOL.
   return joinWithEol(out, lines);
+}
+
+/**
+ * Compose the accepted subset of raw unified-diff `hunks` onto `originalText`
+ * using EXACTLY the line model `myers-diff` produced them with:
+ * `text.length === 0 ? [] : text.split('\n')` joined back with `\n`. This is the
+ * entry the Safe Edit Review Gate calls for a partial accept, so the composed
+ * file lines up with the hunk line numbers (which count a trailing empty
+ * segment for newline-terminated files). `composeAcceptedHunks` (EOL-preserving)
+ * stays for hand-built ranges; the two models differ on the phantom last line.
+ *
+ * @throws if accepted hunks overlap, run past the end, or arrive out of order.
+ */
+export function composeMyersAccepted(
+  originalText: string,
+  hunks: readonly DiffHunkLike[],
+  acceptedIds: ReadonlySet<string>
+): string {
+  const out = originalText.length === 0 ? [] : originalText.split('\n');
+  const accepted = toComposeHunks(hunks).filter((h) => acceptedIds.has(h.id));
+  for (let i = 1; i < accepted.length; i++) {
+    const prev = accepted[i - 1];
+    const cur = accepted[i];
+    if (cur.oldStart < prev.oldStart + prev.oldLines) {
+      throw new Error(
+        `composeMyersAccepted: overlapping or out-of-order hunks (${prev.id} @${prev.oldStart}+${prev.oldLines} vs ${cur.id} @${cur.oldStart})`
+      );
+    }
+  }
+  for (let i = accepted.length - 1; i >= 0; i--) {
+    const h = accepted[i];
+    if (h.oldStart < 1) throw new Error(`composeMyersAccepted: hunk ${h.id} has oldStart<1`);
+    if (h.oldStart - 1 + h.oldLines > out.length) {
+      throw new Error(
+        `composeMyersAccepted: hunk ${h.id} extends past end of file (oldStart=${h.oldStart}, oldLines=${h.oldLines}, len=${out.length})`
+      );
+    }
+    out.splice(h.oldStart - 1, h.oldLines, ...h.newLines);
+  }
+  return out.join('\n');
 }
 
 /**

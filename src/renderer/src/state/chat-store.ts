@@ -1379,6 +1379,23 @@ export const useChatStore = create<ChatState>((set, get) => ({
             });
           }
           guardFinalize();
+          // Prompt C (Knowledge Layer — Step 4): once per completed task, run a
+          // background distillation pass to propose memory candidates for review.
+          // Fire-and-forget and feature-gated; a missing model route is handled
+          // server-side as an honest no-op, never a fabricated rule.
+          const finalContent = (lastMessage?.content || '').trim();
+          if (workspacePath && finalContent.length > 0 && prompt.trim().length > 0 && window.electronAPI?.memory?.distill) {
+            void window.electronAPI.memory
+              .distill(workspacePath, prompt.slice(0, 4000), finalContent.slice(0, 8000))
+              .then((res) => {
+                if (!res?.success) return;
+                const proposed = res.data?.proposed ?? 0;
+                if (proposed > 0 && typeof window !== 'undefined') {
+                  window.dispatchEvent(new CustomEvent('tycode:memory-proposed', { detail: { workspacePath, proposed } }));
+                }
+              })
+              .catch(() => undefined);
+          }
         }
       }));
     }

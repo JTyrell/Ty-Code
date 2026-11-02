@@ -11,7 +11,8 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { composeAcceptedHunks, type ComposeHunk } from './git-hunk-compose';
+import { composeAcceptedHunks, composeMyersAccepted, type ComposeHunk } from './git-hunk-compose';
+import { MyersDiff } from './myers-diff';
 
 const hunk = (
   id: string,
@@ -100,5 +101,51 @@ describe('composeAcceptedHunks', () => {
     ];
     const out = composeAcceptedHunks(src, hunks, new Set(['a', 'b']));
     expect(out).toBe('ONE\nEXTRA\ntwo\nTHREE\n');
+  });
+});
+
+describe('composeMyersAccepted + MyersDiff round-trip (Gate partial accept)', () => {
+  // 15-line file with two edits placed FAR apart (line 1 and line 15) so Myers
+  // keeps them as two independent hunks instead of merging them by context.
+  const original = Array.from({ length: 15 }, (_, i) => `L${i + 1}`).join('\n') + '\n';
+  const modified = original
+    .split('\n')
+    .map((line, i) => (i === 0 ? 'TOP' : i === 14 ? 'BOT' : line))
+    .join('\n');
+
+  it('produces two separate hunks for the distant edits', () => {
+    expect(MyersDiff.diff(original, modified).hunks.length).toBe(2);
+  });
+
+  it('accepting every hunk reconstructs the full modified text', () => {
+    const diff = MyersDiff.diff(original, modified);
+    const all = new Set(diff.hunks.map((_, i) => String(i)));
+    expect(composeMyersAccepted(original, diff.hunks, all)).toBe(modified);
+  });
+
+  it('rejecting every hunk leaves the original untouched', () => {
+    const diff = MyersDiff.diff(original, modified);
+    expect(composeMyersAccepted(original, diff.hunks, new Set())).toBe(original);
+  });
+
+  it('accepting a single hunk applies exactly that change and preserves the rest', () => {
+    const diff = MyersDiff.diff(original, modified);
+    // Keep only the TOP change (hunk 0); the BOT line 15 stays unchanged.
+    const expected = original.replace('L1\n', 'TOP\n');
+    expect(composeMyersAccepted(original, diff.hunks, new Set(['0']))).toBe(expected);
+  });
+
+  it('handles an insertion hunk (append at end of a newline-terminated file)', () => {
+    const withInsert = original + 'omega\n';
+    const diff = MyersDiff.diff(original, withInsert);
+    const all = new Set(diff.hunks.map((_, i) => String(i)));
+    expect(composeMyersAccepted(original, diff.hunks, all)).toBe(withInsert);
+  });
+
+  it('handles a from-empty create (accept-all reproduces the whole new file)', () => {
+    const created = 'a\nb\nc\n';
+    const diff = MyersDiff.diff('', created);
+    const all = new Set(diff.hunks.map((_, i) => String(i)));
+    expect(composeMyersAccepted('', diff.hunks, all)).toBe(created);
   });
 });

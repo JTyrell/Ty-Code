@@ -52,6 +52,9 @@ import { useDocumentReviewStore } from '../state/document-review-store';
 import { DocumentReviewPane } from './documents/DocumentReviewPane';
 import { useThemeSync, getMonacoTheme } from '../hooks/useThemeSync';
 import { copyTextOrNotify } from '../lib/clipboard';
+import { executeCommandEntry } from '../lib/command-runtime';
+import { QUICK_ACTION_ENTRY_IDS } from '../lib/ai-quick-actions';
+import { attachSelectionToolbar } from '../lib/selection-toolbar';
 
 interface SplitPaneState {
   isSplit: boolean;
@@ -91,6 +94,9 @@ export const EditorArea: React.FC = () => {
   const [blameHunks, setBlameHunks] = useState<GitBlameHunk[]>([]);
   const [blameRefreshKey, setBlameRefreshKey] = useState(0);
   const cursorListenerRef = useRef<{ dispose: () => void } | null>(null);
+  // Prompt E: hover toolbar lives and dies with the pane that owns the editor.
+  const primaryToolbarRef = useRef<{ dispose: () => void } | null>(null);
+  const secondaryToolbarRef = useRef<{ dispose: () => void } | null>(null);
   // The command registry's view of the live editors (Prompt 5). Each pane owns one
   // registration, so an unmounted pane stops asserting cursor state it cannot see.
   const primaryEditorRegistration = useRef<EditorDisposable | null>(null);
@@ -117,7 +123,11 @@ export const EditorArea: React.FC = () => {
     }
   }, [shouldLoadMonaco, monacoRuntime.status]);
 
-  useEffect(() => () => cursorListenerRef.current?.dispose(), []);
+  useEffect(() => () => {
+    cursorListenerRef.current?.dispose();
+    primaryToolbarRef.current?.dispose();
+    secondaryToolbarRef.current?.dispose();
+  }, []);
 
   useEffect(
     () => () => {
@@ -463,11 +473,42 @@ export const EditorArea: React.FC = () => {
         await triggerRefactor('add-typescript-types', selectedText, selection);
       }
     });
+
+    // Prompt E (Step 1): AI quick actions in the right-click menu. Each row
+    // dispatches its shared-registry entry id, so the `when` re-check and the
+    // handler table decide what actually runs — the menu never paints a dead
+    // click it cannot back. `precondition` keeps Monaco hiding the rows
+    // without a selection, matching the registry's `selectionActive` gate.
+    const quickActionEntries: Array<{ entryId: string; label: string }> = [
+      { entryId: QUICK_ACTION_ENTRY_IDS.explain, label: 'Ty-Code: Explain Selection' },
+      { entryId: QUICK_ACTION_ENTRY_IDS.fix, label: 'Ty-Code: Fix Selection' },
+      { entryId: QUICK_ACTION_ENTRY_IDS.refactor, label: 'Ty-Code: Refactor Selection' },
+      { entryId: QUICK_ACTION_ENTRY_IDS.tests, label: 'Ty-Code: Generate Tests' },
+      { entryId: QUICK_ACTION_ENTRY_IDS.addToChat, label: 'Ty-Code: Add Selection to Chat' },
+      { entryId: 'edit.inline-assist', label: 'Ty-Code: Inline Assist\u2026' }
+    ];
+    quickActionEntries.forEach((entry, index) => {
+      editor.addAction({
+        id: `tycode.quickAction.${entry.entryId}`,
+        label: entry.label,
+        precondition: 'editorHasSelection',
+        contextMenuGroupId: '5_tycode_ai',
+        contextMenuOrder: index + 1,
+        run: () => {
+          void executeCommandEntry(entry.entryId);
+        }
+      });
+    });
+
+    primaryToolbarRef.current?.dispose();
+    primaryToolbarRef.current = attachSelectionToolbar(editor);
   };
 
   const handleSecondaryEditorMount = (editor: any) => {
     secondaryEditorRegistration.current?.dispose();
     secondaryEditorRegistration.current = registerEditor(editor, { groupId: 'secondary' });
+    secondaryToolbarRef.current?.dispose();
+    secondaryToolbarRef.current = attachSelectionToolbar(editor);
   };
 
   const handleDiffEditorMount = (editor: any) => {
