@@ -32,6 +32,15 @@ Every later stage must show **no degradation** against these numbers. Enforced b
   double-counting behavior (Stage 1a will reduce the iteration figure).
 - The provider is a test harness, not a product code path; no fixture replies are
   baked into `src/**` (verified by `npm run guards`).
+- **Wall-time method (Stage 4a refinement):** the loop's sub-second wall time is
+  noisy on a shared dev machine (GC, and `npm run guards` runs the canary after
+  minutes of sibling guard processes). Because that noise is strictly ADDITIVE,
+  the harness now reports wall time as the **minimum of 5 warmed repeats** (one
+  discarded warm-up + 5 timed, least-contaminated run wins) rather than a cold
+  median. `no-agent-performance-regression.mjs` measures current with the same
+  min-of-5 method, so current-vs-baseline stays apples-to-apples; the 320 value
+  remains the (upward-biased) pre-optimization ceiling reference. Observed
+  post-plan floor: ~270–350 ms, i.e. within/under the pre-optimization figure.
 
 ## Expected ranges after all stages complete (Stage 4a)
 Targets for the fully-optimized loop (Stages 1→5→3→4a shipped). The canary

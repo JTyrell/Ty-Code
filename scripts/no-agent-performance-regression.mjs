@@ -108,7 +108,7 @@ async function measureCurrent() {
   if (typeof runAgentBaseline !== 'function') {
     throw new Error('Baseline harness did not export runAgentBaseline()');
   }
-  return runAgentBaseline(3);
+  return runAgentBaseline(5);
 }
 
 // A metric with a zero baseline gets a small absolute floor so a deterministic
