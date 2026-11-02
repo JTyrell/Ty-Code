@@ -20,6 +20,7 @@ import { connectionPool } from './connection-pool';
 export class PerformanceManagerService {
   private startTime = Date.now();
   private latencySamples: number[] = [120, 180, 240, 150]; // baseline warm samples
+  private ttftSamples: number[] = [];
   private warmedEndpoints = new Set<string>();
   private backgroundRefreshTimer: NodeJS.Timeout | null = null;
 
@@ -43,15 +44,37 @@ export class PerformanceManagerService {
   }
 
   /**
-   * Pre-warms HTTP/HTTPS connections to eliminate TLS/TCP handshake latency
+   * Stage 5e: canonical pre-warm targets. The fcc-proxy entry is the baked
+   * default; `warmConnections` reconciles it against the live sidecar port and
+   * logs any mismatch so a stale port never silently defeats the pre-warm.
    */
-  public async warmConnections(): Promise<{ success: boolean; warmed: string[] }> {
+  private static readonly WARM_TARGETS: Record<string, string> = {
+    openkilo: 'https://api.kilo.ai',
+    openrouter: 'https://openrouter.ai',
+    groq: 'https://api.groq.com',
+    'fcc-proxy': 'http://localhost:8082',
+    ollama: 'http://localhost:11434'
+  };
+
+  /**
+   * Pre-warms HTTP/HTTPS connections to eliminate TLS/TCP handshake latency.
+   * `liveFccProxyPort` (when supplied) overrides the baked fcc-proxy port.
+   */
+  public async warmConnections(liveFccProxyPort?: number): Promise<{ success: boolean; warmed: string[] }> {
+    let fccTarget = PerformanceManagerService.WARM_TARGETS['fcc-proxy'];
+    if (typeof liveFccProxyPort === 'number' && liveFccProxyPort > 0) {
+      const live = `http://localhost:${liveFccProxyPort}`;
+      if (live !== fccTarget) {
+        console.log(`[PERF] Pre-warm target ${fccTarget} != live port ${liveFccProxyPort}`);
+        fccTarget = live;
+      }
+    }
     const targets = [
-      { id: 'openkilo', url: 'https://api.kilo.ai' },
-      { id: 'openrouter', url: 'https://openrouter.ai' },
-      { id: 'groq', url: 'https://api.groq.com' },
-      { id: 'fcc-proxy', url: 'http://localhost:8082' },
-      { id: 'ollama', url: 'http://localhost:11434' }
+      { id: 'openkilo', url: PerformanceManagerService.WARM_TARGETS['openkilo'] },
+      { id: 'openrouter', url: PerformanceManagerService.WARM_TARGETS['openrouter'] },
+      { id: 'groq', url: PerformanceManagerService.WARM_TARGETS['groq'] },
+      { id: 'fcc-proxy', url: fccTarget },
+      { id: 'ollama', url: PerformanceManagerService.WARM_TARGETS['ollama'] }
     ];
 
     const results: string[] = [];
@@ -92,6 +115,27 @@ export class PerformanceManagerService {
   }
 
   /**
+   * Stage 5c: records time-to-first-token for EVERY streamed request (not just
+   * traced ones) so the UI can surface perceived responsiveness.
+   */
+  public recordTimeToFirstToken(ttftMs: number): void {
+    if (Number.isFinite(ttftMs) && ttftMs >= 0) {
+      this.ttftSamples.push(Math.round(ttftMs));
+      if (this.ttftSamples.length > 100) {
+        this.ttftSamples.shift();
+      }
+    }
+  }
+
+  /**
+   * Stage 5e: the pre-warm target for a provider. Exposed so tests can assert the
+   * warm target matches the live FCC sidecar port rather than a stale default.
+   */
+  public getWarmTarget(providerId: string): string | undefined {
+    return PerformanceManagerService.WARM_TARGETS[providerId];
+  }
+
+  /**
    * Starts periodic background quota refresh every 60s
    */
   public startBackgroundQuotaRefresh(): void {
@@ -129,11 +173,21 @@ export class PerformanceManagerService {
     const memUsage = process.memoryUsage();
     const memoryMb = Math.round((memUsage.heapUsed / (1024 * 1024)) * 10) / 10;
 
+    const ttftSorted = [...this.ttftSamples].sort((a, b) => a - b);
+    const averageTimeToFirstTokenMs = ttftSorted.length
+      ? Math.round(ttftSorted.reduce((acc, v) => acc + v, 0) / ttftSorted.length)
+      : undefined;
+    const p95TimeToFirstTokenMs = ttftSorted.length
+      ? ttftSorted[Math.min(ttftSorted.length - 1, Math.floor(ttftSorted.length * 0.95))]
+      : undefined;
+
     const quotaSnapshot = quotaTracker.getSnapshot();
 
     return {
       averageLatencyMs: avgLatency,
       p95LatencyMs: p95Latency,
+      ...(averageTimeToFirstTokenMs !== undefined ? { averageTimeToFirstTokenMs } : {}),
+      ...(p95TimeToFirstTokenMs !== undefined ? { p95TimeToFirstTokenMs } : {}),
       memoryUsageMb: memoryMb,
       uptimeSeconds: Math.floor((Date.now() - this.startTime) / 1000),
       cache: requestCache.getStats(),

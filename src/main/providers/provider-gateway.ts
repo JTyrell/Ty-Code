@@ -1413,16 +1413,60 @@ export async function sendChatRequest(
     }
   };
 
+  // Stage 5d: first-token/idle watchdog for the PRIMARY (legacy) chat/streaming
+  // path — the same guardrail streamWithCandidate gets. A stalled-but-open stream
+  // aborts at the timeout and hands off instead of idling to the 120s hard
+  // timeout. Declared OUTSIDE the try so the catch below can route the abort into
+  // the handoff path. Mandatory defaults 30s first-token / 10s idle, env-overridable
+  // (TYCODE_FIRST_TOKEN_TIMEOUT_MS / TYCODE_IDLE_TIMEOUT_MS).
+  const timeoutMsFirst = Number(process.env.TYCODE_FIRST_TOKEN_TIMEOUT_MS) || 30_000;
+  const timeoutMsIdle = Number(process.env.TYCODE_IDLE_TIMEOUT_MS) || 10_000;
+  const watchdog = new AbortController();
+  let watchdogReason: string | undefined;
+  const watchdogAbort = (reason: string): void => {
+    if (watchdog.signal.aborted) return;
+    watchdogReason = reason;
+    console.log(`[GATEWAY] Watchdog abort: ${reason}`);
+    watchdog.abort(new Error(`[gateway-watchdog] ${reason}`));
+  };
+  let firstTokenTimer: ReturnType<typeof setTimeout> | undefined =
+    setTimeout(() => watchdogAbort('first_token_timeout'), timeoutMsFirst);
+  firstTokenTimer.unref?.();
+  let idleTimer: ReturnType<typeof setTimeout> | undefined;
+  let watchdogFetchStart = 0;
+  let ttftRecorded = false;
+  const clearWatchdog = (): void => {
+    if (firstTokenTimer) { clearTimeout(firstTokenTimer); firstTokenTimer = undefined; }
+    if (idleTimer) { clearTimeout(idleTimer); idleTimer = undefined; }
+  };
+  // Called on every streamed chunk: records TTFT, disarms the first-token timer
+  // and rearms the idle timer, so a live stream is never killed but a silent one is.
+  const touchStream = (): void => {
+    if (firstTokenTimer) {
+      if (!ttftRecorded && watchdogFetchStart > 0) {
+        ttftRecorded = true;
+        performanceManager.recordTimeToFirstToken(Math.round(performance.now() - watchdogFetchStart));
+      }
+      clearTimeout(firstTokenTimer); firstTokenTimer = undefined;
+    }
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => watchdogAbort('idle_timeout'), timeoutMsIdle);
+    idleTimer.unref?.();
+  };
+
   try {
     // 4. Make the fetch request with the key in the headers
     const requestStartMs = Date.now();
 
     // Create a 120s timeout signal for large file operations and long streaming responses
     const timeoutSignal = AbortSignal.timeout(120_000);
-    // Combine with any existing abortSignal
+    // Stage 5d: fold the watchdog signal into the combined abort so a first-token
+    // or idle timeout rejects the in-flight fetch/reader and reaches the handoff
+    // logic in the catch below.
+    watchdogFetchStart = performance.now();
     const combinedSignal = abortSignal
-      ? AbortSignal.any([abortSignal, timeoutSignal])
-      : timeoutSignal;
+      ? AbortSignal.any([abortSignal, timeoutSignal, watchdog.signal])
+      : AbortSignal.any([timeoutSignal, watchdog.signal]);
 
     // Record H3 (Gateway Adapter): right before fetch() is called to the LLM provider
     chatLatencyTracker.recordH3(currentTaskId);
@@ -1694,6 +1738,9 @@ export async function sendChatRequest(
 
     if (!stream) {
       const data: any = await response.json();
+      // Stage 5d: a non-streaming response settles in one shot; no reader loop to
+      // touch the watchdog, so disarm it as soon as the body resolves.
+      clearWatchdog();
       // Record H4 (Network TTFT) for non-streaming response
       chatLatencyTracker.recordH4(currentTaskId);
       let text = data.choices?.[0]?.message?.content || data.content?.[0]?.text || '';
@@ -1804,6 +1851,8 @@ export async function sendChatRequest(
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
+        // Stage 5d: any byte from the provider means the stream is alive.
+        touchStream();
 
         if (isFirstChunk) {
           isFirstChunk = false;
@@ -1945,6 +1994,8 @@ export async function sendChatRequest(
     } finally {
       tokenBatcher.flush();
       reasoningBatcher.flush();
+      // Stage 5d: the stream settled (clean or aborted); stop the watchdog.
+      clearWatchdog();
     }
 
     // FCC responses are not always OpenAI SSE: genuine free-claude-code
@@ -2109,9 +2160,52 @@ export async function sendChatRequest(
   } catch (err: any) {
     console.error('[GATEWAY] Exact Node.js fetch error:', err);
     console.error(`[GATEWAY] Error message: ${err?.message || String(err)}`);
-    // User-initiated abort must never be re-routed to another provider
-    if (abortSignal?.aborted || err?.name === 'AbortError') {
+    // User-initiated abort must never be re-routed to another provider. A
+    // watchdog abort is NOT user-initiated — it is a stalled stream we actively
+    // want to hand off — so it falls through to the handoff logic below.
+    if (abortSignal?.aborted || (err?.name === 'AbortError' && !watchdogReason)) {
+      clearWatchdog();
       throw err;
+    }
+    // Stage 5d: a first-token/idle watchdog fired. With no visible tokens yet we
+    // hand off cleanly to the next healthy candidate; anything already streamed
+    // must never be silently re-run, so surface a stall error instead.
+    if (watchdogReason) {
+      clearWatchdog();
+      const tokensSoFarW =
+        fullText.length +
+        fullThought.length +
+        Array.from(streamedToolCalls.values()).reduce((n, call) => n + call.arguments.length + call.name.length, 0);
+      if (tokensSoFarW === 0 && handoffCount < 2) {
+        const stalledProviderId = config?.providerId || providerId;
+        const nextModel = pickHandoffCandidate(allModels, stalledProviderId, requestModel || modelId);
+        if (nextModel) {
+          providerHealthStore.markTransientDegraded(stalledProviderId);
+          routeEventPolicy.recordHop(currentTaskId, stalledProviderId, 'timeout');
+          console.log(`[GATEWAY] Watchdog (${watchdogReason}) stalled ${stalledProviderId}; handing off to ${nextModel.providerId} (${nextModel.modelId}) (Attempt ${handoffCount + 1}/2).`);
+          const nextApiKey = (nextModel.providerId || '') === (providerId || '') ? apiKey : undefined;
+          return await sendChatRequest(
+            nextModel.providerId,
+            nextModel.modelId,
+            messages,
+            stream,
+            nextApiKey,
+            onToken,
+            handoffCount + 1,
+            abortSignal,
+            onHandoff,
+            onReasoning,
+            tools,
+            onToolCalls,
+            currentTaskId,
+            context,
+            continuationCount,
+            onStatus,
+            carriedPartial
+          );
+        }
+      }
+      throw new Error(`[GATEWAY] ${providerDisplay} stream stalled (${watchdogReason}).`);
     }
     // Route Truth (Prompt 1 Step 1): a mid-stream protocol fault (malformed
     // message / tool pairing) must NEVER sticky-mark the key. Repair the
@@ -3364,22 +3458,30 @@ export class ProviderGateway {
     }
 
     // Phase 5.6: Request Caching for Repeated Queries
-    const cacheKey = requestCache.computeKey(modelId, streamMessages, tools, settings.temperature);
-    const cached = requestCache.get(cacheKey);
-    if (cached) {
-      if (cached.fullText) callbacks.onToken?.(cached.fullText);
-      if (cached.fullThought) callbacks.onThought?.(cached.fullThought);
-      callbacks.onToolCallDelta?.(cached.toolCalls.map((tc) => ({
-        id: tc.id,
-        name: tc.name,
-        arguments: JSON.stringify(tc.arguments)
-      })));
-      performanceManager.recordLatency(4);
-      return {
-        fullText: cached.fullText,
-        fullThought: cached.fullThought,
-        toolCalls: cached.toolCalls
-      };
+    // Stage 5a: this requestCache is redundant with the canonical semantic cache
+    // above — both JSON.stringify the full messages+tools, with a ~0% hit rate
+    // inside the agentic loop. Consolidated OFF by default; re-enable via
+    // TYCODE_REQUEST_CACHE=1 for rollback. The key is only computed when active.
+    const requestCacheEnabled = process.env.TYCODE_REQUEST_CACHE === '1';
+    let requestCacheKey: string | undefined;
+    if (requestCacheEnabled) {
+      requestCacheKey = requestCache.computeKey(modelId, streamMessages, tools, settings.temperature);
+      const cached = requestCache.get(requestCacheKey);
+      if (cached) {
+        if (cached.fullText) callbacks.onToken?.(cached.fullText);
+        if (cached.fullThought) callbacks.onThought?.(cached.fullThought);
+        callbacks.onToolCallDelta?.(cached.toolCalls.map((tc) => ({
+          id: tc.id,
+          name: tc.name,
+          arguments: JSON.stringify(tc.arguments)
+        })));
+        performanceManager.recordLatency(4);
+        return {
+          fullText: cached.fullText,
+          fullThought: cached.fullThought,
+          toolCalls: cached.toolCalls
+        };
+      }
     }
 
     const requestStartTime = performance.now();
@@ -3435,12 +3537,50 @@ export class ProviderGateway {
       console.log('Gateway: Fetching from', gatewayUrl, 'with model', modelId, 'headers', JSON.stringify({ ...headers, ...(headers.Authorization ? { Authorization: 'Bearer ***' } : {}) }));
       console.log(`[GATEWAY] Request URL: ${gatewayUrl}`);
     }
+    // Stage 5d: a first-token/idle watchdog so a stalled-but-open stream aborts
+    // and hands off instead of idling to the 120s hard timeout. Mandatory
+    // defaults 30s first-token / 10s idle, each env-overridable. An abort on the
+    // watchdog signal rejects the in-flight fetch/reader, which flows into the
+    // existing failover/handoff path.
+    const timeoutMsFirst = Number(process.env.TYCODE_FIRST_TOKEN_TIMEOUT_MS) || 30_000;
+    const timeoutMsIdle = Number(process.env.TYCODE_IDLE_TIMEOUT_MS) || 10_000;
+    const watchdog = new AbortController();
+    const watchdogAbort = (reason: string): void => {
+      if (watchdog.signal.aborted) return;
+      console.log(`[GATEWAY] Watchdog abort: ${reason}`);
+      watchdog.abort(new Error(`[gateway-watchdog] ${reason}`));
+    };
+    let firstTokenTimer: ReturnType<typeof setTimeout> | undefined =
+      setTimeout(() => watchdogAbort('first_token_timeout'), timeoutMsFirst);
+    firstTokenTimer.unref?.();
+    let idleTimer: ReturnType<typeof setTimeout> | undefined;
+    let ttftRecorded = false;
+    const clearWatchdog = (): void => {
+      if (firstTokenTimer) { clearTimeout(firstTokenTimer); firstTokenTimer = undefined; }
+      if (idleTimer) { clearTimeout(idleTimer); idleTimer = undefined; }
+    };
+    // Called on every streamed delta: disarms the first-token timer and rearms the
+    // idle timer, so a live stream is never killed but a silent one is.
+    const touchStream = (): void => {
+      if (firstTokenTimer) {
+        // Stage 5c: record time-to-first-token for EVERY request (not only traced).
+        if (!ttftRecorded) {
+          ttftRecorded = true;
+          performanceManager.recordTimeToFirstToken(Math.round(performance.now() - fetchStartTime));
+        }
+        clearTimeout(firstTokenTimer); firstTokenTimer = undefined;
+      }
+      if (idleTimer) clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => watchdogAbort('idle_timeout'), timeoutMsIdle);
+      idleTimer.unref?.();
+    };
+
     try {
       // Add 120s timeout for long streaming responses
       const timeoutSignal = AbortSignal.timeout(120_000);
-      const combinedSignal = abortSignal
-        ? AbortSignal.any([abortSignal, timeoutSignal])
-        : timeoutSignal;
+      const signals: AbortSignal[] = [timeoutSignal, watchdog.signal];
+      if (abortSignal) signals.unshift(abortSignal);
+      const combinedSignal = AbortSignal.any(signals);
 
       response = await providerFetch(gatewayUrl, {
         method: 'POST',
@@ -3449,6 +3589,7 @@ export class ProviderGateway {
         signal: combinedSignal
       });
     } catch (networkErr: unknown) {
+      clearWatchdog();
       console.error('Gateway: NETWORK ERROR for', gatewayUrl, networkErr instanceof Error ? `${networkErr.name}: ${networkErr.message} cause=${(networkErr as { cause?: { code?: string } }).cause?.code ?? ''}` : String(networkErr));
       if (traceId) {
         try {
@@ -3573,6 +3714,11 @@ export class ProviderGateway {
       }
       const delta = payload.choices?.[0]?.delta;
       if (!delta) return;
+      // Stage 5d: any delta activity (content, reasoning, or tool-call args) means
+      // the stream is alive; disarm first-token and rearm the idle watchdog.
+      if (delta.content || delta.reasoning_content || delta.reasoning || delta.tool_calls) {
+        touchStream();
+      }
       if (delta.content) {
         // Stream Hygiene (Prompt 2): FCC harness announce text rides in valid
         // protocol frames but is log output — gate it to the ledger so it can
@@ -3646,6 +3792,7 @@ export class ProviderGateway {
         tokenBatcher.flush();
         thoughtBatcher.flush();
         reader.releaseLock();
+        clearWatchdog();
       }
 
       const parsedToolCalls = Array.from(toolCalls.values()).map((toolCall) => {
@@ -3700,15 +3847,17 @@ export class ProviderGateway {
         // non-blocking
       }
 
-      requestCache.set(cacheKey, {
-        fullText: composedFullText,
-        fullThought,
-        toolCalls: parsedToolCalls,
-        modelId,
-        providerId,
-        promptTokens,
-        completionTokens
-      });
+      if (requestCacheEnabled && requestCacheKey) {
+        requestCache.set(requestCacheKey, {
+          fullText: composedFullText,
+          fullThought,
+          toolCalls: parsedToolCalls,
+          modelId,
+          providerId,
+          promptTokens,
+          completionTokens
+        });
+      }
 
       optimizationPipeline.setCachedResponse(optCacheKey, {
         fullText: composedFullText,
@@ -3720,6 +3869,7 @@ export class ProviderGateway {
 
       return { fullText: composedFullText, fullThought, toolCalls: parsedToolCalls };
     } catch (streamErr: unknown) {
+      clearWatchdog();
       // Retry idempotency (Prompt 2): report exactly how much content THIS
       // attempt already pushed downstream, plus the total visible partial
       // text, so the router can carry it forward instead of silently re-running.

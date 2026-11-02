@@ -2644,6 +2644,8 @@ export interface ContextCompressionResult {
 export interface PerformanceMetricsSnapshot {
   averageLatencyMs: number;
   p95LatencyMs: number;
+  averageTimeToFirstTokenMs?: number;
+  p95TimeToFirstTokenMs?: number;
   memoryUsageMb: number;
   uptimeSeconds: number;
   cache: RequestCacheStats;
