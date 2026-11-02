@@ -3428,8 +3428,13 @@ export class ProviderGateway {
     if (gatewayUrl.includes('api.openkilo.com')) {
       gatewayUrl = 'https://api.kilo.ai/api/gateway/chat/completions';
     }
-    console.log('Gateway: Fetching from', gatewayUrl, 'with model', modelId, 'headers', JSON.stringify({ ...headers, ...(headers.Authorization ? { Authorization: 'Bearer ***' } : {}) }));
-    console.log(`[GATEWAY] Request URL: ${gatewayUrl}`);
+    // Stage 5c: the per-request URL + headers dump is a hot-path cost on every
+    // streamed turn; gate it behind an explicit debug flag so normal traffic
+    // never pays the JSON.stringify of headers.
+    if (process.env.TYCODE_GATEWAY_DEBUG === '1') {
+      console.log('Gateway: Fetching from', gatewayUrl, 'with model', modelId, 'headers', JSON.stringify({ ...headers, ...(headers.Authorization ? { Authorization: 'Bearer ***' } : {}) }));
+      console.log(`[GATEWAY] Request URL: ${gatewayUrl}`);
+    }
     try {
       // Add 120s timeout for long streaming responses
       const timeoutSignal = AbortSignal.timeout(120_000);
