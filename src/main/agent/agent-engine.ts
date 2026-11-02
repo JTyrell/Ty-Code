@@ -466,6 +466,10 @@ export class AgentEngine {
     // Scope is the effective tool constraint (mode + roles), enforced below.
     const scope: ToolScope = assembled.scope;
     const availableToolNames = new Set(getAvailableTools(envContext, scope));
+    // Stage 1d: full canonical tool set (env/scope independent) + bounded
+    // per-name retry counter so a hallucinated tool name cannot spin the loop.
+    const validToolNames = new Set(AGENT_TOOLS_DEFINITIONS.map((t) => t.function.name));
+    const unknownToolCounter = new Map<string, number>();
 
     // H0: Prompt Assembly tracer hop ahead of H1-H5 Runtime Connectivity Tracer
     if (params.traceId) {
@@ -1052,11 +1056,15 @@ export class AgentEngine {
         const harnessToolCalls = parsedHarnessResponse.toolCalls;
         const cleanedStreamText = parsedHarnessResponse.text;
 
+        // Stage 1b: dedup by call identity, NOT by tool name. Structured calls
+        // carry a unique toolCallId, so distinct ids always survive; textual
+        // (harness) calls fall back to name + serialized args. This preserves
+        // legitimate multi-call cases such as read_file(pathA) + read_file(pathB)
+        // while still collapsing exact duplicate emissions.
         const deduped: ToolCall[] = [];
-        const seenNames = new Set<string>();
+        const seenKeys = new Set<string>();
         for (const call of structuredCalls) {
-          if (!call.name || seenNames.has(call.name)) continue;
-          seenNames.add(call.name);
+          if (!call.name) continue;
           let parsedArgs: Record<string, unknown> = {};
           try {
             parsedArgs = call.arguments && String(call.arguments).trim()
@@ -1065,12 +1073,18 @@ export class AgentEngine {
           } catch {
             parsedArgs = { raw: call.arguments };
           }
+          const key = call.id ? `id:${call.id}` : `sig:${call.name}:${JSON.stringify(parsedArgs)}`;
+          if (seenKeys.has(key)) continue;
+          seenKeys.add(key);
           deduped.push({ id: call.id, name: call.name, arguments: parsedArgs });
         }
         const toolCallsToExecute: ToolCall[] = [...deduped];
         for (const textual of harnessToolCalls) {
-          if (seenNames.has(textual.name)) continue;
-          seenNames.add(textual.name);
+          const key = textual.id
+            ? `id:${textual.id}`
+            : `sig:${textual.name}:${JSON.stringify(textual.arguments ?? {})}`;
+          if (seenKeys.has(key)) continue;
+          seenKeys.add(key);
           toolCallsToExecute.push(textual);
         }
 
@@ -1188,6 +1202,38 @@ export class AgentEngine {
           }
             const tool: ToolCall = { id: toolCall.id, name: toolCall.name, arguments: toolCall.arguments };
 
+            // Stage 1d: bounded retry for genuinely unknown tool names. A name
+            // absent from the canonical set is a hallucination, not an env/scope
+            // gate; retry the SAME name at most 3 times before refusing.
+            if (!validToolNames.has(tool.name)) {
+              const attempt = (unknownToolCounter.get(tool.name) ?? 0) + 1;
+              unknownToolCounter.set(tool.name, attempt);
+              const validTools = Array.from(validToolNames);
+              if (attempt >= 3) {
+                const refusal = JSON.stringify({ status: 'unknown_tool_exhausted', name: tool.name, validTools });
+                logAgentStop('none', `unknown_tool_exhausted_${tool.name}`);
+                agentObservability.recordEvent({ type: 'error', message: `unknown_tool_exhausted: ${tool.name}` });
+                onChunk({ type: 'tool_result', toolResult: { toolCallId: tool.id, name: tool.name, output: refusal, isError: true } });
+                messages.push({ role: 'tool', name: tool.name, tool_call_id: tool.id, content: refusal });
+                stateManager.recordToolCall(tool.name, tool.arguments, refusal);
+                // Halt THIS pass's tool loop; the task continues next round-trip.
+                break;
+              }
+              let guidance = `Unknown tool: "${tool.name}" is not a valid tool.`;
+              if (attempt === 2) {
+                // Inject the valid-tool list once, on the second occurrence.
+                guidance += `\nValid tools are: ${validTools.join(', ')}.`;
+                messages.push({ role: 'system', content: `The model requested an unknown tool "${tool.name}". Valid tools: ${validTools.join(', ')}.` });
+              } else {
+                guidance += ' Call a valid tool or respond in text.';
+              }
+              logAgentStop('none', `unknown_tool_${tool.name}`);
+              onChunk({ type: 'tool_result', toolResult: { toolCallId: tool.id, name: tool.name, output: guidance, isError: true } });
+              messages.push({ role: 'tool', name: tool.name, tool_call_id: tool.id, content: guidance });
+              stateManager.recordToolCall(tool.name, tool.arguments, guidance);
+              continue;
+            }
+
             // Runtime short-circuit: never execute workspace-dependent tools without a workspace
             // (zero disk I/O, zero PTY spawns against an empty cwd).
             // Also enforce scope gating (read-only in REVIEW/EXPLAIN, docs-only in DESIGN / docs roles).
@@ -1199,7 +1245,6 @@ export class AgentEngine {
               onChunk({ type: 'tool_result', toolResult: { toolCallId: tool.id, name: tool.name, output, isError: true } });
               messages.push({ role: 'tool', name: tool.name, tool_call_id: tool.id, content: output });
               stateManager.recordToolCall(tool.name, tool.arguments, output);
-              stateManager.iterationCount++;
               continue;
             }
 
@@ -1212,7 +1257,6 @@ export class AgentEngine {
                 onChunk({ type: 'tool_result', toolResult: { toolCallId: tool.id, name: tool.name, output, isError: true } });
                 messages.push({ role: 'tool', name: tool.name, tool_call_id: tool.id, content: output });
                 stateManager.recordToolCall(tool.name, toolCall.arguments, output);
-                stateManager.iterationCount++;
                 continue;
               }
             }
@@ -1302,7 +1346,6 @@ export class AgentEngine {
               onChunk({ type: 'tool_result', toolResult: { toolCallId: toolCall.id, name: toolCall.name, output, isError: !decision.approved } });
               messages.push({ role: 'tool', name: toolCall.name, tool_call_id: toolCall.id, content: output });
               stateManager.recordToolCall(toolCall.name, toolCall.arguments, output);
-              stateManager.iterationCount++;
               continue;
             }
             const output = submittedOutput;
@@ -1317,7 +1360,6 @@ export class AgentEngine {
             });
             messages.push({ role: 'tool', name: toolCall.name, tool_call_id: toolCall.id, content: output });
             stateManager.recordToolCall(toolCall.name, toolCall.arguments, output);
-            stateManager.iterationCount++;
             continue;
           }
 
@@ -1366,7 +1408,6 @@ export class AgentEngine {
                   content: 'Checkpoint APPROVED. Continue with the Execution Plan and report progress on remaining tasks.'
                 });
               }
-              stateManager.iterationCount++;
               continue;
             }
             const revisionFeedback = decision.feedback || 'No feedback provided.';
@@ -1377,7 +1418,6 @@ export class AgentEngine {
               content: `NOT APPROVED. The user sent plan revision feedback: ${revisionFeedback}\n\nRegenerate the Ty-Code Task Scoping Report incorporating this feedback, then call request_approval again. Do not execute any mutating tools yet.`
             });
             onChunk({ type: 'status', content: 'Plan revision requested.' });
-            stateManager.iterationCount++;
             continue;
           }
 
@@ -1395,7 +1435,6 @@ export class AgentEngine {
             onChunk({ type: 'tool_result', toolResult: { toolCallId: toolCall.id, name: toolCall.name, output, isError: true } });
             messages.push({ role: 'tool', name: toolCall.name, tool_call_id: toolCall.id, content: output });
             stateManager.recordToolCall(toolCall.name, toolCall.arguments, output);
-            stateManager.iterationCount++;
             continue;
           }
 
@@ -1407,7 +1446,6 @@ export class AgentEngine {
               onChunk({ type: 'tool_result', toolResult: { toolCallId: toolCall.id, name: toolCall.name, output: delegatedOutput, isError: true } });
               messages.push({ role: 'tool', name: toolCall.name, tool_call_id: toolCall.id, content: delegatedOutput });
               stateManager.recordToolCall(toolCall.name, toolCall.arguments, delegatedOutput);
-              stateManager.iterationCount++;
               continue;
             }
             const childId = backgroundAgentOrchestrator.spawnAgent(delegateName, delegateTask, {
@@ -1421,7 +1459,6 @@ export class AgentEngine {
             onChunk({ type: 'tool_result', toolResult: { toolCallId: toolCall.id, name: toolCall.name, output: delegatedOutput, isError: false } });
             messages.push({ role: 'tool', name: toolCall.name, tool_call_id: toolCall.id, content: delegatedOutput });
             stateManager.recordToolCall(toolCall.name, toolCall.arguments, delegatedOutput);
-            stateManager.iterationCount++;
             continue;
           }
 
@@ -1432,7 +1469,6 @@ export class AgentEngine {
             onChunk({ type: 'tool_result', toolResult: { toolCallId: toolCall.id, name: toolCall.name, output, isError: false } });
             messages.push({ role: 'tool', name: toolCall.name, tool_call_id: toolCall.id, content: output });
             stateManager.recordToolCall(toolCall.name, toolCall.arguments, output);
-            stateManager.iterationCount++;
             continue;
           }
 
@@ -1513,7 +1549,6 @@ export class AgentEngine {
             // Prompt 1 (Build-mode stall fix): the blocked result counts as a
             // completed iteration — without this increment a persistently
             // blocked tool spins the loop without ever reaching the limit.
-            stateManager.iterationCount++;
             continue;
           }
           if (approvalReason) {
@@ -1572,13 +1607,18 @@ export class AgentEngine {
             }
             if (!decision.approved) {
               const deniedSearch = isWebSearchToolCall(toolCall.name);
-              const output = decision.feedback
-                ? `The user did not approve this operation and sent feedback: ${decision.feedback}. Adjust your approach accordingly; request approval again before retrying any mutating action.`
-                // Silent degrade (Prompt E Step 4): a declined search must not
-                // abort or poison the answer — respond from own knowledge,
-                // with no citations and no fabricated sources.
-                : deniedSearch
-                  ? `The user did not approve this web search. It was not executed. ${WEB_SEARCH_DEGRADE_NOTE}`
+              // Silent degrade (Prompt E Step 4): a declined search must not
+              // abort or poison the answer — respond from own knowledge, with
+              // no citations and no fabricated sources. Feedback (when present)
+              // is appended as context but never displaces the degrade note,
+              // preventing an approval re-prompt loop.
+              const feedbackTail = decision.feedback
+                ? ` The user also sent feedback: ${decision.feedback}.`
+                : '';
+              const output = deniedSearch
+                ? `The user did not approve this web search. It was not executed. ${WEB_SEARCH_DEGRADE_NOTE}${feedbackTail}`
+                : decision.feedback
+                  ? `The user did not approve this operation and sent feedback: ${decision.feedback}. Adjust your approach accordingly; request approval again before retrying any mutating action.`
                   : 'The user did not approve this operation. It was not executed.';
               logAgentStop('none', `approval_denied_${toolCall.name}`);
               onChunk({ type: 'tool_result', toolResult: { toolCallId: toolCall.id, name: toolCall.name, output, isError: true } });
@@ -1596,7 +1636,6 @@ export class AgentEngine {
             onChunk({ type: 'tool_result', toolResult: { toolCallId: toolCall.id, name: toolCall.name, output, isError: true } });
             messages.push({ role: 'tool', name: toolCall.name, tool_call_id: toolCall.id, content: output });
             stateManager.recordToolCall(toolCall.name, toolCall.arguments, output);
-            stateManager.iterationCount++;
             continue;
           }
 
@@ -1847,8 +1886,27 @@ export class AgentEngine {
     }
       logAgentStop('max_iterations', 'tool_execution_limit_reached');
       const assessment = stateManager.assessCompletion('');
+      // Stage 1e: iteration-budget exhaustion is a VISIBLE, structured halt — the
+      // ErrorCard carries the unmet todos and the last 3 tool results so the
+      // user can see exactly where the loop stalled (no silent stop).
+      const unmetTodos = stateManager.todos
+        .filter((t) => t.status === 'pending' || t.status === 'in_progress')
+        .map((t) => t.task);
+      const lastToolResults = messages
+        .slice(-10)
+        .filter((m) => (m as { role?: string }).role === 'tool')
+        .slice(-3)
+        .map((m) => {
+          const mm = m as { name?: string; content?: string };
+          return `${mm.name ?? 'tool'}: ${String(mm.content ?? '').replace(/\s+/g, ' ').slice(0, 300)}`;
+        });
       emitCompletionError(
-        [...assessment.unmetEvidence, `iteration limit reached (${stateManager.maxIterations})`],
+        [
+          ...assessment.unmetEvidence,
+          `iteration limit reached (${stateManager.maxIterations})`,
+          unmetTodos.length ? `unmet todos: ${unmetTodos.join(' | ')}` : 'no pending todos',
+          lastToolResults.length ? `last tool results: ${lastToolResults.join(' | ')}` : 'no tool results yet'
+        ],
         'tool execution limit reached'
       );
       persistSessionState(false);

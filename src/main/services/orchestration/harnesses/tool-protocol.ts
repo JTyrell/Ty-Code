@@ -103,10 +103,18 @@ export function normalizeToolCallAlias(
       }
     }
     if (canonicalName === 'replace_file_content') {
-      if (args.searchText === undefined && args.old_str !== undefined) args.searchText = args.old_str;
-      if (args.searchText === undefined && args.search !== undefined) args.searchText = args.search;
-      if (args.replaceText === undefined && args.new_str !== undefined) args.replaceText = args.new_str;
-      if (args.replaceText === undefined && args.replace !== undefined) args.replaceText = args.replace;
+      // Canonical executor fields are targetContent / replacementContent. Fold
+      // every documented alias — including the catalog's searchText/replaceText
+      // and the common old_str/new_str family — onto the canonical names so the
+      // patch is never silently dropped by an argument-name mismatch (Stage 1c).
+      if (args.targetContent === undefined) {
+        const searchCandidate = args.searchText ?? args.old_str ?? args.oldString ?? args.oldContent ?? args.search;
+        if (searchCandidate !== undefined) args.targetContent = searchCandidate;
+      }
+      if (args.replacementContent === undefined) {
+        const replaceCandidate = args.replaceText ?? args.new_str ?? args.newString ?? args.newContent ?? args.replace;
+        if (replaceCandidate !== undefined) args.replacementContent = replaceCandidate;
+      }
     }
   } else if (canonicalName === 'run_command') {
     if (args.command === undefined) {

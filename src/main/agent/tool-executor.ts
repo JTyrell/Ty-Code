@@ -172,8 +172,8 @@ export class ToolExecutor {
 
   public async replaceFileContent(args: Record<string, unknown>): Promise<ToolExecutionResponse> {
     const filePath = String(args.filePath || args.path || '');
-    const targetContent = String(args.targetContent || args.oldString || args.old_str || args.oldContent || '');
-    const replacementContent = String(args.replacementContent ?? args.newString ?? args.new_str ?? args.newContent ?? '');
+    const targetContent = String(args.targetContent || args.searchText || args.oldString || args.old_str || args.oldContent || '');
+    const replacementContent = String(args.replacementContent ?? args.replaceText ?? args.newString ?? args.new_str ?? args.newContent ?? '');
     if (!filePath) return { output: 'Error: filePath is required', isError: true };
     if (!targetContent) return { output: 'Error: targetContent is required', isError: true };
     const allowed = await this.securityPolicy.isFileAllowed(filePath);
