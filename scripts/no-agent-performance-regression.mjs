@@ -170,10 +170,28 @@ async function run() {
     console.error(`\n❌ BUILD FAILURE: agent performance regressed beyond configured thresholds:`);
     for (const f of failures) console.error(`   - ${f}`);
     console.error('\nRecover by re-tuning stages, or deliberately re-capture the baseline with `npm run baseline:capture` if the new numbers are the intended target.');
-    process.exit(1);
+    return 1;
   }
 
   console.log('\n✅ Agent performance canary PASSED: no regression beyond thresholds vs docs/AGENT_BASELINE.md.');
+  return 0;
+}
+
+// The guard's verdict is fully computed by run(). The live harness drives a real
+// AgentEngine over a test-double provider, and ProviderGateway/fcc leave
+// lingering keep-alive sockets and catalog timers on the event loop after the
+// measurement returns. Those handles are irrelevant to the verdict but would
+// keep the CLI alive (and CI hanging), so we clean the temp bundle and exit
+// deterministically with the computed status code.
+function finalize(exitCode) {
+  if (!process.env.TYCODE_PERF_CURRENT_JSON) {
+    try {
+      fsSync.rmSync(bundleDir, { recursive: true, force: true });
+    } catch {
+      // ignore
+    }
+  }
+  process.exit(exitCode);
 }
 
 if (!fsSync.existsSync(BASELINE_DOC)) {
@@ -182,12 +200,8 @@ if (!fsSync.existsSync(BASELINE_DOC)) {
 }
 
 run()
+  .then((code) => finalize(code))
   .catch((err) => {
     console.error('❌ Performance canary errored:', err.message || err);
-    process.exit(1);
-  })
-  .finally(() => {
-    if (!process.env.TYCODE_PERF_CURRENT_JSON) {
-      fs.rm(bundleDir, { recursive: true, force: true }).catch(() => undefined);
-    }
+    finalize(1);
   });

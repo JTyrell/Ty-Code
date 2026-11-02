@@ -33,6 +33,9 @@ import type { ProviderSettings } from '../../src/preload/types';
 
 const EDIT_TOOLS = new Set(['write_file', 'replace_file_content', 'edit_file', 'generate_presentation']);
 const MODEL_ID = 'tycode-baseline-model';
+// Exceeds the engine's 5s file-memory debounce so every deferred summarization
+// flush fires against the still-live shared loopback before it is closed.
+const FILE_MEMORY_DRAIN_MS = 7_500;
 
 interface ScriptedStep {
   tool?: { name: string; arguments: Record<string, unknown> };
@@ -203,13 +206,10 @@ interface SingleRunMetrics {
   wallTimeMs: number;
 }
 
-async function runOnce(): Promise<SingleRunMetrics> {
+async function runOnce(baseUrl: string): Promise<SingleRunMetrics> {
   const workspace = path.join(os.tmpdir(), `tycode-baseline-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
   await fs.mkdir(workspace, { recursive: true });
   await seedWorkspace(workspace);
-
-  const driver = await startDriverServer();
-  const baseUrl = `http://127.0.0.1:${driver.port}/v1`;
 
   const settings: ProviderSettings = {
     activeProvider: 'fcc-proxy' as ProviderSettings['activeProvider'],
@@ -255,7 +255,13 @@ async function runOnce(): Promise<SingleRunMetrics> {
     if (EDIT_TOOLS.has(metric.toolName)) successfulEdits += metric.successCount;
   }
 
-  await driver.close();
+  // NOTE: the loopback driver is intentionally NOT closed here. Stage-3e
+  // defers file-memory summarization via a 5s debounced timer that fires
+  // AFTER engine.run() resolves. If the per-run loopback were already closed,
+  // that deferred request would hit a dead port, hand off to the real network,
+  // and stall on the 30s first-token watchdog — leaking sockets that keep the
+  // canary process alive. A single shared driver (owned by runAgentBaseline)
+  // stays live through the drain window so every flush resolves locally.
   await fs.rm(workspace, { recursive: true, force: true });
 
   return {
@@ -280,6 +286,13 @@ function loopWallTimeMs(values: number[]): number {
 }
 
 export async function runAgentBaseline(repeats = 5): Promise<Record<string, number>> {
+  // One shared loopback driver for the whole process. Deferred file-memory
+  // flushes (Stage-3e 5s debounce) fire long after each engine.run() against
+  // this still-live port, so they resolve locally instead of leaking to the
+  // real network and stalling the canary on watchdog timeouts.
+  const driver = await startDriverServer();
+  const baseUrl = `http://127.0.0.1:${driver.port}/v1`;
+
   // One discarded warm-up run before any timed repeat. The first engine.run()
   // in the process pays cold JIT + first-touch disk + connection-setup costs
   // that swing the sub-second median by 2x on a shared dev machine, so timing
@@ -287,16 +300,24 @@ export async function runAgentBaseline(repeats = 5): Promise<Record<string, numb
   // loop cost. This is measurement hygiene, not threshold tuning: warmed
   // steady-state runs land at or below the captured 320ms baseline (which
   // itself median-included one cold run), so no baseline re-capture is needed.
-  await runOnce();
+  await runOnce(baseUrl);
   const runs: SingleRunMetrics[] = [];
   for (let i = 0; i < repeats; i++) {
-    runs.push(await runOnce());
+    runs.push(await runOnce(baseUrl));
   }
+
+  // Drain window: cover the 5s file-memory debounce that the LAST repeat armed
+  // (plus its request round-trip) while the shared driver is still listening,
+  // then tear down. 7.5s is comfortably above the 5s timer + 5s internal
+  // summarization budget's actual loopback latency (sub-100ms).
+  await new Promise((resolve) => setTimeout(resolve, FILE_MEMORY_DRAIN_MS));
+
   try {
     await fccManager.stop();
   } catch {
     // ignore
   }
+  await driver.close();
 
   const totalToolCalls = runs.reduce((s, r) => s + r.toolCallsTotal, 0);
   const totalFailures = runs.reduce((s, r) => s + r.toolCallFailures, 0);
