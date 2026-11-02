@@ -6,7 +6,7 @@
 import type { AgentHarness, HarnessMetadata } from './types';
 import type { ChatCompletionMessage } from '../../../providers/provider-gateway';
 import type { ToolCall } from '../../../../preload/types';
-import { TEXTUAL_TOOL_PROTOCOL, parseTextualToolCalls } from './tool-protocol';
+import { TEXTUAL_TOOL_PROTOCOL, parseClaudeAntmlToolCalls } from './tool-protocol';
 
 export class ClaudeCodeHarness implements AgentHarness {
   public readonly metadata: HarnessMetadata = {
@@ -18,7 +18,7 @@ export class ClaudeCodeHarness implements AgentHarness {
     promptFormat: 'claude-code-v1',
     toolProtocol: 'json-function',
     systemPromptRole: 'Senior Staff Software Engineer',
-    supportedFeatures: ['autonomous-loop', 'bash-pty', 'surgical-replace', 'multi-file-context']
+    supportedFeatures: ['autonomous-loop', 'bash-pty', 'surgical-replace', 'multi-file-context', 'antml-tool-block-parsing']
   };
 
   public formatSystemPrompt(workspacePath: string, activeFilePath?: string, activeFileContent?: string): string {
@@ -44,6 +44,8 @@ export class ClaudeCodeHarness implements AgentHarness {
     fullText: string,
     toolCalls: ToolCall[]
   ): { text: string; toolCalls: ToolCall[] } {
-    return parseTextualToolCalls(fullText, toolCalls);
+    // Stage 4a-1: parse Anthropic `<antml:function_calls>` blocks natively; falls
+    // through to the universal textual parser when no antml markup is present.
+    return parseClaudeAntmlToolCalls(fullText, toolCalls);
   }
 }

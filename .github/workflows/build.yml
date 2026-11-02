@@ -82,6 +82,9 @@ jobs:
       - name: Anti-Phantom Guard 13: Verify No Plaintext Session Or Checkpoint Bundle Writes
         run: node scripts/no-plaintext-session-bundle.mjs
 
+      - name: Anti-Phantom Guard 14: Verify No Agent Performance Regression vs Baseline
+        run: node scripts/no-agent-performance-regression.mjs
+
       - name: Live Validation Gate: Run Real Network & Disk E2E Suite
         run: npm run test:live
 

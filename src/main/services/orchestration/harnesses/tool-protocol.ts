@@ -269,3 +269,114 @@ export function parseTextualToolCalls<T extends ParsedTextualToolCall>(
   const cleanText = stripTextualToolMarkup(fullText);
   return { text: finalCalls.length > 0 ? cleanText : (cleanText || fullText), toolCalls: finalCalls };
 }
+
+/**
+ * Coerce an Anthropic `<antml:parameter>` value into the most faithful JS type.
+ * Free/pooled models emit numbers and booleans as bare text inside antml params,
+ * so a numeric-looking value becomes a number and JSON objects/arrays are parsed.
+ * Anything ambiguous stays a string — this parser never invents structure.
+ */
+function coerceAntmlValue(raw: string): unknown {
+  const value = raw.trim();
+  if (!value) return '';
+  if (/^-?\d+(\.\d+)?$/.test(value)) return Number(value);
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  if ((value.startsWith('{') && value.endsWith('}')) || (value.startsWith('[') && value.endsWith(']'))) {
+    try {
+      return JSON.parse(value) as Record<string, unknown>;
+    } catch {
+      return value;
+    }
+  }
+  return value;
+}
+
+/**
+ * Stage 4a-1: real Claude harness parser for Anthropic's namespaced
+ * `<antml:function_calls>` / `<antml:invoke name="...">` /
+ * `<antml:parameter name="...">` blocks. The generic textual parser handles the
+ * un-namespaced `<invoke>` shape but not `antml:` tags, so this is the
+ * harness-specific path. When no antml block is present it falls through to the
+ * universal parser rather than guessing.
+ */
+export function parseClaudeAntmlToolCalls<T extends ParsedTextualToolCall>(
+  fullText: string,
+  existingCalls: T[] = []
+): { text: string; toolCalls: T[] } {
+  const finalCalls: T[] = [...existingCalls];
+  if (!fullText || !fullText.includes('<antml:')) {
+    return parseTextualToolCalls(fullText, existingCalls);
+  }
+
+  const blockRegex = /<antml:function_calls>[\s\S]*?<\/antml:function_calls>/gi;
+  const invokeRegex = /<antml:invoke\s+name\s*=\s*["']([^"']+)["']\s*>([\s\S]*?)<\/antml:invoke>/gi;
+  const paramRegex = /<antml:parameter\s+name\s*=\s*["']([^"']+)["']\s*>([\s\S]*?)<\/antml:parameter>/gi;
+
+  let blockMatch: RegExpExecArray | null;
+  let matchedAny = false;
+  while ((blockMatch = blockRegex.exec(fullText)) !== null) {
+    let invoke: RegExpExecArray | null;
+    invokeRegex.lastIndex = 0;
+    while ((invoke = invokeRegex.exec(blockMatch[0])) !== null) {
+      matchedAny = true;
+      const rawName = invoke[1];
+      const body = invoke[2] || '';
+      const args: Record<string, unknown> = {};
+      let param: RegExpExecArray | null;
+      paramRegex.lastIndex = 0;
+      while ((param = paramRegex.exec(body)) !== null) {
+        args[param[1].trim()] = coerceAntmlValue(param[2]);
+      }
+      const normalized = normalizeToolCallAlias(rawName, args);
+      finalCalls.push({ id: makeCallId(), name: normalized.name, arguments: normalized.arguments } as T);
+    }
+  }
+
+  if (!matchedAny) return parseTextualToolCalls(fullText, existingCalls);
+  const cleanText = fullText.replace(blockRegex, '').replace(/<antml:[^>]*>[\s\S]*$/gi, '').replace(/\n{3,}/g, '\n\n').trim();
+  return { text: cleanText, toolCalls: finalCalls };
+}
+
+/**
+ * Stage 4a-1: conservative Codex markdown-patch parser. Codex emits an
+ * `*** Begin Patch` block using `*** Add File:` / `*** Update File:` / `*** Delete File:`
+ * markers. Only `Add File` carries complete, unambiguous new content, so it maps
+ * reliably onto `write_file`. `Update`/`Delete` hunks depend on exact on-disk
+ * context we cannot validate here, so they are intentionally left in the visible
+ * text rather than fabricated into tool calls ("no speculative parsers"). Any
+ * standard `<tool_call>` blocks are still parsed via the universal path.
+ */
+export function parseCodexMarkdownPatch<T extends ParsedTextualToolCall>(
+  fullText: string,
+  existingCalls: T[] = []
+): { text: string; toolCalls: T[] } {
+  if (!fullText || !/\*\*\*\s*Begin Patch|\*\*\*\s*Add File:/i.test(fullText)) {
+    return parseTextualToolCalls(fullText, existingCalls);
+  }
+
+  const generic = parseTextualToolCalls(fullText, existingCalls);
+  const finalCalls: T[] = [...generic.toolCalls];
+
+  const lines = fullText.split(/\r?\n/);
+  const consumed: boolean[] = new Array(lines.length).fill(false);
+  for (let i = 0; i < lines.length; i++) {
+    const header = lines[i].match(/^\s*\*\*\*\s*Add File:\s*(.+?)\s*$/i);
+    if (!header) continue;
+    const filePath = header[1].trim();
+    const contentLines: string[] = [];
+    consumed[i] = true;
+    for (let j = i + 1; j < lines.length; j++) {
+      if (/^\s*\*\*\*\s/.test(lines[j])) break; // next patch directive ends this file
+      contentLines.push(lines[j].replace(/^\+/, ''));
+      consumed[j] = true;
+    }
+    const normalized = normalizeToolCallAlias('write_file', { filePath, content: contentLines.join('\n') });
+    finalCalls.push({ id: makeCallId(), name: normalized.name, arguments: normalized.arguments } as T);
+  }
+
+  // Strip only the Add File blocks we converted; Update/Delete hunks remain visible.
+  const remaining = lines.filter((_, idx) => !consumed[idx]).join('\n');
+  const cleanText = remaining.replace(/\n{3,}/g, '\n\n').trim();
+  return { text: cleanText, toolCalls: finalCalls };
+}

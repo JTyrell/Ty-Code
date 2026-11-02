@@ -7,7 +7,7 @@
 import type { AgentHarness, HarnessMetadata } from './types';
 import type { ChatCompletionMessage } from '../../../providers/provider-gateway';
 import type { ToolCall } from '../../../../preload/types';
-import { TEXTUAL_TOOL_PROTOCOL, parseTextualToolCalls } from './tool-protocol';
+import { TEXTUAL_TOOL_PROTOCOL, parseCodexMarkdownPatch } from './tool-protocol';
 
 export class CodexHarness implements AgentHarness {
   public readonly metadata: HarnessMetadata = {
@@ -19,7 +19,7 @@ export class CodexHarness implements AgentHarness {
     promptFormat: 'codex-v2',
     toolProtocol: 'json-function',
     systemPromptRole: 'Principal Coding Specialist',
-    supportedFeatures: ['patch-diffs', 'test-generation', 'strict-typing', 'high-throughput']
+    supportedFeatures: ['patch-diffs', 'test-generation', 'strict-typing', 'high-throughput', 'markdown-patch-parsing']
   };
 
   public formatSystemPrompt(workspacePath: string, activeFilePath?: string, activeFileContent?: string): string {
@@ -44,6 +44,10 @@ export class CodexHarness implements AgentHarness {
     fullText: string,
     toolCalls: ToolCall[]
   ): { text: string; toolCalls: ToolCall[] } {
-    return parseTextualToolCalls(fullText, toolCalls);
+    // Stage 4a-1: convert `*** Add File:` markdown-patch blocks into write_file
+    // calls; everything else (including `<tool_call>` blocks) still flows through
+    // the universal textual parser. Update/Delete hunks are left visible, not
+    // speculatively executed.
+    return parseCodexMarkdownPatch(fullText, toolCalls);
   }
 }

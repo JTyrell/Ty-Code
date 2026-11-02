@@ -32,3 +32,21 @@ Every later stage must show **no degradation** against these numbers. Enforced b
   double-counting behavior (Stage 1a will reduce the iteration figure).
 - The provider is a test harness, not a product code path; no fixture replies are
   baked into `src/**` (verified by `npm run guards`).
+
+## Expected ranges after all stages complete (Stage 4a)
+Targets for the fully-optimized loop (Stages 1→5→3→4a shipped). The canary
+(`scripts/no-agent-performance-regression.mjs`) still gates on the baseline +
+thresholds above; these ranges are the intended landing zone as stages land.
+
+| Metric | Baseline | Expected after all stages | Success gate |
+| --- | --- | --- | --- |
+| Average iterations | 14 | ≤ 14 (never above baseline) | 1a single-count removes the double-increment; iteration count must not exceed baseline |
+| Wall time for the ~10-tool task (median ms) | 320 | ≤ 70% of baseline (≤ ~224 ms) | 3a parallel reads + 3b/3d reduced per-pass work |
+| Tool-call failure rate (per 100) | 0 | 0 | 2c validation + 1d unknown-tool halts stay visible, never silent |
+| Canvas restyle on warm workspace (ms) | — | ≤ 500 ms | Stage 7a shared WorkspaceCacheService warm hit |
+| Omni-Debugger first finding (ms) | — | ≤ 2000 ms | Stage 6a non-blocking scan streams static findings first |
+| Silent stops in telemetry | 0 | 0 | every run emits exactly one classified `loop_exit` |
+
+> The iteration, wall-time and failure-rate gates are machine-enforced by the
+> canary. The Canvas/Omni-Debugger/silent-stop rows are validated by the Stage 8
+> integration test and the `loop_exit` unit tests until those subsystems ship.

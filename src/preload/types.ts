@@ -849,6 +849,7 @@ export type AgentTelemetryEvent =
   | { type: 'provider_failover'; fromProvider: string; toProvider: string; toModel: string; error?: string }
   | { type: 'parallel_reads'; toolCount: number; parallelBatchSize: number; wallTimeMs: number; sequentialEstimateMs: number }
   | { type: 'deferred_summarization'; fileCount: number; deferredMs: number; skippedDueToPressure: boolean }
+  | { type: 'loop_exit'; reason: 'max_iterations' | 'validation_exhausted' | 'unknown_tool' | 'success' | 'error'; iterationCount: number; toolCallCount: number }
   | { type: 'error'; message: string; stack?: string };
 
 export type AgentTelemetryRecord = AgentTelemetryEvent & { timestamp: number };
@@ -921,6 +922,8 @@ export interface AgentStreamChunk {
   diff?: ProposedDiff;
   approvalRequest?: AgentToolApproval;
   error?: string;
+  /** Structured error card (Stage 1e visible halts render from this). */
+  errorCard?: ChatErrorCard;
   state?: AgentLoopState;
   actions?: string[];
   truncated?: boolean;

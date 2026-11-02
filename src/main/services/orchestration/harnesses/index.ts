@@ -17,7 +17,20 @@ export * from './opencode-harness';
 export * from './tool-protocol';
 
 class GenericHarness implements AgentHarness {
-  constructor(public readonly metadata: HarnessMetadata) {}
+  public readonly metadata: HarnessMetadata;
+
+  constructor(metadata: HarnessMetadata) {
+    // Stage 4a-1: generic harnesses perform NO harness-specific response
+    // parsing; they pass the model output straight to the universal textual
+    // tool protocol. That pass-through is now an explicit, self-documenting
+    // capability rather than an undocumented default ("no speculative parsers").
+    this.metadata = {
+      ...metadata,
+      supportedFeatures: metadata.supportedFeatures.includes('textual-tool-passthrough')
+        ? metadata.supportedFeatures
+        : [...metadata.supportedFeatures, 'textual-tool-passthrough']
+    };
+  }
 
   public formatSystemPrompt(workspacePath: string, activeFilePath?: string, activeFileContent?: string): string {
     return [

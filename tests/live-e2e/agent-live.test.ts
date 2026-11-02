@@ -16,6 +16,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { AgentEngine } from '../../src/main/agent/agent-engine';
 import { ToolExecutor } from '../../src/main/agent/tool-executor';
+import { agentObservability } from '../../src/main/agent/agent-observability';
 import { ProviderGateway } from '../../src/main/providers/provider-gateway';
 import { fccManager } from '../../src/main/services/orchestration/fcc-manager';
 import http from 'node:http';
@@ -80,6 +81,46 @@ export async function runAgentLiveTests(): Promise<{ passed: number; total: numb
           });
           const lastMsg = Array.isArray(parsed.messages) ? parsed.messages[parsed.messages.length - 1]?.content : '';
           const hasTools = Array.isArray(parsed.tools) && parsed.tools.length > 0;
+          // Stage 4a-3: dual same-name read branch — two read_file calls with
+          // distinct ids, then a final text once both results are back.
+          if (hasTools && /DUALREADMARKER/.test(body)) {
+            const conversation = Array.isArray(parsed.messages) ? parsed.messages : [];
+            const hadReadResults = conversation.some(
+              (m: any) => m?.role === 'user' && typeof m?.content === 'string' && /\[Tool Result for read_file\]/.test(m.content)
+            );
+            // Headers were already written above; only emit SSE frames here.
+            if (!hadReadResults) {
+              const dualReadChunk = {
+                id: `chatcmpl-${Date.now()}`,
+                object: 'chat.completion.chunk',
+                created: Math.floor(Date.now() / 1000),
+                model: 'claude-3-5-sonnet-20241022',
+                choices: [{
+                  index: 0,
+                  delta: {
+                    tool_calls: [
+                      { index: 0, id: `call_read_a_${Date.now()}`, type: 'function', function: { name: 'read_file', arguments: JSON.stringify({ filePath: 'dualread.md' }) } },
+                      { index: 1, id: `call_read_b_${Date.now()}`, type: 'function', function: { name: 'read_file', arguments: JSON.stringify({ filePath: 'dualread.md' }) } }
+                    ]
+                  },
+                  finish_reason: 'tool_calls'
+                }]
+              };
+              res.write(`data: ${JSON.stringify(dualReadChunk)}\n\n`);
+            } else {
+              const finalChunk = {
+                id: `chatcmpl-${Date.now()}-final`,
+                object: 'chat.completion.chunk',
+                created: Math.floor(Date.now() / 1000),
+                model: 'claude-3-5-sonnet-20241022',
+                choices: [{ index: 0, delta: { content: 'Both reads of dualread.md returned identical content.' }, finish_reason: 'stop' }]
+              };
+              res.write(`data: ${JSON.stringify(finalChunk)}\n\n`);
+            }
+            res.write('data: [DONE]\n\n');
+            res.end();
+            return;
+          }
           const replacePromptSeen = Array.isArray(parsed.messages) && parsed.messages.some(
             (m: any) => typeof m?.content === 'string' && /replace\s+[^\s]+\s+with\s+[^\s]+/i.test(m.content)
           );
@@ -378,6 +419,53 @@ export async function runAgentLiveTests(): Promise<{ passed: number; total: numb
       errorMessage.includes('ECONNREFUSED') || errorMessage.includes('fetch failed') || errorMessage.includes('API Error'),
       `Real network error received: ${errorMessage}`
     );
+
+    // -------------------------------------------------------------------------
+    // Test 5 (Stage 4a-3): two same-name read calls both execute; iteration
+    // counter stays within the AGENT_BASELINE.md canary threshold.
+    // -------------------------------------------------------------------------
+    console.log('\n--- 5. Dual Same-Name Reads Execute + Iteration Baseline Comparison ---');
+
+    const dualReadFile = path.join(testWorkspaceDir, 'dualread.md');
+    await fs.writeFile(dualReadFile, 'dual-read fixture\n');
+
+    const dualChunks: AgentStreamChunk[] = [];
+    const dualStartTs = Date.now();
+    agentObservability.events.length = 0;
+    const dualEngine = new AgentEngine(testWorkspaceDir);
+    await dualEngine.run({
+      prompt: 'DUALREADMARKER read dualread.md twice through two separate calls and compare',
+      workspacePath: testWorkspaceDir,
+      history: [],
+      settings: anonymousSettings,
+      onChunk: (chunk) => dualChunks.push(chunk),
+      requestApproval: async () => ({ approved: true })
+    });
+
+    const dualReadCalls = dualChunks.filter((c) => c.type === 'tool_call' && c.toolCall?.name === 'read_file');
+    assert(dualReadCalls.length === 2, `Two same-name read_file tool calls emitted (actual: ${dualReadCalls.length})`);
+    const dualReadResults = dualChunks.filter((c) => c.type === 'tool_result' && c.toolResult?.name === 'read_file');
+    assert(dualReadResults.length === 2, `Both read_file calls executed and returned results (actual: ${dualReadResults.length})`);
+    assert(
+      dualReadResults.every((c) => c.type === 'tool_result' && c.toolResult && !c.toolResult.isError && String(c.toolResult.output).includes('dual-read fixture')),
+      'Both read results carry the real on-disk content (no dedup suppression)'
+    );
+
+    // Iteration-counter baseline comparison — same canary threshold as
+    // scripts/no-agent-performance-regression.mjs (baseline + 20%).
+    const loopExits = agentObservability.getEvents({ startTime: dualStartTs }).filter((e) => e.type === 'loop_exit');
+    assert(loopExits.length === 1, `Exactly one loop_exit telemetry event for the run (actual: ${loopExits.length})`);
+    const liveIterations = Number((loopExits[0] as unknown as { iterationCount?: number }).iterationCount ?? 0);
+    assert(liveIterations > 0, `loop_exit recorded iterationCount: ${liveIterations}`);
+    const baselineDoc = await fs.readFile(path.join(projectRoot, 'docs', 'AGENT_BASELINE.md'), 'utf-8');
+    const baselineIterations = Number(baselineDoc.match(/Average iterations.*?\|\s*([\d.]+)/is)?.[1] ?? NaN);
+    assert(Number.isFinite(baselineIterations) && baselineIterations > 0, `Parsed baseline average iterations from AGENT_BASELINE.md: ${baselineIterations}`);
+    const maxAllowed = Math.ceil(baselineIterations * 1.2);
+    assert(
+      liveIterations <= maxAllowed,
+      `Live run iterations ${liveIterations} within baseline canary (<= ${maxAllowed} = baseline + 20%)`
+    );
+    console.log(`  Iteration canary OK: live=${liveIterations} baseline=${baselineIterations} maxAllowed=${maxAllowed}`);
 
     console.log('\n========================================================================');
     console.log(`=== AGENT LIVE E2E SUITE PASSED: ${passedTests}/${totalTests} TESTS               ===`);

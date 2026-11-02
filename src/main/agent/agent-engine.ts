@@ -373,6 +373,19 @@ export function __perfGuardForTest(next?: { trips?: number; degraded?: boolean }
   return { trips: memoryPressureTrips, degraded: degradedMode };
 }
 
+/**
+ * Stage 4a-2: classify a run's terminal loop exit into the structured reason
+ * enum consumed by the `loop_exit` telemetry event (regression guard + baseline).
+ * Derived from the last non-'none' stop logged before the run returned.
+ */
+function classifyLoopExit(stop: string): 'max_iterations' | 'validation_exhausted' | 'unknown_tool' | 'success' | 'error' {
+  if (stop === 'simple_query' || stop === 'completion_contract_satisfied') return 'success';
+  if (stop === 'max_iterations') return 'max_iterations';
+  if (stop.startsWith('validation_exhausted')) return 'validation_exhausted';
+  if (stop.startsWith('unknown_tool')) return 'unknown_tool';
+  return 'error';
+}
+
 /** Structured plan-mode refusal body returned as a recoverable tool result. */
 const PLAN_MODE_REFUSAL = {
   status: 'refused',
@@ -890,7 +903,18 @@ export class AgentEngine {
     let planSubmitted = false;
     let planNudgesUsed = 0;
     let iterationKind: 'text' | 'tools' = 'text';
+    // Stage 4a-2: the last terminal (non-'none') stop drives the loop_exit event
+    // emitted once in the run's finally, so classification is single-sourced.
+    // Exhaustion halts (unknown_tool / validation_exhausted) are STICKY: they are
+    // the causal failure even when the iteration tail then burns to the limit.
+    let loopExitStop = '';
+    const STICKY_STOP_PREFIXES = ['unknown_tool', 'validation_exhausted'];
     const logAgentStop = (stop: string, reason?: string): void => {
+      if (stop && stop !== 'none') {
+        if (!loopExitStop || !STICKY_STOP_PREFIXES.some((prefix) => loopExitStop.startsWith(prefix))) {
+          loopExitStop = stop;
+        }
+      }
       console.log(`[AGENT] iter=${stateManager.iterationCount} kind=${iterationKind} stop=${stop || 'none'}${reason ? ` reason=${reason}` : ''}`);
     };
     const emitCompletionError = (unmetEvidence: string[], reason: string): void => {
@@ -1461,7 +1485,9 @@ export class AgentEngine {
               const validTools = Array.from(validToolNames);
               if (attempt >= 3) {
                 const refusal = JSON.stringify({ status: 'unknown_tool_exhausted', name: tool.name, validTools });
-                logAgentStop('none', `unknown_tool_exhausted_${tool.name}`);
+                // Stage 4a-2: exhaustion (with break) is terminal for the run —
+                // log it as the stop so loop_exit classifies 'unknown_tool'.
+                logAgentStop('unknown_tool', `unknown_tool_exhausted_${tool.name}`);
                 agentObservability.recordEvent({ type: 'error', message: `unknown_tool_exhausted: ${tool.name}` });
                 onChunk({ type: 'tool_result', toolResult: { toolCallId: tool.id, name: tool.name, output: refusal, isError: true } });
                 messages.push({ role: 'tool', name: tool.name, tool_call_id: tool.id, content: refusal });
@@ -1942,7 +1968,7 @@ export class AgentEngine {
                   expected: argValidation.error.expected,
                   hint: `Your tool arguments are repeatedly invalid. Review the schema: ${JSON.stringify(argValidation.error.expected)}`
                 });
-                logAgentStop('none', `validation_exhausted_${toolCall.name}`);
+                logAgentStop('validation_exhausted', `validation_exhausted_${toolCall.name}`);
                 onChunk({ type: 'tool_result', toolResult: { toolCallId: toolCall.id, name: toolCall.name, output: halt, isError: true } });
                 messages.push({ role: 'tool', name: toolCall.name, tool_call_id: toolCall.id, content: halt });
                 stateManager.recordToolCall(toolCall.name, toolCall.arguments, halt);
@@ -2227,6 +2253,16 @@ export class AgentEngine {
       logAgentStop('error', 'outer_loop_exception');
       onChunk({ type: 'error', error: message });
     } finally {
+      // Stage 4a-2: exactly one structured loop_exit per run, classified from the
+      // terminal stop. Silent stops are already forbidden; this makes the exit
+      // reason an explicit, queryable event for the perf regression guard.
+      const toolCallHistoryForExit = stateManager.toolCallHistory;
+      agentObservability.recordEvent({
+        type: 'loop_exit',
+        reason: classifyLoopExit(loopExitStop),
+        iterationCount: stateManager.iterationCount,
+        toolCallCount: Array.isArray(toolCallHistoryForExit) ? toolCallHistoryForExit.length : 0
+      });
       activeAgentSessions.delete(activeTaskId);
     }
   }
