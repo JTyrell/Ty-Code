@@ -90,12 +90,43 @@ function emptyRuntime(): RuntimeState {
  * Windows needs the cmd shim for bare package launchers (`npx`, `pip`, …),
  * because Node's spawn cannot see `.cmd` files without a shell. Absolute
  * paths and explicit executables bypass the shim.
+ *
+ * Security (CodeReview #3): when the cmd.exe shim is required, args must not
+ * contain shell metacharacters (`& | ^ > < %`) because cmd.exe re-parses the
+ * command line after CreateProcess joins argv. Workspace-scope config files
+ * (attacker-authored in cloned repos) flow through this path, so rejection is
+ * the safe boundary. Non-shim spawns pass args directly to the kernel and are
+ * unaffected.
  */
 function resolveSpawn(command: string, args: string[]): { file: string; args: string[] } {
   if (process.platform === 'win32' && !/[\\/]/.test(command) && !/\.(exe|cmd|bat)$/i.test(command)) {
+    // Shell metacharacter check: reject only on the cmd.exe path
+    const SHELL_METACHARS = /[&|^><%]/;
+    if (SHELL_METACHARS.test(command) || args.some((a) => SHELL_METACHARS.test(a))) {
+      throw new Error('Server command or arguments contain shell metacharacters; refusing to spawn via cmd.exe shim.');
+    }
     return { file: 'cmd.exe', args: ['/d', '/s', '/c', command, ...args] };
   }
   return { file: command, args };
+}
+
+/**
+ * SSE URL validation (CodeReview #2): applies the same scheme/host policy the
+ * Zod add-schema enforces at IPC-time to servers loaded from config files.
+ * This prevents a workspace `.ty-code/mcp_config.json` from directing fetch()
+ * to arbitrary HTTP endpoints or non-http protocols.
+ */
+function isValidSseUrl(value: string): boolean {
+  try {
+    const u = new URL(value);
+    if (u.protocol === 'https:') return true;
+    if (u.protocol === 'http:') {
+      return ['localhost', '127.0.0.1', '[::1]'].includes(u.hostname);
+    }
+    return false;
+  } catch {
+    return false;
+  }
 }
 
 /** Minimal env for spawned servers: shell plumbing, never the whole profile. */
@@ -437,6 +468,11 @@ class McpClientService {
   // ── sse: the 2024-11-05 HTTP+SSE transport (GET stream + POST messages) ──
 
   private async connectSse(server: ManagedServer, runtime: RuntimeState): Promise<McpToolInfo[]> {
+    // URL validation gate (CodeReview #2): applies the same localhost-only-for-http
+    // policy enforced by Zod at IPC add-time, preventing config-file bypass.
+    if (!isValidSseUrl(server.target)) {
+      throw new Error(`Invalid SSE URL: must be https or http://localhost — got "${server.target}".`);
+    }
     const abort = new AbortController();
     runtime.sseAbort = abort;
     const response = await this.withTimeout(
