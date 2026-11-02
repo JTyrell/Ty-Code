@@ -8,6 +8,7 @@ import { parseMarkdownSections, persistDocument } from '../services/document-par
 import { ChatErrorCardSchema, zDocumentProposed } from '../../shared/types/agent-events';
 import { webSearchApprovalReason, isWebSearchToolCall, WEB_SEARCH_DEGRADE_NOTE } from '../../shared/types/web-search-citations';
 import { getAvailableTools, isToolAvailable, isDocsOnlyWrite } from './tool-registry';
+import { validateToolArguments } from './tool-schemas';
 import { rulesService } from '../services/knowledge/rules-service';
 import { autoMemoryService } from '../services/knowledge/auto-memory-service';
 import { workspaceManager } from '../services/workspace-manager';
@@ -470,6 +471,8 @@ export class AgentEngine {
     // per-name retry counter so a hallucinated tool name cannot spin the loop.
     const validToolNames = new Set(AGENT_TOOLS_DEFINITIONS.map((t) => t.function.name));
     const unknownToolCounter = new Map<string, number>();
+    // Stage 2c: per-name consecutive argument-validation failures for the task.
+    const validationFailures = new Map<string, number>();
 
     // H0: Prompt Assembly tracer hop ahead of H1-H5 Runtime Connectivity Tracer
     if (params.traceId) {
@@ -1673,6 +1676,42 @@ export class AgentEngine {
             } catch {
               /* degrade silently — the edit proceeds even if checkpointing failed */
             }
+          }
+
+          // Stage 2a/2b: validate arguments against the Zod registry right before
+          // execution — post alias-normalisation and post approval. This checks the
+          // EXACT args about to run (approvedExecutionArgs included), so a drifted
+          // approval is refused too. Stage 2c bounds retries per tool name.
+          {
+            const argValidation = validateToolArguments(toolCall.name, approvedExecutionArgs);
+            if (!argValidation.valid) {
+              const failures = (validationFailures.get(toolCall.name) ?? 0) + 1;
+              validationFailures.set(toolCall.name, failures);
+              agentObservability.recordEvent({ type: 'error', message: `invalid_arguments: ${toolCall.name} (${argValidation.error.hint})` });
+              if (failures >= 3) {
+                const halt = JSON.stringify({
+                  status: 'validation_exhausted',
+                  tool: toolCall.name,
+                  expected: argValidation.error.expected,
+                  hint: `Your tool arguments are repeatedly invalid. Review the schema: ${JSON.stringify(argValidation.error.expected)}`
+                });
+                logAgentStop('none', `validation_exhausted_${toolCall.name}`);
+                onChunk({ type: 'tool_result', toolResult: { toolCallId: toolCall.id, name: toolCall.name, output: halt, isError: true } });
+                messages.push({ role: 'tool', name: toolCall.name, tool_call_id: toolCall.id, content: halt });
+                stateManager.recordToolCall(toolCall.name, toolCall.arguments, halt);
+                break; // halt this pass's tool loop; the task resumes next round-trip
+              }
+              const driftNote = (approvedExecutionArgs as Record<string, unknown>).__approvedOriginalHash !== undefined
+                ? 'Approved arguments drifted from schema; manual review required. '
+                : '';
+              const output = `${driftNote}${JSON.stringify(argValidation.error)}. Correct the arguments and retry (attempt ${failures}/3).`;
+              logAgentStop('none', `invalid_arguments_${toolCall.name}`);
+              onChunk({ type: 'tool_result', toolResult: { toolCallId: toolCall.id, name: toolCall.name, output, isError: true } });
+              messages.push({ role: 'tool', name: toolCall.name, tool_call_id: toolCall.id, content: output });
+              stateManager.recordToolCall(toolCall.name, toolCall.arguments, output);
+              continue;
+            }
+            validationFailures.delete(toolCall.name);
           }
 
           onChunk({ type: 'status', content: `Running ${toolCall.name}…` });
