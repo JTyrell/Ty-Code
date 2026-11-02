@@ -37,7 +37,7 @@ import { backgroundAgentOrchestrator } from './background-agent-orchestrator';
 import { ShellSandbox } from './shell-sandbox';
 import { agentObservability } from './agent-observability';
 import { skillRegistry } from './agent-skills';
-import { getCorrections, onCorrectionAdded, computeWorkspaceHash, type CorrectionEvent } from '../services/context-engine/correction-memory';
+import { getCorrections, onCorrectionAdded, onCorrectionRemoved, computeWorkspaceHash, type CorrectionEvent } from '../services/context-engine/correction-memory';
 import { modelRotationManager } from '../services/model-rotation-manager';
 import { routeEventPolicy } from '../providers/route-event-policy';
 import { providerHealthStore, normaliseHealthId } from '../providers/provider-health-store';
@@ -62,41 +62,52 @@ export function getRuntimeLearnedRules(workspacePathOrHash: string): string[] {
   return Array.from(runtimeRulesByWorkspace.get(hash) || []);
 }
 
+// Stage 3c: learned rules are maintained as a single dedicated system message
+// rather than appended on every correction. Each sync REBUILDS the block from
+// the current store set (getCorrections is the source of truth), so duplicates
+// never accumulate and store-deleted rules drop automatically.
+const CORRECTION_MEMORY_PREFIX = '[CORRECTION MEMORY]\n';
+
+function syncCorrectionMemoryBlock(workspaceHash: string, rules: string[]): void {
+  const deduped = Array.from(new Set(rules.filter((rule) => typeof rule === 'string' && rule.trim().length > 0)));
+  runtimeRulesByWorkspace.set(workspaceHash, new Set(deduped));
+
+  const block = deduped.length > 0
+    ? `${CORRECTION_MEMORY_PREFIX}${deduped.map((rule) => `- ${rule}`).join('\n')}\nYou MUST strictly adhere to every rule above.`
+    : '';
+
+  for (const session of activeAgentSessions.values()) {
+    if (session.workspaceHash !== workspaceHash && session.workspacePath !== workspaceHash) continue;
+    // Drop any prior [CORRECTION MEMORY] block, then re-emit the full current set once.
+    session.messages = session.messages.filter(
+      (message) => !(message.role === 'system' && typeof message.content === 'string' && message.content.startsWith(CORRECTION_MEMORY_PREFIX))
+    );
+    if (block) {
+      session.messages.unshift({ role: 'system', content: block });
+    }
+  }
+}
+
+async function rebuildCorrectionMemory(workspaceHash: string): Promise<void> {
+  try {
+    const rules = await getCorrections(workspaceHash);
+    syncCorrectionMemoryBlock(workspaceHash, rules);
+  } catch (err) {
+    console.warn('[AgentEngine] Failed to rebuild correction memory:', err);
+  }
+}
+
 // Global Correction Hook: live sync learned rules into the active chat session without app restart or /sync
 onCorrectionAdded((event: CorrectionEvent) => {
   const { workspaceHash, rule, surface } = event;
   console.log(`[AgentEngine] Live correction added (${surface}): "${rule}"`);
+  // Rebuild the whole block from the store (already includes this new rule) so
+  // the set stays deduped and reflects any prior deletions in one pass.
+  void rebuildCorrectionMemory(workspaceHash);
 
-  let rules = runtimeRulesByWorkspace.get(workspaceHash);
-  if (!rules) {
-    rules = new Set<string>();
-    runtimeRulesByWorkspace.set(workspaceHash, rules);
-  }
-  rules.add(rule);
-
+  // Inject subtle UI notification in the Chat Sidecar
   for (const session of activeAgentSessions.values()) {
     if (session.workspaceHash === workspaceHash || session.workspacePath === workspaceHash) {
-      // Dynamically append to active session's system prompt context
-      const liveRuleContext = `\n\n[LEARNED RULE (LIVE APPLIED)]\n- ${rule}\nYou MUST strictly adhere to this rule immediately.`;
-      let systemFound = false;
-      for (let i = session.messages.length - 1; i >= 0; i--) {
-        if (session.messages[i].role === 'system') {
-          session.messages[i] = {
-            ...session.messages[i],
-            content: session.messages[i].content + liveRuleContext
-          };
-          systemFound = true;
-          break;
-        }
-      }
-      if (!systemFound) {
-        session.messages.unshift({
-          role: 'system',
-          content: liveRuleContext
-        });
-      }
-
-      // Inject subtle UI notification in the Chat Sidecar
       try {
         session.onChunk({
           type: 'status',
@@ -108,6 +119,15 @@ onCorrectionAdded((event: CorrectionEvent) => {
       }
     }
   }
+});
+
+// Stage 3c: deletions must also drop the rule from live sessions immediately.
+// The store has already been mutated when this fires, so a rebuild yields the
+// surviving set (add 10, delete 3 -> exactly 7, no duplicates).
+onCorrectionRemoved((event: CorrectionEvent) => {
+  const { workspaceHash, rule } = event;
+  console.log(`[AgentEngine] Live correction removed: "${rule}"`);
+  void rebuildCorrectionMemory(workspaceHash);
 });
 
 import { connectivityTracer } from '../services/diagnostics/connectivity-tracer';
@@ -217,6 +237,23 @@ async function pickNextAgentProvider(
  * threshold triggers correctly for all model tiers (8k, 32k, 64k, 128k, 200k, 1M).
  */
 async function resolveModelContextLimit(providerId: string, modelId: string): Promise<number> {
+  // Stage 3b: cache the resolved window per `${providerId}:${modelId}`. The limit
+  // is static for a given model, so once resolved it never needs re-deriving; a
+  // model switch simply misses the cache and re-derives. The uncached path awaits
+  // getVerifiedModels(), which is itself memoized (Stage 5b, 60s TTL).
+  const cacheKey = `${(providerId || '').toLowerCase()}:${(modelId || '').toLowerCase()}`;
+  const cachedLimit = modelContextLimitCache.get(cacheKey);
+  if (cachedLimit !== undefined) return cachedLimit;
+  const resolved = await deriveModelContextLimit(providerId, modelId);
+  modelContextLimitCache.set(cacheKey, resolved);
+  return resolved;
+}
+
+// Stage 3b: context-window cache. Keyed by provider+model so switching models
+// (not reusing a stale limit) is implicit; never grows unbounded in practice.
+const modelContextLimitCache = new Map<string, number>();
+
+async function deriveModelContextLimit(providerId: string, modelId: string): Promise<number> {
   try {
     const models = await getVerifiedModels();
     const match = models.find((m) =>
@@ -273,6 +310,69 @@ function looksLikeSimpleQuery(prompt: string): boolean {
   return false;
 }
 
+/**
+ * Stage 3d: per-tool output compression budget. The previous global 1200-char
+ * cap starved the model of context for high-value read/inspect tools while
+ * over-allocating for terse ones. Read/search keep the most; commands less.
+ */
+const TOOL_OUTPUT_CHAR_BUDGET: Record<string, number> = {
+  read_file: 8000,
+  grep_search: 8000,
+  run_command: 4000,
+  run_terminal_command: 4000,
+  git_status: 6000,
+  git_diff: 6000,
+  git_log: 6000,
+  default: 1200
+};
+function outputCharBudget(toolName: string): number {
+  return TOOL_OUTPUT_CHAR_BUDGET[toolName] ?? TOOL_OUTPUT_CHAR_BUDGET.default;
+}
+
+/**
+ * Stage 3a: consecutive read-only tools that are safe to run in parallel (no
+ * approval, no policy preview, no filesystem mutation). Bounded by PARALLEL_CAP
+ * and rolled back to sequential under failure or memory pressure.
+ */
+const PARALLEL_READ_TOOLS = new Set(['read_file', 'list_dir', 'grep_search', 'git_status', 'git_diff', 'git_log']);
+const PARALLEL_CAP = 4;
+const PARALLEL_READ_TIMEOUT_MS = 15_000;
+// Stage 3a feature flag (default ON). Rollback: set TYCODE_PARALLEL_READS=false.
+function parallelReadsEnabled(): boolean {
+  return process.env.TYCODE_PARALLEL_READS !== 'false' && process.env.TYCODE_PARALLEL_READS !== '0';
+}
+
+/**
+ * Stage 3f/3g: process-wide memory-pressure guard + persistent degraded mode.
+ * Checked before parallel reads (3a) and before deferred summarization (3e).
+ * Degraded mode latches for the whole session once the guard trips 3+ times and
+ * is cleared only on app restart (never mid-session).
+ */
+const MEMORY_PRESSURE_HEAP_BYTES = 2.5 * 1024 * 1024 * 1024;
+let memoryPressureTrips = 0;
+let degradedMode = false;
+function isMemoryPressure(): boolean {
+  if (process.memoryUsage().heapUsed > MEMORY_PRESSURE_HEAP_BYTES) {
+    memoryPressureTrips++;
+    if (memoryPressureTrips >= 3 && !degradedMode) {
+      degradedMode = true;
+      console.log('[PERF] Degraded mode engaged due to repeated memory pressure');
+    }
+    return true;
+  }
+  return false;
+}
+
+// Test/observability accessors (used by the Stage 4a regression + guard tests).
+export function isDegradedMode(): boolean { return degradedMode; }
+export function __perfGuardForTest(next?: { trips?: number; degraded?: boolean }): { trips: number; degraded: boolean } {
+  if (next) {
+    if (typeof next.trips === 'number') memoryPressureTrips = next.trips;
+    if (typeof next.degraded === 'boolean') degradedMode = next.degraded;
+  }
+  return { trips: memoryPressureTrips, degraded: degradedMode };
+}
+
 /** Structured plan-mode refusal body returned as a recoverable tool result. */
 const PLAN_MODE_REFUSAL = {
   status: 'refused',
@@ -285,6 +385,12 @@ export class AgentEngine {
   private securityPolicy: SecurityPolicyEngine;
   private shellSandbox: ShellSandbox;
   private fileMemoryRefreshInFlight = new Set<string>();
+  // Stage 3e: deferred summarization queue. File-memory refresh is a networked
+  // LLM call per touched file; running it inline in the tool loop adds latency
+  // to every read/edit. We coalesce pending paths and flush on a 5s debounce,
+  // after the loop settles — and skip/defer under memory pressure (3f/3g).
+  private pendingFileMemory = new Map<string, { content: string; provider: string; model: string }>();
+  private fileMemoryDebounceTimer: NodeJS.Timeout | null = null;
 
   constructor(private workspacePath: string = process.cwd(), settingsSource: Pick<SettingsManager, 'getEffectiveSettings'> = settingsManager) {
     this.securityPolicy = new SecurityPolicyEngine(this.workspacePath, settingsSource);
@@ -323,6 +429,51 @@ export class AgentEngine {
     } finally {
       this.fileMemoryRefreshInFlight.delete(filePath);
     }
+  }
+
+  private queueFileMemoryRefresh(filePath: string, content: string, provider: string, model: string): void {
+    this.pendingFileMemory.set(filePath, { content, provider, model });
+    // Under degraded mode or an active memory spike, do not schedule work; the
+    // pending set survives and flushes once pressure clears / the loop exits.
+    if (degradedMode || isMemoryPressure()) {
+      agentObservability.emit('deferred_summarization', {
+        fileCount: this.pendingFileMemory.size,
+        deferredMs: 0,
+        skippedDueToPressure: true
+      });
+      return;
+    }
+    if (this.fileMemoryDebounceTimer) clearTimeout(this.fileMemoryDebounceTimer);
+    const timeoutMs = 5_000;
+    this.fileMemoryDebounceTimer = setTimeout(() => {
+      this.fileMemoryDebounceTimer = null;
+      void this.flushFileMemory();
+    }, timeoutMs);
+    this.fileMemoryDebounceTimer.unref?.();
+  }
+
+  private async flushFileMemory(): Promise<void> {
+    if (this.pendingFileMemory.size === 0) return;
+    // Defer further if pressure is still on (3f) — never summarize into an OOM.
+    if (degradedMode || isMemoryPressure()) {
+      agentObservability.emit('deferred_summarization', {
+        fileCount: this.pendingFileMemory.size,
+        deferredMs: 0,
+        skippedDueToPressure: true
+      });
+      return;
+    }
+    const batch = [...this.pendingFileMemory.entries()];
+    this.pendingFileMemory.clear();
+    const startedAt = Date.now();
+    for (const [filePath, info] of batch) {
+      await this.refreshFileMemory(filePath, info.content, info.provider, info.model);
+    }
+    agentObservability.emit('deferred_summarization', {
+      fileCount: batch.length,
+      deferredMs: Date.now() - startedAt,
+      skippedDueToPressure: false
+    });
   }
 
   private async executeWithSandbox(
@@ -847,6 +998,102 @@ export class AgentEngine {
         if (match) {
           const task = (match[2] ?? match[1]).replace(/\*\*/g, '').trim();
           if (task.length > 3 && task.length < 300) stateManager.addTodo(task, 'medium');
+        }
+      }
+    };
+
+    // ===== Stage 3a: parallel execution of consecutive read-only tool calls =====
+    // A maximal run of consecutive eligible read-only tools is dispatched with
+    // Promise.all (bounded by PARALLEL_CAP). The run is triggered the moment the
+    // sequential loop first reaches an uncached member, so any earlier write in
+    // the same pass has already run — ordering is preserved. Every call still
+    // walks the loop and consumes its cached result, so results append in the
+    // original order. Rollback: TYCODE_PARALLEL_READS=false; auto-fallback to
+    // sequential once >50% of a batch errors or memory pressure trips (3f/3g).
+    const parallelReadResults = new Map<string, ToolExecutionResponse>();
+    let sequentialReadFallback = false;
+    const FIFTY_MB = 50 * 1024 * 1024;
+
+    const isEligibleParallelRead = (call: ToolCall): boolean => {
+      if (!PARALLEL_READ_TOOLS.has(call.name)) return false;
+      if (!validToolNames.has(call.name)) return false;
+      if (!isToolAvailable(call.name, envContext, scope)) return false;
+      if (!validateToolArguments(call.name, call.arguments).valid) return false;
+      return true;
+    };
+
+    const runParallelReadBatch = async (leaderIdx: number, calls: ToolCall[]): Promise<void> => {
+      if (!parallelReadsEnabled() || sequentialReadFallback || degradedMode || isMemoryPressure()) return;
+      const run: ToolCall[] = [];
+      for (let i = leaderIdx; i < calls.length; i++) {
+        if (!isEligibleParallelRead(calls[i])) break;
+        run.push(calls[i]);
+      }
+      if (run.length < 2) return; // nothing to gain from a single read
+
+      const timeoutMs = PARALLEL_READ_TIMEOUT_MS;
+      const runOne = (call: ToolCall): Promise<{ id: string; name: string; res: ToolExecutionResponse; ms: number }> =>
+        new Promise((resolveOne) => {
+          const callStartedAt = Date.now();
+          let settled = false;
+          const timer = setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            console.warn(`[AGENT] Parallel read timed out: ${call.name}`);
+            agentObservability.recordEvent({ type: 'error', message: `parallel_read_timeout: ${call.name}` });
+            resolveOne({ id: call.id, name: call.name, res: { output: JSON.stringify({ status: 'error', message: 'timeout', tool: call.name }), isError: true }, ms: Date.now() - callStartedAt });
+          }, timeoutMs);
+          timer.unref?.();
+          void this.executeWithSandbox(call, call.arguments, abortSignal)
+            .then((res) => {
+              if (settled) return;
+              settled = true;
+              clearTimeout(timer);
+              resolveOne({ id: call.id, name: call.name, res, ms: Date.now() - callStartedAt });
+            })
+            .catch((err: unknown) => {
+              if (settled) return;
+              settled = true;
+              clearTimeout(timer);
+              resolveOne({ id: call.id, name: call.name, res: { output: `Parallel read failed: ${err instanceof Error ? err.message : String(err)}`, isError: true }, ms: Date.now() - callStartedAt });
+            });
+        });
+
+      for (let c = 0; c < run.length; c += PARALLEL_CAP) {
+        const chunk = run.slice(c, c + PARALLEL_CAP);
+        const batchStartedAt = Date.now();
+        const settled = await Promise.all(chunk.map(runOne));
+
+        // Memory guard (3a): bound a pathological batch before caching. Each
+        // result is also re-compressed individually in the loop's post-processing,
+        // so this only prevents an enormous intermediate from living in the cache.
+        const combinedChars = settled.reduce((sum, s) => sum + s.res.output.length, 0);
+        if (combinedChars > FIFTY_MB) {
+          for (const s of settled) {
+            if (s.res.isError) continue;
+            const compressed = optimizationPipeline.compressToolOutput(s.res.output, 25, outputCharBudget(s.name));
+            s.res = { output: compressed.compressed, isError: false };
+          }
+        }
+
+        let failures = 0;
+        for (const s of settled) {
+          parallelReadResults.set(s.id, s.res);
+          if (s.res.isError) failures++;
+        }
+        const totalMs = settled.reduce((sum, s) => sum + s.ms, 0);
+        const averageReadTime = settled.length ? Math.round(totalMs / settled.length) : 0;
+        agentObservability.emit('parallel_reads', {
+          toolCount: chunk.length,
+          parallelBatchSize: Math.min(chunk.length, PARALLEL_CAP),
+          wallTimeMs: Date.now() - batchStartedAt,
+          sequentialEstimateMs: averageReadTime * chunk.length
+        });
+
+        if (failures / chunk.length > 0.5) {
+          sequentialReadFallback = true;
+          console.warn(`[AGENT] Parallel read fallback: ${failures}/${chunk.length} reads failed; remaining reads run sequentially.`);
+          break;
         }
       }
     };
@@ -1715,7 +1962,24 @@ export class AgentEngine {
           }
 
           onChunk({ type: 'status', content: `Running ${toolCall.name}…` });
-          const result: ToolExecutionResponse = await this.executeWithSandbox(toolCall, approvedExecutionArgs, abortSignal);
+          // Stage 3a: consume a pre-executed parallel read if the run this call
+          // belongs to was already dispatched. On the run's first (uncached)
+          // member we launch the whole consecutive run; later members find their
+          // result cached here. A cache miss (single read, ineligible, disabled,
+          // or post-fallback) simply executes sequentially as before.
+          let result = parallelReadResults.get(toolCall.id);
+          if (result) {
+            parallelReadResults.delete(toolCall.id);
+          } else {
+            if (PARALLEL_READ_TOOLS.has(toolCall.name)) {
+              await runParallelReadBatch(toolCallsToExecute.indexOf(toolCall), toolCallsToExecute);
+              result = parallelReadResults.get(toolCall.id);
+              if (result) parallelReadResults.delete(toolCall.id);
+            }
+            if (!result) {
+              result = await this.executeWithSandbox(toolCall, approvedExecutionArgs, abortSignal);
+            }
+          }
 
           // Finalize the checkpoint with the agent's resulting content so a later
           // restore can distinguish "only the agent changed this" from a genuine
@@ -1740,7 +2004,7 @@ export class AgentEngine {
               : toolCall.name === 'replace_file_content'
                 ? String(approvedExecutionArgs.replacementContent ?? toolCall.arguments.replacementContent ?? '')
                 : result.output;
-            void this.refreshFileMemory(referencedPath, memoryContent, activeProvider, activeModel);
+            void this.queueFileMemoryRefresh(referencedPath, memoryContent, activeProvider, activeModel);
           }
 
           // Completion evidence: successful edits invalidate older verification;
@@ -1767,7 +2031,7 @@ export class AgentEngine {
             }
           });
           if (result.proposedDiff) onChunk({ type: 'diff', diff: result.proposedDiff });
-          const compressedResult = optimizationPipeline.compressToolOutput(result.output);
+          const compressedResult = optimizationPipeline.compressToolOutput(result.output, 25, outputCharBudget(toolCall.name));
           messages.push({ role: 'tool', name: toolCall.name, tool_call_id: toolCall.id, content: compressedResult.compressed });
 
           // Hook 3: Per-Layer Token Accounting for tool_result

@@ -847,6 +847,8 @@ export type AgentTelemetryEvent =
   | { type: 'agent_iteration'; iteration: number; todosCompleted: number; todosRemaining: number }
   | { type: 'context_compaction'; tokensBefore: number; tokensAfter: number }
   | { type: 'provider_failover'; fromProvider: string; toProvider: string; toModel: string; error?: string }
+  | { type: 'parallel_reads'; toolCount: number; parallelBatchSize: number; wallTimeMs: number; sequentialEstimateMs: number }
+  | { type: 'deferred_summarization'; fileCount: number; deferredMs: number; skippedDueToPressure: boolean }
   | { type: 'error'; message: string; stack?: string };
 
 export type AgentTelemetryRecord = AgentTelemetryEvent & { timestamp: number };

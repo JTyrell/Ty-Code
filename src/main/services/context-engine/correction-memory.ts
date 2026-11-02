@@ -57,6 +57,24 @@ export function emitCorrectionAdded(event: CorrectionEvent): void {
   correctionEmitter.emit('correction-added', event);
 }
 
+/**
+ * Subscribes to correction removals so live sessions can drop a deleted rule.
+ * Returns an unsubscription function.
+ */
+export function onCorrectionRemoved(callback: CorrectionCallback): () => void {
+  correctionEmitter.on('correction-removed', callback);
+  return () => {
+    correctionEmitter.off('correction-removed', callback);
+  };
+}
+
+/**
+ * Emits a correction removal event to all Main Process subscribers.
+ */
+export function emitCorrectionRemoved(event: CorrectionEvent): void {
+  correctionEmitter.emit('correction-removed', event);
+}
+
 // Dynamically check for node:sqlite support
 let sqliteModule: typeof import('node:sqlite') | null = null;
 try {
@@ -320,10 +338,23 @@ export async function deleteCorrection(workspaceHashOrPath: string, id: string):
   }
 
   const entries = await readJsonl(workspaceHash);
+  const removed = entries.find((e) => e.id === id);
   const filtered = entries.filter((e) => e.id !== id);
   if (filtered.length !== entries.length) {
     deleted = true;
     await writeJsonl(workspaceHash, filtered);
+  }
+
+  // Stage 3c: notify live sessions so a deleted rule is dropped immediately,
+  // not just on the next correction. The store is already mutated here, so
+  // subscribers rebuilding from getCorrections() yield the surviving set.
+  if (deleted && removed) {
+    emitCorrectionRemoved({
+      entry: removed,
+      workspaceHash,
+      surface: removed.surface ?? 'global',
+      rule: removed.rule
+    });
   }
 
   return deleted;

@@ -17,6 +17,15 @@ export class AgentObservability {
     }
   }
 
+  /**
+   * Stage 3h: convenience emitter for the perf ledger events added by the loop
+   * optimizations (parallel_reads, deferred_summarization). Keeps recordEvent's
+   * discriminated-union contract while letting call sites emit by type name.
+   */
+  emit(type: AgentTelemetryEvent['type'], payload: Record<string, unknown> = {}): void {
+    this.recordEvent({ type, ...payload } as unknown as AgentTelemetryEvent);
+  }
+
   getEvents(filter?: { type?: string; startTime?: number }): AgentTelemetryRecord[] {
     if (!filter || (!filter.type && typeof filter.startTime !== 'number')) return this.events.slice();
     return this.events.filter((event) => {
