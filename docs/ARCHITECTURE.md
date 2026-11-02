@@ -158,9 +158,72 @@ markdown-patch parse).
 'success' | 'error', iterationCount, toolCallCount }`, derived from the
 last non-`none` stop via `classifyLoopExit` (exhaustion reasons are sticky).
 
-## Pending (Stage 6 — document when implemented)
+## Omni-Debugger performance (Stage 6)
 
-- **6a — non-blocking workspace scan.** `runFullAnalysis` should start the
-  static step immediately and pass the `getOrScanWorkspaceProfile` promise
-  into the arch/dynamic steps, emitting `non_blocking_scan`. Not yet
-  implemented; this section is a placeholder to be filled in during Stage 6.
+### 6a — non-blocking workspace scan
+`runFullAnalysis` no longer `await`s `getOrScanWorkspaceProfile` before
+launching the engines. The scan is started as a promise (memoized through the
+shared `workspaceCache` singleton) and only the passes that actually consume it
+— the dynamic DB-profiling step and the arch worker — `await` it. The static
+step therefore launches immediately and findings stream to the UI sooner. The
+LITE-mode single-worker gate (one debugger worker alive at a time) is unchanged.
+
+### 6b — shared workspace cache + explicit invalidation
+`src/main/services/workspace-cache-service.ts` exports a process-wide
+`workspaceCache` singleton (`getOrCompute(key, ttl, fn)` / `invalidate` /
+`invalidateByPattern` / `subscribeToInvalidation`) reused by BOTH the Debugger
+(workspace profile) and the Canvas (design prompt). Keys are
+`${projectRoot}:${scope}` with a 30s TTL (matching the Stage 5b memo). On
+`workspace:changed` / `workspace:closed` the Workspace Session Manager calls
+`handleWorkspaceChanged(root)`; the file watcher calls `handleFileEvent(root,
+path)` for monitored paths (`package.json`, `tailwind.config.*`,
+`.tycode/rules/*`, `src/**/*.{ts,tsx,js,jsx}`). Concurrent computes for one key
+are deduplicated onto a single in-flight promise.
+
+### 6c — abortable AI post-pass
+`FullAnalysisOptions.abortSignal` is threaded into `generateRoleBasedReport`
+(previously hardcoded `undefined`). The analyst checks `aborted` before spending
+a request and before the free-tier fallback; a mid-stream cancellation is
+classified by `isAbortError` and returns partial results flagged
+`{ aborted: true }` instead of an "AI analyst unavailable" finding. The
+engines-only snapshot broadcast (before the AI pass) is preserved, so the UI
+keeps every finding and simply shows the AI section as cancelled.
+
+### 6d — `non_blocking_scan` telemetry
+`agentObservability` emits `{ scanStartMs, firstFindingMs, scanCompleteMs }` at
+the engines-only broadcast. `scanCompleteMs === 0` means the workspace scan was
+still running when findings were delivered — the exact latency 6a removes.
+
+### 6e — cache invalidation tests
+`tests/workspace-cache.test.ts` (run by `npm run test:integration`) locks hit
+within TTL, miss after expiry, invalidation on `workspace:changed` and on a
+file-watcher event, disposable subscriptions, concurrent dedup, and the
+Debugger/Canvas shared instance (same key → same value).
+
+## M3E Canvas performance (Stage 7)
+
+### 7a — shared design-prompt cache
+`canvas-agent-engine.generate` memoizes the expensive
+`extractDesignSystem` + `getOrScanWorkspaceProfile` + `getCorrections` trio per
+root through the SAME `workspaceCache` singleton used by the Debugger, so a
+restyle on a warm workspace skips re-scanning. Live, in-session corrections are
+still applied fresh on top of the cached base prompt.
+
+### 7b — abort + notice hygiene
+`opts.abortSignal` is forwarded unchanged to `ProviderGateway.sendChatRequest`,
+so a newer prompt aborts the prior stream. The free-tier fallback notice is
+emitted once: when a streaming `onToken` relay is present the in-stream notice
+is shown and the separate `pushMessage` is skipped (no double-emit).
+`getActiveModel()` is synchronous/cached, so no per-run memo is needed.
+
+## Cross-stage integration (Stage 8)
+
+`tests/integration/agent-loop-integration.test.ts` drives the REAL AgentEngine
+loop against a scripted provider and asserts the stages hold together: parallel
+read-only batching (3a) preserves every result, a mid-task argument-validation
+retry recovers (2c), a transient `[PROVIDER_DOWN] (503)` fails over through
+Stage 1 routing without a silent stop, exactly one classified `loop_exit` is
+recorded (1a/1e), the shared cache serves both surfaces without blocking the
+loop (6b/7a), and the `non_blocking_scan` ledger event flows end-to-end (6d).
+The gated `npm run test:live` suite covers the full Electron/worker/provider
+runtime this headless test intentionally does not spawn.

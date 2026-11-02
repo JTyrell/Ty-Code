@@ -850,6 +850,7 @@ export type AgentTelemetryEvent =
   | { type: 'parallel_reads'; toolCount: number; parallelBatchSize: number; wallTimeMs: number; sequentialEstimateMs: number }
   | { type: 'deferred_summarization'; fileCount: number; deferredMs: number; skippedDueToPressure: boolean }
   | { type: 'loop_exit'; reason: 'max_iterations' | 'validation_exhausted' | 'unknown_tool' | 'success' | 'error'; iterationCount: number; toolCallCount: number }
+| { type: 'non_blocking_scan'; scanStartMs: number; firstFindingMs: number; scanCompleteMs: number }
   | { type: 'error'; message: string; stack?: string };
 
 export type AgentTelemetryRecord = AgentTelemetryEvent & { timestamp: number };

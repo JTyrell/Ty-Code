@@ -208,6 +208,11 @@ export class WorkspaceSessionManager {
 
   private evictOrphanedRootCaches(previous: string | null): void {
     if (!previous) return;
+    // Stage 6b: the shared workspace cache (Debugger + Canvas) is invalidated on
+    // every workspace:changed / workspace:closed transition.
+    void import('./workspace-cache-service')
+      .then((m) => m.workspaceCache.handleWorkspaceChanged(previous))
+      .catch(() => {});
     void import('./context-engine/workspace-scanner')
       .then((m) => m.clearWorkspaceProfileCache())
       .catch(() => {});

@@ -18,6 +18,7 @@ import { extractDesignSystem, type DesignProfile } from '../services/context-eng
 import { getOrScanWorkspaceProfile } from '../services/context-engine/workspace-scanner';
 import type { WorkspaceProfile } from '../services/context-engine/types';
 import { onCorrectionAdded, computeWorkspaceHash, type CorrectionEvent, getCorrections } from '../services/context-engine/correction-memory';
+import { workspaceCache, workspaceCacheKey, WORKSPACE_CACHE_TTL_MS } from '../services/workspace-cache-service';
 
 const liveCanvasCorrections = new Map<string, Set<string>>();
 
@@ -572,14 +573,26 @@ export class CanvasAgentEngine {
     try {
       const workspaceRoot = opts.workspaceRoot || process.cwd();
       const hash = computeWorkspaceHash(workspaceRoot);
-      const [designProfile, workspaceProfile, persistentRules] = await Promise.all([
-        extractDesignSystem(workspaceRoot).catch(() => null),
-        getOrScanWorkspaceProfile(workspaceRoot).catch(() => null),
-        getCorrections(workspaceRoot).catch(() => [])
-      ]);
+      // Stage 7a: the expensive design-system + workspace extraction and
+      // persistent-rule load are memoized per root through the shared
+      // workspace cache singleton (same instance the Debugger uses in 6b), so a
+      // restyle on a warm workspace skips re-scanning. Live, in-session
+      // corrections are still applied fresh on top of the cached base.
+      const extracted = await workspaceCache.getOrCompute(
+        workspaceCacheKey(workspaceRoot, 'canvas-design-prompt'),
+        WORKSPACE_CACHE_TTL_MS,
+        async () => {
+          const [designProfile, workspaceProfile, persistentRules] = await Promise.all([
+            extractDesignSystem(workspaceRoot).catch(() => null),
+            getOrScanWorkspaceProfile(workspaceRoot).catch(() => null),
+            getCorrections(workspaceRoot).catch(() => [] as string[])
+          ]);
+          return { designProfile, workspaceProfile, persistentRules };
+        }
+      );
       const liveRules = Array.from(liveCanvasCorrections.get(hash) || []);
-      const allRules = Array.from(new Set([...persistentRules, ...liveRules]));
-      projectDesignPrompt = buildProjectDesignPrompt(designProfile, workspaceProfile, allRules);
+      const allRules = Array.from(new Set([...extracted.persistentRules, ...liveRules]));
+      projectDesignPrompt = buildProjectDesignPrompt(extracted.designProfile, extracted.workspaceProfile, allRules);
     } catch {
       // Non-blocking fallback
     }
@@ -619,13 +632,18 @@ export class CanvasAgentEngine {
             onToken(`\n*(Notice: ${provider}/${model} unavailable; falling back to Ty-Code Free)*\n\n`);
           } catch {}
         }
-        canvasSyncManager.pushMessage({
-          id: `canvas_fallback_${globalThis.crypto.randomUUID()}`,
-          role: 'assistant',
-          content: `⚠️ Model \`${provider}/${model}\` is unavailable. Falling back to Ty-Code Free.`,
-          timestamp: Date.now(),
-          origin: 'canvas'
-        });
+        // Stage 7b: emit the fallback notice once. When a streaming relay is
+        // present the token notice above already surfaced it in-chat, so skip
+        // the separate pushMessage to avoid a double-emit.
+        if (!onToken) {
+          canvasSyncManager.pushMessage({
+            id: `canvas_fallback_${globalThis.crypto.randomUUID()}`,
+            role: 'assistant',
+            content: `⚠️ Model \`${provider}/${model}\` is unavailable. Falling back to Ty-Code Free.`,
+            timestamp: Date.now(),
+            origin: 'canvas'
+          });
+        }
         try {
           response = await this.callGateway('ty-code-free', 'google/gemma-4-31b-it:free', messages, onToken, opts.abortSignal);
         } catch (fallbackErr: unknown) {

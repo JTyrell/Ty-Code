@@ -72,6 +72,8 @@ export interface RoleReportResult {
   /** Structured info-severity items to append to analysisResults (role-tagged). */
   results: AnalysisResult[];
   rawText: string;
+  /** Stage 6c: set when the caller aborted the AI pass before/while it ran. */
+  aborted?: boolean;
 }
 
 export const ROLE_PROMPTS: Record<AnalysisRole, string> = {
@@ -398,6 +400,12 @@ function parseFallback(role: AnalysisRole, text: string): { results: AnalysisRes
   return { results: markdownToResults(role, text), parseMode: 'markdown' };
 }
 
+function isAbortError(error: unknown): boolean {
+  if (error instanceof Error && (error.name === 'AbortError' || error.name === 'CancellationError')) return true;
+  const message = error instanceof Error ? error.message : String(error);
+  return /\babort(ed)?\b|cancell?ed|signal is aborted/i.test(message);
+}
+
 async function reportGenerationFailure(
   role: AnalysisRole,
   provider: string,
@@ -484,6 +492,11 @@ export async function generateRoleBasedReport(
     let activeModel = model;
     let responseText: string;
 
+    // Stage 6c: honor cancellation before spending a request.
+    if (options?.abortSignal?.aborted) {
+      return { role, provider, model, durationMs: Date.now() - startedAt, parseMode: 'raw', results: [], rawText: '', aborted: true };
+    }
+
     try {
       responseText = await ProviderGateway.sendChatRequest(
         activeProvider,
@@ -505,6 +518,10 @@ export async function generateRoleBasedReport(
       const errMessage = initialErr instanceof Error ? initialErr.message : String(initialErr);
       const isUnavailable = /KEY_MISSING_ERROR|key required|unavailable|429|500|502|503/i.test(errMessage);
       if (isUnavailable) {
+        // Stage 6c: if the caller aborted, don't spin up a fallback request.
+        if (options?.abortSignal?.aborted) {
+          return { role, provider, model, durationMs: Date.now() - startedAt, parseMode: 'raw', results: [], rawText: '', aborted: true };
+        }
         console.warn(`[AI-ANALYST] Model ${activeProvider}/${activeModel} unavailable (${errMessage}). Falling back to best available free model.`);
         if (options?.onToken) {
           try {
@@ -542,6 +559,12 @@ export async function generateRoleBasedReport(
     const { results, parseMode } = parseFallback(role, rawText);
     return { role, provider: activeProvider, model: activeModel, durationMs: completedAt - startedAt, parseMode, results, rawText };
   } catch (error) {
+    // Stage 6c: a cancellation is a clean stop, not an analyst failure. Return
+    // partial (empty) results flagged `aborted` so the UI shows "Analysis
+    // cancelled" rather than an "AI analyst unavailable" finding.
+    if (options?.abortSignal?.aborted || isAbortError(error)) {
+      return { role, provider, model, durationMs: Date.now() - startedAt, parseMode: 'raw', results: [], rawText: '', aborted: true };
+    }
     const failure = await reportGenerationFailure(role, provider, model, options ?? {}, error);
     failure.durationMs = Date.now() - startedAt;
     return failure;

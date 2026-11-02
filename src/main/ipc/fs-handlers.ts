@@ -10,6 +10,17 @@ import { WorkerIndexerService } from '../services/indexing/worker-indexer-servic
 // Ignored folders for fast directory indexing
 const IGNORED_DIRS = new Set(['.git', '.kombai', 'node_modules', 'dist', 'dist-electron', 'out', 'release', '.DS_Store', 'Thumbs.db']);
 
+// Stage 6b/7a: paths whose changes invalidate the shared workspace cache
+// (design system / workspace profile / canvas prompt) for the active root.
+const CACHE_MONITORED = /(^|\/)(package\.json|package-lock\.json)$|tailwind\.config\.[^/]+$|^\.tycode\/rules\/.+|\.(ts|tsx|js|jsx)$/;
+
+function invalidateWorkspaceCacheFor(root: string, relPath: string): void {
+  if (!CACHE_MONITORED.test(relPath)) return;
+  void import('../services/workspace-cache-service')
+    .then((m) => m.workspaceCache.handleFileEvent(root, relPath))
+    .catch(() => {});
+}
+
 const TREE_CACHE_DIR = path.join(os.tmpdir(), 'tycode-tree-cache');
 
 const inMemoryTreeCache = new Map<string, FlatFileNodeEntry[]>();
@@ -108,6 +119,7 @@ export function setupWorkspaceWatcher(
             changeType = 'unlink';
           }
           onUpdate(changeType, cleanRel);
+          invalidateWorkspaceCacheFor(workspaceRoot, cleanRel);
         } catch {
           // Ignore watch callback error
         }

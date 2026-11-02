@@ -85,6 +85,9 @@ jobs:
       - name: Anti-Phantom Guard 14: Verify No Agent Performance Regression vs Baseline
         run: node scripts/no-agent-performance-regression.mjs
 
+      - name: Cross-Stage Integration Gate: Run Workspace Cache + Agent Loop Integration Suite
+        run: npm run test:integration
+
       - name: Live Validation Gate: Run Real Network & Disk E2E Suite
         run: npm run test:live
 

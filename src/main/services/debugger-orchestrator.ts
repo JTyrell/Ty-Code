@@ -10,6 +10,8 @@ import { getOrScanWorkspaceProfile } from './context-engine/workspace-scanner';
 import type { WorkspaceProfile } from './context-engine/types';
 import { resolveWorkerRuntimeFile } from './debugger-engines/runtime-paths';
 import { memoryGovernor } from './memory-governor';
+import { agentObservability } from '../agent/agent-observability';
+import { workspaceCache, workspaceCacheKey, WORKSPACE_CACHE_TTL_MS } from './workspace-cache-service';
 import type { AnalysisResult, AnalysisRole, AnalysisSeverity } from '../windows/debugger-window';
 import type { VerifiedModelConfig } from './verified-models';
 import { onCorrectionAdded, computeWorkspaceHash, type CorrectionEvent, getCorrections } from './context-engine/correction-memory';
@@ -49,6 +51,8 @@ export interface FullAnalysisPayload {
   results: AnalysisResult[];
   engineErrors: EngineErrorRecord[];
   arch?: ArchProjectReport;
+  /** Stage 6c: true when the post-engine AI pass was cancelled by the caller. */
+  aborted?: boolean;
   selectedModels?: Record<'static' | 'dynamic' | 'arch' | 'ai_reasoning', { modelId: string; providerId: string }>;
 }
 
@@ -68,6 +72,13 @@ export interface FullAnalysisOptions {
    * state snapshot twice (UI shows engines instantly, AI live afterwards).
    */
   onResultsSnapshot?: (results: AnalysisResult[], stage: 'engines' | 'complete') => void;
+  /**
+   * Stage 6c: abort signal threaded to the post-engine AI pass. When aborted
+   * the AI request is cancelled and the run returns engines-only results with
+   * `aborted: true`, so the UI can show "Analysis cancelled" instead of an
+   * orphaned loading state. Engine findings are unaffected.
+   */
+  abortSignal?: AbortSignal;
 }
 
 export const STATIC_ENGINE_BUDGET_MS = 20000;
@@ -249,8 +260,25 @@ export async function runFullAnalysis(
   console.log(`[DEBUGGER] Architectural analysis using model: ${archModel.modelId} (${archModel.providerId})`);
   console.log(`[DEBUGGER] AI reasoning using model: ${aiModel.modelId} (${aiModel.providerId})`);
 
-  // Context Engine Integration: retrieve workspace profile for architectural drift & DB profiling
-  const profile: WorkspaceProfile | null = await getOrScanWorkspaceProfile(projectRoot).catch(() => null);
+  // Context Engine Integration: the workspace profile only feeds the
+  // architectural-drift and DB-profiling passes. Stage 6a starts the scan as a
+  // promise (memoized through the shared workspace cache singleton) WITHOUT
+  // awaiting it, so the static engine launches immediately and findings stream
+  // to the UI sooner; arch/dynamic await the promise where they truly need it.
+  const scanStartMs = Date.now();
+  let firstFindingMs = 0;
+  let scanCompleteMs = 0;
+  const profilePromise: Promise<WorkspaceProfile | null> = workspaceCache
+    .getOrCompute(
+      workspaceCacheKey(projectRoot, 'workspace-profile'),
+      WORKSPACE_CACHE_TTL_MS,
+      () => getOrScanWorkspaceProfile(projectRoot)
+    )
+    .catch(() => null)
+    .then((scanned) => {
+      scanCompleteMs = Date.now();
+      return scanned;
+    });
 
   // Step 5 (LITE mode): cap debugger workers to ONE alive at any moment.
   // The gate serializes the engine passes; in FULL mode it is identity and
@@ -278,6 +306,7 @@ export async function runFullAnalysis(
     ? withLiteGate(async () => {
         const runtime = await runDynamicAnalysis(targetFile);
         const runtimeFindings = mapDynamicResultToFindings(runtime, targetFile);
+        const profile = await profilePromise;
         const dbFindings = await profileFileDatabaseQueries(targetFile, { profile, projectRoot });
         return [...runtimeFindings, ...dbFindings];
       })
@@ -286,13 +315,14 @@ export async function runFullAnalysis(
   const [staticOutcome, dynamicOutcome, archOutcome] = await Promise.allSettled([
     staticStep,
     dynamicStep,
-    withLiteGate(() =>
-      runWorkerJob<ArchProjectReport>(
+    withLiteGate(async () => {
+      const profile = await profilePromise;
+      return runWorkerJob<ArchProjectReport>(
         'arch-worker.js',
         { kind: 'arch', projectRoot, profile, model: archModel.modelId, provider: archModel.providerId },
         ARCH_ENGINE_BUDGET_MS
-      )
-    )
+      );
+    })
   ]);
 
   const results: AnalysisResult[] = [];
@@ -398,13 +428,20 @@ export async function runFullAnalysis(
 
   // Deliver engine findings IMMEDIATELY (before the AI pass) so the UI is
   // never blocked while the model thinks.
+  firstFindingMs = Date.now();
   broadcastUpdate(engineResults);
   options?.onResultsSnapshot?.(engineResults, 'engines');
+
+  // Stage 6d: prove the scan no longer gates first-paint. `scanCompleteMs` is
+  // 0 when the workspace scan was still running as findings were delivered —
+  // exactly the improvement 6a targets.
+  agentObservability.emit('non_blocking_scan', { scanStartMs, firstFindingMs, scanCompleteMs });
 
   // Post-engine AI pass: generateRoleBasedReport streams tokens to the
   // renderer in real time via the onToken callback pattern, then appends
   // role-tagged 'info' findings to the analysis payload.
   let aiResults: AnalysisResult[] = [];
+  let aborted = false;
   const resultsForAi = engineResults.filter((entry) => entry.severity !== 'info');
   if (resultsForAi.length > 0) {
     relayAiFrame({ runId, role: effectiveRole, phase: 'token' });
@@ -413,12 +450,19 @@ export async function runFullAnalysis(
       arch,
       modelConfig: { providerId: aiModel.providerId, modelId: aiModel.modelId },
       onToken: (chunk) => relayAiFrame({ runId, role: effectiveRole, phase: 'token', chunk }),
-      abortSignal: undefined
+      abortSignal: options?.abortSignal
     });
-    relayAiFrame({ runId, role: effectiveRole, phase: 'done', parseMode: report.parseMode });
-    aiResults = report.results.filter(
-      (entry) => !engineErrors.some((engineError) => entry.ruleId === `${engineError.engine}-engine-failure`)
-    );
+    if (report.aborted) {
+      // Stage 6c: user cancelled the AI pass. Engine findings already shipped;
+      // relay an error frame so the UI drops the loading state cleanly.
+      aborted = true;
+      relayAiFrame({ runId, role: effectiveRole, phase: 'error' });
+    } else {
+      relayAiFrame({ runId, role: effectiveRole, phase: 'done', parseMode: report.parseMode });
+      aiResults = report.results.filter(
+        (entry) => !engineErrors.some((engineError) => entry.ruleId === `${engineError.engine}-engine-failure`)
+      );
+    }
   }
 
   const combinedResults = dedupeAndSort([...engineResults, ...aiResults]);
@@ -433,6 +477,7 @@ export async function runFullAnalysis(
     results: combinedResults,
     engineErrors,
     arch,
+    aborted,
     selectedModels: {
       static: { modelId: staticModel.modelId, providerId: staticModel.providerId },
       dynamic: { modelId: dynamicModel.modelId, providerId: dynamicModel.providerId },
