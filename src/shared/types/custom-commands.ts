@@ -71,6 +71,7 @@ export const CustomCommandRenderRequestSchema = z
     args: z.record(z.string().max(80), z.string().max(2000)).optional()
   })
   .strict();
+export type CustomCommandRenderRequest = z.infer<typeof CustomCommandRenderRequestSchema>;
 
 export const CustomCommandRenderResultSchema = z.object({
   name: CommandNameSchema,

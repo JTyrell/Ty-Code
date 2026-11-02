@@ -23,9 +23,11 @@ import { useChatStore } from '../state/chat-store';
 import { useEditorNavigationStore } from '../state/editor-navigation-store';
 import { useCodeReviewStore } from '../state/code-review-store';
 import { usePairProgrammingStore } from '../state/pair-programming-store';
+import { useExtensionPromptStore } from '../state/extension-prompt-store';
 import { toast } from '../state/toast-store';
 import { extensionHost } from '../services/extension-host';
 import { copyTextOrNotify } from '../lib/clipboard';
+import type { CustomCommand } from '../../../shared/types/custom-commands';
 
 export interface CommandItem {
   id: string;
@@ -66,6 +68,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [hostCommands, setHostCommands] = useState<Array<{ id: string; title: string; category?: string }>>([]);
+  const [customCommands, setCustomCommands] = useState<CustomCommand[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const { saveActiveFile, activeTabPath, openTabs } = useWorkspaceStore();
@@ -82,8 +85,48 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
           setHostCommands(res.data);
         }
       }).catch(() => undefined);
+
+      // Prompt E (Step 3): .tycode/commands/*.md entries, refreshed each time
+      // the palette opens so freshly-written files appear immediately.
+      const ws = useWorkspaceStore.getState().workspacePath;
+      if (ws && window.electronAPI?.customCommands) {
+        void window.electronAPI.customCommands.list(ws).then((res) => {
+          if (res.success) setCustomCommands(res.data ?? []);
+        }).catch(() => undefined);
+      } else {
+        setCustomCommands([]);
+      }
     }
   }, [isOpen]);
+
+  // Palette flow for a custom command: collect missing arguments through the
+  // modal prompt (defaults prefilled), render main-side, and drop the fully
+  // substituted prompt into the chat composer.
+  const runCustomCommand = async (command: CustomCommand): Promise<void> => {
+    const ws = useWorkspaceStore.getState().workspacePath;
+    if (!ws || !window.electronAPI?.customCommands) return;
+    const provided: Record<string, string> = {};
+    for (const arg of command.args) {
+      const typed = await useExtensionPromptStore.getState().requestInput(
+        arg.description || `Value for {${arg.name}}:`,
+        arg.defaultValue ?? '',
+        `/${command.name} — ${arg.name}`
+      );
+      if (typed === undefined) return; // cancelled
+      if (typed.trim()) provided[arg.name] = typed.trim();
+    }
+    const res = await window.electronAPI.customCommands.render({
+      workspacePath: ws,
+      name: command.name,
+      rawArgs: '',
+      ...(Object.keys(provided).length > 0 ? { args: provided } : {})
+    });
+    if (res.success && res.data) {
+      setDraftPrompt(res.data.prompt);
+    } else {
+      toast.error('Command failed', res.error || `Could not render /${command.name}.`);
+    }
+  };
 
   // Generate complete command list
   const getCommands = (): CommandItem[] => {
@@ -502,6 +545,23 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         }
       }
     ];
+
+    // Prompt E (Step 3): custom commands surface in the palette beside the
+    // built-in ones; the shared list keeps titles unambiguous.
+    for (const command of customCommands) {
+      commands.push({
+        id: `tycode.customCommand.${command.name}`,
+        title: `Command: /${command.name}${command.description ? ` — ${command.description}` : ''}`,
+        category: 'General',
+        icon: <Zap size={14} color="var(--accent-amber)" />,
+        action: () => {
+          onClose();
+          void runCustomCommand(command).catch((err: unknown) => {
+            toast.error('Command failed', err instanceof Error ? err.message : String(err));
+          });
+        }
+      });
+    }
 
     // Only expose commands that have actually been registered by an active Worker.
     for (const command of extensionHost.getRegisteredCommands()) {

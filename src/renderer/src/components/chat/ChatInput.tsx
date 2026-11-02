@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AtSign, BookOpen, FileDiff, FileText, FolderOpen, GitCommit, Image as ImageIcon, Mic, Plus, ScrollText, Send, Slash, Square, X } from 'lucide-react';
+import { AtSign, BookOpen, FileDiff, FileText, FolderOpen, GitCommit, Image as ImageIcon, Mic, Plus, ScrollText, Send, Slash, Sparkles, Square, X } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { FlatFileNodeEntry, GitCommitInfo } from '../../../../preload/types';
 import type { WikiSectionId, WikiSectionMeta } from '../../../../shared/types/wiki';
@@ -7,6 +7,7 @@ import type { RuleMeta } from '../../../../shared/types/rules';
 import { useWorkspaceStore } from '../../state/workspace-store';
 import { useChatInputStore, MAX_ATTACHMENTS, type Attachment } from '../../state/chat-input-store';
 import { toast } from '../../state/toast-store';
+import type { CustomCommand } from '../../../../shared/types/custom-commands';
 
 const TY_CODE_FILE_MIME = 'application/x-ty-code-file-path';
 
@@ -136,6 +137,32 @@ export function ChatInput({ input, inputRef, onInputChange, onKeyDown, onSubmit,
     if (!input.startsWith('/') || /\s/.test(input)) return SLASH_COMMANDS;
     return SLASH_COMMANDS.filter((command) => command.command.startsWith(input.toLowerCase()));
   }, [input]);
+
+  // Prompt E (Step 3): user/project commands from .tycode/commands/*.md join
+  // the / menu. Refreshed whenever the menu opens, so a file just written on
+  // disk shows up without an app restart. Entries render their template main-
+  // side at submit; here they only need name + description.
+  const [customCommands, setCustomCommands] = useState<CustomCommand[]>([]);
+  useEffect(() => {
+    if (menuMode !== 'actions' || !workspacePath || !window.electronAPI?.customCommands) return;
+    let cancelled = false;
+    void window.electronAPI.customCommands.list(workspacePath).then((res) => {
+      if (!cancelled && res.success) setCustomCommands(res.data ?? []);
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [menuMode, workspacePath]);
+
+  const customSlashMatches = useMemo(() => {
+    if (!input.startsWith('/') || /\s/.test(input)) return [];
+    const typed = input.toLowerCase();
+    return customCommands
+      .filter((command) => `/${command.name}`.startsWith(typed))
+      .map((command) => ({
+        command: `/${command.name}`,
+        description: `${command.description || 'Custom command'} (${command.scope}${command.args.length > 0 ? `, ${command.args.map((a) => `{${a.name}}`).join(' ')}` : ''})`,
+        template: `/${command.name} `
+      }));
+  }, [customCommands, input]);
 
   const mentionMatches = useMemo(() => {
     if (menuMode !== 'mentions') return [];
@@ -876,6 +903,20 @@ export function ChatInput({ input, inputRef, onInputChange, onKeyDown, onSubmit,
                         onClick={() => handleSlashSelected(command.template)}
                       >
                         <Slash size={12} aria-hidden="true" />
+                        <span className="chat-context-menu-name">{command.command}</span>
+                        <small>{command.description}</small>
+                      </button>
+                    ))}
+                    {customSlashMatches.map((command) => (
+                      <button
+                        type="button"
+                        key={command.command}
+                        className="chat-context-menu-item"
+                        role="menuitem"
+                        onClick={() => handleSlashSelected(command.template)}
+                        title="Custom command from .tycode/commands"
+                      >
+                        <Sparkles size={12} aria-hidden="true" />
                         <span className="chat-context-menu-name">{command.command}</span>
                         <small>{command.description}</small>
                       </button>

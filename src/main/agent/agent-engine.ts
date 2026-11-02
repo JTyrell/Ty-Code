@@ -6,6 +6,7 @@ import { buildSystemPrompt, AGENT_TOOLS_DEFINITIONS, TASK_SCOPING_PROTOCOL, getE
 import { ToolExecutor, type ToolExecutionResponse } from './tool-executor';
 import { parseMarkdownSections, persistDocument } from '../services/document-parser';
 import { ChatErrorCardSchema, zDocumentProposed } from '../../shared/types/agent-events';
+import { webSearchApprovalReason, isWebSearchToolCall, WEB_SEARCH_DEGRADE_NOTE } from '../../shared/types/web-search-citations';
 import { getAvailableTools, isToolAvailable, isDocsOnlyWrite } from './tool-registry';
 import { rulesService } from '../services/knowledge/rules-service';
 import { autoMemoryService } from '../services/knowledge/auto-memory-service';
@@ -1455,11 +1456,15 @@ export class AgentEngine {
               ? 'Merge another branch into the active branch.'
               : toolCall.name === 'git_branch' && (action === 'create' || action === 'switch')
                 ? `${action === 'create' ? 'Create and check out' : 'Switch to'} a Git branch.`
-                : mutatingGitCommand
-                  ? 'Run a shell command that changes Git state.'
-                  : destructiveShellCommand
-                    ? 'Run a destructive filesystem or disk command.'
-                    : null;
+                // Prompt E (Step 4): web search is the single networked tool
+                // and is opt-in per invocation — approval is never inherited
+                // from earlier searches or from unrelated approvals.
+                : webSearchApprovalReason(toolCall.name, toolCall.arguments.query ?? toolCall.arguments.q)
+                  ?? (mutatingGitCommand
+                    ? 'Run a shell command that changes Git state.'
+                    : destructiveShellCommand
+                      ? 'Run a destructive filesystem or disk command.'
+                      : null);
           let fileReview: Awaited<ReturnType<SecurityPolicyEngine['previewFileMutation']>> | undefined;
           let approvedExecutionArgs = toolCall.arguments;
           if (toolCall.name === 'run_command') {
@@ -1566,9 +1571,15 @@ export class AgentEngine {
               return;
             }
             if (!decision.approved) {
+              const deniedSearch = isWebSearchToolCall(toolCall.name);
               const output = decision.feedback
                 ? `The user did not approve this operation and sent feedback: ${decision.feedback}. Adjust your approach accordingly; request approval again before retrying any mutating action.`
-                : 'The user did not approve this operation. It was not executed.';
+                // Silent degrade (Prompt E Step 4): a declined search must not
+                // abort or poison the answer — respond from own knowledge,
+                // with no citations and no fabricated sources.
+                : deniedSearch
+                  ? `The user did not approve this web search. It was not executed. ${WEB_SEARCH_DEGRADE_NOTE}`
+                  : 'The user did not approve this operation. It was not executed.';
               logAgentStop('none', `approval_denied_${toolCall.name}`);
               onChunk({ type: 'tool_result', toolResult: { toolCallId: toolCall.id, name: toolCall.name, output, isError: true } });
               messages.push({ role: 'tool', name: toolCall.name, tool_call_id: toolCall.id, content: output });

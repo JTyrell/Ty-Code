@@ -1,8 +1,8 @@
 {
   "phase": "FCC-6",
   "title": "Provable 100% FCC Coverage + Permanent Attribution",
-  "timestamp": "2026-11-02T01:07:04.781Z",
-  "gitCommit": "b689f83a1875abebc213344064e7e996f5ef63cc",
+  "timestamp": "2026-11-02T02:04:04.634Z",
+  "gitCommit": "54d5756883183993dfb72fbc2ea1b4fd1b0bd045",
   "command": "npm run test:fcc-coverage",
   "summary": {
     "totalCapabilities": 12,
@@ -29,7 +29,7 @@
         ],
         "compliantProviders": 55
       },
-      "timestamp": "2026-11-02T01:07:00.009Z"
+      "timestamp": "2026-11-02T02:04:01.677Z"
     },
     {
       "capabilityId": "fcc_cap_02_tos_flag",
@@ -48,7 +48,7 @@
           "blackbox-web"
         ]
       },
-      "timestamp": "2026-11-02T01:07:00.011Z"
+      "timestamp": "2026-11-02T02:04:01.679Z"
     },
     {
       "capabilityId": "fcc_cap_03_subscription_connect",
@@ -67,7 +67,7 @@
           "copilot/o1-preview"
         ]
       },
-      "timestamp": "2026-11-02T01:07:00.848Z"
+      "timestamp": "2026-11-02T02:04:02.088Z"
     },
     {
       "capabilityId": "fcc_cap_04_harness_spawn",
@@ -101,7 +101,7 @@
           "status": "started"
         }
       },
-      "timestamp": "2026-11-02T01:07:04.382Z"
+      "timestamp": "2026-11-02T02:04:04.276Z"
     },
     {
       "capabilityId": "fcc_cap_05_endpoint_roundtrip",
@@ -109,13 +109,13 @@
       "tier": "External Access",
       "status": "PASS",
       "evidence": {
-        "testPort": 54666,
+        "testPort": 54588,
         "httpStatusCode": 200,
-        "responseId": "chatcmpl-04f7a7f4dd1d969ab1ae4350",
+        "responseId": "chatcmpl-920e22ee1a40d8b3cfe591f3",
         "modelUsed": "auto-free",
         "hasMessageContent": true
       },
-      "timestamp": "2026-11-02T01:07:04.427Z"
+      "timestamp": "2026-11-02T02:04:04.313Z"
     },
     {
       "capabilityId": "fcc_cap_06_failover_resume",
@@ -129,7 +129,7 @@
         "turnContinuityPreserved": true,
         "finalResponseLength": 117
       },
-      "timestamp": "2026-11-02T01:07:04.427Z"
+      "timestamp": "2026-11-02T02:04:04.313Z"
     },
     {
       "capabilityId": "fcc_cap_07_savings_meter",
@@ -144,7 +144,7 @@
         "headroomTokens": 950,
         "cacheTokens": 2200
       },
-      "timestamp": "2026-11-02T01:07:04.455Z"
+      "timestamp": "2026-11-02T02:04:04.331Z"
     },
     {
       "capabilityId": "fcc_cap_08_dashboard_fields",
@@ -167,7 +167,7 @@
           "isExhausted": false
         }
       },
-      "timestamp": "2026-11-02T01:07:04.456Z"
+      "timestamp": "2026-11-02T02:04:04.332Z"
     },
     {
       "capabilityId": "fcc_cap_09_connector_module_loads",
@@ -181,7 +181,7 @@
         "rateCapEnforced": true,
         "auditLogsRecorded": 5
       },
-      "timestamp": "2026-11-02T01:07:04.470Z"
+      "timestamp": "2026-11-02T02:04:04.341Z"
     },
     {
       "capabilityId": "fcc_cap_10_session_bridge_contract",
@@ -189,12 +189,12 @@
       "tier": "Browser Seam",
       "status": "PASS",
       "evidence": {
-        "sessionId": "bridge_coverage_1793581624470",
+        "sessionId": "bridge_coverage_1793585044341",
         "eventsStreamed": 20,
         "contractDocumentBytes": 7102,
         "multiplexingVerified": true
       },
-      "timestamp": "2026-11-02T01:07:04.763Z"
+      "timestamp": "2026-11-02T02:04:04.622Z"
     },
     {
       "capabilityId": "fcc_cap_11_tray_present",
@@ -207,9 +207,9 @@
         "quickChatPresent": true,
         "backgroundTasksPresent": true,
         "runInBackgroundPresent": true,
-        "testTaskId": "bg_task_1793581624764_l5alf"
+        "testTaskId": "bg_task_1793585044623_m5ooh"
       },
-      "timestamp": "2026-11-02T01:07:04.764Z"
+      "timestamp": "2026-11-02T02:04:04.623Z"
     },
     {
       "capabilityId": "fcc_cap_12_credit_strings_present",
@@ -238,7 +238,7 @@
         ],
         "allSurfacesIntact": true
       },
-      "timestamp": "2026-11-02T01:07:04.780Z"
+      "timestamp": "2026-11-02T02:04:04.633Z"
     }
   ],
   "prePublishQaAudit": {

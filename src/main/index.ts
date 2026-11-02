@@ -309,6 +309,7 @@ import { registerIndexHandlers } from './ipc/index-handlers';
 import { registerMemoryHandlers } from './ipc/memory-handlers';
 import { registerQuestHandlers } from './ipc/quest-handlers';
 import { registerMcpHandlers } from './ipc/mcp-handlers';
+import { registerCustomCommandHandlers } from './ipc/custom-commands-handlers';
 import { mcpClientService } from './services/mcp-client-service';
 import { runRealSessionMigration } from './services/session/migration-wiring';
 import { unifiedSessionStore } from './services/session/unified-session-store';
@@ -777,6 +778,10 @@ function registerIpcHandlers(): void {
   // JSON-RPC handshakes; connections are only opened on user intent (panel
   // subscribe / enable / add), and children are torn down on quit.
   registerMcpHandlers({ isTrustedSender: isTrustedExtensionFrame });
+
+  // Prompt E (Step 3): custom commands (.tycode/commands/*.md, project + user
+  // scopes) with main-side $ARGUMENTS/{name:default} substitution.
+  registerCustomCommandHandlers({ isTrustedSender: isTrustedExtensionFrame });
 
   // File > Open File… and File > Save As… are registry rows whose handlers live
   // in the renderer, but a renderer cannot open a native picker. The window is

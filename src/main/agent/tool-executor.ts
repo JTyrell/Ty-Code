@@ -1157,8 +1157,11 @@ export class ToolExecutor {
       };
     } catch (err: unknown) {
       const errorMsg = err instanceof Error ? err.message : String(err);
+      // Prompt E (Step 4): search failures degrade to plain no-search answers —
+      // the loop must keep going; the model is told to drop citations entirely
+      // rather than invent sources for a search that never happened.
       return {
-        output: `Failed to execute web search via Brave: ${errorMsg}`,
+        output: `Failed to execute web search via Brave: ${errorMsg}\n\nDegrade gracefully: answer from your own knowledge, state plainly that live results were unavailable, and do NOT invent citations or a Sources section.`,
         isError: true
       };
     }

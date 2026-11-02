@@ -1,14 +1,14 @@
 {
   "phase": "RealConnect 1",
   "title": "Kill Mock Server + Enforce Streaming Truth",
-  "timestamp": "2026-11-01T22:25:55.795Z",
-  "epoch": 1793571955,
-  "gitCommit": "b689f83a1875abebc213344064e7e996f5ef63cc",
+  "timestamp": "2026-11-02T02:03:03.158Z",
+  "epoch": 1793584983,
+  "gitCommit": "54d5756883183993dfb72fbc2ea1b4fd1b0bd045",
   "command": "node scripts/no-fixture-replies.mjs",
   "status": "VERIFIED_PASS",
   "grepAudit": {
     "targetDirectory": "src/",
-    "scannedFilesCount": 508,
+    "scannedFilesCount": 541,
     "queries": [
       {
         "query": "FCC proxy response streaming",

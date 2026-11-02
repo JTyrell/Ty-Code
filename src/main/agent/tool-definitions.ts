@@ -41,7 +41,7 @@ export const BRAVE_WEB_SEARCH_TOOL: AgentToolSchema = {
   function: {
     name: 'brave_web_search',
     description:
-      'Search the web for up-to-date documentation, APIs, error solutions, or library guides using an isolated, ephemeral Brave Browser Guest session. Extracts the top 3 results and returns their titles, URLs, and text snippets.',
+      'Search the web for up-to-date documentation, APIs, error solutions, or library guides using an isolated, ephemeral Brave Browser Guest session. Extracts the top 3 results and returns their titles, URLs, and text snippets. This tool leaves the machine: EVERY invocation asks the user for explicit approval. When your answer uses the results, cite inline with [1]/[2]/[3] and finish with a Sources footer. If the search is denied or fails, answer from your own knowledge without citations.',
     parameters: {
       type: 'object',
       properties: {

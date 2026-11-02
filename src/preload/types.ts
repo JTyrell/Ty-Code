@@ -1803,6 +1803,14 @@ export interface ElectronAPI {
     liveTools: () => Promise<IpcResponse<Array<{ serverId: string; tool: string }>>>;
     onEvent: (callback: (event: import('../shared/types/mcp').McpEvent) => void) => () => void;
   };
+  /**
+   * Prompt E (Step 3): custom commands authored as Markdown in
+   * `.tycode/commands/*.md` (project) and `~/.tycode/commands` (user).
+   */
+  customCommands?: {
+    list: (workspacePath: string) => Promise<IpcResponse<import('../shared/types/custom-commands').CustomCommand[]>>;
+    render: (request: import('../shared/types/custom-commands').CustomCommandRenderRequest) => Promise<IpcResponse<import('../shared/types/custom-commands').CustomCommandRenderResult>>;
+  };
   searchExtensions: (query: string) => Promise<IpcResponse<ExtensionMetadata[]>>;
   getExtensionDetails: (namespace: string, name: string) => Promise<IpcResponse<Record<string, unknown>>>;
   getAvailableSkills: (workspacePath: string) => Promise<IpcResponse<SkillDefinition[]>>;

@@ -35,6 +35,7 @@ import { ChatInput } from './chat/ChatInput';
 import { ContextMeter } from './chat/ContextMeter';
 import { ReliabilityAdvisorCard } from './chat/ReliabilityAdvisorCard';
 import { useChatInputStore } from '../state/chat-input-store';
+import { useExtensionPromptStore } from '../state/extension-prompt-store';
 import { toast } from '../state/toast-store';
 import { ChatMessageItem } from './ChatMessage';
 import { ChatMessageList, type ChatMessageListHandle } from './chat/ChatMessageList';
@@ -1170,6 +1171,58 @@ export const ChatSidecar: React.FC = () => {
           if (!res.success) toast.error('Could not draft quest', res.error || 'Quest drafting failed.');
         } catch (err: unknown) {
           toast.error('Could not draft quest', err instanceof Error ? err.message : String(err));
+        }
+      })();
+      return;
+    }
+    // Prompt E (Step 3): custom commands from .tycode/commands/*.md. The
+    // template renders main-side (identical substitution to the palette);
+    // the result goes through the ordinary send path. Missing required
+    // arguments are collected in the modal prompt, defaults prefilled.
+    const customMatch = /^\/([a-z0-9][a-z0-9._-]*)(?:\s+([\s\S]*))?$/.exec(rawInput);
+    const BUILTIN_SLASH = new Set(['sync', 'quest', 'review', 'test', 'refactor']);
+    if (customMatch && !BUILTIN_SLASH.has(customMatch[1]) && window.electronAPI?.customCommands && workspacePath) {
+      const commandName = customMatch[1];
+      const restArgs = (customMatch[2] ?? '').trim();
+      historyIndexRef.current = -1;
+      useChatInputStore.getState().clearAttachments();
+      setInput('');
+      void (async () => {
+        try {
+          const listRes = await window.electronAPI!.customCommands!.list(workspacePath);
+          const command = listRes.success ? (listRes.data ?? []).find((c) => c.name === commandName) : undefined;
+          if (!command) {
+            // Not a custom command after all: fall through as plain text so
+            // an unknown /token is never silently swallowed.
+            sendPrompt(rawInput);
+            return;
+          }
+          const provided: Record<string, string> = {};
+          if (command.args.length > 0 && !restArgs) {
+            for (const arg of command.args) {
+              const typed = await useExtensionPromptStore.getState().requestInput(
+                arg.description || `Value for {${arg.name}}:`,
+                arg.defaultValue ?? '',
+                `/${commandName} — ${arg.name}`
+              );
+              if (typed === undefined) return; // cancelled: drop the invocation
+              if (typed.trim()) provided[arg.name] = typed.trim();
+            }
+          }
+          const renderRes = await window.electronAPI!.customCommands!.render({
+            workspacePath,
+            name: commandName,
+            rawArgs: restArgs,
+            ...(Object.keys(provided).length > 0 ? { args: provided } : {})
+          });
+          if (!renderRes.success || !renderRes.data) {
+            toast.error('Command failed', renderRes.error || `Could not render /${commandName}.`);
+            return;
+          }
+          rememberPrompt(rawInput);
+          sendPrompt(renderRes.data.prompt);
+        } catch (err: unknown) {
+          toast.error('Command failed', err instanceof Error ? err.message : String(err));
         }
       })();
       return;

@@ -20,6 +20,7 @@ import { INDEX_CHANNELS } from '../shared/types/semantic';
 import { MEMORY_CHANNELS } from '../shared/types/memory';
 import { QUEST_CHANNELS } from '../shared/types/quest';
 import { MCP_CHANNELS } from '../shared/types/mcp';
+import { CUSTOM_COMMAND_CHANNELS } from '../shared/types/custom-commands';
 import type { ReliabilityAdvisorPayload, ReliabilityHealthSnapshot } from '../shared/types/agent-events';
 
 // Echo suppression (Prompt: Break the Model-Sync Echo Loop): each renderer
@@ -680,6 +681,13 @@ const api: ElectronAPI = {
       ipcRenderer.on(MCP_CHANNELS.events, listener);
       return () => { ipcRenderer.removeListener(MCP_CHANNELS.events, listener); };
     }
+  },
+  // Prompt E (Step 3): custom commands (.tycode/commands/*.md). Rendering is
+  // main-side so the / menu, palette, and chat submit all substitute identically.
+  customCommands: {
+    list: (workspacePath: string) =>
+      ipcRenderer.invoke(CUSTOM_COMMAND_CHANNELS.list, { workspacePath }),
+    render: (request: any) => ipcRenderer.invoke(CUSTOM_COMMAND_CHANNELS.render, request)
   },
   searchExtensions: (query: string) => ipcRenderer.invoke('extensions:search', query),
   getExtensionDetails: (namespace: string, name: string) => ipcRenderer.invoke('extensions:details', { namespace, name }),
