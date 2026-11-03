@@ -2854,7 +2854,7 @@ function registerIpcHandlers(): void {
     ipcMain.handle('dev:storm:set-active-model', async (event) => {
       if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
       for (let i = 0; i < 100; i++) {
-        ProviderGateway.setActiveModel({ providerId: 'ty-code-free', modelId: 'google/gemma-4-31b-it:free', isAutoMode: false });
+        ProviderGateway.setActiveModel({ providerId: 'ty-code-free', modelId: 'google/gemma-4-26b-a4b-it:free', isAutoMode: false });
       }
       return { success: true, data: { calls: 100, stormDetected: hasSyncLoopStormFired() } };
     });
@@ -5200,11 +5200,11 @@ app.whenReady().then(async () => {
         const res = await getSettings();
         const lock = res.success && res.data?.modelLock
           ? res.data.modelLock
-          : { providerId: 'ty-code-free', modelId: 'google/gemma-4-31b-it:free', mode: 'resilient' as const };
+          : { providerId: 'ty-code-free', modelId: 'google/gemma-4-26b-a4b-it:free', mode: 'resilient' as const };
         seedActiveConfig(lock.providerId, lock.modelId, lock.mode);
         seedModelLock(lock);
       } catch {
-        const lock = { providerId: 'ty-code-free', modelId: 'google/gemma-4-31b-it:free', mode: 'resilient' as const };
+        const lock = { providerId: 'ty-code-free', modelId: 'google/gemma-4-26b-a4b-it:free', mode: 'resilient' as const };
         seedActiveConfig(lock.providerId, lock.modelId, lock.mode);
         seedModelLock(lock);
       }

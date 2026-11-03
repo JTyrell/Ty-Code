@@ -47,7 +47,7 @@ import type {
 import { ReliabilityAdvisorPayloadSchema, buildAdvisorActions } from '../../../shared/types/agent-events';
 
 const TY_CODE_FREE_PROVIDER_ID = 'ty-code-free';
-const TY_CODE_FREE_MODEL_ID = 'google/gemma-4-31b-it:free'; // mirrors provider-gateway consts (not exported)
+const TY_CODE_FREE_MODEL_ID = 'google/gemma-4-26b-a4b-it:free'; // mirrors provider-gateway consts (not exported)
 const MAX_COOLDOWN_WAIT_MS = 1_200;
 const COOLDOWN_GRACE_MS = 350;
 const MAX_TRACKED_TASKS = 100;

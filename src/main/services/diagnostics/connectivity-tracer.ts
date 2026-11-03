@@ -53,11 +53,11 @@ export const CANNED_TRACE_PROMPT = 'Reply with exactly: TRACE-OK';
  * openai/gpt-oss-20b is the current free-tier fast probe target.
  */
 const PROBE_MODEL_MATRIX: Record<string, string> = {
-  'ty-code-free': 'google/gemma-4-31b-it:free',
+  'ty-code-free': 'google/gemma-4-26b-a4b-it:free',
   openkilo: 'kilo-auto/free',
   'openkilo-free': 'kilo-auto/free',
-  openrouter: 'google/gemma-4-31b-it:free',
-  'openrouter-free': 'google/gemma-4-31b-it:free',
+  openrouter: 'google/gemma-4-26b-a4b-it:free',
+  'openrouter-free': 'google/gemma-4-26b-a4b-it:free',
   groq: 'openai/gpt-oss-20b',
   'groq-free': 'openai/gpt-oss-20b'
 };
@@ -68,7 +68,7 @@ function resolveProbeModel(providerId: string): string {
   const registry =
     freeProviderRegistry.getProvider(providerId) ||
     freeProviderRegistry.getProvider(`${providerId}-free`);
-  return registry?.best_free_models?.[0] || 'google/gemma-4-31b-it:free';
+  return registry?.best_free_models?.[0] || 'google/gemma-4-26b-a4b-it:free';
 }
 
 export const HOP_DEFINITIONS: Record<HopId, { title: string; layer: string; description: string }> = {

@@ -34,15 +34,45 @@ interface CanvasStoreState {
   nodes: CanvasNode[];
   activePlatform: CanvasPlatform;
   selectedNodeId: string | null;
+  /**
+   * Full multi-select set (Prompt 3, Step 2). `selectedNodeId` stays the
+   * "primary" node (last added) so the single-node Inspector keeps working;
+   * `selectedNodeIds` is the ordered set the bbox / multi-inspector read.
+   */
+  selectedNodeIds: string[];
+  /**
+   * Session-only editing aids (Prompt 3, Step 4). Deliberately NOT node fields
+   * and NOT part of the synced/persisted document — closing the window drops
+   * them. Locked nodes are unselectable; hidden nodes render ghosted in the
+   * layer tree only.
+   */
+  lockedIds: string[];
+  hiddenIds: string[];
   hydrated: boolean;
+  /** Viewport chrome + transform, persisted per document and NOT synced to main. */
+  viewport: CanvasViewportPersist;
 
   addNode: (input: AddNodeInput) => string | null;
   updateNodeProps: (id: string, patch: Record<string, CanvasPropValue>) => void;
   removeNode: (id: string) => void;
+  /**
+   * Replace the whole node tree. Used by the Prompt 3 history stack, whose
+   * commands are pure `nodes -> nodes` transforms: applying / inverting a
+   * command is a single atomic tree swap, so undo restores the EXACT prior
+   * state without replaying individual field writes.
+   */
+  replaceNodes: (nodes: CanvasNode[]) => void;
   setPlatform: (platform: CanvasPlatform) => void;
   clearCanvas: () => void;
   selectNode: (id: string | null) => void;
+  setSelection: (ids: string[]) => void;
+  toggleSelect: (id: string) => void;
+  clearSelection: () => void;
+  selectAllTopLevel: () => void;
+  toggleLock: (id: string) => void;
+  toggleHide: (id: string) => void;
   applyRemoteSnapshot: (snapshot: CanvasSnapshotData, onlyIfUnhydrated?: boolean) => void;
+  setViewport: (patch: Partial<CanvasViewportPersist>) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -164,6 +194,73 @@ export const nodeDefaultSize = (type: string): { width: number; height: number }
 };
 
 // ---------------------------------------------------------------------------
+// Viewport persistence (Prompt 1 Step 4) — per canvas document, UI-local.
+// Kept in the store but deliberately excluded from the node-sync push (see
+// schedulePush): panning / zooming must not spam the main CanvasSyncManager.
+// ---------------------------------------------------------------------------
+
+export interface CanvasViewportPersist {
+  scale: number;
+  tx: number;
+  ty: number;
+  grid: boolean;
+  rulers: boolean;
+  minimap: boolean;
+  /** True once the user has actually moved the view, so we restore instead of fit. */
+  saved: boolean;
+}
+
+const VIEWPORT_STORAGE_KEY = 'tycode.canvas.viewport';
+
+const DEFAULT_VIEWPORT: CanvasViewportPersist = {
+  scale: 1,
+  tx: 0,
+  ty: 0,
+  grid: true,
+  rulers: true,
+  minimap: true,
+  saved: false
+};
+
+const loadViewport = (): CanvasViewportPersist => {
+  try {
+    if (typeof localStorage === 'undefined') return { ...DEFAULT_VIEWPORT };
+    const raw = localStorage.getItem(VIEWPORT_STORAGE_KEY);
+    if (!raw) return { ...DEFAULT_VIEWPORT };
+    const parsed = JSON.parse(raw) as Partial<CanvasViewportPersist>;
+    return {
+      scale: typeof parsed.scale === 'number' ? parsed.scale : 1,
+      tx: typeof parsed.tx === 'number' ? parsed.tx : 0,
+      ty: typeof parsed.ty === 'number' ? parsed.ty : 0,
+      grid: typeof parsed.grid === 'boolean' ? parsed.grid : true,
+      rulers: typeof parsed.rulers === 'boolean' ? parsed.rulers : true,
+      minimap: typeof parsed.minimap === 'boolean' ? parsed.minimap : true,
+      saved: parsed.saved === true
+    };
+  } catch {
+    return { ...DEFAULT_VIEWPORT };
+  }
+};
+
+let viewportSaveTimer: ReturnType<typeof setTimeout> | null = null;
+const persistViewport = (value: CanvasViewportPersist): void => {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    if (viewportSaveTimer) clearTimeout(viewportSaveTimer);
+    viewportSaveTimer = setTimeout(() => {
+      viewportSaveTimer = null;
+      try {
+        localStorage.setItem(VIEWPORT_STORAGE_KEY, JSON.stringify(value));
+      } catch {
+        /* storage full or unavailable — non-fatal, view simply re-fits next open */
+      }
+    }, 250);
+  } catch {
+    /* ignore */
+  }
+};
+
+// ---------------------------------------------------------------------------
 // Store
 // ---------------------------------------------------------------------------
 
@@ -171,7 +268,11 @@ export const useCanvasStore = create<CanvasStoreState>((set, get) => ({
   nodes: [],
   activePlatform: 'react',
   selectedNodeId: null,
+  selectedNodeIds: [],
+  lockedIds: [],
+  hiddenIds: [],
   hydrated: false,
+  viewport: loadViewport(),
 
   addNode: (input) => {
     const state = get();
@@ -204,7 +305,8 @@ export const useCanvasStore = create<CanvasStoreState>((set, get) => ({
       nodes: parentId
         ? insertIntoParent(state.nodes, parentId, node)
         : [...state.nodes, node],
-      selectedNodeId: id
+      selectedNodeId: id,
+      selectedNodeIds: [id]
     });
     return id;
   },
@@ -213,11 +315,38 @@ export const useCanvasStore = create<CanvasStoreState>((set, get) => ({
     set({ nodes: updateNodeRecursive(get().nodes, id, patch) });
   },
 
+  replaceNodes: (nodes) => {
+    // Drop any selection / lock / hide that pointed at a node no longer present
+    // so the aids can never reference a stale id after an undo / paste.
+    const present = new Set<string>();
+    const collect = (list: CanvasNode[]): void => {
+      for (const n of list) {
+        present.add(n.id);
+        collect(n.children);
+      }
+    };
+    collect(nodes);
+    const state = get();
+    const selectedNodeIds = state.selectedNodeIds.filter((id) => present.has(id));
+    set({
+      nodes,
+      selectedNodeIds,
+      selectedNodeId: selectedNodeIds.length
+        ? selectedNodeIds[selectedNodeIds.length - 1]
+        : null,
+      lockedIds: state.lockedIds.filter((id) => present.has(id)),
+      hiddenIds: state.hiddenIds.filter((id) => present.has(id))
+    });
+  },
+
   removeNode: (id) => {
     const state = get();
     set({
       nodes: removeNodeRecursive(state.nodes, id),
-      selectedNodeId: state.selectedNodeId === id ? null : state.selectedNodeId
+      selectedNodeId: state.selectedNodeId === id ? null : state.selectedNodeId,
+      selectedNodeIds: state.selectedNodeIds.filter((n) => n !== id),
+      lockedIds: state.lockedIds.filter((n) => n !== id),
+      hiddenIds: state.hiddenIds.filter((n) => n !== id)
     });
   },
 
@@ -230,11 +359,60 @@ export const useCanvasStore = create<CanvasStoreState>((set, get) => ({
   },
 
   clearCanvas: () => {
-    set({ nodes: [], selectedNodeId: null });
+    set({ nodes: [], selectedNodeId: null, selectedNodeIds: [], lockedIds: [], hiddenIds: [] });
   },
 
   selectNode: (id) => {
-    set({ selectedNodeId: id });
+    // A locked node is unselectable (Step 4). null always clears.
+    if (id !== null && get().lockedIds.includes(id)) {
+      set({ selectedNodeId: null, selectedNodeIds: [] });
+      return;
+    }
+    set({ selectedNodeId: id, selectedNodeIds: id ? [id] : [] });
+  },
+
+  setSelection: (ids) => {
+    const allowed = ids.filter((id) => !get().lockedIds.includes(id));
+    set({ selectedNodeIds: allowed, selectedNodeId: allowed.length ? allowed[allowed.length - 1] : null });
+  },
+
+  toggleSelect: (id) => {
+    const state = get();
+    if (state.lockedIds.includes(id)) return;
+    if (state.selectedNodeIds.includes(id)) {
+      const next = state.selectedNodeIds.filter((n) => n !== id);
+      set({ selectedNodeIds: next, selectedNodeId: next.length ? next[next.length - 1] : null });
+    } else {
+      const next = [...state.selectedNodeIds, id];
+      set({ selectedNodeIds: next, selectedNodeId: id });
+    }
+  },
+
+  clearSelection: () => set({ selectedNodeIds: [], selectedNodeId: null }),
+
+  selectAllTopLevel: () => {
+    const state = get();
+    const ids = state.nodes.filter((n) => !state.lockedIds.includes(n.id)).map((n) => n.id);
+    set({ selectedNodeIds: ids, selectedNodeId: ids.length ? ids[ids.length - 1] : null });
+  },
+
+  toggleLock: (id) => {
+    const state = get();
+    const locked = state.lockedIds.includes(id);
+    const lockedIds = locked ? state.lockedIds.filter((n) => n !== id) : [...state.lockedIds, id];
+    // Locking drops the node from any selection (locked = unselectable).
+    const selectedNodeIds = locked ? state.selectedNodeIds : state.selectedNodeIds.filter((n) => n !== id);
+    set({
+      lockedIds,
+      selectedNodeIds,
+      selectedNodeId: selectedNodeIds.length ? selectedNodeIds[selectedNodeIds.length - 1] : null
+    });
+  },
+
+  toggleHide: (id) => {
+    const state = get();
+    const hidden = state.hiddenIds.includes(id);
+    set({ hiddenIds: hidden ? state.hiddenIds.filter((n) => n !== id) : [...state.hiddenIds, id] });
   },
 
   applyRemoteSnapshot: (snapshot, onlyIfUnhydrated = false) => {
@@ -251,8 +429,15 @@ export const useCanvasStore = create<CanvasStoreState>((set, get) => ({
       nodes,
       activePlatform: platform,
       hydrated: true,
-      selectedNodeId: stillExists ? state.selectedNodeId : null
+      selectedNodeId: stillExists ? state.selectedNodeId : null,
+      selectedNodeIds: stillExists ? state.selectedNodeIds : []
     });
+  },
+
+  setViewport: (patch) => {
+    const next = { ...get().viewport, ...patch };
+    set({ viewport: next });
+    persistViewport(next);
   }
 }));
 
@@ -286,6 +471,11 @@ const schedulePush = (): void => {
   if (isRemoteApply) return;
   const state = useCanvasStore.getState();
   if (!state.hydrated) return;
+  // Viewport-only changes must not push the node tree; only nodes / platform
+  // are part of the synced document. Skip when that signature is unchanged.
+  const signature = `${state.activePlatform}|${state.nodes.length}|${nodesDeepId(state.nodes)}`;
+  if (signature === lastPushSignature) return;
+  lastPushSignature = signature;
   if (pushTimer) clearTimeout(pushTimer);
   pushTimer = setTimeout(() => {
     pushTimer = null;
@@ -298,6 +488,23 @@ const schedulePush = (): void => {
       })
       .catch((err: unknown) => console.warn('Failed to push canvas state:', err));
   }, 300);
+};
+
+let lastPushSignature = '';
+
+// A cheap structural id so moving a node's x/y (which changes props, not the
+// node set) still counts as a real edit and pushes, while a pure viewport change
+// does not.
+const nodesDeepId = (nodes: CanvasNode[]): string => {
+  let acc = '';
+  const walk = (list: CanvasNode[]): void => {
+    for (const n of list) {
+      acc += `${n.id}:${n.props.x},${n.props.y},${n.props.width},${n.props.height};`;
+      if (n.children.length) walk(n.children);
+    }
+  };
+  walk(nodes);
+  return acc;
 };
 
 // Push every local mutation (debounced). Remote applies set the guard above so

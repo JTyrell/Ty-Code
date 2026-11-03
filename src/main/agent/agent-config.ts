@@ -51,7 +51,7 @@ export interface ActiveProviderConfigSummary {
 }
 
 const TY_CODE_FREE_PROVIDER = 'ty-code-free';
-export const TY_CODE_FREE_MODEL = 'google/gemma-4-31b-it:free';
+export const TY_CODE_FREE_MODEL = 'google/gemma-4-26b-a4b-it:free';
 
 /** Providers that route without any stored user credential. */
 const ANONYMOUS_PROVIDERS = new Set([

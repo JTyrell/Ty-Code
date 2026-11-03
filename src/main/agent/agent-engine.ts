@@ -1191,7 +1191,7 @@ export class AgentEngine {
               } else if (activeProvider === 'groq') {
                 activeModel = 'openai/gpt-oss-120b';
               } else {
-                activeModel = 'google/gemma-4-31b-it:free';
+                activeModel = 'google/gemma-4-26b-a4b-it:free';
               }
             }
           }

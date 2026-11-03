@@ -74,6 +74,7 @@ import { UsageLedgerView } from './dashboard/UsageLedgerView';
 import { CorrectionsManager } from './settings/CorrectionsManager';
 import { RulesManager } from './settings/RulesManager';
 import { McpSettingsPanel } from './settings/McpSettingsPanel';
+import { CanvasSettingsTab } from './settings/CanvasSettingsTab';
 import { MemoryManager } from './settings/MemoryManager';
 import { PanelBoundary, RenderStormWatch } from './settings/PanelBoundary';
 import { trackRenders } from '../dev/render-storm';
@@ -82,7 +83,7 @@ import type { StoredKeySummary, CustomProviderConfig } from '../../../shared/typ
 import { copyTextOrNotify } from '../lib/clipboard';
 
 type UpdateChannelPreference = 'stable' | 'beta' | 'nightly';
-type SettingsTab = 'apikeys' | 'providers' | 'byok' | 'usage' | 'openkilo' | 'opencode' | 'integrations' | 'orchestration' | 'fcc' | 'rules' | 'mcp' | 'endpoints' | 'params' | 'terminal' | 'lsp' | 'editor' | 'shortcuts' | 'extensions' | 'security' | 'privacy' | 'diagnostics';
+type SettingsTab = 'apikeys' | 'providers' | 'byok' | 'usage' | 'openkilo' | 'opencode' | 'integrations' | 'orchestration' | 'fcc' | 'rules' | 'mcp' | 'endpoints' | 'params' | 'terminal' | 'lsp' | 'editor' | 'canvas' | 'shortcuts' | 'extensions' | 'security' | 'privacy' | 'diagnostics';
 
 const DEFAULT_SECURITY_SETTINGS: SecurityPolicySettings = {
   terminalPolicy: 'restricted',
@@ -1204,6 +1205,14 @@ export const SettingsModal: React.FC = () => {
             <Sliders size={13} />Editor Polish
           </button>
           <button
+            className={activeTab === 'canvas' ? 'is-active' : ''}
+            onClick={() => setActiveTab('canvas')}
+            id="tab-btn-canvas"
+            data-tab="canvas"
+          >
+            <Square size={13} />Canvas
+          </button>
+          <button
             className={activeTab === 'shortcuts' ? 'is-active' : ''}
             onClick={() => setActiveTab('shortcuts')}
             id="tab-btn-shortcuts"
@@ -2254,6 +2263,9 @@ export const SettingsModal: React.FC = () => {
               </div>
             </div>
           ))}
+
+          {/* Canvas Tab: collapsible/resizable panels + live canvas settings */}
+          {renderTabPanel(activeTab, 'canvas', <CanvasSettingsTab />)}
 
           {/* Keybindings Tab */}
           {renderTabPanel(activeTab, 'shortcuts', (

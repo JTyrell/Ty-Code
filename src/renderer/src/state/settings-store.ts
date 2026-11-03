@@ -42,7 +42,7 @@ interface SettingsStoreState {
 }
 
 export const TY_CODE_FREE_PROVIDER = 'ty-code-free';
-export const TY_CODE_FREE_MODEL = 'google/gemma-4-31b-it:free';
+export const TY_CODE_FREE_MODEL = 'google/gemma-4-26b-a4b-it:free';
 export const DEFAULT_LOCK_MODE: ModelLockMode = 'resilient';
 
 const DEFAULTS = {

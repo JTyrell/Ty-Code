@@ -148,17 +148,26 @@
 .chat-header-top { justify-content: space-between; gap: 8px; min-height: 22px; overflow: hidden; }
 /* Segmented tab group: one recessed track with a floating active pill. */
 .chat-header-tabs {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  min-width: 0;
   gap: 2px;
   padding: 2px;
   background: var(--bg-primary);
   border: var(--chat-hairline);
   border-radius: var(--chat-radius-pill);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.18);
+  /* Shrink instead of hard-clipping labels; scroll the track when it overflows. */
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
+.chat-header-tabs::-webkit-scrollbar { display: none; }
 .chat-header-tab {
+  position: relative;
   min-width: 0;
-  min-height: 22px;
-  padding: 2px 10px;
+  min-height: 24px;
+  padding: 2px 9px;
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -167,22 +176,55 @@
   color: var(--text-muted);
   background: transparent;
   font-size: 11px;
-  font-weight: 500;
+  font-weight: 550;
   white-space: nowrap;
   cursor: pointer;
-  transition: color var(--chat-dur) var(--chat-ease), background-color var(--chat-dur) var(--chat-ease);
+  transition:
+    color var(--chat-dur) var(--chat-ease),
+    background-color var(--chat-dur) var(--chat-ease),
+    box-shadow var(--chat-dur) var(--chat-ease);
 }
+.chat-header-tab > span { overflow: hidden; text-overflow: ellipsis; }
 .chat-header-tab:hover:not(.is-active) { color: var(--text-secondary); background: var(--surface-2); }
-.chat-header-tab > svg { flex: 0 0 auto; color: currentColor; }
+.chat-header-tab > svg { flex: 0 0 auto; color: currentColor; opacity: 0.88; transition: opacity var(--chat-dur) var(--chat-ease); }
 .chat-header-tab.is-active {
   color: var(--text-primary);
   background: var(--surface-3);
   font-weight: 650;
-  box-shadow: var(--chat-shadow-xs);
+  /* Soft elevation plus a restrained accent hairline so the active pill reads
+     as intentionally selected rather than just a grey blob. */
+  box-shadow:
+    var(--chat-shadow-xs),
+    inset 0 0 0 1px color-mix(in srgb, var(--accent-primary) 20%, transparent);
 }
+.chat-header-tab.is-active > svg { opacity: 1; }
 .chat-header-tab.is-active:first-child > svg { color: var(--accent-primary); }
 .chat-header-tab.is-active:nth-child(2) > svg { color: var(--chat-pair-accent); }
-.chat-pair-active-dot { width: 6px; height: 6px; flex: 0 0 auto; border-radius: 50%; background: var(--chat-pair-accent); }
+/* Tasteful keyboard-focus ring that sits inside the pill. Overrides the global
+   offset outline (which collides with the recessed track edge) via a more
+   specific !important rule, while keeping a visible focus indicator. */
+.chat-header-tabs .chat-header-tab:focus-visible {
+  outline: none !important;
+  box-shadow:
+    var(--chat-shadow-xs),
+    inset 0 0 0 2px color-mix(in srgb, var(--accent-cyan) 70%, transparent) !important;
+}
+.chat-pair-active-dot { width: 6px; height: 6px; flex: 0 0 auto; border-radius: 50%; background: var(--chat-pair-accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--chat-pair-accent) 25%, transparent); }
+/* De-crowd narrow panels: collapse the seven tabs to icon-only. Labels are the
+   only class-less spans, so :not([class]) hides just the text while the pair /
+   session status dots (which carry classes) reposition as corner badges. */
+@container chat-panel (max-width: 620px) {
+  .chat-header-tab > span:not([class]) { display: none; }
+  .chat-header-tab { gap: 0; padding-inline: 8px; }
+  .chat-header-tab .chat-pair-active-dot,
+  .chat-header-tab .chat-header-tab-dot {
+    position: absolute;
+    top: 3px;
+    right: 4px;
+    width: 5px;
+    height: 5px;
+  }
+}
 .chat-header-actions { flex: 0 1 auto; min-width: 0; justify-content: flex-end; gap: 6px; }
 .chat-header-controls {
   min-width: 0;

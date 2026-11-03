@@ -121,17 +121,17 @@ export const FALLBACK_CATALOG: Record<ModelTier, RankedModelCandidate[]> = {
       selectionReason: 'Exceptional code generation and component authoring'
     },
     {
-      modelId: 'poolside/laguna-s-2.1:free',
-      modelName: 'Poolside Laguna S (Kilo Gateway)',
-      providerId: 'openkilo-free',
-      providerName: 'OpenKilo',
+      modelId: 'google/gemma-4-26b-a4b-it:free',
+      modelName: 'Gemma 4 26B A4B (Free)',
+      providerId: 'openrouter-free',
+      providerName: 'OpenRouter',
       tier: 'tier_a_coding',
       isFree: true,
       latencyMs: 0,
       healthScore: 1.0,
       isRateLimited: false,
       compositeRankScore: 180,
-      selectionReason: 'Massive 262K context code specialist'
+      selectionReason: 'Healthy Gemma generalist (default free route)'
     },
     {
       modelId: 'google/gemma-4-31b-it:free',
@@ -190,8 +190,8 @@ export const FALLBACK_CATALOG: Record<ModelTier, RankedModelCandidate[]> = {
       selectionReason: 'Sub-second ultra-fast execution on Groq LPUs'
     },
     {
-      modelId: 'minimax/minimax-m3.1-flash:free',
-      modelName: 'MiniMax M3.1 Flash (Free)',
+      modelId: 'nvidia/nemotron-3.5-lightning:free',
+      modelName: 'Nemotron 3.5 Lightning (Free)',
       providerId: 'openrouter-free',
       providerName: 'OpenRouter',
       tier: 'tier_c_fast',
@@ -200,7 +200,7 @@ export const FALLBACK_CATALOG: Record<ModelTier, RankedModelCandidate[]> = {
       healthScore: 1.0,
       isRateLimited: false,
       compositeRankScore: 195,
-      selectionReason: 'Ultra-responsive flash model with 1M context'
+      selectionReason: 'Ultra-responsive lightning model with long context'
     }
   ]
 };

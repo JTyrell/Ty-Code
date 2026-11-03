@@ -550,7 +550,7 @@ export class CanvasAgentEngine {
     }
 
     let provider = 'openrouter';
-    let model = 'google/gemma-4-31b-it:free';
+    let model = 'google/gemma-4-26b-a4b-it:free';
     try {
       const { ProviderGateway } = await import('../providers/provider-gateway');
       const active = typeof ProviderGateway.getActiveModel === 'function' ? ProviderGateway.getActiveModel() : null;
@@ -645,7 +645,7 @@ export class CanvasAgentEngine {
           });
         }
         try {
-          response = await this.callGateway('ty-code-free', 'google/gemma-4-31b-it:free', messages, onToken, opts.abortSignal);
+          response = await this.callGateway('ty-code-free', 'google/gemma-4-26b-a4b-it:free', messages, onToken, opts.abortSignal);
         } catch (fallbackErr: unknown) {
           const fbError = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
           return { ok: false, platform, error: `Canvas generation failed: ${fbError}` };

@@ -11,7 +11,7 @@
  * the canvas-store auto-sync, so the main IDE window stays in lockstep.
  */
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { useWorkspaceSessionStore } from '../../state/workspace-session-store';
 import { copyTextOrNotify } from '../../lib/clipboard';
 import {
@@ -48,16 +48,36 @@ import {
   nodeDefaultSize,
   useCanvasStore
 } from '../../state/canvas-store';
-import type { CanvasNode, CanvasPlatform, CanvasPropValue } from '../../state/canvas-store';
+import type { CanvasNode, CanvasPlatform, CanvasPropValue, CanvasViewportPersist } from '../../state/canvas-store';
+import { CanvasViewport, snapToGrid, pickTickStep, ZOOM_PRESETS } from './canvas-viewport';
+import type { CanvasBox } from './canvas-viewport';
 import { extractImageCss } from '../../utils/image-to-css';
 import type { ImageCssResult } from '../../utils/image-to-css';
 import { WorkspaceGate } from '../common/WorkspaceGate';
 import { SessionPresenceStrip } from '../common/SessionPresenceStrip';
+import { registerContextContributor, registerRendererCommands } from '../../lib/command-runtime';
 import { useWorkspaceStore } from '../../state/workspace-store';
 import { useWorkspaceEditStore } from '../../state/workspace-edit-store';
 import { toast } from '../../state/toast-store';
 import { handleAutoAppliedTransaction } from '../../services/workspace-edit-commands';
 import type { DesignProfile, DesignComponent } from '../../../../preload/types';
+import {
+  useCanvasLayoutStore,
+  PANEL_MIN_WIDTH,
+  PANEL_MAX_WIDTH,
+  selectLeftWidth,
+  selectRightWidth,
+  selectLeftCollapsed,
+  selectRightCollapsed,
+  selectFocusMode,
+  selectLeftSections,
+  selectRightSections
+} from '../../state/canvas-layout-store';
+import type { CanvasPanelId, CanvasSectionId } from '../../state/canvas-layout-store';
+import { CollapsedRail, PanelHeaderBar, ResizeHandle, SectionShell } from './canvas-panel';
+import type { RailItem } from './canvas-panel';
+import { getCanvasSettings, subscribeCanvasSettings, canvasThemeVars } from '../../lib/canvas-settings';
+import type { CanvasSettings } from '../../lib/canvas-settings';
 
 // ---------------------------------------------------------------------------
 // Platform + library catalogs
@@ -105,6 +125,10 @@ const typeGlyphColor = (type: string): string =>
 const DEFAULT_TEXT_COLOR = 'var(--text-primary)';
 const CANVAS_GRID_BG =
   'radial-gradient(circle, var(--border-subtle) 1px, transparent 1px)';
+// Snap + dot-grid spacing now come from the live Canvas settings (Prompt 2
+// Step 4); these fallbacks are used only before the first settings read.
+const DEFAULT_SNAP = 8;
+const DEFAULT_GRID_SPACING = 24;
 
 // ---------------------------------------------------------------------------
 // Small helpers
@@ -375,20 +399,31 @@ interface NodeFrameProps {
   onSelect: (id: string) => void;
   onDragStart: (id: string, startX: number, startY: number, pointerX: number, pointerY: number) => void;
   onResizeStart: (id: string, startW: number, startH: number, pointerX: number, pointerY: number) => void;
+  /** Current viewport zoom; selection outline + handles divide by it to stay 1px-crisp on screen. */
+  scale: number;
+  /** Space is held, so a left-drag should pan the stage instead of moving this node. */
+  spaceHeld: boolean;
 }
 
-const NodeFrame: React.FC<NodeFrameProps> = ({ node, selectedId, onSelect, onDragStart, onResizeStart }) => {
+const NodeFrame: React.FC<NodeFrameProps> = ({ node, selectedId, onSelect, onDragStart, onResizeStart, scale, spaceHeld }) => {
   const isSelected = selectedId === node.id;
   const x = Math.round(num(node.props, 'x', 0));
   const y = Math.round(num(node.props, 'y', 0));
   const width = num(node.props, 'width', nodeDefaultSize(node.type).width);
   const height = num(node.props, 'height', nodeDefaultSize(node.type).height);
+  // Screen-constant compensation: this whole subtree is rendered inside the
+  // scaled stage, so a 1px value becomes `scale`px on screen. Dividing by scale
+  // keeps the outline and handle the same pixel size at 25% and 400% alike.
+  const inv = 1 / (scale || 1);
 
   return (
     <div
       data-node-id={node.id}
       onPointerDown={(event) => {
         if (event.button !== 0 || (event.target as HTMLElement).dataset.resizeHandle) return;
+        // Space+drag is a stage pan; let the event bubble to the container
+        // instead of capturing it as a node move.
+        if (spaceHeld) return;
         event.stopPropagation();
         onSelect(node.id);
         onDragStart(node.id, x, y, event.clientX, event.clientY);
@@ -399,10 +434,10 @@ const NodeFrame: React.FC<NodeFrameProps> = ({ node, selectedId, onSelect, onDra
         top: y,
         width,
         height,
-        cursor: 'move',
-        outline: isSelected ? '1.5px solid var(--accent-primary)' : 'none',
-        outlineOffset: 1,
-        boxShadow: isSelected ? '0 0 0 4px rgba(168, 85, 247, 0.18)' : 'none',
+        cursor: spaceHeld ? 'grab' : 'move',
+        outline: isSelected ? `${1.5 * inv}px solid var(--accent-primary)` : 'none',
+        outlineOffset: inv,
+        boxShadow: isSelected ? `0 0 0 ${4 * inv}px rgba(168, 85, 247, 0.18)` : 'none',
         borderRadius: '4px',
         userSelect: 'none',
         touchAction: 'none'
@@ -417,24 +452,27 @@ const NodeFrame: React.FC<NodeFrameProps> = ({ node, selectedId, onSelect, onDra
           onSelect={onSelect}
           onDragStart={onDragStart}
           onResizeStart={onResizeStart}
+          scale={scale}
+          spaceHeld={spaceHeld}
         />
       ))}
       {isSelected && (
         <div
           data-resize-handle="1"
           onPointerDown={(event) => {
+            if (spaceHeld) return;
             event.stopPropagation();
             onResizeStart(node.id, width, height, event.clientX, event.clientY);
           }}
           style={{
             position: 'absolute',
-            right: -4,
-            bottom: -4,
-            width: 10,
-            height: 10,
-            borderRadius: 2,
+            right: -5 * inv,
+            bottom: -5 * inv,
+            width: 10 * inv,
+            height: 10 * inv,
+            borderRadius: 2 * inv,
             background: 'var(--accent-primary)',
-            border: '1.5px solid var(--accent-primary)',
+            border: `${1.5 * inv}px solid var(--accent-primary)`,
             cursor: 'nwse-resize',
             touchAction: 'none'
           }}
@@ -674,43 +712,63 @@ const ColorField: React.FC<ColorFieldProps> = ({ value, onChange, fallbackHex, p
   );
 };
 
-interface PropsPanelProps {
-  node: CanvasNode | null;
-  platform: CanvasPlatform;
-  designProfile?: DesignProfile | null;
-}
+// --- Inspector sections (Prompt 2 Step 3) ---------------------------------
+// The right panel is no longer one monolith: it is a list of independently
+// collapsible / hideable / reorderable sections, ordered by the layout store.
+// Counts stay honest — they read the selected node's real props, never a
+// placeholder.
 
-const PropertiesPanel: React.FC<PropsPanelProps> = ({ node, platform, designProfile }) => {
-  const updateNodeProps = useCanvasStore((state) => state.updateNodeProps);
+const SECTION_TITLE: Record<CanvasSectionId, string> = {
+  library: 'Component Library',
+  layers: 'Layer Tree',
+  properties: 'Properties',
+  styles: 'Styles',
+  events: 'Events',
+  data: 'Data'
+};
 
-  if (!node) {
-    return (
-      <div style={{ padding: '18px 12px', fontSize: 10.5, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-        <Sliders size={16} color="var(--text-secondary)" style={{ marginBottom: 10 }} />
-        <div style={{ fontWeight: 600, color: 'var(--text-muted)', marginBottom: 4 }}>Properties</div>
-        Select a node on the canvas or in the layer tree to edit its color, text, padding and layout.
-      </div>
-    );
+const SECTION_ICON = (id: CanvasSectionId): React.ReactNode => {
+  switch (id) {
+    case 'library': return <Plus size={12} />;
+    case 'layers': return <Layers size={12} />;
+    case 'properties': return <Sliders size={12} />;
+    case 'styles': return <Palette size={12} />;
+    case 'events': return <MousePointer2 size={12} />;
+    case 'data': return <Braces size={12} />;
+    default: return <Square size={12} />;
   }
+};
 
+const isEventKey = (key: string): boolean => /^on[A-Z]/.test(key);
+const eventKeys = (node: CanvasNode): string[] => Object.keys(node.props).filter(isEventKey);
+const eventCount = (node: CanvasNode): number =>
+  eventKeys(node).filter((k) => String(node.props[k]).length > 0).length;
+
+const STYLE_KEYS = ['color', 'textColor', 'fontSize', 'padding', 'borderRadius'] as const;
+const styleCount = (node: CanvasNode): number =>
+  STYLE_KEYS.filter((k) => node.props[k] !== undefined).length + 4;
+
+const sectionCount = (id: CanvasSectionId, node: CanvasNode | null): number | undefined => {
+  switch (id) {
+    case 'events': return node ? eventCount(node) : 0;
+    case 'styles': return node ? styleCount(node) : undefined;
+    case 'data': return node ? Object.keys(node.props).length : undefined;
+    default: return undefined;
+  }
+};
+
+const inspectorBodyStyle: React.CSSProperties = {
+  padding: '8px 12px',
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 9
+};
+
+const PropertiesBody: React.FC<{ node: CanvasNode; platform: CanvasPlatform }> = ({ node, platform }) => {
+  const updateNodeProps = useCanvasStore((state) => state.updateNodeProps);
   const p = node.props;
-  const numField = (key: string): number => {
-    const value = p[key];
-    return typeof value === 'number' ? value : Number(value) || 0;
-  };
-
   return (
-    <div
-      style={{
-        padding: '10px 12px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 9,
-        overflowY: 'auto',
-        flex: 1,
-        minHeight: 0
-      }}
-    >
+    <div style={inspectorBodyStyle}>
       <div style={{ paddingBottom: 8, borderBottom: '1px solid var(--bg-tertiary)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <span style={{ color: typeGlyphColor(node.type) }}>
@@ -724,7 +782,6 @@ const PropertiesPanel: React.FC<PropsPanelProps> = ({ node, platform, designProf
           id #{node.id.slice(-8)} • {platformLabel(platform)}
         </div>
       </div>
-
       <PropRow label="text">
         <input
           style={propInputStyle}
@@ -732,6 +789,41 @@ const PropertiesPanel: React.FC<PropsPanelProps> = ({ node, platform, designProf
           onChange={(event) => updateNodeProps(node.id, { text: event.target.value })}
         />
       </PropRow>
+      {node.type === 'checkbox' || node.type === 'switch' ? (
+        <PropRow label="checked">
+          <input
+            type="checkbox"
+            checked={bool(p, 'checked')}
+            onChange={(event) => updateNodeProps(node.id, { checked: event.target.checked })}
+            style={{ accentColor: 'var(--accent-primary)' }}
+          />
+        </PropRow>
+      ) : null}
+      {node.type === 'progress' ? (
+        <PropRow label="value">
+          <input
+            type="number"
+            min={0}
+            max={100}
+            style={propInputStyle}
+            value={num(p, 'value', 60)}
+            onChange={(event) => updateNodeProps(node.id, { value: Math.max(0, Math.min(100, Number(event.target.value) || 0)) })}
+          />
+        </PropRow>
+      ) : null}
+    </div>
+  );
+};
+
+const StylesBody: React.FC<{ node: CanvasNode; designProfile: DesignProfile | null }> = ({ node, designProfile }) => {
+  const updateNodeProps = useCanvasStore((state) => state.updateNodeProps);
+  const p = node.props;
+  const numField = (key: string): number => {
+    const value = p[key];
+    return typeof value === 'number' ? value : Number(value) || 0;
+  };
+  return (
+    <div style={inspectorBodyStyle}>
       <PropRow label="color">
         <ColorField
           value={str(p, 'color')}
@@ -772,10 +864,6 @@ const PropertiesPanel: React.FC<PropsPanelProps> = ({ node, platform, designProf
           onChange={(event) => updateNodeProps(node.id, { borderRadius: Number(event.target.value) || 0 })}
         />
       </PropRow>
-
-      <div style={{ paddingTop: 8, borderTop: '1px solid var(--bg-tertiary)', fontSize: 9, letterSpacing: '0.6px', color: 'var(--text-secondary)' }}>
-        LAYOUT
-      </div>
       {(['x', 'y', 'width', 'height'] as const).map((key) => (
         <PropRow key={key} label={key}>
           <input
@@ -786,59 +874,162 @@ const PropertiesPanel: React.FC<PropsPanelProps> = ({ node, platform, designProf
           />
         </PropRow>
       ))}
-      {node.type === 'checkbox' || node.type === 'switch' ? (
-        <PropRow label="checked">
-          <input
-            type="checkbox"
-            checked={bool(p, 'checked')}
-            onChange={(event) => updateNodeProps(node.id, { checked: event.target.checked })}
-            style={{ accentColor: 'var(--accent-primary)' }}
-          />
-        </PropRow>
-      ) : null}
-      {node.type === 'progress' ? (
-        <PropRow label="value">
-          <input
-            type="number"
-            min={0}
-            max={100}
-            style={propInputStyle}
-            value={num(p, 'value', 60)}
-            onChange={(event) => updateNodeProps(node.id, { value: Math.max(0, Math.min(100, Number(event.target.value) || 0)) })}
-          />
-        </PropRow>
-      ) : null}
-
-      <div style={{ paddingTop: 8, borderTop: '1px solid var(--bg-tertiary)', fontSize: 9, letterSpacing: '0.6px', color: 'var(--text-secondary)' }}>
-        JSON
-      </div>
-      <pre
-        style={{
-          margin: 0,
-          padding: 8,
-          borderRadius: 6,
-          background: 'var(--bg-secondary)',
-          border: '1px solid var(--bg-tertiary)',
-          color: 'var(--text-muted)',
-          fontSize: 9.5,
-          lineHeight: 1.45,
-          overflowX: 'auto',
-          whiteSpace: 'pre'
-        }}
-      >
-        {JSON.stringify(
-          {
-            id: node.id,
-            type: node.type,
-            platform: node.platform,
-            props: node.props,
-            ...(node.children.length > 0 ? { children: '[…]' } : {})
-          },
-          null,
-          2
-        )}
-      </pre>
     </div>
+  );
+};
+
+const EventsBody: React.FC<{ node: CanvasNode }> = ({ node }) => {
+  const updateNodeProps = useCanvasStore((state) => state.updateNodeProps);
+  const [name, setName] = useState('');
+  const [handler, setHandler] = useState('');
+  const p = node.props;
+  const keys = eventKeys(node);
+  const pascal = (raw: string): string =>
+    raw.trim().replace(/[^a-zA-Z0-9]/g, '').replace(/^(.)/, (_m, c: string) => c.toUpperCase());
+
+  const add = () => {
+    const key = `on${pascal(name)}`;
+    if (name.trim().length === 0 || key === 'on') return;
+    updateNodeProps(node.id, { [key]: handler.trim() || 'onClick' });
+    setName('');
+    setHandler('');
+  };
+
+  return (
+    <div style={inspectorBodyStyle}>
+      {keys.length === 0 ? (
+        <div style={{ fontSize: 10.5, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+          No events bound. Add an interaction (e.g. tap → navigate) to record it on this node.
+        </div>
+      ) : (
+        keys.map((key) => (
+          <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--accent-primary)', minWidth: 62 }}>{key}</span>
+            <input
+              style={propInputStyle}
+              value={str(p, key)}
+              onChange={(event) => updateNodeProps(node.id, { [key]: event.target.value })}
+            />
+            <button
+              type="button"
+              title={`Clear ${key}`}
+              onClick={() => updateNodeProps(node.id, { [key]: '' })}
+              style={{ display: 'flex', padding: 3, border: 'none', background: 'transparent', color: 'var(--accent-red)', cursor: 'pointer' }}
+            >
+              <Trash2 size={11} />
+            </button>
+          </div>
+        ))
+      )}
+      <div style={{ display: 'flex', gap: 5, marginTop: 2 }}>
+        <input
+          style={{ ...propInputStyle, maxWidth: 78 }}
+          placeholder="tap"
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+        />
+        <input
+          style={propInputStyle}
+          placeholder="handler / action"
+          value={handler}
+          onChange={(event) => setHandler(event.target.value)}
+          onKeyDown={(event) => { if (event.key === 'Enter') add(); }}
+        />
+        <button
+          type="button"
+          onClick={add}
+          style={{ display: 'flex', alignItems: 'center', gap: 3, padding: '4px 8px', borderRadius: 5, border: '1px solid var(--bg-tertiary)', background: 'var(--surface-2)', color: 'var(--accent-primary)', fontSize: 10, cursor: 'pointer' }}
+        >
+          <Plus size={11} /> Bind
+        </button>
+      </div>
+    </div>
+  );
+};
+
+const DataBody: React.FC<{ node: CanvasNode }> = ({ node }) => (
+  <div style={inspectorBodyStyle}>
+    <pre
+      style={{
+        margin: 0,
+        padding: 8,
+        borderRadius: 6,
+        background: 'var(--bg-secondary)',
+        border: '1px solid var(--bg-tertiary)',
+        color: 'var(--text-muted)',
+        fontSize: 9.5,
+        lineHeight: 1.45,
+        overflowX: 'auto',
+        whiteSpace: 'pre'
+      }}
+    >
+      {JSON.stringify(
+        {
+          id: node.id,
+          type: node.type,
+          platform: node.platform,
+          props: node.props,
+          ...(node.children.length > 0 ? { children: '[…]' } : {})
+        },
+        null,
+        2
+      )}
+    </pre>
+  </div>
+);
+
+const InspectorEmpty: React.FC = () => (
+  <div style={{ padding: '18px 12px', fontSize: 10.5, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+    <Sliders size={16} color="var(--text-secondary)" style={{ marginBottom: 10 }} />
+    <div style={{ fontWeight: 600, color: 'var(--text-muted)', marginBottom: 4 }}>Inspector</div>
+    Select a node on the canvas or in the layer tree to edit its properties, styles, events and data.
+  </div>
+);
+
+interface InspectorSectionsProps {
+  node: CanvasNode | null;
+  platform: CanvasPlatform;
+  designProfile: DesignProfile | null;
+}
+
+const InspectorSections: React.FC<InspectorSectionsProps> = ({ node, platform, designProfile }) => {
+  const rightSections = useCanvasLayoutStore(selectRightSections);
+  const toggleSectionCollapsed = useCanvasLayoutStore((s) => s.toggleSectionCollapsed);
+  const setSectionVisible = useCanvasLayoutStore((s) => s.setSectionVisible);
+  const moveSection = useCanvasLayoutStore((s) => s.moveSection);
+  const dragRef = useRef<{ id: CanvasSectionId } | null>(null);
+
+  if (!node) return <InspectorEmpty />;
+
+  const visible = rightSections.filter((section) => section.visible);
+  return (
+    <>
+      {visible.map((section) => (
+        <SectionShell
+          key={section.id}
+          title={SECTION_TITLE[section.id]}
+          icon={SECTION_ICON(section.id)}
+          count={sectionCount(section.id, node)}
+          collapsed={section.collapsed}
+          onToggleCollapse={() => toggleSectionCollapsed('right', section.id)}
+          onHide={() => setSectionVisible('right', section.id, false)}
+          dragProps={{
+            onDragStart: () => { dragRef.current = { id: section.id }; },
+            onDragOver: (event) => event.preventDefault(),
+            onDrop: () => {
+              const dragged = dragRef.current;
+              if (dragged) moveSection('right', dragged.id, section.id);
+              dragRef.current = null;
+            }
+          }}
+        >
+          {section.id === 'properties' && <PropertiesBody node={node} platform={platform} />}
+          {section.id === 'styles' && <StylesBody node={node} designProfile={designProfile} />}
+          {section.id === 'events' && <EventsBody node={node} />}
+          {section.id === 'data' && <DataBody node={node} />}
+        </SectionShell>
+      ))}
+    </>
   );
 };
 
@@ -917,6 +1108,24 @@ const FrameForPlatform = (platform: CanvasPlatform): FrameSpec => {
         )
       };
   }
+};
+
+/**
+ * The device frame's box in canvas units, for the viewport's content bounds.
+ * Fixed frames (react / flutter / swiftui) report their point size; fill frames
+ * (web / other) fill the container, so their canvas box is the container minus
+ * the 40px gutter the stage already lays out. Reads the live platform through
+ * the store so it stays correct regardless of when a viewport effect runs.
+ */
+const deviceBoxFor = (containerWidth: number, containerHeight: number): CanvasBox => {
+  const frame = FrameForPlatform(useCanvasStore.getState().activePlatform);
+  const fill = frame.width === 'fill';
+  return {
+    x: 0,
+    y: 0,
+    width: fill ? Math.max(1, containerWidth - 40) : (frame.width as number),
+    height: fill ? Math.max(1, containerHeight - 40) : (frame.height as number)
+  };
 };
 
 // ---------------------------------------------------------------------------
@@ -1175,6 +1384,48 @@ export function generateProjectNativeCode(
 // Main editor
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Zoom / options menu row (viewport cluster)
+// ---------------------------------------------------------------------------
+
+const MenuItemRow: React.FC<{
+  label: string;
+  onClick: () => void;
+  active?: boolean;
+  toggle?: boolean;
+}> = ({ label, onClick, active, toggle }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    style={{
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 8,
+      padding: '5px 8px',
+      border: 'none',
+      background: active ? 'var(--surface-3)' : 'transparent',
+      color: 'var(--text-primary)',
+      fontSize: 11,
+      cursor: 'pointer',
+      borderRadius: 4,
+      textAlign: 'left'
+    }}
+  >
+    <span>{label}</span>
+    {toggle && (
+      <span
+        style={{
+          width: 8,
+          height: 8,
+          borderRadius: 2,
+          background: active ? 'var(--accent-primary)' : 'var(--border-default)'
+        }}
+      />
+    )}
+  </button>
+);
+
 export const M3ECanvas: React.FC = () => {
   const isWorkspaceReady = useWorkspaceStore((state) => state.isWorkspaceReady);
   const workspaceRoot = useWorkspaceStore((state) => state.workspaceRoot || state.workspacePath);
@@ -1201,7 +1452,60 @@ export const M3ECanvas: React.FC = () => {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [confirmingClear, setConfirmingClear] = useState(false);
   const centerRef = useRef<HTMLDivElement>(null);
-  const [frameScale, setFrameScale] = useState(1);
+  // --- Viewport controller (Prompt 1) -------------------------------------
+  const viewportRef = useRef<CanvasViewport | null>(null);
+  if (!viewportRef.current) viewportRef.current = new CanvasViewport();
+  const viewport = viewportRef.current;
+  // Read initial chrome state once; do NOT subscribe (setViewport fires on every
+  // pan/zoom and would re-render the whole editor).
+  const persistedViewport = useRef<CanvasViewportPersist>(useCanvasStore.getState().viewport).current;
+  const [, bumpViewport] = useReducer((n: number) => n + 1, 0);
+  const viewportReadyRef = useRef(false);
+  const spaceHeldRef = useRef(false);
+  const [spaceHeld, setSpaceHeld] = useState(false);
+  const [isPanning, setIsPanning] = useState(false);
+  const panRef = useRef<{ lastX: number; lastY: number } | null>(null);
+  // Viewport chrome toggles + snap (persisted in the canvas store on Step 4).
+  const [gridVisible, setGridVisible] = useState(persistedViewport.grid);
+  const [rulersVisible, setRulersVisible] = useState(persistedViewport.rulers);
+  const [minimapVisible, setMinimapVisible] = useState(persistedViewport.minimap);
+  const [snapEnabled, setSnapEnabled] = useState(false);
+  const [showZoomMenu, setShowZoomMenu] = useState(false);
+  // --- Layout customization (Prompt 2) ------------------------------------
+  // Atomic store selectors: a width change re-renders the panes, a focus toggle
+  // re-renders the chrome, a section toggle re-renders just its panel.
+  const leftWidth = useCanvasLayoutStore(selectLeftWidth);
+  const rightWidth = useCanvasLayoutStore(selectRightWidth);
+  const leftCollapsed = useCanvasLayoutStore(selectLeftCollapsed);
+  const rightCollapsed = useCanvasLayoutStore(selectRightCollapsed);
+  const focusMode = useCanvasLayoutStore(selectFocusMode);
+  const leftSections = useCanvasLayoutStore(selectLeftSections);
+  const rightSections = useCanvasLayoutStore(selectRightSections);
+  // Live canvas defaults (grid size, snap tolerance, chrome theme, panel
+  // widths). Read from localStorage now; kept fresh through a subscription so an
+  // edit in the main-window Settings modal lands here without a restart.
+  const [canvasSettings, setCanvasSettingsState] = useState<CanvasSettings>(() => getCanvasSettings());
+  const settingsRef = useRef<CanvasSettings>(canvasSettings);
+  // Tracks which section header is mid-drag for reorder within its panel.
+  const dragSectionRef = useRef<{ panel: CanvasPanelId; id: CanvasSectionId } | null>(null);
+  // Persist the live transform (and a patch of chrome toggles) to the canvas
+  // store, which debounces the localStorage write and keeps it out of the
+  // node-sync push. Marking `saved` so the next open restores instead of fitting.
+  const persistViewport = useCallback(
+    (patch: Partial<CanvasViewportPersist>) => {
+      useCanvasStore.getState().setViewport({
+        scale: viewport.scale,
+        tx: viewport.tx,
+        ty: viewport.ty,
+        saved: true,
+        ...patch
+      });
+    },
+    [viewport]
+  );
+  // Drag/resize effect reads the snap flag through a ref so holding a modifier
+  // mid-drag picks it up without re-subscribing the pointermove listener.
+  const snapEnabledRef = useRef(false);
   const deviceExportRef = useRef<HTMLDivElement>(null);
   const cssFileInputRef = useRef<HTMLInputElement>(null);
   const [imageCss, setImageCss] = useState<ImageCssResult | null>(null);
@@ -1239,25 +1543,227 @@ export const M3ECanvas: React.FC = () => {
     };
   }, [isWorkspaceReady, workspaceRoot]);
 
-  // Scale-to-fit the device frame inside the center panel.
+  // Keep the viewport's client-space origin + size synced to the stage
+  // container, publish the device box as the content bounds, and frame it once
+  // the container has a real size. The stage does not scroll (pan replaces
+  // scroll), so `origin` only moves on layout / resize, which ResizeObserver
+  // also catches when the canvas window itself is resized.
   useEffect(() => {
     const element = centerRef.current;
     if (!element) return;
-    const recalc = () => {
-      const frame = FrameForPlatform(useCanvasStore.getState().activePlatform);
-      if (!frame.scale || typeof frame.width !== 'number' || typeof frame.height !== 'number') {
-        setFrameScale(1);
-        return;
+    const sync = () => {
+      const rect = element.getBoundingClientRect();
+      viewport.setOrigin(rect.left, rect.top);
+      viewport.setSize(rect.width, rect.height);
+      viewport.setContent(deviceBoxFor(rect.width, rect.height));
+      if (!viewportReadyRef.current && rect.width > 0 && rect.height > 0) {
+        viewportReadyRef.current = true;
+        if (persistedViewport.saved) {
+          viewport.restore(persistedViewport);
+        } else if (Math.abs(settingsRef.current.defaultZoom - 1) > 0.001) {
+          // Fresh document + an explicit default zoom: honor it over auto-fit.
+          viewport.setScale(settingsRef.current.defaultZoom);
+        } else {
+          viewport.fitToContent();
+        }
       }
-      const scaleW = (element.clientWidth - 56) / frame.width;
-      const scaleH = (element.clientHeight - 56) / frame.height;
-      setFrameScale(Math.max(0.35, Math.min(1, scaleW, scaleH)));
+      bumpViewport();
     };
-    recalc();
-    const observer = new ResizeObserver(recalc);
+    sync();
+    const observer = new ResizeObserver(sync);
     observer.observe(element);
     return () => observer.disconnect();
-  }, [activePlatform]);
+  }, [viewport, persistedViewport]);
+
+  // Reframe when the platform changes the device size.
+  useEffect(() => {
+    if (!viewportReadyRef.current) return;
+    const element = centerRef.current;
+    if (!element) return;
+    const rect = element.getBoundingClientRect();
+    viewport.setContent(deviceBoxFor(rect.width, rect.height));
+    viewport.fitToContent();
+  }, [activePlatform, viewport]);
+
+  useEffect(() => {
+    viewport.onChange = () => {
+      bumpViewport();
+      persistViewport({});
+    };
+    return () => { viewport.onChange = undefined; };
+  }, [viewport, persistViewport]);
+
+  // Wheel / trackpad: ctrl (or a trackpad pinch, which Chromium reports as a
+  // ctrlKey wheel) zooms at the cursor; plain wheel pans vertically; shift+wheel
+  // pans horizontally. Registered non-passive because every branch preventDefaults
+  // to stop the window's own zoom / scroll. Removed on unmount.
+  useEffect(() => {
+    const element = centerRef.current;
+    if (!element) return;
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      if (event.ctrlKey || event.metaKey) {
+        viewport.zoomAt({ x: event.clientX, y: event.clientY }, Math.exp(-event.deltaY * 0.0015));
+      } else if (event.shiftKey) {
+        viewport.panBy(-(event.deltaY || event.deltaX), 0);
+      } else {
+        viewport.panBy(0, -event.deltaY);
+      }
+    };
+    element.addEventListener('wheel', onWheel, { passive: false });
+    return () => element.removeEventListener('wheel', onWheel);
+  }, [viewport]);
+
+  // Space toggles grab-to-pan. Suppressed while typing so holding space in a
+  // property field never arms pan mode.
+  useEffect(() => {
+    const isSafeTarget = (t: EventTarget | null): boolean => {
+      const el = t as HTMLElement | null;
+      return !el || !(el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
+    };
+    const down = (event: KeyboardEvent) => {
+      if (event.code === 'Space' && isSafeTarget(event.target)) {
+        if (!spaceHeldRef.current) {
+          spaceHeldRef.current = true;
+          setSpaceHeld(true);
+        }
+        event.preventDefault();
+      }
+    };
+    const up = (event: KeyboardEvent) => {
+      if (event.code === 'Space') {
+        spaceHeldRef.current = false;
+        setSpaceHeld(false);
+      }
+    };
+    window.addEventListener('keydown', down);
+    window.addEventListener('keyup', up);
+    return () => {
+      window.removeEventListener('keydown', down);
+      window.removeEventListener('keyup', up);
+    };
+  }, []);
+
+  // Active stage pan: window-level move/up so the grab keeps working even when
+  // the cursor leaves the canvas rectangle.
+  useEffect(() => {
+    if (!isPanning) return;
+    const move = (event: PointerEvent) => {
+      const point = panRef.current;
+      if (!point) return;
+      viewport.panBy(event.clientX - point.lastX, event.clientY - point.lastY);
+      point.lastX = event.clientX;
+      point.lastY = event.clientY;
+    };
+    const up = () => {
+      panRef.current = null;
+      setIsPanning(false);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    return () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+    };
+  }, [isPanning, viewport]);
+
+  // Mirror the snap toggle into the ref the drag loop reads.
+  useEffect(() => {
+    snapEnabledRef.current = snapEnabled;
+  }, [snapEnabled]);
+
+  // Live Canvas settings (Prompt 2 Step 4). A write from the main-window
+  // Settings modal fires in this window through the storage event; when the
+  // document has no saved viewport we also adopt the chrome-toggle defaults so
+  // "grid / rulers / minimap by default" applies to a fresh canvas.
+  useEffect(() => {
+    return subscribeCanvasSettings((next) => {
+      settingsRef.current = next;
+      setCanvasSettingsState(next);
+      if (!persistedViewport.saved) {
+        setGridVisible(next.gridDefault);
+        setRulersVisible(next.rulersDefault);
+        setMinimapVisible(next.minimapDefault);
+      }
+    });
+  }, [persistedViewport]);
+
+  // Narrow window: collapse both panels ONCE (with a hint toast), then respect
+  // the user's manual choices for the rest of the session.
+  useEffect(() => {
+    const NARROW = 900;
+    let lastBelow = window.innerWidth < NARROW;
+    const onResize = () => {
+      const below = window.innerWidth < NARROW;
+      if (below && !lastBelow) {
+        const store = useCanvasLayoutStore.getState();
+        if (!store.autoCollapsedOnce) {
+          store.setPanelCollapsed('left', true);
+          store.setPanelCollapsed('right', true);
+          store.markAutoCollapsed();
+          toast.info(
+            'Narrow window',
+            'Sketcher panels collapsed for more canvas. Ctrl+Alt+[ and Ctrl+Alt+] bring them back.'
+          );
+        }
+      }
+      lastBelow = below;
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  // Esc leaves focus mode, restoring the exact panels + chrome that were visible
+  // before (focus mode never mutates collapsed state).
+  useEffect(() => {
+    if (!focusMode) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.stopPropagation();
+        useCanvasLayoutStore.getState().setFocusMode(false);
+      }
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [focusMode]);
+
+  // Contribute `canvasActive` while the design stage is mounted, so the
+  // registry-driven View rows appear and their chords fire in THIS window only.
+  useEffect(() => {
+    const contributor = registerContextContributor(() => ({ canvasActive: true }));
+    return () => contributor.dispose();
+  }, []);
+
+  // Back the `canvas.*` commands with the live viewport. Re-registering when a
+  // toggle flips is cheap (dispose + add) and keeps each handler closing over
+  // the current grid / rulers / minimap state.
+  useEffect(() => {
+    const commands = registerRendererCommands({
+      'canvas.zoomIn': () => viewport.zoomStep(1),
+      'canvas.zoomOut': () => viewport.zoomStep(-1),
+      'canvas.zoomReset': () => viewport.reset100(),
+      'canvas.zoomFit': () => viewport.fitToContent(),
+      'canvas.toggleGrid': () => {
+        const next = !gridVisible;
+        setGridVisible(next);
+        persistViewport({ grid: next });
+      },
+      'canvas.toggleRulers': () => {
+        const next = !rulersVisible;
+        setRulersVisible(next);
+        persistViewport({ rulers: next });
+      },
+      'canvas.toggleMinimap': () => {
+        const next = !minimapVisible;
+        setMinimapVisible(next);
+        persistViewport({ minimap: next });
+      },
+      'canvas.toggleLeftPanel': () => useCanvasLayoutStore.getState().togglePanel('left'),
+      'canvas.toggleRightPanel': () => useCanvasLayoutStore.getState().togglePanel('right'),
+      'canvas.focusMode': () => useCanvasLayoutStore.getState().toggleFocusMode()
+    });
+    return () => commands.dispose();
+  }, [viewport, persistViewport, gridVisible, rulersVisible, minimapVisible]);
 
   // Delete key removes the selected node (unless typing in an input).
   useEffect(() => {
@@ -1290,18 +1796,23 @@ export const M3ECanvas: React.FC = () => {
 
   useEffect(() => {
     if (!dragState) return;
+    const step = snapEnabledRef.current ? settingsRef.current.snapTolerance : DEFAULT_SNAP;
     const onMove = (event: PointerEvent) => {
-      const dx = event.clientX - dragState.pointerAX;
-      const dy = event.clientY - dragState.pointerAY;
+      // Screen px → canvas units. The whole stage is scaled by `viewport.scale`,
+      // so a cursor delta of `d` screen px is `d / scale` canvas units. Without
+      // this the node drifted from the pointer at any zoom other than 100 %.
+      const s = viewport.scale || 1;
+      const dx = (event.clientX - dragState.pointerAX) / s;
+      const dy = (event.clientY - dragState.pointerAY) / s;
       if (dragState.kind === 'drag') {
         updateNodeProps(dragState.id, {
-          x: Math.max(0, Math.round(dragState.startA + dx)),
-          y: Math.max(0, Math.round(dragState.startB + dy))
+          x: Math.max(0, snapToGrid(Math.round(dragState.startA + dx), step)),
+          y: Math.max(0, snapToGrid(Math.round(dragState.startB + dy), step))
         });
       } else {
         updateNodeProps(dragState.id, {
-          width: Math.max(16, Math.round(dragState.startA + dx)),
-          height: Math.max(10, Math.round(dragState.startB + dy))
+          width: Math.max(16, snapToGrid(Math.round(dragState.startA + dx), step)),
+          height: Math.max(10, snapToGrid(Math.round(dragState.startB + dy), step))
         });
       }
     };
@@ -1312,7 +1823,7 @@ export const M3ECanvas: React.FC = () => {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
     };
-  }, [dragState, updateNodeProps]);
+  }, [dragState, updateNodeProps, viewport]);
 
   const toggleExpanded = useCallback((id: string) => {
     setExpanded((prev) => {
@@ -1447,6 +1958,22 @@ export const M3ECanvas: React.FC = () => {
   const deviceWidth = frameIsFill ? (centerRef.current?.clientWidth ?? 800) - 40 : frame.width as number;
   const deviceHeight = frameIsFill ? (centerRef.current?.clientHeight ?? 600) - 40 : frame.height as number;
 
+  // Expanding a collapsed panel from its rail: reveal the panel and make sure
+  // the chosen section is visible and open.
+  const revealSection = (panel: CanvasPanelId, id: CanvasSectionId): void => {
+    const store = useCanvasLayoutStore.getState();
+    store.setPanelCollapsed(panel, false);
+    store.setSectionVisible(panel, id, true);
+    const list = panel === 'left' ? store.leftSections : store.rightSections;
+    if (list.find((s) => s.id === id)?.collapsed) store.toggleSectionCollapsed(panel, id);
+  };
+  const leftRailItems: RailItem[] = leftSections
+    .filter((s) => s.visible)
+    .map((s) => ({ id: s.id, label: SECTION_TITLE[s.id], icon: SECTION_ICON(s.id), onActivate: () => revealSection('left', s.id) }));
+  const rightRailItems: RailItem[] = rightSections
+    .filter((s) => s.visible)
+    .map((s) => ({ id: s.id, label: SECTION_TITLE[s.id], icon: SECTION_ICON(s.id), onActivate: () => revealSection('right', s.id) }));
+
   return (
     <WorkspaceGate featureName="M3E Canvas" message="Indexing Workspace for Canvas...">
       <div
@@ -1456,9 +1983,15 @@ export const M3ECanvas: React.FC = () => {
         display: 'flex',
         flexDirection: 'column',
         background: 'var(--bg-primary)',
-        overflow: 'hidden'
+        overflow: 'hidden',
+        // Canvas chrome theme (Prompt 2 Step 4): overrides the CSS variables
+        // the panels and toolbar already read, so a theme change recolours live.
+        ...(canvasThemeVars(canvasSettings.chromeTheme) as React.CSSProperties)
       }}
     >
+      {/* Chrome (presence strip + toolbar) is hidden in focus mode. */}
+      {!focusMode && (
+        <>
       {/* Workspace session presence strip (Prompt 1: session bus) */}
       <div style={{ padding: '4px 10px', flexShrink: 0, borderBottom: '1px solid var(--bg-tertiary)' }}>
         <SessionPresenceStrip self="canvas" />
@@ -1628,205 +2161,425 @@ export const M3ECanvas: React.FC = () => {
           )}
         </div>
       </div>
+        </>
+      )}
 
       {/* 3-pane body */}
       <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
-        {/* LEFT: library + layer tree */}
-        <aside
-          style={{
-            width: 232,
-            flexShrink: 0,
-            display: 'flex',
-            flexDirection: 'column',
-            borderRight: '1px solid var(--bg-tertiary)',
-            background: 'var(--bg-primary)',
-            minHeight: 0
-          }}
-        >
-          <div
-            style={{
-              height: 30,
-              flexShrink: 0,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 7,
-              padding: '0 10px',
-              borderBottom: '1px solid var(--bg-secondary)',
-              fontSize: 10,
-              fontWeight: 700,
-              letterSpacing: '0.5px',
-              color: 'var(--text-muted)'
-            }}
-          >
-            <Plus size={12} color="var(--accent-primary)" />
-            COMPONENT LIBRARY
-          </div>
-          <LibraryPanel onAdd={handleAdd} designProfile={designProfile} />
-
-          <div
-            style={{
-              height: 30,
-              flexShrink: 0,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 7,
-              padding: '0 10px',
-              borderTop: '1px solid var(--bg-secondary)',
-              borderBottom: '1px solid var(--bg-secondary)',
-              fontSize: 10,
-              fontWeight: 700,
-              letterSpacing: '0.5px',
-              color: 'var(--text-muted)'
-            }}
-          >
-            <Layers size={12} color="var(--accent-primary)" />
-            LAYER TREE
-          </div>
-          <div style={{ flex: 1, overflowY: 'auto', padding: '6px 8px 10px', minHeight: 0 }}>
-            {nodes.length === 0 ? (
-              <div style={{ fontSize: 10, color: 'var(--text-secondary)', padding: '10px 4px', lineHeight: 1.6 }}>
-                No layers yet.
-                <br />
-                Add components from the library above.
+        {/* LEFT: library + layer tree — collapsible rail, resizable, reorderable sections */}
+        {!focusMode && (leftCollapsed ? (
+          <CollapsedRail side="left" onExpand={() => useCanvasLayoutStore.getState().togglePanel('left')} items={leftRailItems} />
+        ) : (
+          <>
+            <aside
+              style={{
+                width: leftWidth,
+                flexShrink: 0,
+                display: 'flex',
+                flexDirection: 'column',
+                borderRight: '1px solid var(--bg-tertiary)',
+                background: 'var(--bg-primary)',
+                minHeight: 0,
+                overflow: 'hidden'
+              }}
+            >
+              <PanelHeaderBar
+                side="left"
+                collapsed={leftCollapsed}
+                onToggleCollapse={() => useCanvasLayoutStore.getState().togglePanel('left')}
+                sections={leftSections.map((s) => ({ id: s.id, title: SECTION_TITLE[s.id], visible: s.visible }))}
+                onToggleSectionVisible={(id, visible) => useCanvasLayoutStore.getState().setSectionVisible('left', id as CanvasSectionId, visible)}
+              />
+              <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+                {leftSections.filter((s) => s.visible).map((section) => (
+                  <SectionShell
+                    key={section.id}
+                    title={SECTION_TITLE[section.id]}
+                    icon={SECTION_ICON(section.id)}
+                    count={section.id === 'library' ? LIBRARY.length : section.id === 'layers' ? countNodes(nodes) : undefined}
+                    collapsed={section.collapsed}
+                    onToggleCollapse={() => useCanvasLayoutStore.getState().toggleSectionCollapsed('left', section.id)}
+                    onHide={() => useCanvasLayoutStore.getState().setSectionVisible('left', section.id, false)}
+                    dragProps={{
+                      onDragStart: () => { dragSectionRef.current = { panel: 'left', id: section.id }; },
+                      onDragOver: (event) => event.preventDefault(),
+                      onDrop: () => { const d = dragSectionRef.current; if (d) useCanvasLayoutStore.getState().moveSection('left', d.id, section.id); dragSectionRef.current = null; }
+                    }}
+                  >
+                    {section.id === 'library' && <LibraryPanel onAdd={handleAdd} designProfile={designProfile} />}
+                    {section.id === 'layers' && (
+                      <div style={{ padding: '6px 8px 10px', minHeight: 0 }}>
+                        {nodes.length === 0 ? (
+                          <div style={{ fontSize: 10, color: 'var(--text-secondary)', padding: '10px 4px', lineHeight: 1.6 }}>
+                            No layers yet.
+                            <br />
+                            Add components from the library above.
+                          </div>
+                        ) : (
+                          nodes.map((node) => (
+                            <LayerRow key={node.id} node={node} depth={0} selectedId={selectedNodeId} expanded={expanded} onToggle={toggleExpanded} />
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </SectionShell>
+                ))}
               </div>
-            ) : (
-              nodes.map((node) => (
-                <LayerRow
-                  key={node.id}
-                  node={node}
-                  depth={0}
-                  selectedId={selectedNodeId}
-                  expanded={expanded}
-                  onToggle={toggleExpanded}
-                />
-              ))
-            )}
-          </div>
-        </aside>
+            </aside>
+            <ResizeHandle
+              side="left"
+              width={leftWidth}
+              min={PANEL_MIN_WIDTH}
+              max={PANEL_MAX_WIDTH}
+              onResize={(w) => useCanvasLayoutStore.getState().setPanelWidth('left', w)}
+              onResizeStart={() => useCanvasLayoutStore.getState().setResizing(true)}
+              onResizeEnd={() => useCanvasLayoutStore.getState().setResizing(false)}
+              onReset={() => useCanvasLayoutStore.getState().setPanelWidth('left', canvasSettings.defaultLeftWidth)}
+            />
+          </>
+        ))}
 
-        {/* CENTER: visual canvas */}
+        {/* CENTER: visual canvas — the viewport-scaled design stage */}
         <div
           ref={centerRef}
-          onPointerDown={() => selectNode(null)}
+          onPointerDown={(event) => {
+            // Middle-drag or space+drag pans the stage; otherwise a click on
+            // empty canvas clears the selection.
+            if (event.button === 1 || spaceHeldRef.current) {
+              event.preventDefault();
+              panRef.current = { lastX: event.clientX, lastY: event.clientY };
+              setIsPanning(true);
+              return;
+            }
+            selectNode(null);
+          }}
           style={{
             flex: 1,
             minWidth: 0,
             position: 'relative',
-            overflow: 'auto',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: 'var(--bg-primary)'
+            overflow: 'hidden',
+            background: 'var(--bg-primary)',
+            cursor: isPanning ? 'grabbing' : spaceHeld ? 'grab' : 'default'
           }}
         >
+          {/* Dot grid: spacing and offset track the viewport so dots sit on
+              canvas-unit lines at every zoom. */}
+          {gridVisible && (() => {
+            // Dot spacing equals the configured grid size (canvas units) so the
+            // dots line up with where nodes snap; scales with zoom, floored for
+            // legibility at far-out views.
+            const spacing = Math.max(6, canvasSettings.gridSpacing * viewport.scale);
+            return (
+              <div
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  backgroundImage: CANVAS_GRID_BG,
+                  backgroundSize: `${spacing}px ${spacing}px`,
+                  backgroundPosition: `${viewport.tx}px ${viewport.ty}px`,
+                  opacity: 0.5,
+                  pointerEvents: 'none'
+                }}
+              />
+            );
+          })()}
+
+          {/* Design stage: the single transformed wrapper everything is drawn in. */}
           <div
             style={{
               position: 'absolute',
-              inset: 0,
-              backgroundImage: CANVAS_GRID_BG,
-              backgroundSize: '22px 22px',
-              opacity: 0.55,
-              pointerEvents: 'none'
+              left: 0,
+              top: 0,
+              width: deviceWidth,
+              height: deviceHeight,
+              transform: viewport.toTransformStyle(),
+              transformOrigin: '0 0',
+              zIndex: 2
             }}
-          />
-
-          {nodes.length === 0 ? (
+          >
             <div
+              ref={deviceExportRef}
               style={{
-                position: 'relative',
-                zIndex: 2,
+                width: deviceWidth,
+                height: deviceHeight,
                 display: 'flex',
                 flexDirection: 'column',
-                alignItems: 'center',
-                gap: 12,
-                padding: '26px 34px',
-                borderRadius: 14,
-                background: 'var(--surface-2)',
-                border: '1px dashed rgba(168, 85, 247, 0.4)',
-                textAlign: 'center'
+                borderRadius: activePlatform === 'web' ? 10 : activePlatform === 'swiftui' ? 10 : 34,
+                background: 'var(--bg-primary)',
+                border: '1px solid var(--border-default)',
+                boxShadow: '0 18px 50px rgba(0, 0, 0, 0.55)',
+                overflow: 'hidden'
               }}
             >
-              <Box size={26} color="var(--accent-primary)" />
-              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
-                {platformLabel(activePlatform)} canvas is empty
+              <div style={{ flexShrink: 0, background: 'var(--surface-2)' }}>
+                {frame.titlebar}
               </div>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.6, maxWidth: 280 }}>
-                Add containers, buttons or text from the library — every change syncs to the main IDE
-                window, and the shared chat can drive this canvas directly.
-              </div>
-              <button
-                type="button"
-                onClick={() => handleAdd('container')}
+              <div
                 style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  padding: '7px 14px',
-                  borderRadius: 8,
-                  background: 'var(--accent-primary)',
-                  border: 'none',
-                  color: '#ffffff',
-                  fontSize: 11,
-                  fontWeight: 700,
-                  cursor: 'pointer'
+                  position: 'relative',
+                  flex: 1,
+                  minHeight: 0,
+                  paddingTop: frame.contentPadTop,
+                  backgroundColor: 'var(--bg-primary)'
                 }}
               >
-                <Plus size={12} />
-                Add first container
-              </button>
+                {nodes.map((node) => (
+                  <NodeFrame
+                    key={node.id}
+                    node={node}
+                    selectedId={selectedNodeId}
+                    onSelect={selectNode}
+                    onDragStart={handleDragStart}
+                    onResizeStart={handleResizeStart}
+                    scale={viewport.scale}
+                    spaceHeld={spaceHeld}
+                  />
+                ))}
+              </div>
             </div>
-          ) : (
+          </div>
+
+          {/* Empty-canvas hint floats above the stage, unscaled. */}
+          {nodes.length === 0 && (
             <div
               style={{
-                position: 'relative',
-                zIndex: 2,
-                width: frameIsFill ? 'calc(100% - 40px)' : deviceWidth * frameScale,
-                height: frameIsFill ? 'calc(100% - 40px)' : deviceHeight * frameScale,
-                flexShrink: 0
+                position: 'absolute',
+                inset: 0,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                pointerEvents: 'none',
+                zIndex: 3
               }}
             >
               <div
-                ref={deviceExportRef}
                 style={{
-                  width: frameIsFill ? '100%' : deviceWidth,
-                  height: frameIsFill ? '100%' : deviceHeight,
-                  transform: frameIsFill ? undefined : `scale(${frameScale})`,
-                  transformOrigin: 'top left',
+                  pointerEvents: 'auto',
                   display: 'flex',
                   flexDirection: 'column',
-                  borderRadius: activePlatform === 'web' ? 10 : activePlatform === 'swiftui' ? 10 : 34,
-                  background: 'var(--bg-primary)',
-                  border: '1px solid var(--border-default)',
-                  boxShadow: '0 18px 50px rgba(0, 0, 0, 0.55)',
-                  overflow: 'hidden'
+                  alignItems: 'center',
+                  gap: 12,
+                  padding: '26px 34px',
+                  borderRadius: 14,
+                  background: 'var(--surface-2)',
+                  border: '1px dashed rgba(168, 85, 247, 0.4)',
+                  textAlign: 'center'
                 }}
               >
-                <div style={{ flexShrink: 0, background: 'var(--surface-2)' }}>
-                  {frame.titlebar}
+                <Box size={26} color="var(--accent-primary)" />
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
+                  {platformLabel(activePlatform)} canvas is empty
                 </div>
-                <div
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.6, maxWidth: 280 }}>
+                  Add containers, buttons or text from the library — every change syncs to the main IDE
+                  window, and the shared chat can drive this canvas directly.
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleAdd('container')}
                   style={{
-                    position: 'relative',
-                    flex: 1,
-                    minHeight: 0,
-                    paddingTop: frame.contentPadTop,
-                    backgroundColor: 'var(--bg-primary)'
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '7px 14px',
+                    borderRadius: 8,
+                    background: 'var(--accent-primary)',
+                    border: 'none',
+                    color: '#ffffff',
+                    fontSize: 11,
+                    fontWeight: 700,
+                    cursor: 'pointer'
                   }}
                 >
-                  {nodes.map((node) => (
-                    <NodeFrame
-                      key={node.id}
-                      node={node}
-                      selectedId={selectedNodeId}
-                       onSelect={selectNode}
-                      onDragStart={handleDragStart}
-                      onResizeStart={handleResizeStart}
-                    />
-                  ))}
-                </div>
+                  <Plus size={12} />
+                  Add first container
+                </button>
               </div>
             </div>
           )}
+
+          {/* Zoom-aware rulers: tick labels are canvas units, positioned in the
+              container's local space so they track pan and zoom. */}
+          {rulersVisible && (() => {
+            const step = pickTickStep(viewport.scale, 80);
+            const view = viewport.visibleCanvasBox();
+            const first = Math.floor(view.x / step) * step;
+            const last = view.x + view.width;
+            const firstY = Math.floor(view.y / step) * step;
+            const lastY = view.y + view.height;
+            const xTicks: React.ReactNode[] = [];
+            for (let c = first; c <= last; c += step) {
+              const lx = viewport.canvasToLocal(c, 0).x;
+              xTicks.push(
+                <div key={`xt${c}`} style={{ position: 'absolute', left: lx, top: 0, height: 20, borderLeft: '1px solid var(--border-subtle)' }}>
+                  <span style={{ position: 'absolute', left: 2, top: 3, fontSize: 8, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{Math.round(c)}</span>
+                </div>
+              );
+            }
+            const yTicks: React.ReactNode[] = [];
+            for (let c = firstY; c <= lastY; c += step) {
+              const ly = viewport.canvasToLocal(0, c).y;
+              yTicks.push(
+                <div key={`yt${c}`} style={{ position: 'absolute', top: ly, left: 0, width: 20, borderTop: '1px solid var(--border-subtle)' }}>
+                  <span style={{ position: 'absolute', left: 1, top: 2, fontSize: 8, color: 'var(--text-muted)', transform: 'rotate(0deg)', whiteSpace: 'nowrap' }}>{Math.round(c)}</span>
+                </div>
+              );
+            }
+            return (
+              <>
+                <div style={{ position: 'absolute', left: 20, top: 0, right: 0, height: 20, background: 'var(--surface-2)', borderBottom: '1px solid var(--border-default)', overflow: 'hidden', pointerEvents: 'none', zIndex: 20 }}>{xTicks}</div>
+                <div style={{ position: 'absolute', left: 0, top: 20, bottom: 0, width: 20, background: 'var(--surface-2)', borderRight: '1px solid var(--border-default)', overflow: 'hidden', pointerEvents: 'none', zIndex: 20 }}>{yTicks}</div>
+                <div style={{ position: 'absolute', left: 0, top: 0, width: 20, height: 20, background: 'var(--surface-2)', borderRight: '1px solid var(--border-default)', borderBottom: '1px solid var(--border-default)', zIndex: 21 }} />
+              </>
+            );
+          })()}
+
+          {/* Minimap: thumbnail of top-level nodes + a draggable viewport rect. */}
+          {minimapVisible && (() => {
+            const MW = 150;
+            const MH = 110;
+            const map = viewport.minimapMapping(MW, MH);
+            if (!map) return null;
+            const vb = viewport.visibleCanvasBox();
+            const vtl = viewport.canvasToMinimap(vb.x, vb.y, map);
+            const thumbs = nodes.map((n) => {
+              const p = viewport.canvasToMinimap(num(n.props, 'x', 0), num(n.props, 'y', 0), map);
+              return (
+                <div
+                  key={n.id}
+                  style={{
+                    position: 'absolute',
+                    left: p.x,
+                    top: p.y,
+                    width: Math.max(2, num(n.props, 'width', 40) * map.scale),
+                    height: Math.max(2, num(n.props, 'height', 40) * map.scale),
+                    background: selectedNodeId === n.id ? 'var(--accent-primary)' : 'var(--text-muted)',
+                    opacity: selectedNodeId === n.id ? 0.9 : 0.4,
+                    borderRadius: 1
+                  }}
+                />
+              );
+            });
+            return (
+              <div
+                style={{
+                  position: 'absolute',
+                  left: 12,
+                  bottom: 12,
+                  width: MW,
+                  height: MH,
+                  zIndex: 40,
+                  background: 'var(--surface-2)',
+                  border: '1px solid var(--border-default)',
+                  borderRadius: 8,
+                  overflow: 'hidden',
+                  cursor: 'pointer',
+                  boxShadow: '0 6px 18px rgba(0, 0, 0, 0.4)'
+                }}
+                onPointerDown={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  const el = event.currentTarget as HTMLDivElement;
+                  const seek = (clientX: number, clientY: number) => {
+                    const r = el.getBoundingClientRect();
+                    const m = viewport.minimapMapping(MW, MH);
+                    if (!m) return;
+                    viewport.centerOn(viewport.minimapToCanvas(clientX - r.left, clientY - r.top, m));
+                  };
+                  seek(event.clientX, event.clientY);
+                  const move = (ev: PointerEvent) => seek(ev.clientX, ev.clientY);
+                  const up = () => {
+                    window.removeEventListener('pointermove', move);
+                    window.removeEventListener('pointerup', up);
+                  };
+                  window.addEventListener('pointermove', move);
+                  window.addEventListener('pointerup', up);
+                }}
+              >
+                {thumbs}
+                <div
+                  style={{
+                    position: 'absolute',
+                    left: vtl.x,
+                    top: vtl.y,
+                    width: Math.max(6, vb.width * map.scale),
+                    height: Math.max(6, vb.height * map.scale),
+                    border: '1.5px solid var(--accent-primary)',
+                    background: 'rgba(168, 85, 247, 0.12)',
+                    borderRadius: 2
+                  }}
+                />
+              </div>
+            );
+          })()}
+
+          {/* Floating zoom cluster (bottom-right). */}
+          <div
+            style={{
+              position: 'absolute',
+              right: 12,
+              bottom: 12,
+              zIndex: 40,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 2,
+              padding: '3px 4px',
+              background: 'var(--surface-2)',
+              border: '1px solid var(--border-default)',
+              borderRadius: 8,
+              boxShadow: '0 6px 18px rgba(0, 0, 0, 0.4)'
+            }}
+          >
+            {([
+              { k: '−', t: 'Zoom out (Ctrl+-)', onClick: () => viewport.zoomStep(-1) },
+              { k: '+', t: 'Zoom in (Ctrl+=)', onClick: () => viewport.zoomStep(1) }
+            ]).map((b, i) => (
+              <button key={i} type="button" title={b.t} onClick={b.onClick}
+                style={{ width: 24, height: 22, border: 'none', background: 'transparent', color: 'var(--text-primary)', fontSize: 15, lineHeight: 1, cursor: 'pointer', borderRadius: 4 }}>{b.k}</button>
+            ))}
+            <button
+              type="button"
+              title="Reset to 100% (Ctrl+0)"
+              onClick={() => viewport.reset100()}
+              style={{ minWidth: 44, height: 22, border: 'none', background: 'transparent', color: 'var(--text-primary)', fontSize: 11, fontWeight: 600, cursor: 'pointer', borderRadius: 4 }}
+            >
+              {Math.round(viewport.scale * 100)}%
+            </button>
+            <button type="button" title="Fit to content (Ctrl+Shift+0)" onClick={() => viewport.fitToContent()}
+              style={{ width: 24, height: 22, border: 'none', background: 'transparent', color: 'var(--text-primary)', fontSize: 11, cursor: 'pointer', borderRadius: 4 }}>⤢</button>
+            <button type="button" title="Zoom options" onClick={() => setShowZoomMenu((v) => !v)}
+              style={{ width: 18, height: 22, border: 'none', background: 'transparent', color: 'var(--text-muted)', fontSize: 10, cursor: 'pointer', borderRadius: 4 }}>▾</button>
+
+            {showZoomMenu && (
+              <div
+                style={{
+                  position: 'absolute',
+                  right: 0,
+                  bottom: 28,
+                  width: 168,
+                  padding: 4,
+                  background: 'var(--surface-2)',
+                  border: '1px solid var(--border-default)',
+                  borderRadius: 8,
+                  boxShadow: '0 10px 30px rgba(0, 0, 0, 0.5)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 1
+                }}
+              >
+                {ZOOM_PRESETS.map((preset) => (
+                  <MenuItemRow key={preset.label} label={preset.label} active={Math.round(viewport.scale * 100) === Math.round(preset.scale * 100)} onClick={() => { viewport.setScale(preset.scale); setShowZoomMenu(false); }} />
+                ))}
+                <MenuItemRow label="Fit to content" onClick={() => { viewport.fitToContent(); setShowZoomMenu(false); }} />
+                <MenuItemRow label="Fit to selection" onClick={() => { viewport.zoomToSelection(); setShowZoomMenu(false); }} />
+                <div style={{ height: 1, background: 'var(--border-subtle)', margin: '4px 0' }} />
+                <MenuItemRow label="Grid" toggle active={gridVisible} onClick={() => { const next = !gridVisible; setGridVisible(next); persistViewport({ grid: next }); }} />
+                <MenuItemRow label="Rulers" toggle active={rulersVisible} onClick={() => { const next = !rulersVisible; setRulersVisible(next); persistViewport({ rulers: next }); }} />
+                <MenuItemRow label="Minimap" toggle active={minimapVisible} onClick={() => { const next = !minimapVisible; setMinimapVisible(next); persistViewport({ minimap: next }); }} />
+                <MenuItemRow label="Snap to grid" toggle active={snapEnabled} onClick={() => setSnapEnabled((v) => !v)} />
+              </div>
+            )}
+          </div>
 
           {/* Hidden image input for Img → CSS extraction */}
           <input
@@ -1956,56 +2709,58 @@ export const M3ECanvas: React.FC = () => {
           )}
         </div>
 
-        {/* RIGHT: properties */}
-        <aside
-          style={{
-            width: 250,
-            flexShrink: 0,
-            display: 'flex',
-            flexDirection: 'column',
-            borderLeft: '1px solid var(--bg-tertiary)',
-            background: 'var(--bg-primary)',
-            minHeight: 0
-          }}
-        >
-          <div
-            style={{
-              height: 30,
-              flexShrink: 0,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 7,
-              padding: '0 10px',
-              borderBottom: '1px solid var(--bg-secondary)',
-              fontSize: 10,
-              fontWeight: 700,
-              letterSpacing: '0.5px',
-              color: 'var(--text-muted)'
-            }}
-          >
-            <Sliders size={12} color="var(--accent-primary)" />
-            PROPERTIES
-            {selectedNode && (
-              <button
-                type="button"
-                onClick={() => removeNode(selectedNode.id)}
-                title="Delete selected node"
-                style={{
-                  marginLeft: 'auto',
-                  background: 'transparent',
-                  border: 'none',
-                  color: selectedNodeId ? 'var(--accent-red)' : 'var(--text-secondary)',
-                  cursor: selectedNodeId ? 'pointer' : 'default',
-                  display: 'flex',
-                  padding: 2
-                }}
-              >
-                <Trash2 size={11} />
-              </button>
-            )}
-          </div>
-          <PropertiesPanel node={selectedNode} platform={activePlatform} designProfile={designProfile} />
-        </aside>
+        {/* RIGHT: inspector — collapsible rail, resizable, reorderable sections */}
+        {!focusMode && (rightCollapsed ? (
+          <CollapsedRail side="right" onExpand={() => useCanvasLayoutStore.getState().togglePanel('right')} items={rightRailItems} />
+        ) : (
+          <>
+            <ResizeHandle
+              side="right"
+              width={rightWidth}
+              min={PANEL_MIN_WIDTH}
+              max={PANEL_MAX_WIDTH}
+              onResize={(w) => useCanvasLayoutStore.getState().setPanelWidth('right', w)}
+              onResizeStart={() => useCanvasLayoutStore.getState().setResizing(true)}
+              onResizeEnd={() => useCanvasLayoutStore.getState().setResizing(false)}
+              onReset={() => useCanvasLayoutStore.getState().setPanelWidth('right', canvasSettings.defaultRightWidth)}
+            />
+            <aside
+              style={{
+                width: rightWidth,
+                flexShrink: 0,
+                display: 'flex',
+                flexDirection: 'column',
+                borderLeft: '1px solid var(--bg-tertiary)',
+                background: 'var(--bg-primary)',
+                minHeight: 0,
+                overflow: 'hidden'
+              }}
+            >
+              <PanelHeaderBar
+                side="right"
+                collapsed={rightCollapsed}
+                onToggleCollapse={() => useCanvasLayoutStore.getState().togglePanel('right')}
+                sections={rightSections.map((s) => ({ id: s.id, title: SECTION_TITLE[s.id], visible: s.visible }))}
+                onToggleSectionVisible={(id, visible) => useCanvasLayoutStore.getState().setSectionVisible('right', id as CanvasSectionId, visible)}
+              />
+              {selectedNode && (
+                <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '5px 8px', borderBottom: '1px solid var(--bg-secondary)' }}>
+                  <button
+                    type="button"
+                    onClick={() => removeNode(selectedNode.id)}
+                    title="Delete selected node"
+                    style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 7px', borderRadius: 5, border: '1px solid var(--bg-tertiary)', background: 'transparent', color: 'var(--accent-red)', fontSize: 10, cursor: 'pointer' }}
+                  >
+                    <Trash2 size={11} /> Delete node
+                  </button>
+                </div>
+              )}
+              <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+                <InspectorSections node={selectedNode} platform={activePlatform} designProfile={designProfile} />
+              </div>
+            </aside>
+          </>
+        ))}
       </div>
 
       {/* Safe Edit Review Gate Modal: Apply UI to Project File */}

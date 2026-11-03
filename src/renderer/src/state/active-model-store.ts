@@ -69,7 +69,7 @@ export const useActiveModelStore = create<ActiveModelState>()(
   persist(
     (set, get) => ({
       providerId: 'ty-code-free',
-      modelId: 'google/gemma-4-31b-it:free',
+      modelId: 'google/gemma-4-26b-a4b-it:free',
       modelConfig: null,
       isAutoMode: true,
       mode: DEFAULT_LOCK_MODE,
@@ -197,7 +197,7 @@ if (typeof window !== 'undefined') {
         }
         if (res?.success && res.data) {
           const providerId = res.data.activeProvider || 'ty-code-free';
-          const modelId = res.data.activeModel || 'google/gemma-4-31b-it:free';
+          const modelId = res.data.activeModel || 'google/gemma-4-26b-a4b-it:free';
           const isAutoMode = providerId === 'auto' || !providerId;
           const mode: ModelLockMode = res.data.modelLock?.mode === 'strict' ? 'strict' : DEFAULT_LOCK_MODE;
           const adopted: PushTriple = { providerId, modelId, isAutoMode, mode };
@@ -242,7 +242,7 @@ let disposeActiveRouteListener: (() => void) | null = null;
 function adoptRequestedLock(modelLock: { providerId?: string; modelId?: string; mode?: ModelLockMode } | null | undefined): void {
   if (!modelLock || typeof modelLock !== 'object') return;
   const providerId = modelLock.providerId || 'ty-code-free';
-  const modelId = modelLock.modelId || 'google/gemma-4-31b-it:free';
+  const modelId = modelLock.modelId || 'google/gemma-4-26b-a4b-it:free';
   const isAutoMode = providerId === 'auto' || !providerId;
   const mode: ModelLockMode = modelLock.mode === 'strict' ? 'strict' : DEFAULT_LOCK_MODE;
   const adopted: PushTriple = { providerId, modelId, isAutoMode, mode };

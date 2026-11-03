@@ -28,7 +28,7 @@ export const SYNC_LOOP_QUIET_PERIOD_MS = 2000;
 
 const DEFAULT_LOCK: ModelLock = {
   providerId: 'ty-code-free',
-  modelId: 'google/gemma-4-31b-it:free',
+  modelId: 'google/gemma-4-26b-a4b-it:free',
   mode: 'resilient'
 };
 const UNLOCKED: ActiveModelTriple = { providerId: '', modelId: '', isAutoMode: true };

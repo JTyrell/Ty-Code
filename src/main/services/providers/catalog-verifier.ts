@@ -23,9 +23,11 @@ import {
   exportBakedExpectations,
   setModelCatalogCorrections,
   getModelCatalogCorrections,
+  getVerifiedModels,
   type VerifiedModelConfig,
   type ModelCatalogCorrection
 } from '../verified-models';
+import { getModelLock, lockActiveModel } from '../../providers/active-model-lock';
 import { fccCatalogSync } from '../fcc/catalog-sync';
 import { getAllPreconfiguredProviders } from '../../config/provider-registry';
 
@@ -53,6 +55,20 @@ interface PersistedVerifications {
 const PERSIST_FILE = 'model-catalog-verifications.json';
 const PERIODIC_INTERVAL_MS = 15 * 60 * 1000;
 
+// Zero-config Ty-Code Free tier reconciliation (OpenRouter). The public /models
+// listing needs no key, so healing this catalog never touches the rate-limited
+// community-key budget. Newly-available `:free` models are auto-admitted ONLY
+// from these trusted publishers, so a random/low-quality slug can never enter
+// the agentic rotation; retired slugs are pruned the moment they vanish live.
+const OPENROUTER_MODELS_URL = 'https://openrouter.ai/api/v1/models';
+const OPENROUTER_FREE_PROVIDER_ID = 'ty-code-free';
+const MAX_AUTO_ADDED_FREE_MODELS = 15;
+const FREE_TIER_PUBLISHER_ALLOWLIST = new Set<string>([
+  'google', 'anthropic', 'openai', 'meta-llama', 'mistralai', 'nvidia',
+  'cohere', 'qwen', 'deepseek', 'x-ai', 'microsoft', 'alibaba', 'moonshot',
+  'moonshotai', 'z-ai', 'minimax', 'ai21', 'ibm-granite', 'baichuan', 'thudm'
+]);
+
 class ModelCatalogVerifier {
   private results: CatalogVerificationResult[] = [];
   private updatedAt = 0;
@@ -60,6 +76,7 @@ class ModelCatalogVerifier {
   private periodic: NodeJS.Timeout | null = null;
   private listeners: Set<(results: CatalogVerificationResult[]) => void> = new Set();
   private saveTimer: NodeJS.Timeout | null = null;
+  private healInFlight: Promise<CatalogVerificationResult> | null = null;
 
   /** Loads persisted corrections from disk and applies them immediately. */
   activate(): void {
@@ -102,6 +119,10 @@ class ModelCatalogVerifier {
       const batchResults = await Promise.all(batch.map((c) => this.verifyOne(c)));
       results.push(...batchResults);
     }
+    // Reconcile the zero-config OpenRouter free tier against its PUBLIC /models
+    // listing (no key, no community-key budget). This is the guard that keeps
+    // ty-code-free from rotting into a stale baked snapshot that breaks chat.
+    results.push(await this.verifyOpenRouterFreeTier());
     this.applyAndPersist(results);
     return results;
   }
@@ -287,6 +308,34 @@ class ModelCatalogVerifier {
     this.updatedAt = Date.now();
     for (const listener of this.listeners) listener(this.results);
     void this.persistSoon();
+    // If the corrections just pruned the model the active lock points at, heal
+    // the default too so a retired slug can never be the entry point.
+    void this.repointDefaultIfRetired();
+  }
+
+  /**
+   * Repoints the active free-tier lock to the first healthy catalog entry when
+   * the currently-locked model has been retired upstream. Non-destructive to
+   * connected (keyed) providers; only acts while the lock sits on ty-code-free.
+   */
+  private async repointDefaultIfRetired(): Promise<void> {
+    try {
+      const lock = getModelLock();
+      if ((lock.providerId || '').toLowerCase() !== OPENROUTER_FREE_PROVIDER_ID) return;
+      const models = await getVerifiedModels();
+      const healthyFree = models.filter((m) => (m.providerId || '').toLowerCase() === OPENROUTER_FREE_PROVIDER_ID);
+      if (healthyFree.length === 0) return;
+      if (healthyFree.some((m) => m.modelId === lock.modelId)) return;
+      const next = healthyFree[0];
+      lockActiveModel(
+        { providerId: OPENROUTER_FREE_PROVIDER_ID, modelId: next.modelId, mode: lock.mode },
+        OPENROUTER_FREE_PROVIDER_ID,
+        next.modelId
+      );
+      console.log(`[CATALOG-VERIFY] Default free model "${lock.modelId}" retired upstream; repointed to healthy "${next.modelId}".`);
+    } catch {
+      // Non-fatal: resilient-mode failover still routes around the dead default.
+    }
   }
 
   /** Debounced disk write: near-instant reactions do not thrash the disk. */
@@ -334,6 +383,100 @@ class ModelCatalogVerifier {
       void this.verifyAll().catch(() => undefined);
     }, PERIODIC_INTERVAL_MS);
     if (typeof this.periodic.unref === 'function') this.periodic.unref();
+  }
+
+  /**
+   * Reconciles the zero-config Ty-Code Free tier (OpenRouter) against the
+   * PUBLIC OpenRouter /models catalog. No API key is required for the listing,
+   * so this never consumes the rate-limited community-key budget. Produces the
+   * same removed/added corrections the pipeline already applies to connected
+   * providers — so retired slugs stop being referenced and newly-available
+   * `:free` models from trusted publishers are admitted automatically.
+   */
+  async verifyOpenRouterFreeTier(): Promise<CatalogVerificationResult> {
+    const providerId = OPENROUTER_FREE_PROVIDER_ID;
+    const providerName = 'Ty-Code Free (OpenRouter)';
+    try {
+      const res = await fetch(OPENROUTER_MODELS_URL, {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+        signal: AbortSignal.timeout(12_000)
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new Error(`OpenRouter /models request failed (${res.status}): ${text.slice(0, 150)}`);
+      }
+      const data = (await res.json()) as { data?: Array<{ id?: string; name?: string }> };
+      const list = Array.isArray(data.data) ? data.data : [];
+      const liveIds = new Set<string>();
+      const nameById = new Map<string, string>();
+      for (const m of list) {
+        const id = String(m?.id || '');
+        if (!id) continue;
+        liveIds.add(id);
+        if (m?.name) nameById.set(id, String(m.name));
+      }
+
+      const expectations = exportBakedExpectations()[providerId] || [];
+      const expectedIds = new Set(expectations.map((m) => m.modelId));
+
+      const removedModelIds = [...expectedIds].filter((id) => !liveIds.has(id));
+      const addedModels = [...liveIds]
+        .filter((id) => id.endsWith(':free'))
+        .filter((id) => !expectedIds.has(id))
+        .filter((id) => FREE_TIER_PUBLISHER_ALLOWLIST.has((id.split('/')[0] || '').toLowerCase()))
+        .map((id) => ({ modelId: id, name: nameById.get(id) || id }))
+        .slice(0, MAX_AUTO_ADDED_FREE_MODELS);
+
+      return {
+        providerId,
+        providerName,
+        status: 'PASS',
+        verifiedAt: Date.now(),
+        liveCount: liveIds.size,
+        expectedCount: expectations.length,
+        addedModels,
+        removedModelIds,
+        renamedModels: [],
+        corrected: addedModels.length > 0 || removedModelIds.length > 0
+      };
+    } catch (err: unknown) {
+      return {
+        providerId,
+        providerName,
+        status: 'FAIL',
+        verifiedAt: Date.now(),
+        liveCount: 0,
+        expectedCount: 0,
+        addedModels: [],
+        removedModelIds: [],
+        renamedModels: [],
+        corrected: false,
+        error: err instanceof Error ? err.message : String(err)
+      };
+    }
+  }
+
+  /**
+   * On-demand, de-duplicated heal of the free tier. Fired by the gateway when a
+   * live request hits a 404 / "no longer available" / "retired" for a free route,
+   * so a brand-new retirement is corrected within the current session instead of
+   * waiting for the next periodic pass. Non-blocking; safe to fire-and-forget.
+   */
+  healOpenRouterFreeTier(): Promise<CatalogVerificationResult> {
+    if (this.healInFlight) return this.healInFlight;
+    this.healInFlight = (async () => {
+      const result = await this.verifyOpenRouterFreeTier();
+      if (result.status === 'PASS') {
+        const merged = [...this.results.filter((r) => r.providerId !== result.providerId), result]
+          .sort((a, b) => a.providerId.localeCompare(b.providerId));
+        this.applyAndPersist(merged);
+      }
+      return result;
+    })().finally(() => {
+      this.healInFlight = null;
+    });
+    return this.healInFlight;
   }
 }
 

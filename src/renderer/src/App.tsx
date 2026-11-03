@@ -68,6 +68,18 @@ const CodeReviewPanel = React.lazy(() => import('./components/CodeReviewPanel').
 const DiffViewer = React.lazy(() => import('./components/DiffViewer').then((m) => ({ default: m.DiffViewer })));
 const DocViewerModal = React.lazy(() => import('./components/DocViewerModal').then((m) => ({ default: m.DocViewerModal })));
 
+// Perf: these heavy subtrees read their own state from stores and take no props,
+// so memoizing them keeps a sidebar width change (toggle or splitter drag) and an
+// activity-tab switch from re-rendering the Monaco editor, chat sidecar and the
+// always-mounted panels. Without this, every mousemove during a resize reconciled
+// the entire workbench tree (editor + full chat list) — the tab-switch/resize freeze.
+const MemoEditorArea = React.memo(EditorArea);
+const MemoChatSidecar = React.memo(ChatSidecar);
+const MemoSidebar = React.memo(Sidebar);
+const MemoSourceControlPanel = React.memo(SourceControlPanel);
+const MemoSkillsPanel = React.memo(SkillsPanel);
+const MemoOmniDebugger = React.memo(OmniDebugger);
+
 const MainWorkbench: React.FC = () => {
   useActiveModelSync();
   const [activityTab, setActivityTab] = useState<ActivityTab>('explorer');
@@ -162,7 +174,12 @@ const MainWorkbench: React.FC = () => {
     if (tab === 'extensions') {
       void window.electronAPI?.bootSchedulerPromote?.('extension_host');
     }
-    setActivityTab(tab);
+    // Paint the activity-bar highlight + open the panel container immediately,
+    // then mount the (possibly heavy) target panel in a non-urgent transition so
+    // the click never blocks on the new view's first render.
+    React.startTransition(() => {
+      setActivityTab(tab);
+    });
     void transitionProfiler.endTransition(id, `panel_visible:${tab}`);
   }, [activityTab]);
 
@@ -506,14 +523,28 @@ const MainWorkbench: React.FC = () => {
     setIsDraggingLeft(true);
     const startX = e.clientX;
     const startWidth = leftWidth;
+    // Coalesce mousemove into one update per animation frame. Raw mousemove can
+    // fire far faster than the display refresh; setting state on each event
+    // re-rendered the workbench many times per frame while dragging.
+    let rafId = 0;
+    let pendingWidth = startWidth;
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
       const delta = moveEvent.clientX - startX;
-      const newWidth = Math.max(180, Math.min(800, startWidth + delta));
-      setLeftWidth(newWidth);
+      pendingWidth = Math.max(180, Math.min(800, startWidth + delta));
+      if (rafId) return;
+      rafId = window.requestAnimationFrame(() => {
+        rafId = 0;
+        setLeftWidth(pendingWidth);
+      });
     };
 
     const handleMouseUp = () => {
+      if (rafId) {
+        window.cancelAnimationFrame(rafId);
+        rafId = 0;
+      }
+      setLeftWidth(pendingWidth);
       setIsDraggingLeft(false);
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
@@ -533,15 +564,28 @@ const MainWorkbench: React.FC = () => {
     setIsDraggingRight(true);
     const startX = e.clientX;
     const startWidth = rightWidth;
+    // rAF-coalesce the drag (see the left handler) so React state updates at most
+    // once per frame instead of once per mousemove event.
+    let rafId = 0;
+    let pendingWidth = startWidth;
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
       // Dragging leftwards increases the width of the right sidebar
       const delta = startX - moveEvent.clientX;
-      const newWidth = Math.max(280, Math.min(750, startWidth + delta));
-      setRightWidth(newWidth);
+      pendingWidth = Math.max(280, Math.min(750, startWidth + delta));
+      if (rafId) return;
+      rafId = window.requestAnimationFrame(() => {
+        rafId = 0;
+        setRightWidth(pendingWidth);
+      });
     };
 
     const handleMouseUp = () => {
+      if (rafId) {
+        window.cancelAnimationFrame(rafId);
+        rafId = 0;
+      }
+      setRightWidth(pendingWidth);
       setIsDraggingRight(false);
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
@@ -576,9 +620,9 @@ const MainWorkbench: React.FC = () => {
 
         {/* Dynamic Primary Left Panel (Explorer / Search / Source Control / Code Review / Extensions / Skills / Outline) */}
         <div style={{ width: `${leftWidth}px`, height: '100%', flexShrink: 0, overflow: 'hidden' }}>
-          {activityTab === 'explorer' && <Sidebar />}
+          {activityTab === 'explorer' && <MemoSidebar />}
           {activityTab === 'search' && <SearchPanel onNavigateToLocation={(filePath, line, column) => navigateTo({ filePath, line, column })} />}
-          {activityTab === 'source-control' && <SourceControlPanel />}
+          {activityTab === 'source-control' && <MemoSourceControlPanel />}
           <React.Suspense fallback={<ViewSkeleton type="panel" />}>
             {activityTab === 'code-review' && <CodeReviewPanel />}
             {activityTab === 'extensions' && <ExtensionsPanel />}
@@ -611,9 +655,9 @@ const MainWorkbench: React.FC = () => {
               </div>
             )}
           </React.Suspense>
-          {activityTab === 'skills' && <SkillsPanel />}
+          {activityTab === 'skills' && <MemoSkillsPanel />}
           {activityTab === 'outline' && <OutlineView onNavigateToLine={(line) => navigateTo({ line })} />}
-          {activityTab === 'debugger' && <OmniDebugger />}
+          {activityTab === 'debugger' && <MemoOmniDebugger />}
         </div>
 
         {/* Left Splitter Resizer Handle */}
@@ -628,7 +672,7 @@ const MainWorkbench: React.FC = () => {
         {/* Central Monaco Editor Workspace + Git Diff Viewer + Integrated Terminal */}
         <div style={{ flex: 1, height: '100%', minWidth: 200, overflow: 'hidden', position: 'relative', display: 'flex', flexDirection: 'column', scrollbarGutter: 'stable' }}>
           <div style={{ flex: 1, minHeight: 0, position: 'relative', overflow: 'hidden' }}>
-            <EditorArea />
+            <MemoEditorArea />
             {/* Prompt 3: DiffViewer tree only mounts after hydration resolves —
                 before that its lazy chunk would suspend behind a modal
                 skeleton, which reads as the boot flash. */}
@@ -658,7 +702,7 @@ const MainWorkbench: React.FC = () => {
 
         {/* Right AI Assistant Sidecar */}
         <div style={{ width: `${rightWidth}px`, height: '100%', flexShrink: 0, overflow: 'hidden', display: rightWidth > 0 ? 'block' : 'none' }}>
-          <ChatSidecar />
+          <MemoChatSidecar />
         </div>
       </div>
 

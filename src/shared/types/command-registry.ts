@@ -72,7 +72,9 @@ export const COMMAND_CONTEXT_KEYS = [
   'hasRunningTasks',
   'hasOpenTabs',
   // --- Phase 2 (Inline Assist) --------------------------------------------
-  'inlineAssistOpen'
+  'inlineAssistOpen',
+  // --- Canvas viewport (Prompt 1) -----------------------------------------
+  'canvasActive'
 ] as const;
 
 export type CommandContextKey = (typeof COMMAND_CONTEXT_KEYS)[number];

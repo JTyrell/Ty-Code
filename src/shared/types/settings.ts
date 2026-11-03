@@ -105,7 +105,7 @@ export function migrateSettingsDocument(raw: Record<string, unknown>): Record<st
       : 'ty-code-free';
     const modelId = typeof migrated.activeModel === 'string'
       ? migrated.activeModel.trim()
-      : 'google/gemma-4-31b-it:free';
+      : 'google/gemma-4-26b-a4b-it:free';
     if (!migrated.modelLock || typeof migrated.modelLock !== 'object') {
       migrated.modelLock = { providerId, modelId, mode: 'resilient' };
     }

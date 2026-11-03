@@ -119,7 +119,7 @@ async function resolveProviderModel(): Promise<{ provider: string; model: string
   if (!model || (provider === 'openkilo' && !model.endsWith(':free') && !model.endsWith('/free'))) {
     if (provider === 'openkilo') model = 'kilo-auto/free';
     else if (provider === 'groq') model = 'openai/gpt-oss-120b';
-    else model = 'google/gemma-4-31b-it:free';
+    else model = 'google/gemma-4-26b-a4b-it:free';
   }
   return { provider, model };
 }
@@ -529,7 +529,7 @@ export async function generateRoleBasedReport(
           } catch {}
         }
         activeProvider = 'ty-code-free';
-        activeModel = 'google/gemma-4-31b-it:free';
+        activeModel = 'google/gemma-4-26b-a4b-it:free';
         responseText = await ProviderGateway.sendChatRequest(
           activeProvider,
           activeModel,

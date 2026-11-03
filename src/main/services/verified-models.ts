@@ -97,26 +97,19 @@ const OPENCODE_ZEN_FREE_MODELS: VerifiedModelConfig[] = [
 // upstream genuinely needs a key; the key is simply never supplied by the
 // user and never lives in source code.
 //
-// Every entry below was verified live on 2026-10-21 (~19:05 UTC) via
+// Every entry below was re-verified live on 2026-11-02 (~03:30 UTC) via
 // single-shot chat/completions probes against OpenRouter using the rotating
-// Community Key fetched fresh from the community Worker. Of the 18 slugs in
-// OpenRouter's live :free catalog, 14 answered 200; the ones excluded here are
-// "only available on agentic harnesses"-failed gateway-side. Newly retired
-// since the previous bake (do not re-add without a fresh probe): deepseek/
-// deepseek-v4.1-flash:free, z-ai/glm-5.3-flash:free, meituan/longcat-2.0:free
-// and nvidia/nemotron-3-super-120b-a12b:free (404 "unavailable for free"),
-// xingchen-agi/xing4.0-29b-a4b:free (persistent 429 from upstream provider).
+// Community Key fetched fresh from the community Worker. The first entry is the
+// default free model; healthy 200 responders lead the list so resilient-mode
+// failover lands on a working route fast. Transient 5xx/429 upstreams are kept
+// (they recover) but ordered last. Permanently retired slugs removed this pass
+// (do not re-add without a fresh probe): poolside/laguna-s-2.1:free and
+// poolside/laguna-xs-2.1:free (404 "no provider serves this model anymore"),
+// and minimax/minimax-m3.1-flash:free (404 free launch ended 2026-10-22).
 // Also live but deliberately excluded: nvidia/nemotron-3.5-content-safety
 // (single-purpose safety classifier) and nvidia/nemotron-3-nano-omni-30b
 // (audio/video omni variant, unreliable for text-only agent payloads).
 const TY_CODE_FREE_MODELS: VerifiedModelConfig[] = [
-  {
-    modelId: 'google/gemma-4-31b-it:free',
-    name: 'Gemma 4 31B (Ty-Code Free)',
-    url: 'https://openrouter.ai/api/v1/chat/completions',
-    requiresKey: true,
-    providerId: 'ty-code-free'
-  },
   {
     modelId: 'google/gemma-4-26b-a4b-it:free',
     name: 'Gemma 4 26B A4B (Ty-Code Free)',
@@ -132,36 +125,8 @@ const TY_CODE_FREE_MODELS: VerifiedModelConfig[] = [
     providerId: 'ty-code-free'
   },
   {
-    modelId: 'poolside/laguna-s-2.1:free',
-    name: 'Poolside Laguna S (Ty-Code Free)',
-    url: 'https://openrouter.ai/api/v1/chat/completions',
-    requiresKey: true,
-    providerId: 'ty-code-free'
-  },
-  {
-    modelId: 'poolside/laguna-xs-2.1:free',
-    name: 'Poolside Laguna XS (Ty-Code Free)',
-    url: 'https://openrouter.ai/api/v1/chat/completions',
-    requiresKey: true,
-    providerId: 'ty-code-free'
-  },
-  {
-    modelId: 'minimax/minimax-m3.1-flash:free',
-    name: 'MiniMax M3.1 Flash (Ty-Code Free)',
-    url: 'https://openrouter.ai/api/v1/chat/completions',
-    requiresKey: true,
-    providerId: 'ty-code-free'
-  },
-  {
     modelId: 'nvidia/nemotron-3.5-lightning:free',
     name: 'Nemotron 3.5 Lightning (Ty-Code Free)',
-    url: 'https://openrouter.ai/api/v1/chat/completions',
-    requiresKey: true,
-    providerId: 'ty-code-free'
-  },
-  {
-    modelId: 'nvidia/nemotron-3-ultra-550b-a55b:free',
-    name: 'Nemotron 3 Ultra 550B (Ty-Code Free)',
     url: 'https://openrouter.ai/api/v1/chat/completions',
     requiresKey: true,
     providerId: 'ty-code-free'
@@ -176,6 +141,20 @@ const TY_CODE_FREE_MODELS: VerifiedModelConfig[] = [
   {
     modelId: 'dots-studio/dots-3-note-preview:free',
     name: 'Dots 3 Note Preview (Ty-Code Free)',
+    url: 'https://openrouter.ai/api/v1/chat/completions',
+    requiresKey: true,
+    providerId: 'ty-code-free'
+  },
+  {
+    modelId: 'nvidia/nemotron-3-ultra-550b-a55b:free',
+    name: 'Nemotron 3 Ultra 550B (Ty-Code Free)',
+    url: 'https://openrouter.ai/api/v1/chat/completions',
+    requiresKey: true,
+    providerId: 'ty-code-free'
+  },
+  {
+    modelId: 'google/gemma-4-31b-it:free',
+    name: 'Gemma 4 31B (Ty-Code Free)',
     url: 'https://openrouter.ai/api/v1/chat/completions',
     requiresKey: true,
     providerId: 'ty-code-free'

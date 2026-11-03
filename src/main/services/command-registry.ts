@@ -107,11 +107,19 @@ export const COMMAND_ENTRY_INPUTS: CommandEntryInput[] = [
   // Edit — every operation delegates to Monaco when an editor is focused, so
   // the behaviour matches editor semantics rather than the DOM.
   // =========================================================================
-  { id: 'edit.undo', label: 'Undo', menu: 'Edit', group: 1, keybinding: 'Ctrl+Z', command: 'edit.dispatch', args: { op: 'undo' }, category: 'Edit' },
+  { id: 'edit.undo', label: 'Undo', menu: 'Edit', group: 1, keybinding: 'Ctrl+Z', when: '!canvasActive', disabledReason: 'The UI Sketcher owns Undo while its canvas is open.', command: 'edit.dispatch', args: { op: 'undo' }, category: 'Edit' },
   { id: 'edit.redo', label: 'Redo', menu: 'Edit', group: 1, keybinding: 'Ctrl+Y', command: 'edit.dispatch', args: { op: 'redo' }, category: 'Edit' },
-  { id: 'edit.cut', label: 'Cut', menu: 'Edit', group: 2, keybinding: 'Ctrl+X', command: 'edit.dispatch', args: { op: 'cut' }, category: 'Edit' },
-  { id: 'edit.copy', label: 'Copy', menu: 'Edit', group: 2, keybinding: 'Ctrl+C', command: 'edit.dispatch', args: { op: 'copy' }, category: 'Edit' },
-  { id: 'edit.paste', label: 'Paste', menu: 'Edit', group: 2, keybinding: 'Ctrl+V', command: 'edit.dispatch', args: { op: 'paste' }, category: 'Edit' },
+  // Prompt 3 (Sketcher editing core): Ctrl+Z belongs to the canvas history
+  // while the Sketcher is open, so `M3ECanvas` registers these handlers itself.
+  { id: 'canvas.undo', label: 'Undo (Canvas)', menu: 'Edit', group: 1, keybinding: 'Ctrl+Z', when: 'canvasActive', disabledReason: 'Open the UI Sketcher to undo its last editing action.', command: 'canvas.undo', category: 'View' },
+  { id: 'canvas.redo', label: 'Redo (Canvas)', menu: 'Edit', group: 1, keybinding: 'Ctrl+Shift+Z', when: 'canvasActive', disabledReason: 'Open the UI Sketcher to redo its last editing action.', command: 'canvas.redo', category: 'View' },
+  { id: 'edit.cut', label: 'Cut', menu: 'Edit', group: 2, keybinding: 'Ctrl+X', when: '!canvasActive', disabledReason: 'The UI Sketcher owns Cut while its canvas is open.', command: 'edit.dispatch', args: { op: 'cut' }, category: 'Edit' },
+  { id: 'edit.copy', label: 'Copy', menu: 'Edit', group: 2, keybinding: 'Ctrl+C', when: '!canvasActive', disabledReason: 'The UI Sketcher owns Copy while its canvas is open.', command: 'edit.dispatch', args: { op: 'copy' }, category: 'Edit' },
+  { id: 'edit.paste', label: 'Paste', menu: 'Edit', group: 2, keybinding: 'Ctrl+V', when: '!canvasActive', disabledReason: 'The UI Sketcher owns Paste while its canvas is open.', command: 'edit.dispatch', args: { op: 'paste' }, category: 'Edit' },
+  { id: 'canvas.cut', label: 'Cut (Canvas Layers)', menu: 'Edit', group: 2, keybinding: 'Ctrl+X', when: 'canvasActive', disabledReason: 'Open the UI Sketcher to cut its selected layers.', command: 'canvas.cut', category: 'View' },
+  { id: 'canvas.copy', label: 'Copy (Canvas Layers)', menu: 'Edit', group: 2, keybinding: 'Ctrl+C', when: 'canvasActive', disabledReason: 'Open the UI Sketcher to copy its selected layers.', command: 'canvas.copy', category: 'View' },
+  { id: 'canvas.paste', label: 'Paste (Canvas Layers)', menu: 'Edit', group: 2, keybinding: 'Ctrl+V', when: 'canvasActive', disabledReason: 'Open the UI Sketcher to paste canvas layers.', command: 'canvas.paste', category: 'View' },
+  { id: 'canvas.duplicate', label: 'Duplicate (Canvas Layers)', menu: 'Edit', group: 2, when: 'canvasActive', disabledReason: 'Open the UI Sketcher to duplicate its selected layers.', command: 'canvas.duplicate', category: 'View' },
   { id: 'edit.find', label: 'Find', menu: 'Edit', group: 3, keybinding: 'Ctrl+F', when: 'editorOpen', disabledReason: 'Open a file to search inside it.', command: 'editor.monacoAction', args: { actionId: 'actions.find' }, category: 'Edit' },
   { id: 'edit.replace', label: 'Replace', menu: 'Edit', group: 3, keybinding: 'Ctrl+H', when: 'editorOpen', disabledReason: 'Open a file to replace inside it.', command: 'editor.monacoAction', args: { actionId: 'editor.action.startFindReplaceAction' }, category: 'Edit' },
   { id: 'edit.find-in-files', label: 'Find in Files', menu: 'Edit', group: 3, keybinding: 'Ctrl+Shift+F', command: 'workbench.findInFiles', category: 'Edit' },
@@ -128,7 +136,7 @@ export const COMMAND_ENTRY_INPUTS: CommandEntryInput[] = [
   // =========================================================================
   // Selection — multi-cursor and column mode delegate to Monaco actions.
   // =========================================================================
-  { id: 'selection.select-all', label: 'Select All', menu: 'Selection', group: 1, keybinding: 'Ctrl+A', command: 'edit.dispatch', args: { op: 'selectAll' }, category: 'Selection' },
+  { id: 'selection.select-all', label: 'Select All', menu: 'Selection', group: 1, keybinding: 'Ctrl+A', when: '!canvasActive', disabledReason: 'The UI Sketcher owns Select All while its canvas is open.', command: 'edit.dispatch', args: { op: 'selectAll' }, category: 'Selection' },
   { id: 'selection.expand', label: 'Expand Selection', menu: 'Selection', group: 1, keybinding: 'Alt+Shift+Right', when: 'editorOpen', disabledReason: 'Open a file to expand a selection.', command: 'editor.monacoAction', args: { actionId: 'editor.action.smartSelect.expand' }, category: 'Selection' },
   { id: 'selection.shrink', label: 'Shrink Selection', menu: 'Selection', group: 1, keybinding: 'Alt+Shift+Left', when: 'editorOpen', disabledReason: 'Open a file to shrink a selection.', command: 'editor.monacoAction', args: { actionId: 'editor.action.smartSelect.shrink' }, category: 'Selection' },
   { id: 'selection.copy-line-up', label: 'Copy Line Up', menu: 'Selection', group: 2, keybinding: 'Alt+Shift+Up', when: 'editorOpen', disabledReason: 'Open a file to duplicate a line.', command: 'editor.monacoAction', args: { actionId: 'editor.action.copyLinesUpAction' }, category: 'Selection' },
@@ -140,6 +148,23 @@ export const COMMAND_ENTRY_INPUTS: CommandEntryInput[] = [
   { id: 'selection.add-cursor-above', label: 'Add Cursor Above', menu: 'Selection', group: 3, keybinding: 'Ctrl+Alt+Up', when: 'editorOpen', disabledReason: 'Open a file to add a cursor.', command: 'editor.monacoAction', args: { actionId: 'editor.action.insertCursorAbove' }, category: 'Selection' },
   { id: 'selection.add-cursor-below', label: 'Add Cursor Below', menu: 'Selection', group: 3, keybinding: 'Ctrl+Alt+Down', when: 'editorOpen', disabledReason: 'Open a file to add a cursor.', command: 'editor.monacoAction', args: { actionId: 'editor.action.insertCursorBelow' }, category: 'Selection' },
   { id: 'selection.column-mode', label: 'Column Selection Mode', menu: 'Selection', group: 4, when: 'editorOpen', disabledReason: 'Open a file to use column selection.', command: 'editor.monacoAction', args: { actionId: 'editor.action.toggleColumnSelectionMode' }, category: 'Selection' },
+
+  // Prompt 3 (Sketcher editing core, Steps 2-4): selection, align/distribute
+  // and grouping for the canvas layer tree. All gated on `canvasActive`, so
+  // they only appear (and only claim chords) in the Sketcher window; handlers
+  // are registered by `M3ECanvas` while the design stage is mounted.
+  { id: 'canvas.select-all', label: 'Select All Layers', menu: 'Selection', group: 6, keybinding: 'Ctrl+A', when: 'canvasActive', disabledReason: 'Open the UI Sketcher to select its top-level layers.', command: 'canvas.selectAll', category: 'View' },
+  { id: 'canvas.deselect', label: 'Deselect All (Canvas)', menu: 'Selection', group: 6, when: 'canvasActive', disabledReason: 'Open the UI Sketcher to clear its selection.', command: 'canvas.deselect', category: 'View' },
+  { id: 'canvas.align-left', label: 'Align Left', menu: 'Selection', group: 7, when: 'canvasActive', disabledReason: 'Select two or more canvas layers to align them.', command: 'canvas.align', args: { kind: 'left' }, category: 'View' },
+  { id: 'canvas.align-hcenter', label: 'Align Horizontal Centers', menu: 'Selection', group: 7, when: 'canvasActive', disabledReason: 'Select two or more canvas layers to align them.', command: 'canvas.align', args: { kind: 'hcenter' }, category: 'View' },
+  { id: 'canvas.align-right', label: 'Align Right', menu: 'Selection', group: 7, when: 'canvasActive', disabledReason: 'Select two or more canvas layers to align them.', command: 'canvas.align', args: { kind: 'right' }, category: 'View' },
+  { id: 'canvas.align-top', label: 'Align Top', menu: 'Selection', group: 7, when: 'canvasActive', disabledReason: 'Select two or more canvas layers to align them.', command: 'canvas.align', args: { kind: 'top' }, category: 'View' },
+  { id: 'canvas.align-vcenter', label: 'Align Vertical Centers', menu: 'Selection', group: 7, when: 'canvasActive', disabledReason: 'Select two or more canvas layers to align them.', command: 'canvas.align', args: { kind: 'vcenter' }, category: 'View' },
+  { id: 'canvas.align-bottom', label: 'Align Bottom', menu: 'Selection', group: 7, when: 'canvasActive', disabledReason: 'Select two or more canvas layers to align them.', command: 'canvas.align', args: { kind: 'bottom' }, category: 'View' },
+  { id: 'canvas.distribute-horizontal', label: 'Distribute Horizontally', menu: 'Selection', group: 7, when: 'canvasActive', disabledReason: 'Select three or more canvas layers to distribute them.', command: 'canvas.distribute', args: { axis: 'h' }, category: 'View' },
+  { id: 'canvas.distribute-vertical', label: 'Distribute Vertically', menu: 'Selection', group: 7, when: 'canvasActive', disabledReason: 'Select three or more canvas layers to distribute them.', command: 'canvas.distribute', args: { axis: 'v' }, category: 'View' },
+  { id: 'canvas.group', label: 'Group Selection', menu: 'Selection', group: 8, keybinding: 'Ctrl+Alt+G', when: 'canvasActive', disabledReason: 'Select canvas layers to group them.', command: 'canvas.group', category: 'View' },
+  { id: 'canvas.ungroup', label: 'Ungroup Selection', menu: 'Selection', group: 8, keybinding: 'Ctrl+Shift+Alt+G', when: 'canvasActive', disabledReason: 'Select a canvas group to ungroup it.', command: 'canvas.ungroup', category: 'View' },
 
   // Prompt E (Step 1): AI quick actions on the current selection. Registry-
   // backed only — the Monaco context-menu entries and the selection hover
@@ -168,6 +193,32 @@ export const COMMAND_ENTRY_INPUTS: CommandEntryInput[] = [
   { id: 'view.change-theme', label: 'Appearance & Theme…', menu: 'View', group: 4, command: 'workbench.changeTheme', category: 'View' },
   { id: 'view.usage-dashboard', label: 'Usage & Quota Dashboard', menu: 'View', group: 4, command: 'workbench.usageDashboard', category: 'View' },
   { id: 'view.boot-timeline', label: 'Boot Timeline', menu: 'View', group: 4, command: 'workbench.bootTimeline', category: 'View' },
+
+  // Canvas viewport (M3E Sketcher, Prompt 1). Gated on `canvasActive`, which
+  // only the Sketcher window contributes, so these rows stay hidden in the main
+  // window (where there is no design stage to act on) and their chords never
+  // fire there. Handlers are registered by `M3ECanvas` while it is mounted.
+  { id: 'canvas.zoom-in', label: 'Zoom In', menu: 'View', group: 5, keybinding: 'Ctrl+=', when: 'canvasActive', disabledReason: 'Open the UI Sketcher to zoom its canvas.', command: 'canvas.zoomIn', category: 'View' },
+  { id: 'canvas.zoom-out', label: 'Zoom Out', menu: 'View', group: 5, keybinding: 'Ctrl+-', when: 'canvasActive', disabledReason: 'Open the UI Sketcher to zoom its canvas.', command: 'canvas.zoomOut', category: 'View' },
+  { id: 'canvas.zoom-reset', label: 'Reset Zoom (100%)', menu: 'View', group: 5, keybinding: 'Ctrl+0', when: 'canvasActive', disabledReason: 'Open the UI Sketcher to reset its zoom.', command: 'canvas.zoomReset', category: 'View' },
+  { id: 'canvas.zoom-fit', label: 'Zoom to Fit Content', menu: 'View', group: 5, keybinding: 'Ctrl+Shift+0', when: 'canvasActive', disabledReason: 'Open the UI Sketcher to fit its canvas.', command: 'canvas.zoomFit', category: 'View' },
+  { id: 'canvas.toggle-grid', label: 'Toggle Canvas Grid', menu: 'View', group: 6, when: 'canvasActive', disabledReason: 'Open the UI Sketcher to toggle its grid.', command: 'canvas.toggleGrid', category: 'View' },
+  { id: 'canvas.toggle-rulers', label: 'Toggle Canvas Rulers', menu: 'View', group: 6, when: 'canvasActive', disabledReason: 'Open the UI Sketcher to toggle its rulers.', command: 'canvas.toggleRulers', category: 'View' },
+  { id: 'canvas.toggle-minimap', label: 'Toggle Canvas Minimap', menu: 'View', group: 6, when: 'canvasActive', disabledReason: 'Open the UI Sketcher to toggle its minimap.', command: 'canvas.toggleMinimap', category: 'View' },
+
+  // Canvas panels + focus mode (Prompt 2). Same `canvasActive` gate as the
+  // viewport rows, so none of these claim a chord in the main window.
+  { id: 'canvas.toggle-left-panel', label: 'Toggle Left Panel', menu: 'View', group: 7, keybinding: 'Ctrl+Alt+[', when: 'canvasActive', disabledReason: 'Open the UI Sketcher to show or hide its panels.', command: 'canvas.toggleLeftPanel', category: 'View' },
+  { id: 'canvas.toggle-right-panel', label: 'Toggle Right Panel', menu: 'View', group: 7, keybinding: 'Ctrl+Alt+]', when: 'canvasActive', disabledReason: 'Open the UI Sketcher to show or hide its panels.', command: 'canvas.toggleRightPanel', category: 'View' },
+  { id: 'canvas.focus-mode', label: 'Focus Canvas (Fullscreen)', menu: 'View', group: 7, keybinding: 'Ctrl+Shift+Enter', when: 'canvasActive', disabledReason: 'Open the UI Sketcher to enter focus mode.', command: 'canvas.focusMode', category: 'View' },
+
+  // Canvas z-order (Prompt 3, Step 4). Same `canvasActive` gate as the rest of
+  // the Sketcher rows; `M3ECanvas` reorders the layer AST through history
+  // commands when these fire.
+  { id: 'canvas.bring-front', label: 'Bring to Front', menu: 'View', group: 8, keybinding: 'Ctrl+Shift+]', when: 'canvasActive', disabledReason: 'Open the UI Sketcher to raise its selected layers.', command: 'canvas.bringToFront', category: 'View' },
+  { id: 'canvas.bring-forward', label: 'Bring Forward', menu: 'View', group: 8, keybinding: 'Ctrl+]', when: 'canvasActive', disabledReason: 'Open the UI Sketcher to raise its selected layers.', command: 'canvas.bringForward', category: 'View' },
+  { id: 'canvas.send-backward', label: 'Send Backward', menu: 'View', group: 8, keybinding: 'Ctrl+[', when: 'canvasActive', disabledReason: 'Open the UI Sketcher to lower its selected layers.', command: 'canvas.sendBackward', category: 'View' },
+  { id: 'canvas.send-back', label: 'Send to Back', menu: 'View', group: 8, keybinding: 'Ctrl+Shift+[', when: 'canvasActive', disabledReason: 'Open the UI Sketcher to lower its selected layers.', command: 'canvas.sendBack', category: 'View' },
 
   // Palette-only (no menu): these keep three shortcuts that `App.tsx` bound by
   // hand before the registry existed. Without entries here, retiring that

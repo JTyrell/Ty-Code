@@ -376,7 +376,7 @@ const FCC_SIDECAR_URL = 'http://localhost:8765/v1/chat/completions';
 const KILO_URL = 'https://api.kilo.ai/api/gateway/chat/completions';
 
 const TY_CODE_FREE_PROVIDER = 'ty-code-free';
-const TY_CODE_FREE_MODEL = 'google/gemma-4-31b-it:free';
+const TY_CODE_FREE_MODEL = 'google/gemma-4-26b-a4b-it:free';
 
 export class KeyMissingError extends Error {
   public readonly code = 'KEY_MISSING_ERROR';
@@ -1505,6 +1505,23 @@ export async function sendChatRequest(
       (failureClass.failureClass === 'invalid_key') ||
       (failureClass.failureClass === 'protocol_error' && (response.status === 401 || response.status === 403)) ||
       (response.status === 404 && /:free|\/free/.test(requestModel || modelId));
+    // Catalog self-heal: a free-tier model returning 404 / "no longer available"
+    // / "retired" means our baked expectations drifted from OpenRouter's live
+    // catalog. Fire a de-duplicated background reconcile against the PUBLIC
+    // /models listing so the dead slug is pruned (and healthy replacements
+    // admitted) within this session — the very signal that would otherwise
+    // silently break chat and agentic tool usage.
+    const looksRetiredFreeRoute =
+      response.status === 404 ||
+      /no longer available|retired|unavailable for free|not a valid model|was not found/i.test(errBodyText);
+    if (looksRetiredFreeRoute && /ty-code-free|openrouter|:free|\/free/i.test(`${config?.providerId || providerId} ${requestModel || modelId}`)) {
+      try {
+        const { modelCatalogVerifier } = require('../services/providers/catalog-verifier') as typeof import('../services/providers/catalog-verifier');
+        void modelCatalogVerifier.healOpenRouterFreeTier().catch(() => undefined);
+      } catch {
+        // Verifier unavailable: the periodic pass still heals the catalog later.
+      }
+    }
     if (shouldHandoff && usedCommunityKey && (response.status === 401 || response.status === 403)) {
       // The rotating Community Key was rejected: drop the cached card so the
       // next attempt re-bootstraps the current rotation, then fail over.

@@ -1297,6 +1297,8 @@ export const ChatSidecar: React.FC = () => {
             aria-pressed={sidecarTab === 'chat'}
             onClick={() => setSidecarTab('chat')}
             className={`chat-header-tab${sidecarTab === 'chat' ? ' is-active' : ''}`}
+            title="Assistant"
+            aria-label="Assistant"
           >
             <Sparkles size={13} aria-hidden="true" />
             <span>Assistant</span>
@@ -1306,6 +1308,8 @@ export const ChatSidecar: React.FC = () => {
             aria-pressed={sidecarTab === 'pair'}
             onClick={() => setSidecarTab('pair')}
             className={`chat-header-tab${sidecarTab === 'pair' ? ' is-active' : ''}`}
+            title="Pair Mode"
+            aria-label="Pair Mode"
           >
             <Users size={13} aria-hidden="true" />
             <span>Pair Mode</span>
@@ -1317,6 +1321,7 @@ export const ChatSidecar: React.FC = () => {
             onClick={() => setSidecarTab('history')}
             className={`chat-header-tab${sidecarTab === 'history' ? ' is-active' : ''}`}
             title={activeSidecar ? `Session: ${activeSidecar.title}` : 'Session history'}
+            aria-label="Sessions"
           >
             <History size={13} aria-hidden="true" />
             <span>{activeSidecar ? activeSidecar.title.slice(0, 18) : 'Sessions'}</span>
@@ -1327,6 +1332,8 @@ export const ChatSidecar: React.FC = () => {
             aria-pressed={sidecarTab === 'checkpoints'}
             onClick={() => setSidecarTab('checkpoints')}
             className={`chat-header-tab${sidecarTab === 'checkpoints' ? ' is-active' : ''}`}
+            title="Checkpoints"
+            aria-label="Checkpoints"
           >
             <RotateCcw size={13} aria-hidden="true" />
             <span>Checkpoints</span>
@@ -1337,6 +1344,7 @@ export const ChatSidecar: React.FC = () => {
             onClick={() => setSidecarTab('wiki')}
             className={`chat-header-tab${sidecarTab === 'wiki' ? ' is-active' : ''}`}
             title="Project Wiki"
+            aria-label="Project Wiki"
           >
             <BookOpen size={13} aria-hidden="true" />
             <span>Wiki</span>
@@ -1347,6 +1355,7 @@ export const ChatSidecar: React.FC = () => {
             onClick={() => setSidecarTab('index')}
             className={`chat-header-tab${sidecarTab === 'index' ? ' is-active' : ''}`}
             title="Semantic Index"
+            aria-label="Semantic Index"
           >
             <Layers size={13} aria-hidden="true" />
             <span>Index</span>
@@ -1357,6 +1366,7 @@ export const ChatSidecar: React.FC = () => {
             onClick={() => setSidecarTab('quests')}
             className={`chat-header-tab${sidecarTab === 'quests' ? ' is-active' : ''}`}
             title="Quests — delegated autonomous tasks"
+            aria-label="Quests"
           >
             <Rocket size={13} aria-hidden="true" />
             <span>Quests</span>
