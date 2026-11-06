@@ -19,6 +19,13 @@ export interface DesignComponent {
   name: string;
   importPath: string;
   category?: 'primitive' | 'layout' | 'form' | 'feedback' | 'navigation';
+  /**
+   * Workspace-relative path of the file that actually defines this component
+   * (Prompt 4 Step 1: the library tooltip shows it). Absent for components that
+   * resolve to a bare package (e.g. `@mui/material`), where `importPath` is the
+   * only location hint.
+   */
+  sourceFile?: string;
 }
 
 export interface DesignProfile {
@@ -299,7 +306,12 @@ export async function extractDesignSystem(rootPath: string): Promise<DesignProfi
             components.push({
               name: componentName,
               importPath: `${importPrefix}/${baseFileName}`,
-              category: categorizeComponent(componentName)
+              category: categorizeComponent(componentName),
+              // Relative to the workspace root so the tooltip reads like an
+              // editor path (src/components/ui/button.tsx).
+              sourceFile: shadcnDir.startsWith(resolved + path.sep)
+                ? shadcnDir.slice(resolved.length + 1).split(path.sep).join('/') + '/' + entry.name
+                : entry.name
             });
           }
         }

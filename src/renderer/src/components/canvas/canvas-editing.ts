@@ -14,7 +14,9 @@
  */
 
 import type { CanvasNode, CanvasPlatform, CanvasPropValue } from '../../state/canvas-store';
+import { autoPlaceSlot, nodeDefaultSize } from '../../state/canvas-store';
 import {
+  addNodeCommand,
   canvasHistory,
   deleteNodeCommand,
   findNodeInTree,
@@ -23,6 +25,7 @@ import {
   propsCommand,
   reorderCommand,
   reparentCommand,
+  replaceNodeInTree,
   resolveChildren,
   ungroupCommand
 } from './canvas-history';
@@ -195,12 +198,88 @@ export class CanvasEditController {
 
   // -- single-step ops ------------------------------------------------------
 
+  /**
+   * Create a top-level layer and record it as one `add` command (its invert
+   * removes it), so a fresh node is undoable just like every other edit.
+   */
+  addLayer(input: { type: string; name?: string; props?: Record<string, CanvasPropValue> }): string {
+    const nodes = this.readNodes();
+    const platform = this.services.platformOf();
+    const id = freshNodeId();
+    const size = nodeDefaultSize(input.type);
+    const slot = autoPlaceSlot(nodes.length);
+    const node: CanvasNode = {
+      id,
+      type: input.type,
+      platform,
+      props: { x: slot.x, y: slot.y, width: size.width, height: size.height, ...input.props },
+      ...(input.name ? { name: input.name } : {}),
+      children: []
+    };
+    this.run(addNodeCommand(node, [], nodes.length, null));
+    return id;
+  }
+
+  /**
+   * Create a layer nested INSIDE an existing container (Prompt 4 Step 1: drop
+   * from the library onto a container). The child's x/y are local to the
+   * parent's content box; a fresh slot offsets stacked drops. Recorded as one
+   * undoable `add` command against the parent path, mirroring {@link addLayer}.
+   */
+  addLayerInto(
+    parentId: string,
+    input: { type: string; name?: string; props?: Record<string, CanvasPropValue> }
+  ): string | null {
+    const nodes = this.readNodes();
+    const parent = findNodeInTree(nodes, parentId);
+    if (!parent) return null;
+    const id = freshNodeId();
+    const size = nodeDefaultSize(input.type);
+    const slot = autoPlaceSlot(parent.children.length);
+    const node: CanvasNode = {
+      id,
+      type: input.type,
+      platform: parent.platform,
+      props: { x: slot.x, y: slot.y, width: size.width, height: size.height, ...input.props },
+      ...(input.name ? { name: input.name } : {}),
+      children: []
+    };
+    this.run(
+      addNodeCommand(
+        node,
+        [parentId],
+        parent.children.length,
+        { ...parent, children: [...parent.children] }
+      )
+    );
+    return id;
+  }
+
   restyle(id: string, patch: Record<string, CanvasPropValue>, label = 'Restyle'): void {
     const node = findNodeInTree(this.readNodes(), id);
     if (!node) return;
     const before = { [id]: { ...node.props } };
     const after = { [id]: { ...node.props, ...patch } };
     this.run(propsCommand('restyle', label, before, after));
+  }
+
+  /**
+   * Rename a layer. `name` lives outside `props`, so this is its own pure
+   * over-the-AST command (a `restyle` op) whose invert restores the exact prior
+   * node — undo/redo round-trips the label verbatim.
+   */
+  rename(id: string, name: string): void {
+    const nodes = this.readNodes();
+    const node = findNodeInTree(nodes, id);
+    if (!node || node.name === name) return;
+    const before = node;
+    const after: CanvasNode = { ...node, name };
+    this.run({
+      type: 'restyle',
+      label: 'Rename layer',
+      apply: (tree) => replaceNodeInTree(tree, id, after),
+      invert: (tree) => replaceNodeInTree(tree, id, before)
+    });
   }
 
   nudge(dx: number, dy: number): void {
@@ -510,6 +589,7 @@ export class CanvasEditController {
       treeOf: () => CanvasNode[];
       replaceOf: (nodes: CanvasNode[]) => void;
       selectionOf: () => string[];
+      platformOf: () => CanvasPlatform;
       clipboardOf: () => { write: (text: string) => void } | null;
     }
   ) {}

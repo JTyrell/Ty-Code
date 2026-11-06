@@ -17,6 +17,12 @@ import { toast } from '../../../state/toast-store';
 import { useWorkspaceSessionStore } from '../../../state/workspace-session-store';
 import { useCanvasPreviewStore } from '../../../state/canvas-preview-store';
 import {
+  getCanvasResponsive,
+  subscribeCanvasResponsive,
+  resolveResponsiveWidth
+} from '../../../lib/canvas-responsive-store';
+import type { ResponsiveState } from '../../../lib/canvas-responsive-store';
+import {
   CANVAS_INSPECTOR_SOURCE,
   CanvasInspectorBridge,
   type InspectorDragEvent,
@@ -186,6 +192,15 @@ export const CanvasPreviewHost: React.FC = () => {
   const inspectMode = useCanvasPreviewStore((s) => s.inspectMode);
   const setInspectMode = useCanvasPreviewStore((s) => s.setInspectMode);
   const setBridgeActive = useCanvasPreviewStore((s) => s.setBridgeActive);
+
+  // Prompt 4 extension: mirror the per-document responsive preview width into
+  // the live <webview> (the same store the sketcher stage reads), through a
+  // disposable subscription. 'auto' imposes no constraint. The running project
+  // is always the web representation, so the export target never changes it.
+  const responsiveDocId = sessionRoot ?? '__no-workspace__';
+  const [responsive, setResponsive] = useState<ResponsiveState>(() => getCanvasResponsive(responsiveDocId));
+  useEffect(() => subscribeCanvasResponsive(responsiveDocId, setResponsive), [responsiveDocId]);
+  const previewWidth = resolveResponsiveWidth(responsive);
 
   // Prompt 5 Step 3.2: colors are constrained to the extracted DesignProfile
   // palette — the swatch strip below is sourced from the workspace extractor.
@@ -751,9 +766,11 @@ export const CanvasPreviewHost: React.FC = () => {
               allowpopups={false}
               ondom-ready={handleDomReady}
               style={{
-                width: '100%',
+                width: previewWidth ?? '100%',
+                maxWidth: '100%',
                 height: '100%',
                 display: webviewReady ? 'block' : 'none',
+                margin: '0 auto',
                 border: 'none'
               }}
             />

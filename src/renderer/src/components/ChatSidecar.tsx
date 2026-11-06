@@ -1112,11 +1112,11 @@ export const ChatSidecar: React.FC = () => {
     return () => unsub?.();
   }, []);
 
-  const sendPrompt = (prompt: string, appendUserMessage = true, images?: string[], clientSentAt?: number) => {
+  const sendPrompt = (prompt: string, appendUserMessage = true, images?: string[], clientSentAt?: number, excludeRoute?: string) => {
     chatListRef.current?.scrollToBottom();
     const h1 = clientSentAt ?? (performance.timeOrigin + performance.now());
     console.log('UI: Sending prompt', prompt, 'H1:', h1);
-    void sendMessage(prompt, workspacePath, activeTab?.path, activeTab?.content, appendUserMessage, { clientSentAt: h1 }, images);
+    void sendMessage(prompt, workspacePath, activeTab?.path, activeTab?.content, appendUserMessage, { clientSentAt: h1, ...(excludeRoute ? { excludeRoute } : {}) }, images);
   };
   const handleSubmit = (event?: React.FormEvent) => {
     event?.preventDefault();
@@ -1242,8 +1242,12 @@ export const ChatSidecar: React.FC = () => {
     }
     const h1 = performance.timeOrigin + performance.now();
     const promptToRetry = lastUserMessage?.content || input.trim();
+    // Step 4.2: when the last assistant turn came back hollow, force the first
+    // attempt of the regenerated send to rotate AWAY from that degenerate route.
+    const lastHollow = [...messages].reverse().find((m) => m.role === 'assistant' && m.routeFailure);
+    const excludeRoute = lastHollow?.routeFailure?.route;
     if (promptToRetry) {
-      sendPrompt(promptToRetry, !lastUserMessage, Array.isArray(lastUserMessage?.images) && lastUserMessage.images.length > 0 ? [...lastUserMessage.images] : undefined, h1);
+      sendPrompt(promptToRetry, !lastUserMessage, Array.isArray(lastUserMessage?.images) && lastUserMessage.images.length > 0 ? [...lastUserMessage.images] : undefined, h1, excludeRoute);
     } else {
       inputRef.current?.focus();
     }

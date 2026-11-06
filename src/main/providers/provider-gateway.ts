@@ -22,7 +22,7 @@ import { providerHealthMonitor } from '../services/providers/health-monitor';
 import { readStoredCredentials } from '../ipc/settings-handlers';
 import { keyDetector } from '../services/providers/key-detector';
 
-import { getKey, getCommunityKey, warmUpCommunityKey, getCommunityKeyCached, hasCommunityKey, invalidateCommunityKey, emitCommunityKeyStatus } from '../services/credential-vault';
+import { getKey, getKeyPool, getCommunityKey, warmUpCommunityKey, getCommunityKeyCached, hasCommunityKey, invalidateCommunityKey, emitCommunityKeyStatus } from '../services/credential-vault';
 import { getVerifiedModels, type VerifiedModelConfig } from '../services/verified-models';
 import { fetchFCCCatalog, canFccServeCompletions } from '../services/fcc-catalog-sync';
 import { opencodeBridge, buildBridgePromptFromMessages } from '../services/opencode-bridge';
@@ -39,6 +39,8 @@ import { routeEventPolicy } from './route-event-policy';
 // === Autonomous Free-Tier Reliability (Prompt: sentinel + silent ladder) ===
 import { reliabilityLadder } from '../services/reliability/remediation-ladder';
 import { reliabilitySentinel } from '../services/reliability/reliability-sentinel';
+import { reliabilityLedger } from '../services/reliability/reliability-ledger';
+import { StreamValidityTracker, type DegenerateReason } from './output-validity';
 import { fccModelMapper } from '../services/fcc-model-mapper';
 import { sidecarLogLedger } from '../services/fcc/sidecar-log-ledger';
 import { isHarnessLogContent, FAILOVER_RESUME_INSTRUCTION } from '../services/fcc/sidecar-line-classifier';
@@ -621,6 +623,79 @@ export function parseFinishReason(raw: unknown): NormalizedFinishReason | null {
   return null;
 }
 
+// === Output Validity Gate: DEGENERATE ladder + key-pool rotation state =======
+// Per-turn (keyed by currentTaskId, stable across a turn's silent recursion)
+// bookkeeping so the remediation ladder honors its hard cap of 4 total attempts
+// per user turn and never re-uses a key or re-runs a same-route degenerate retry
+// it already spent. Local-only, best-effort, size-bounded (a runaway is capped,
+// never an unbounded leak).
+const MAX_TURN_ATTEMPTS = 4;
+const TURN_REMEDIATION_CAP = 256;
+interface TurnRemediationState {
+  /** Total provider/deg/key attempts dispatched this turn (>= MAX → stop). */
+  attempts: number;
+  /** `provider::model` routes already granted a same-route DEGENERATE retry. */
+  sameRouteRetried: Set<string>;
+  /** providerId -> keys already tried this turn (pool rotation advances past them). */
+  triedKeys: Map<string, string[]>;
+}
+const turnRemediation = new Map<string, TurnRemediationState>();
+
+function getRemediationState(taskId: string): TurnRemediationState {
+  let s = turnRemediation.get(taskId);
+  if (!s) {
+    if (turnRemediation.size >= TURN_REMEDIATION_CAP) {
+      const oldest = turnRemediation.keys().next().value;
+      if (oldest !== undefined) turnRemediation.delete(oldest);
+    }
+    s = { attempts: 0, sameRouteRetried: new Set(), triedKeys: new Map() };
+    turnRemediation.set(taskId, s);
+  }
+  return s;
+}
+
+/** The next not-yet-tried pool key for a provider, or null when the pool is spent. */
+function nextPoolKeyFor(taskId: string, providerId: string, pool: string[]): string | null {
+  const norm = (providerId || '').toLowerCase().trim();
+  const state = getRemediationState(taskId);
+  const tried = state.triedKeys.get(norm) ?? [];
+  for (const k of pool) {
+    const clean = (k || '').trim();
+    if (clean && !tried.includes(clean)) return clean;
+  }
+  return null;
+}
+
+function markKeyTried(taskId: string, providerId: string, key: string): void {
+  const norm = (providerId || '').toLowerCase().trim();
+  const state = getRemediationState(taskId);
+  const tried = state.triedKeys.get(norm) ?? [];
+  if (key && !tried.includes(key)) tried.push(key);
+  state.triedKeys.set(norm, tried);
+}
+
+/** Test/teardown hook: drop all per-turn remediation state. */
+export function __resetTurnRemediation(taskId?: string): void {
+  if (taskId) {
+    turnRemediation.delete(taskId);
+    turnExcludedRoute.delete(taskId);
+  } else {
+    turnRemediation.clear();
+    turnExcludedRoute.clear();
+  }
+}
+
+// Output Validity Gate (Step 4.2): a Regenerate after a degenerate failure
+// carries the route that came back hollow so the FIRST attempt of the new turn
+// rotates away from it instead of re-hitting it. Consumed once, on the primary
+// send; never persisted. Set from the agent IPC before the run starts.
+const turnExcludedRoute = new Map<string, string>();
+export function setTurnExcludedRoute(taskId: string, route: string): void {
+  if (!taskId || !route) return;
+  if (turnExcludedRoute.size >= TURN_REMEDIATION_CAP) turnExcludedRoute.clear();
+  turnExcludedRoute.set(taskId, String(route).toLowerCase().trim());
+}
+
 export async function sendChatRequest(
   providerId: string,
   modelId: string,
@@ -642,6 +717,10 @@ export async function sendChatRequest(
 ): Promise<string> {
   const currentTaskId = taskId || chatLatencyTracker.getActiveTaskId() || `task_${Date.now()}`;
   chatLatencyTracker.setActiveTaskId(currentTaskId);
+  // Every dispatch (initial send + each silent retry/handoff/key rotation) is
+  // ONE attempt against the hard per-turn cap. The ladder gates below refuse
+  // any FURTHER remediation once this reaches MAX_TURN_ATTEMPTS.
+  getRemediationState(currentTaskId).attempts += 1;
 
   // Read currentActiveModel to determine routing (Prompt 2: Fix Routing)
   const activeConfig = getActiveModel();
@@ -743,15 +822,30 @@ export async function sendChatRequest(
   // dev chaos IPC is consumed here and thrown so NATIVE failover + ladder
   // paths run exactly as they would on a real outage. Packaged builds never
   // queue faults (double-guarded with the CI `chaos-hook-guard` script).
+  // The two Output-Validity faults do NOT throw: they preset a synthetic HTTP
+  // 200 whose body is degenerate, so the real validity gate + ladder exercise
+  // end-to-end exactly as they would against a live empty upstream.
   const chaosFault = reliabilitySentinel.takeChaosFault(providerId, modelId);
+  let chaosPresetResponse: Response | null = null;
   if (chaosFault) {
-    const msg =
-      chaosFault.fault === 'timeout'
-        ? 'fetch failed (timeout fault)'
-        : chaosFault.fault === 'refused'
-        ? 'fetch failed (ECONNREFUSED fault)'
-        : '429 rate limited (fault)';
-    throw new Error(`[GATEWAY] ${providerId} ${msg}`);
+    if (chaosFault.fault === 'emptyResponse' || chaosFault.fault === 'errorIn200') {
+      const sse =
+        chaosFault.fault === 'emptyResponse'
+          ? 'data: [DONE]\n\n' // 200, zero data events -> DEGENERATE(zero_data_events)
+          : 'data: {"error":{"message":"injected error-in-200","code":502}}\n\n'; // DEGENERATE(error_in_200)
+      chaosPresetResponse = new Response(sse, {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' }
+      });
+    } else {
+      const msg =
+        chaosFault.fault === 'timeout'
+          ? 'fetch failed (timeout fault)'
+          : chaosFault.fault === 'refused'
+          ? 'fetch failed (ECONNREFUSED fault)'
+          : '429 rate limited (fault)';
+      throw new Error(`[GATEWAY] ${providerId} ${msg}`);
+    }
   }
 
   const isFreeTierRequest = isTyCodeFree || isFcc || isFccProxy || norm === 'openkilo' || norm === 'kilo' || (providerId || '').toLowerCase().includes('free');
@@ -773,6 +867,87 @@ export async function sendChatRequest(
 
   // 1. Fetch verified models catalog and find requested model configuration
   const allModels = await getVerifiedModels();
+
+  // Catalog freshness (DEGENERATE-driven): a free route that has recently
+  // produced repeated degenerate/empty output is marked 'degraded'/'cooling'
+  // by the reliability sentinel. On a PRIMARY send (handoffCount === 0) we
+  // deprioritize such a slug and rotate to the first still-healthy free route
+  // of the same provider, so a retired or rate-limited default stops being hit
+  // first on every message. Handoff hops are already health-filtered by
+  // pickHandoffCandidate, so this only guards the fresh-send entry point.
+  if (handoffCount === 0 && (norm === 'ty-code-free' || norm === 'openrouter' || /:free|\/free/i.test(modelId))) {
+    try {
+      if (reliabilitySentinel.isRouteUnusable(providerId, modelId)) {
+        const healthySameProvider = allModels.find(
+          (m) =>
+            (m.providerId || '').toLowerCase() === (providerId || '').toLowerCase() &&
+            m.modelId !== modelId &&
+            /:free|\/free/i.test(m.modelId) &&
+            !reliabilitySentinel.isRouteUnusable(m.providerId, m.modelId)
+        );
+        if (healthySameProvider) {
+          console.log(`[GATEWAY] Free default ${modelId} is sentinel-degraded; rotating this send to healthy ${healthySameProvider.modelId}.`);
+          reliabilityLedger.record({
+            at: Date.now(),
+            kind: 'rotation_trigger',
+            turnId: currentTaskId,
+            step: 'model_rotation',
+            outcome: 'started',
+            route: `${providerId}::${modelId}`,
+            from: modelId,
+            to: healthySameProvider.modelId,
+            detail: 'sentinel-degraded free slug; rotated model within provider'
+          });
+          modelId = healthySameProvider.modelId;
+        }
+      }
+    } catch {
+      // Sentinel unavailable: the primary send proceeds on the requested route.
+    }
+  }
+
+  // Regenerate-excludes-route (Step 4.2): a fresh turn whose FIRST requested
+  // route was the one that just came back hollow rotates to a still-healthy
+  // model of the SAME provider before the first attempt. Consumed once, on the
+  // primary send only (handoffCount === 0). Same-provider rotation keeps every
+  // derived flag (isTyCodeFree/isFcc/…) valid; the sentinel-driven free-slug
+  // rotation above uses the identical, safe pattern.
+  if (handoffCount === 0 && turnExcludedRoute.has(currentTaskId)) {
+    const excluded = turnExcludedRoute.get(currentTaskId) || '';
+    turnExcludedRoute.delete(currentTaskId);
+    const excludedProvider = excluded.split('::')[0];
+    const excludedRoute = excluded.includes('::') ? excluded : '';
+    const matchesCurrentProvider =
+      excludedProvider &&
+      (excludedProvider === (providerId || '').toLowerCase().trim() ||
+        excludedProvider === norm ||
+        excludedProvider === (providerId || '').toLowerCase().trim().replace(/-free$/, ''));
+    if (matchesCurrentProvider) {
+      const altModel = allModels.find(
+        (m) =>
+          (m.providerId || '').toLowerCase() === (providerId || '').toLowerCase() &&
+          m.modelId !== modelId &&
+          (!excludedRoute || `${(m.providerId || '').toLowerCase()}::${m.modelId}` !== excludedRoute) &&
+          !reliabilitySentinel.isRouteUnusable(m.providerId, m.modelId)
+      );
+      if (altModel) {
+        console.log(`[GATEWAY] Regenerate excludes hollow route ${excluded}; rotating first attempt to ${altModel.modelId}.`);
+        reliabilityLedger.record({
+          at: Date.now(),
+          kind: 'rotation_trigger',
+          turnId: currentTaskId,
+          step: 'model_rotation',
+          outcome: 'started',
+          route: `${providerId}::${modelId}`,
+          from: modelId,
+          to: altModel.modelId,
+          detail: 'regenerate excluded degenerate route; rotated first attempt within provider'
+        });
+        modelId = altModel.modelId;
+      }
+    }
+  }
+
   let config = allModels.find(
     (m) =>
       (m.modelId === modelId || m.modelId.toLowerCase() === modelId.toLowerCase()) &&
@@ -1078,6 +1253,66 @@ export async function sendChatRequest(
   // Whether the resolved key came from the Community Key card (rotating).
   const usedCommunityKey = isTyCodeFree && Boolean(key && key === getCommunityKeyCached());
 
+  // Track the key we are about to use so pool rotation advances PAST it on a
+  // later 401/403/429/DEGENERATE (Step 2.1). Community keys rotate via their
+  // own re-bootstrap path, so only user-keyed routes are tracked. The raw key
+  // NEVER enters the ledger — only positional indices.
+  const keyedRoute = Boolean(config.requiresKey) && !usedCommunityKey && Boolean(key && key.trim());
+  if (keyedRoute && key) {
+    markKeyTried(currentTaskId, config.providerId || providerId, key.trim());
+  }
+
+  // Step 2.1: try the NEXT key in the provider's pool before rotating models
+  // or providers, on an auth / rate-limit / DEGENERATE failure from a keyed
+  // route. Returns the recovered text when a fresh key was dispatched, or null
+  // when the pool is spent / single-key / over the per-turn attempt cap.
+  const attemptKeyRotation = async (trigger: 'auth' | 'rate_limit' | 'degenerate'): Promise<string | null> => {
+    if (!keyedRoute) return null;
+    const state = getRemediationState(currentTaskId);
+    if (state.attempts >= MAX_TURN_ATTEMPTS) return null;
+    let pool: string[];
+    try {
+      pool = await getKeyPool(config.providerId || providerId);
+    } catch {
+      return null;
+    }
+    if (pool.length <= 1) return null;
+    const nextKey = nextPoolKeyFor(currentTaskId, config.providerId || providerId, pool);
+    if (!nextKey) return null;
+    const fromIdx = (state.triedKeys.get((config.providerId || providerId).toLowerCase().trim()) ?? []).length;
+    reliabilityLedger.record({
+      at: Date.now(),
+      kind: 'key_rotation',
+      turnId: currentTaskId,
+      step: 'key_rotation',
+      outcome: 'started',
+      route: `${config.providerId || providerId}::${requestModel || modelId}`,
+      from: `key#${fromIdx}`,
+      to: `key#${fromIdx + 1}`,
+      detail: `trigger=${trigger}; advancing to next pool key before model/provider rotation`
+    });
+    console.log(`[GATEWAY] ${trigger} on keyed route; rotating to next pool key (attempt ${state.attempts + 1}/${MAX_TURN_ATTEMPTS}).`);
+    return await sendChatRequest(
+      providerId,
+      modelId,
+      messages,
+      stream,
+      nextKey,
+      onToken,
+      handoffCount,
+      abortSignal,
+      onHandoff,
+      onReasoning,
+      tools,
+      onToolCalls,
+      currentTaskId,
+      context,
+      continuationCount,
+      onStatus,
+      carriedPartial
+    );
+  };
+
   // 3. Construct headers
   const headers: Record<string, string> = {
     'Content-Type': 'application/json'
@@ -1213,6 +1448,9 @@ export async function sendChatRequest(
     if (json.fcc_quota && typeof json.fcc_quota.consumed === 'number') {
       fccManager.recordTokenUsage(json.fcc_quota.consumed);
     }
+    // Validity gate: provider-reported output tokens feed the tracker so a
+    // stream with tokens but no decoded content classifies correctly.
+    if (usageOutputTokens !== undefined) validityTracker.noteTokens(usageOutputTokens);
   };
 
   const recordResponseUsage = (responseText: string) => {
@@ -1385,6 +1623,13 @@ export async function sendChatRequest(
   let fullText = '';
   let fullThought = '';
 
+  // Output Validity Gate (Prompt: Output Validity Gate & Quality-Driven
+  // Rotation). Incremental O(1) observation inside the SSE hot loop: the very
+  // first non-empty token or tool-call fragment marks the stream VALID, so a
+  // healthy stream pays no extra latency. The DEGENERATE reason taxonomy is
+  // only resolved once, at stream end.
+  const validityTracker = new StreamValidityTracker();
+
   // FCC stream normalization inputs: lines the OpenAI SSE parser could not
   // categorize are kept aside so non-SSE FCC flavors (NDJSON, bare JSON,
   // plain text) can be salvaged into a token stream after the read loop.
@@ -1471,12 +1716,15 @@ export async function sendChatRequest(
     // Record H3 (Gateway Adapter): right before fetch() is called to the LLM provider
     chatLatencyTracker.recordH3(currentTaskId);
 
-    const response = await providerFetch(config.url, {
+    const response = chaosPresetResponse ?? (await providerFetch(config.url, {
       method: 'POST',
       headers,
       body: JSON.stringify(payload),
       signal: combinedSignal
-    });
+    }));
+    // The preset is consumed once; a handoff re-entering this function must
+    // reach the real network (or its own queued fault), never replay it.
+    chaosPresetResponse = null;
 
     console.log(`[GATEWAY] Response status: ${response.status}`);
 
@@ -1529,10 +1777,63 @@ export async function sendChatRequest(
       console.log('[GATEWAY] Invalidating cached Community Key...');
       console.warn('[GATEWAY] ty-code-free: Community Key rejected; invalidating cache for re-bootstrap.');
       invalidateCommunityKey();
+      // Step 2.2: re-bootstrap the Community Key ONCE from the Cloudflare
+      // endpoint and retry the SAME route before rotating providers. The cache
+      // was just invalidated, so the re-entry re-fetches a fresh rotation.
+      if (getRemediationState(currentTaskId).attempts < MAX_TURN_ATTEMPTS) {
+        reliabilityLedger.record({
+          at: Date.now(),
+          kind: 'community_key_refresh',
+          turnId: currentTaskId,
+          step: 'community_key_refresh',
+          outcome: 'started',
+          route: `${config.providerId || providerId}::${requestModel || modelId}`,
+          detail: 'auth 401/403 on community key; re-bootstrapping from endpoint'
+        });
+        try {
+          const refreshed = await getCommunityKey();
+          reliabilityLedger.record({
+            at: Date.now(),
+            kind: 'community_key_refresh',
+            turnId: currentTaskId,
+            step: 'community_key_refresh',
+            outcome: refreshed ? 'ok' : 'failed',
+            route: `${config.providerId || providerId}::${requestModel || modelId}`,
+            detail: refreshed ? 'community key re-fetched' : 'endpoint returned no key'
+          });
+          if (refreshed && refreshed.trim()) {
+            return await sendChatRequest(
+              providerId, modelId, messages, stream, undefined, onToken, handoffCount,
+              abortSignal, onHandoff, onReasoning, tools, onToolCalls, currentTaskId, context,
+              continuationCount, onStatus, carriedPartial
+            );
+          }
+        } catch (refreshErr) {
+          reliabilityLedger.record({
+            at: Date.now(),
+            kind: 'community_key_refresh',
+            turnId: currentTaskId,
+            step: 'community_key_refresh',
+            outcome: 'failed',
+            route: `${config.providerId || providerId}::${requestModel || modelId}`,
+            detail: `refresh threw: ${refreshErr instanceof Error ? refreshErr.message : String(refreshErr)}`
+          });
+        }
+      }
     }
     if (shouldHandoff) {
+      // Step 2.1: for a keyed route, exhaust the provider's key pool BEFORE
+      // rotating models or providers (auth 401/403 and rate-limit 429).
+      if (!usedCommunityKey && config.requiresKey) {
+        const trigger = response.status === 429 ? 'rate_limit' : 'auth';
+        const recovered = await attemptKeyRotation(trigger);
+        if (recovered !== null) return recovered;
+      }
       const requestedModel = requestModel || modelId;
-      const nextModel = handoffCount < 2
+      // Hard per-turn attempt cap (Step 1.3): provider rotation is one attempt
+      // among at most MAX_TURN_ATTEMPTS total for the whole user turn.
+      const providerBudgetLeft = getRemediationState(currentTaskId).attempts < MAX_TURN_ATTEMPTS;
+      const nextModel = handoffCount < 2 && providerBudgetLeft
         ? pickHandoffCandidate(allModels, config?.providerId || providerId, requestedModel)
         : undefined;
 
@@ -1571,7 +1872,7 @@ export async function sendChatRequest(
           );
         }
       }
-      if (handoffCount < 2) {
+      if (handoffCount < 2 && providerBudgetLeft) {
         console.log(`[GATEWAY] Provider failed (${response.status}). Handing off to next provider (Attempt ${handoffCount + 1}/2).`);
         sidecarLogLedger.record(
           'rerun-decision',
@@ -1858,6 +2159,41 @@ export async function sendChatRequest(
       if (onReasoning) onReasoning(chunk);
     }, 10);
 
+    // Shared degenerate bookkeeping (Output Validity Gate). Hoisted as a
+    // function declaration so BOTH the mid-stream error-in-200 throw and the
+    // end-of-stream gate record an identical, reason-tagged audit trail:
+    // health-board strike + `degenerate_output` ledger event + free-tier
+    // catalog self-heal. The caller still throws the marker that feeds the
+    // remediation ladder.
+    function finalizeDegenerate(reason: DegenerateReason): void {
+      const degenerateProviderId = config?.providerId || providerId || 'unknown';
+      const degenerateModelId = requestModel || modelId || 'unknown';
+      reliabilityLedger.record({
+        at: Date.now(),
+        kind: 'degenerate',
+        turnId: currentTaskId,
+        route: `${degenerateProviderId}::${degenerateModelId}`,
+        outcome: 'failed',
+        bytes: fullText.trim().length,
+        finishReason: lastFinishReason || 'none',
+        detail: `degenerate_output reason=${reason}`
+      });
+      try {
+        reliabilitySentinel.recordRequestResult(degenerateProviderId, degenerateModelId, false, undefined, `degenerate_output:${reason}`);
+      } catch {
+        // Sentinel unavailable: the throw at the call site still fails the turn over.
+      }
+      if (/ty-code-free|^openrouter$/i.test(degenerateProviderId) || /:free|\/free/i.test(degenerateModelId)) {
+        // Lazy load to avoid a static import cycle (catalog-verifier imports
+        // ProviderGateway). Fire-and-forget: the heal must never delay the
+        // throw into the ladder. Dynamic import() works in both the CJS main
+        // build and the ESM test env (where a bare require() is undefined).
+        import('../services/providers/catalog-verifier')
+          .then(({ modelCatalogVerifier }) => modelCatalogVerifier.healOpenRouterFreeTier())
+          .catch(() => undefined);
+      }
+    }
+
     const reader = response.body.getReader();
     const decoder = new TextDecoder('utf-8');
     let buffer = '';
@@ -1897,14 +2233,24 @@ export async function sendChatRequest(
               json = null;
             }
             if (json) {
+              validityTracker.noteDataEvent();
               if (json.error && !fullText && streamedToolCalls.size === 0) {
+                // Error-in-200: the server smuggled a failure inside a healthy
+                // HTTP status. Record it in the validity taxonomy BEFORE throwing
+                // so the route takes a degenerate strike on the health board and
+                // the remediation ladder runs off the same marker message.
+                validityTracker.noteErrorFrame();
+                finalizeDegenerate('error_in_200');
                 const errCodeVal = json.error?.code || json.error?.status || 502;
                 const errMsgVal = json.error?.message || (typeof json.error === 'string' ? json.error : JSON.stringify(json.error));
                 throw new Error(`fetch failed: Upstream stream error (${errCodeVal}): ${errMsgVal}`);
               }
               extractProviderUsage(json);
               const finish = parseFinishReason(json);
-              if (finish) lastFinishReason = finish;
+              if (finish) {
+                lastFinishReason = finish;
+                validityTracker.noteFinishReason(finish);
+              }
               // Reasoning models stream their chain-of-thought in a dedicated
               // delta field. Capture it for the reasoning_content echo but never
               // mix it into the assistant content stream.
@@ -1928,6 +2274,8 @@ export async function sendChatRequest(
                   if (fragment.function?.name) slot.name = fragment.function.name;
                   if (typeof fragment.function?.arguments === 'string') slot.arguments += fragment.function.arguments;
                   streamedToolCalls.set(idx, slot);
+                  // A tool-call fragment is real output — VALID immediately.
+                  if (slot.name || slot.id || slot.arguments) validityTracker.markToolCall();
                 }
               }
               // Anthropic SSE: content_block_start announces a tool_use block,
@@ -1939,6 +2287,7 @@ export async function sendChatRequest(
                   name: json.content_block.name,
                   arguments: ''
                 });
+                validityTracker.markToolCall();
               } else if (json.type === 'input_json_delta' && typeof json.partial_json === 'string') {
                 const idx = typeof json.index === 'number' ? json.index : Math.max(0, streamedToolCalls.size - 1);
                 const slot = streamedToolCalls.get(idx);
@@ -1961,6 +2310,7 @@ export async function sendChatRequest(
               }
 
               if (token) {
+                validityTracker.markContent();
                 // Stream Hygiene (Prompt 2): token enters the agent stream only
                 // as completion content from a protocol frame; FCC harness
                 // announce content is log output and is gated to the ledger.
@@ -1984,11 +2334,15 @@ export async function sendChatRequest(
         if (trimmed.startsWith('data: ')) {
           const dataStr = trimmed.slice(6).trim();
           if (dataStr !== '[DONE]') {
+            validityTracker.noteDataEvent();
             try {
               const json = JSON.parse(dataStr);
               extractProviderUsage(json);
               const finish = parseFinishReason(json);
-              if (finish) lastFinishReason = finish;
+              if (finish) {
+                lastFinishReason = finish;
+                validityTracker.noteFinishReason(finish);
+              }
               const trailingReasoning = json.choices?.[0]?.delta?.reasoning_content ?? json.choices?.[0]?.delta?.reasoning;
               if (typeof trailingReasoning === 'string' && trailingReasoning) {
                 fullThought += trailingReasoning;
@@ -1996,6 +2350,7 @@ export async function sendChatRequest(
               }
               const token = json.choices?.[0]?.delta?.content ?? json.delta?.text;
               if (token) {
+                validityTracker.markContent();
                 if ((isFcc || isFccProxy) && isHarnessLogContent(token)) {
                   sidecarLogLedger.record('stream-gate', token);
                 } else {
@@ -2116,14 +2471,18 @@ export async function sendChatRequest(
       chatLatencyTracker.recordToken(currentTaskId, fullText);
     }
 
-    // If an upstream free provider closed an HTTP 200 SSE stream with 0 content,
-    // 0 reasoning, and 0 tool calls, treat it as an empty upstream failure (502)
-    // and hand off to the next healthy candidate if one is available.
-    if (!fullText.trim() && streamedToolCalls.size === 0 && !fullThought.trim() && handoffCount < 2) {
-      const altCandidate = pickHandoffCandidate(allModels, config?.providerId || providerId, requestModel || modelId);
-      if (altCandidate && altCandidate.providerId !== (config?.providerId || providerId)) {
-        throw new Error('fetch failed: 502 Empty stream from upstream provider');
-      }
+    // If an upstream provider closed an HTTP 200 stream with no usable output,
+    // that is a DEGENERATE turn — NOT a valid empty answer. The Output Validity
+    // Gate classifies WHY (error-in-200 / zero data events / missing
+    // finish_reason / plain empty content); `finalizeDegenerate` records the
+    // health-board strike and ledger event, and the throw below feeds the
+    // remediation ladder (retry same route -> rotate model/key/provider, all
+    // silent) so only a single retryable ErrorCard/Advisor escapes after
+    // exhaustion.
+    const gate = validityTracker.observe(fullText.trim().length);
+    if (!gate.valid) {
+      finalizeDegenerate(gate.reason);
+      throw new Error(`fetch failed: 502 Degenerate output from upstream provider (${gate.reason})`);
     }
 
     providerHealthMonitor.recordRequestOutcome(config.providerId || providerId, true, Math.max(1, Date.now() - requestStartMs));
@@ -2177,12 +2536,112 @@ export async function sendChatRequest(
   } catch (err: any) {
     console.error('[GATEWAY] Exact Node.js fetch error:', err);
     console.error(`[GATEWAY] Error message: ${err?.message || String(err)}`);
+    // Set when a DEGENERATE turn exhausts the same-route/key/community/model
+    // ladder and falls through to the provider handoff, so the trail names the
+    // hop 'degenerate' (an empty 200) rather than a generic 'err'.
+    let degenerateFallthrough = false;
     // User-initiated abort must never be re-routed to another provider. A
     // watchdog abort is NOT user-initiated — it is a stalled stream we actively
     // want to hand off — so it falls through to the handoff logic below.
     if (abortSignal?.aborted || (err?.name === 'AbortError' && !watchdogReason)) {
       clearWatchdog();
       throw err;
+    }
+    // Output Validity Gate — DEGENERATE remediation ladder (Step 1.3 + 2.1).
+    // A degenerate turn (HTTP 200, no usable output) is a ROUTABLE failure, so
+    // it walks a strict, SILENT ladder within a hard cap of 4 attempts/turn:
+    //   1. retry the SAME route once (transient empties happen),
+    //   2. try the NEXT key in the pool for a keyed route (before model/provider),
+    //   3. re-bootstrap the Community Key once for ty-code-free,
+    //   4. rotate to a healthy model WITHIN the provider,
+    //   5. otherwise fall through to the health-aware provider handoff below.
+    // Every step is silent; the consolidated trail is emitted once at `done`.
+    if (typeof err?.message === 'string' && err.message.includes('Degenerate output from upstream provider')) {
+      clearWatchdog();
+      degenerateFallthrough = true;
+      const state = getRemediationState(currentTaskId);
+      const degProviderId = config?.providerId || providerId || 'unknown';
+      const degModelId = requestModel || modelId || 'unknown';
+      const routeKey = `${degProviderId}::${degModelId}`;
+      const budget = state.attempts < MAX_TURN_ATTEMPTS;
+
+      // 1. Same-route retry, ONCE per route.
+      if (budget && !state.sameRouteRetried.has(routeKey)) {
+        state.sameRouteRetried.add(routeKey);
+        reliabilityLedger.record({
+          at: Date.now(), kind: 'rotation_trigger', turnId: currentTaskId, step: 'same_route_retry',
+          outcome: 'started', route: routeKey, from: routeKey, to: routeKey,
+          detail: `degenerate transient; retrying same route once (attempt ${state.attempts + 1}/${MAX_TURN_ATTEMPTS})`
+        });
+        return await sendChatRequest(
+          providerId, modelId, messages, stream, apiKey, onToken, handoffCount, abortSignal,
+          onHandoff, onReasoning, tools, onToolCalls, currentTaskId, context, continuationCount,
+          onStatus, carriedPartial
+        );
+      }
+
+      // 2. Keyed route: advance the pool before touching models/providers.
+      const recoveredKey = await attemptKeyRotation('degenerate');
+      if (recoveredKey !== null) return recoveredKey;
+
+      // 3. Community key: invalidate, re-bootstrap once, retry same route.
+      if (usedCommunityKey && budget) {
+        invalidateCommunityKey();
+        reliabilityLedger.record({
+          at: Date.now(), kind: 'community_key_refresh', turnId: currentTaskId, step: 'community_key_refresh',
+          outcome: 'started', route: routeKey, detail: 'degenerate on community key; re-bootstrapping once'
+        });
+        try {
+          const refreshed = await getCommunityKey();
+          reliabilityLedger.record({
+            at: Date.now(), kind: 'community_key_refresh', turnId: currentTaskId, step: 'community_key_refresh',
+            outcome: refreshed ? 'ok' : 'failed', route: routeKey,
+            detail: refreshed ? 'community key re-fetched' : 'endpoint returned no key'
+          });
+          if (refreshed && refreshed.trim()) {
+            return await sendChatRequest(
+              providerId, modelId, messages, stream, undefined, onToken, handoffCount, abortSignal,
+              onHandoff, onReasoning, tools, onToolCalls, currentTaskId, context, continuationCount,
+              onStatus, carriedPartial
+            );
+          }
+        } catch {
+          reliabilityLedger.record({
+            at: Date.now(), kind: 'community_key_refresh', turnId: currentTaskId, step: 'community_key_refresh',
+            outcome: 'failed', route: routeKey, detail: 'community refresh threw'
+          });
+        }
+      }
+
+      // 4. Rotate to a healthy model within the SAME provider (before leaving it).
+      if (budget) {
+        try {
+          const sameProviderModel = allModels.find(
+            (m) =>
+              (m.providerId || '').toLowerCase() === (degProviderId || '').toLowerCase() &&
+              m.modelId !== degModelId &&
+              !reliabilitySentinel.isRouteUnusable(m.providerId, m.modelId)
+          );
+          if (sameProviderModel) {
+            reliabilityLedger.record({
+              at: Date.now(), kind: 'rotation_trigger', turnId: currentTaskId, step: 'model_rotation',
+              outcome: 'started', route: routeKey, from: degModelId, to: sameProviderModel.modelId,
+              detail: `degenerate persisted; rotating model within ${degProviderId}`
+            });
+            routeEventPolicy.recordHop(currentTaskId, degProviderId, 'degenerate');
+            const carryKey = (sameProviderModel.providerId || '') === (providerId || '') ? apiKey : undefined;
+            return await sendChatRequest(
+              sameProviderModel.providerId, sameProviderModel.modelId, messages, stream, carryKey, onToken,
+              handoffCount, abortSignal, onHandoff, onReasoning, tools, onToolCalls, currentTaskId, context,
+              continuationCount, onStatus, carriedPartial
+            );
+          }
+        } catch {
+          // Model rotation unavailable: fall through to provider handoff.
+        }
+      }
+      // 5. Fall through to the existing health-aware provider handoff (the error
+      // message contains 502/fetch failed, so the block below rotates providers).
     }
     // Stage 5d: a first-token/idle watchdog fired. With no visible tokens yet we
     // hand off cleanly to the next healthy candidate; anything already streamed
@@ -2193,7 +2652,7 @@ export async function sendChatRequest(
         fullText.length +
         fullThought.length +
         Array.from(streamedToolCalls.values()).reduce((n, call) => n + call.arguments.length + call.name.length, 0);
-      if (tokensSoFarW === 0 && handoffCount < 2) {
+      if (tokensSoFarW === 0 && handoffCount < 2 && getRemediationState(currentTaskId).attempts < MAX_TURN_ATTEMPTS) {
         const stalledProviderId = config?.providerId || providerId;
         const nextModel = pickHandoffCandidate(allModels, stalledProviderId, requestModel || modelId);
         if (nextModel) {
@@ -2238,6 +2697,7 @@ export async function sendChatRequest(
       if (
         midClassification.failureClass === 'protocol_error' &&
         handoffCount < 2 &&
+        getRemediationState(currentTaskId).attempts < MAX_TURN_ATTEMPTS &&
         Array.isArray(messages) &&
         !(messages as any).__midProtocolRepaired
       ) {
@@ -2295,6 +2755,7 @@ export async function sendChatRequest(
     }
     if (
       handoffCount < 2 &&
+      getRemediationState(currentTaskId).attempts < MAX_TURN_ATTEMPTS &&
       (err?.message?.includes('429') ||
         err?.message?.includes('500') ||
         err?.message?.includes('502') ||
@@ -2308,8 +2769,19 @@ export async function sendChatRequest(
       const nextModel = pickHandoffCandidate(allModels, config?.providerId || providerId, requestedModel);
       if (nextModel) {
         console.log(`[GATEWAY] Handing off to ${nextModel.providerId} (${nextModel.modelId})`);
+        reliabilityLedger.record({
+          at: Date.now(),
+          kind: 'rotation_trigger',
+          turnId: currentTaskId,
+          step: 'provider_rotation',
+          outcome: 'started',
+          route: `${config?.providerId || providerId}::${requestModel || modelId}`,
+          from: config?.providerId || providerId,
+          to: nextModel.providerId,
+          detail: `mid-stream/degenerate handoff (attempt ${handoffCount + 1}/2)`
+        });
         // Mid-stream failure: trail only, never a per-hop renderer event.
-        routeEventPolicy.recordHop(currentTaskId, config.providerId || providerId, 'err');
+        routeEventPolicy.recordHop(currentTaskId, config.providerId || providerId, degenerateFallthrough ? 'degenerate' : 'err');
         routeEventPolicy.setLanding(currentTaskId, nextModel.providerId);
         // Retry idempotency (Prompt 2): if THIS attempt already streamed token
         // content to the renderer, a plain restart would re-run the whole

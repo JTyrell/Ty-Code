@@ -28,6 +28,7 @@ export interface MarketplaceExtensionEntry {
   rating?: number;
   categories?: string[];
   readmeUrl?: string;
+  changelogUrl?: string;
   repository?: string;
   publishedDate?: string;
   errorMessage?: string;
@@ -65,4 +66,47 @@ export interface InstallResult {
   error?: string;
   failedStep?: InstallStep;
   canRetry?: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Extension Controls (VS Code parity: updates, bulk toggles, running list, bisect)
+// ---------------------------------------------------------------------------
+
+export interface ExtensionUpdateInfo {
+  id: string;
+  displayName: string;
+  installedVersion: string;
+  latestVersion: string;
+  downloadUrl?: string;
+  sha256?: string;
+  iconUrl?: string;
+}
+
+export interface RunningExtensionInfo {
+  id: string;
+  displayName: string;
+  version: string;
+  state: 'unactivated' | 'activating' | 'activated' | 'deactivated' | 'failed';
+  enabled: boolean;
+  isBuiltIn: boolean;
+  activatedAt?: number;
+  activationDurationMs?: number;
+  error?: string;
+  commandCount: number;
+}
+
+export interface ExtensionBisectState {
+  active: boolean;
+  round: number;
+  suspects: string[];
+  candidates: string[];
+  disabledThisRound: string[];
+  identified?: string;
+  baseline: Record<string, boolean>;
+}
+
+export interface BulkToggleResult {
+  changed: number;
+  skippedMetadataOnly: string[];
+  failed: Array<{ id: string; error: string }>;
 }

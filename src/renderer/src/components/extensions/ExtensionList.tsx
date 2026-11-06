@@ -7,7 +7,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { RefreshCw, AlertCircle, Search, XCircle } from 'lucide-react';
 import type { InstalledExtension, ExtensionMetadata } from '../../../../preload/types';
-import type { MarketplaceExtensionEntry } from '../../../../shared/types/marketplace';
+import type { MarketplaceExtensionEntry, ExtensionUpdateInfo } from '../../../../shared/types/marketplace';
 import { useContainerWidth } from '../../hooks/useContainerWidth';
 import { ExtensionCard } from './ExtensionCard';
 import './extensions.css';
@@ -26,6 +26,7 @@ export interface ExtensionListProps {
   offlineMessage?: string | null;
   installingMap?: Record<string, { step?: string; percent?: number; message?: string }>;
   errorMap?: Record<string, { message: string; step?: string; canRetry: boolean }>;
+  updatesMap?: Record<string, ExtensionUpdateInfo>;
   onSelect?: (item: MarketplaceExtensionEntry | InstalledExtension | ExtensionMetadata) => void;
   onInstall?: (item: MarketplaceExtensionEntry | ExtensionMetadata) => void;
   onUninstall?: (id: string) => void;
@@ -34,6 +35,7 @@ export interface ExtensionListProps {
   onRetryInstall?: (id: string) => void;
   onRetrySearch?: () => void;
   onClearSearch?: () => void;
+  onUpdate?: (id: string) => void;
 }
 
 export const ExtensionList: React.FC<ExtensionListProps> = ({
@@ -45,6 +47,7 @@ export const ExtensionList: React.FC<ExtensionListProps> = ({
   offlineMessage = null,
   installingMap = {},
   errorMap = {},
+  updatesMap = {},
   onSelect,
   onInstall,
   onUninstall,
@@ -52,7 +55,8 @@ export const ExtensionList: React.FC<ExtensionListProps> = ({
   onConfigure,
   onRetryInstall,
   onRetrySearch,
-  onClearSearch
+  onClearSearch,
+  onUpdate
 }) => {
   // Use container width hook to observe container-type: inline-size and bucket changes
   const { width: containerWidth, bucket, containerRef } = useContainerWidth({
@@ -343,6 +347,7 @@ export const ExtensionList: React.FC<ExtensionListProps> = ({
                   key={item.id}
                   item={item}
                   installedRecord={installedRecord}
+                  updateInfo={updatesMap[item.id]}
                   isInstalling={Boolean(installing)}
                   installMessage={installing?.message}
                   installPercent={installing?.percent}
@@ -354,6 +359,7 @@ export const ExtensionList: React.FC<ExtensionListProps> = ({
                   onToggle={onToggle}
                   onConfigure={onConfigure}
                   onRetry={onRetryInstall}
+                  onUpdate={onUpdate}
                 />
               );
             })}
@@ -375,6 +381,7 @@ export const ExtensionList: React.FC<ExtensionListProps> = ({
                 key={item.id}
                 item={item}
                 installedRecord={installedRecord}
+                updateInfo={updatesMap[item.id]}
                 isInstalling={Boolean(installing)}
                 installMessage={installing?.message}
                 installPercent={installing?.percent}
@@ -386,6 +393,7 @@ export const ExtensionList: React.FC<ExtensionListProps> = ({
                 onToggle={onToggle}
                 onConfigure={onConfigure}
                 onRetry={onRetryInstall}
+                onUpdate={onUpdate}
               />
             );
           })}

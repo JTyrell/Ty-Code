@@ -273,6 +273,20 @@ export class CanvasViewport {
     this.setScale(1);
   }
 
+  /**
+   * Recenter the current content box at the existing scale (no zoom change).
+   * `setScale` keeps the point under the viewport center fixed, so applying a
+   * default zoom to a canvas whose origin is (0, 0) leaves the device pinned to
+   * the top-left; this pulls it back to the middle without touching the scale.
+   */
+  centerContent(): void {
+    const box = this.content;
+    if (!box || this.size.width <= 0 || this.size.height <= 0) return;
+    this.tx = this.size.width / 2 - (box.x + box.width / 2) * this.scale;
+    this.ty = this.size.height / 2 - (box.y + box.height / 2) * this.scale;
+    this.emit();
+  }
+
   /** Step zoom used by the +/- buttons and commands; anchors the viewport center. */
   zoomStep(direction: 1 | -1): void {
     this.setScale(this.scale * (direction === 1 ? 1.25 : 0.8));

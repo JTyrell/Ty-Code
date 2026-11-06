@@ -626,6 +626,50 @@ export class ExtensionHost {
     return this.capabilityProvider.commands.getRegisteredCommands();
   }
 
+  /**
+   * Live runtime snapshot used by "Show Running Extensions" and Extension Bisect.
+   * Reports actual activation state per extension, not registry metadata.
+   */
+  getRunningExtensions(): Array<{
+    id: string;
+    displayName: string;
+    version: string;
+    state: ExtensionActivationState;
+    enabled: boolean;
+    isBuiltIn: boolean;
+    activatedAt?: number;
+    activationDurationMs?: number;
+    error?: string;
+    commandCount: number;
+  }> {
+    const commands = this.capabilityProvider.commands.getRegisteredCommands();
+    const out: ReturnType<ExtensionHost['getRunningExtensions']> = [];
+    for (const record of this.extensions.values()) {
+      const commandCount = commands.filter((cmd) => (cmd as unknown as { extensionId?: string }).extensionId === record.id).length;
+      out.push({
+        id: record.id,
+        displayName: record.manifest.displayName || record.manifest.name,
+        version: record.manifest.version,
+        state: record.state,
+        enabled: record.enabled,
+        isBuiltIn: record.isBuiltIn,
+        activatedAt: record.activatedAt,
+        activationDurationMs: record.activationDurationMs,
+        error: record.error,
+        commandCount
+      });
+    }
+    out.sort((a, b) => (b.activatedAt || 0) - (a.activatedAt || 0));
+    return out;
+  }
+
+  /**
+   * Recent activation history (newest first) for diagnostics panels.
+   */
+  getRecentActivationLog(limit = 50): Array<{ timestamp: number; extensionId: string; event: string; durationMs: number; success: boolean; error?: string }> {
+    return this.activationLog.slice(-Math.max(1, limit)).reverse();
+  }
+
   async provideCompletionItems(language: string, filePath: string, line: number, character: number): Promise<CompletionItem[]> {
     return await this.capabilityProvider.languages.provideCompletionItems(language, filePath, line, character);
   }

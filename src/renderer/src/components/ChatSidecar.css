@@ -2295,6 +2295,56 @@
   animation: pulse 1.5s ease-in-out infinite;
 }
 
+/* No-response strip: actionable notice for a degenerate empty turn. Neutral
+   surface (not an error) so it never reads as fake model content. */
+.chat-no-response {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0;
+  padding: 8px 12px;
+  border: var(--chat-hairline);
+  border-left: 3px solid var(--accent-red);
+  border-radius: var(--chat-radius-md);
+  background: var(--surface-2);
+}
+
+.chat-no-response-icon {
+  flex-shrink: 0;
+  color: var(--accent-red);
+}
+
+.chat-no-response-label {
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.chat-no-response-hint {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.chat-no-response-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  padding: 3px 8px;
+  border: var(--chat-hairline);
+  border-radius: var(--chat-radius-xs);
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.chat-no-response-btn:hover {
+  background: var(--chat-veil-bright);
+}
+
 /* Agent activity ledger: the collapsible tool/command summary */
 .chat-activity {
   margin: 8px 0;

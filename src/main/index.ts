@@ -66,7 +66,11 @@ import {
   handleInstallExtension, handleUninstallExtension, handleToggleExtension,
   handleUpdateExtensionSettings, handleInstallExtensionFromVsix, handleExtensionCapability,
   handleExtensionActivate, handleExtensionDeactivate, handleExtensionExecuteCommand,
-  handleExtensionTriggerEvent, handleExtensionListCommands, handleExtensionProvideCompletions
+  handleExtensionTriggerEvent, handleExtensionListCommands, handleExtensionProvideCompletions,
+  handleCheckExtensionUpdates, handleUpdateExtension, handleToggleAllExtensions,
+  handleGetRunningExtensions, handleGetExtensionAutoUpdate, handleSetExtensionAutoUpdate,
+  handleStartExtensionBisect, handleReportExtensionBisectRound, handleStopExtensionBisect,
+  handleGetExtensionBisectState
 } from './ipc/extensions-handlers';
 import {
   handleMarketplaceSearch, handleMarketplaceMetadata,
@@ -283,6 +287,12 @@ import { DevChaosRequestSchema } from '../shared/types/agent-events';
 import { initiateCopilotDeviceFlow, pollCopilotToken } from './services/auth/subscription-auth';
 import { canvasSyncManager } from './services/canvas-sync-manager';
 import { canvasAgentEngine, type CanvasAgentGenerationResult } from './agent/canvas-agent-engine';
+import {
+  exportCanvasToDialect,
+  cancelCanvasExport,
+  CanvasExportCancelled
+} from './agent/canvas-export/canvas-export-service';
+import { CanvasExportDialectRequestSchema, type CanvasExportDialectResult } from '../shared/types/canvas-export';
 import { getCanvasWindow } from './windows/canvas-window';
 import { openCanvasWindow } from './windows/canvas-window';
 import { debuggerSyncManager, openDebuggerWindow, closeDebuggerWindow } from './windows/debugger-window';
@@ -656,6 +666,43 @@ function registerIpcHandlers(): void {
         updatedAt: Date.now()
       });
       return { ok: true, data: true };
+    }
+  );
+
+  // Canvas dialect export (Prompt 4 extension). Zod-validated at the boundary;
+  // the returned code is routed by the renderer through the Safe Edit Review Gate
+  // (this handler never touches disk). An aborted run maps to 'Export cancelled'.
+  ipcMain.handle(
+    'canvas:export-dialect',
+    async (
+      event,
+      rawPayload: unknown
+    ): Promise<{ success: boolean; data?: CanvasExportDialectResult; error?: string }> => {
+      if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+      const parsed = CanvasExportDialectRequestSchema.safeParse(rawPayload);
+      if (!parsed.success) {
+        return { success: false, error: `Invalid export request: ${parsed.error.issues.map((i) => i.message).join('; ')}` };
+      }
+      try {
+        const result = await exportCanvasToDialect(parsed.data);
+        return { success: true, data: result };
+      } catch (err: unknown) {
+        if (err instanceof CanvasExportCancelled) return { success: false, error: 'Export cancelled' };
+        return { success: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    }
+  );
+
+  // Abort an in-flight canvas dialect export by requestId (amendment 4, 5d abort hardening).
+  ipcMain.handle(
+    'canvas:export-cancel',
+    async (event, requestId: unknown): Promise<{ success: boolean; data?: boolean; error?: string }> => {
+      if (!isTrustedExtensionFrame(event)) return { success: false, error: 'Untrusted renderer frame.' };
+      if (typeof requestId !== 'string' || !requestId.trim()) {
+        return { success: false, error: 'requestId must be a non-empty string.' };
+      }
+      cancelCanvasExport(requestId);
+      return { success: true, data: true };
     }
   );
 
@@ -3402,6 +3449,37 @@ function registerIpcHandlers(): void {
   });
   ipcMain.handle('extensions:install-vsix', (event) => isTrustedExtensionFrame(event)
     ? handleInstallExtensionFromVsix(mainWindow || undefined)
+    : { success: false, error: 'Untrusted renderer frame.' });
+  // Extension Controls (VS Code parity "…" menu)
+  ipcMain.handle('extensions:check-updates', (event) => isTrustedExtensionFrame(event)
+    ? handleCheckExtensionUpdates()
+    : { success: false, error: 'Untrusted renderer frame.' });
+  ipcMain.handle('extensions:update', (event, id: unknown) => isTrustedExtensionFrame(event)
+    ? handleUpdateExtension(id)
+    : { success: false, error: 'Untrusted renderer frame.' });
+  ipcMain.handle('extensions:toggle-all', (event, enabled: unknown) => isTrustedExtensionFrame(event)
+    ? handleToggleAllExtensions(enabled)
+    : { success: false, error: 'Untrusted renderer frame.' });
+  ipcMain.handle('extensions:running', (event) => isTrustedExtensionFrame(event)
+    ? handleGetRunningExtensions()
+    : { success: false, error: 'Untrusted renderer frame.' });
+  ipcMain.handle('extensions:get-auto-update', (event) => isTrustedExtensionFrame(event)
+    ? handleGetExtensionAutoUpdate()
+    : { success: false, error: 'Untrusted renderer frame.' });
+  ipcMain.handle('extensions:set-auto-update', (event, enabled: unknown) => isTrustedExtensionFrame(event)
+    ? handleSetExtensionAutoUpdate(enabled)
+    : { success: false, error: 'Untrusted renderer frame.' });
+  ipcMain.handle('extensions:bisect-start', (event) => isTrustedExtensionFrame(event)
+    ? handleStartExtensionBisect()
+    : { success: false, error: 'Untrusted renderer frame.' });
+  ipcMain.handle('extensions:bisect-report', (event, issuePresent: unknown) => isTrustedExtensionFrame(event)
+    ? handleReportExtensionBisectRound(issuePresent)
+    : { success: false, error: 'Untrusted renderer frame.' });
+  ipcMain.handle('extensions:bisect-stop', (event, restore: unknown) => isTrustedExtensionFrame(event)
+    ? handleStopExtensionBisect(restore)
+    : { success: false, error: 'Untrusted renderer frame.' });
+  ipcMain.handle('extensions:bisect-state', (event) => isTrustedExtensionFrame(event)
+    ? handleGetExtensionBisectState()
     : { success: false, error: 'Untrusted renderer frame.' });
   ipcMain.handle('extensions:capability', (event, payload: unknown) => isTrustedExtensionFrame(event)
     ? handleExtensionCapability(payload, currentWorkspacePath)

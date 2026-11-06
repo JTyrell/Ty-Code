@@ -41,6 +41,7 @@ const makeController = (h: Harness): CanvasEditController =>
       h.tree = nodes;
     },
     selectionOf: () => h.selection,
+    platformOf: () => 'react',
     clipboardOf: () => ({ write: (text) => h.writes.push(text) })
   });
 
@@ -104,6 +105,19 @@ describe('CanvasEditController — gestures', () => {
     ctrl.nudge(0, 10);
     expect(h.tree[1].props.y).toBe(10);
     expect((h.tree[1].children[0].props as Props).y).toBe(40);
+    ctrl.undo();
+    expect(h.tree).toEqual(sample());
+  });
+});
+
+describe('CanvasEditController — add / delete', () => {
+  it('addLayer appends a top-level node that undoes by removing it', () => {
+    const h = makeHarness(sample());
+    const ctrl = makeController(h);
+    const id = ctrl.addLayer({ type: 'button' });
+    expect(h.tree).toHaveLength(4);
+    expect(h.tree[3].id).toBe(id);
+    expect(h.tree[3].props.width).toBe(128);
     ctrl.undo();
     expect(h.tree).toEqual(sample());
   });
@@ -239,5 +253,131 @@ describe('CanvasEditController — rect helpers', () => {
     const box = unionRectOfIds(sample(), ['b']);
     // b (0,0,300,200) ∪ b1 (20,30,80,20) → still b's box.
     expect(box).toEqual({ x: 0, y: 0, width: 300, height: 200 });
+  });
+});
+
+describe('CanvasEditController — z-order', () => {
+  it('bring to front / send to back reorder the top-level list and undo', () => {
+    const h = makeHarness(sample());
+    const ctrl = makeController(h);
+    h.selection = ['a'];
+    ctrl.zorder('front');
+    expect(h.tree.map((n) => n.id)).toEqual(['b', 'c', 'a']);
+    ctrl.undo();
+    expect(h.tree.map((n) => n.id)).toEqual(['a', 'b', 'c']);
+    h.selection = ['c'];
+    ctrl.zorder('back');
+    expect(h.tree.map((n) => n.id)).toEqual(['c', 'a', 'b']);
+    ctrl.undo();
+    expect(h.tree.map((n) => n.id)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('bring forward moves one slot up; no-op when already at the top', () => {
+    const h = makeHarness(sample());
+    const ctrl = makeController(h);
+    h.selection = ['a'];
+    ctrl.zorder('forward');
+    expect(h.tree.map((n) => n.id)).toEqual(['b', 'a', 'c']);
+    // 'c' is already last, so forward records nothing.
+    h.selection = ['c'];
+    ctrl.zorder('forward');
+    expect(canvasHistory.size).toBe(1);
+    expect(h.tree.map((n) => n.id)).toEqual(['b', 'a', 'c']);
+    ctrl.undo();
+    expect(h.tree.map((n) => n.id)).toEqual(['a', 'b', 'c']);
+  });
+});
+
+describe('CanvasEditController — group / ungroup', () => {
+  it('group wraps siblings in a container and ungroup restores exactly', () => {
+    const h = makeHarness(sample());
+    const ctrl = makeController(h);
+    h.selection = ['a', 'c'];
+    ctrl.groupSelection();
+    expect(h.tree).toHaveLength(2);
+    const group = h.tree.find((n) => n.name === 'Group');
+    expect(group).toBeTruthy();
+    expect(group!.children.map((c) => c.id).sort()).toEqual(['a', 'c']);
+    ctrl.undo();
+    expect(h.tree).toEqual(sample());
+  });
+
+  it('ungroup dissolves a group and undo re-forms it exactly', () => {
+    const h = makeHarness(sample());
+    const ctrl = makeController(h);
+    h.selection = ['a', 'c'];
+    ctrl.groupSelection();
+    const grouped = JSON.parse(JSON.stringify(h.tree));
+    const groupId = h.tree.find((n) => n.name === 'Group')!.id;
+    h.selection = [groupId];
+    ctrl.ungroupSelection();
+    expect(h.tree.map((n) => n.id).sort()).toEqual(['a', 'b', 'c']);
+    expect(h.tree.find((n) => n.name === 'Group')).toBeFalsy();
+    ctrl.undo();
+    expect(h.tree).toEqual(grouped);
+  });
+
+  it('grouping fewer than two nodes is a no-op', () => {
+    const h = makeHarness(sample());
+    const ctrl = makeController(h);
+    h.selection = ['a'];
+    ctrl.groupSelection();
+    expect(canvasHistory.size).toBe(0);
+    expect(h.tree).toEqual(sample());
+  });
+});
+
+describe('CanvasEditController — reparent', () => {
+  it('reparents a node into another container and restores on undo', () => {
+    const h = makeHarness(sample());
+    const ctrl = makeController(h);
+    ctrl.reparent('a', ['b'], 0);
+    expect(h.tree.map((n) => n.id)).toEqual(['b', 'c']);
+    expect(h.tree[0].children.map((c) => c.id)).toEqual(['a', 'b1']);
+    ctrl.undo();
+    expect(h.tree).toEqual(sample());
+  });
+
+  it('refuses to drop a node inside its own subtree', () => {
+    const h = makeHarness(sample());
+    const ctrl = makeController(h);
+    ctrl.reparent('b', ['b'], 0);
+    expect(canvasHistory.size).toBe(0);
+    expect(h.tree).toEqual(sample());
+  });
+});
+
+describe('CanvasEditController — rename', () => {
+  it('renames a layer and restores the prior name exactly on undo', () => {
+    const h = makeHarness(sample());
+    const ctrl = makeController(h);
+    ctrl.rename('a', 'Primary CTA');
+    expect(h.tree[0].name).toBe('Primary CTA');
+    expect(canvasHistory.size).toBe(1);
+    // A rename to the same value records nothing.
+    ctrl.rename('a', 'Primary CTA');
+    expect(canvasHistory.size).toBe(1);
+    ctrl.undo();
+    expect(h.tree).toEqual(sample());
+    ctrl.redo();
+    expect(h.tree[0].name).toBe('Primary CTA');
+  });
+});
+
+describe('CanvasEditController.marqueeHits', () => {
+  it('selects only top-level nodes the rectangle fully encloses', () => {
+    const nodes = sample();
+    // 'a' is 10..110 / 10..50; this box encloses it but not 'b' or 'c'.
+    const box = { x: 0, y: 0, width: 120, height: 60 };
+    expect(CanvasEditController.marqueeHits(nodes, box, [])).toEqual(['a']);
+    // A box covering the whole stage encloses every top-level node.
+    const full = { x: -10, y: -10, width: 500, height: 500 };
+    expect(CanvasEditController.marqueeHits(nodes, full, [])).toEqual(['a', 'b', 'c']);
+  });
+
+  it('ignores locked nodes even when enclosed', () => {
+    const nodes = sample();
+    const full = { x: -10, y: -10, width: 500, height: 500 };
+    expect(CanvasEditController.marqueeHits(nodes, full, ['b'])).toEqual(['a', 'c']);
   });
 });

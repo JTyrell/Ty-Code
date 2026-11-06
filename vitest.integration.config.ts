@@ -12,7 +12,13 @@ import { defineConfig } from 'vitest/config';
  */
 export default defineConfig({
   test: {
-    include: ['tests/workspace-cache.test.ts', 'tests/integration/**/*.test.ts'],
+    include: [
+      'tests/workspace-cache.test.ts',
+      'tests/platform-conformance.test.ts',
+      'tests/canvas-export-validators.test.ts',
+      'tests/canvas-export-pipeline.test.ts',
+      'tests/integration/**/*.test.ts'
+    ],
     environment: 'node',
     testTimeout: 90_000,
     hookTimeout: 30_000,

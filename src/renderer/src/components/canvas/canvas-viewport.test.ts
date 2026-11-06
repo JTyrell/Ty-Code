@@ -111,6 +111,19 @@ describe('CanvasViewport transforms', () => {
     expect(centerWorldAfter.x).toBeCloseTo(centerWorldBefore.x, 3);
     expect(centerWorldAfter.y).toBeCloseTo(centerWorldBefore.y, 3);
   });
+
+  it('centerContent recenters the device at the current scale (no top-left pin)', () => {
+    const vp = make({ x: 0, y: 0 }, { width: 1000, height: 800 });
+    vp.setContent({ x: 0, y: 0, width: 390, height: 780 });
+    // A default-zoom applied from origin leaves the device top-left anchored.
+    vp.setScale(0.8);
+    vp.centerContent();
+    // Content center lands on viewport center, and the scale is untouched.
+    expect(vp.scale).toBeCloseTo(0.8, 6);
+    const center = vp.canvasToScreen(195, 390);
+    expect(center.x).toBeCloseTo(500, 3);
+    expect(center.y).toBeCloseTo(400, 3);
+  });
 });
 
 describe('CanvasViewport grid / ruler helpers', () => {

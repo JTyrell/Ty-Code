@@ -15,6 +15,7 @@ export const AgentStartTaskPayloadSchema = z.object({
   openFilePaths: z.array(z.string()).optional(),
   providerOverride: z.string().optional(),
   modelOverride: z.string().optional(),
+  excludeRoute: z.string().optional(),
   resumeSessionId: z.string().optional(),
   clientSentAt: z.number().optional()
 });
@@ -231,7 +232,17 @@ export const ReliabilityAdvisorPayloadSchema = z.discriminatedUnion('kind', [
 ]);
 export type ReliabilityAdvisorPayload = z.infer<typeof ReliabilityAdvisorPayloadSchema>;
 
-export const DevChaosFaultSchema = z.enum(['timeout', 'refused', 'auth_401', 'rate_429']);
+export const DevChaosFaultSchema = z.enum([
+  'timeout',
+  'refused',
+  'auth_401',
+  'rate_429',
+  // Output Validity Gate (Step 5.1): a 200 that carries no usable output.
+  // `emptyResponse`  = 200 + zero-content stream (no data events).
+  // `errorIn200`    = 200 whose first chunk parses as a JSON object with an `error` key.
+  'emptyResponse',
+  'errorIn200'
+]);
 export const DevChaosRequestSchema = z.object({
   providerId: z.string().optional(),
   modelId: z.string().optional(),

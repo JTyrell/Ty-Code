@@ -12,16 +12,18 @@ import {
   ToggleLeft,
   ToggleRight,
   Settings,
-  AlertCircle
+  AlertCircle,
+  ArrowUpCircle
 } from 'lucide-react';
 import type { InstalledExtension, ExtensionMetadata } from '../../../../preload/types';
-import type { MarketplaceExtensionEntry } from '../../../../shared/types/marketplace';
+import type { MarketplaceExtensionEntry, ExtensionUpdateInfo } from '../../../../shared/types/marketplace';
 import { LogoWithFallback } from './LogoWithFallback';
 import './extensions.css';
 
 export interface ExtensionCardProps {
   item: MarketplaceExtensionEntry | InstalledExtension | ExtensionMetadata;
   installedRecord?: InstalledExtension;
+  updateInfo?: ExtensionUpdateInfo;
   isInstalling?: boolean;
   installMessage?: string;
   installPercent?: number;
@@ -33,6 +35,7 @@ export interface ExtensionCardProps {
   onToggle?: (id: string, enabled: boolean) => void;
   onConfigure?: (item: InstalledExtension) => void;
   onRetry?: (id: string) => void;
+  onUpdate?: (id: string) => void;
 }
 
 /**
@@ -53,6 +56,7 @@ export function formatDownloadCount(count?: number): string | null {
 export const ExtensionCard: React.FC<ExtensionCardProps> = ({
   item,
   installedRecord,
+  updateInfo,
   isInstalling = false,
   installMessage,
   installPercent,
@@ -62,7 +66,8 @@ export const ExtensionCard: React.FC<ExtensionCardProps> = ({
   onInstall,
   onToggle,
   onConfigure,
-  onRetry
+  onRetry,
+  onUpdate
 }) => {
   // Extract normalized fields across installed and marketplace items
   const id = item.id;
@@ -251,8 +256,22 @@ export const ExtensionCard: React.FC<ExtensionCardProps> = ({
             )}
           </div>
         ) : isInstalled ? (
-          /* Installed checkmark + settings + enable toggle */
+          /* Installed: pending-update button + settings + enable toggle */
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            {updateInfo && (
+              <button
+                type="button"
+                className="extension-btn-update"
+                onClick={() => onUpdate?.(id)}
+                title={`Update to v${updateInfo.latestVersion}`}
+                aria-label={`Update ${displayName} to version ${updateInfo.latestVersion}`}
+                data-testid={`extension-update-${id}`}
+              >
+                <ArrowUpCircle size={13} />
+                <span>Update</span>
+              </button>
+            )}
+
             {hasSettings && installedRecord && (
               <button
                 type="button"

@@ -966,6 +966,52 @@ const ChatMessageItemComponent: React.FC<ChatMessageProps> = ({
           </div>
         ) : null}
 
+        {/* 1b. NO-RESPONSE STRIP: the turn finalized with no content, thoughts,
+            tools or error (a degenerate empty stream that the gateway ladder
+            could not heal). Render an actionable notice instead of a blank
+            bubble. Never injects fake model text; Regenerate re-runs the send
+            EXCLUDING the hollow route so the first attempt rotates away. Details
+            reveals the full [ROUTE] trail (degenerate attempts + key rotations).
+            Auto-dismisses as soon as any real chunk lands. */}
+        {message.noResponseNotice && !isMessageStreaming ? (
+          <div className="chat-no-response" role="status">
+            <AlertCircle size={13} className="chat-no-response-icon" />
+            <span className="chat-no-response-label">
+              {message.routeFailure
+                ? `Empty response from ${message.routeFailure.route} \u2014 tried ${message.routeFailure.triedCount} route${message.routeFailure.triedCount === 1 ? '' : 's'}`
+                : 'No response received'}
+            </span>
+            {!message.routeFailure && (
+              <span className="chat-no-response-hint">
+                The model returned an empty reply. Try again on a different route.
+              </span>
+            )}
+            {onRegenerate && (
+              <button
+                type="button"
+                className="chat-no-response-btn"
+                onClick={onRegenerate}
+                title="Regenerate, skipping the route that returned empty"
+              >
+                <RotateCcw size={11} />
+                <span>Regenerate</span>
+              </button>
+            )}
+            {message.routeFailure?.trail && (
+              <button
+                type="button"
+                className="chat-no-response-btn"
+                onClick={() => setShowDetails(!showDetails)}
+                title="Toggle the route trail"
+              >
+                <Info size={11} />
+                <span>Details</span>
+                <ChevronDown size={10} className={`chat-footer-chevron${showDetails ? ' is-open' : ''}`} />
+              </button>
+            )}
+          </div>
+        ) : null}
+
         {/* 2. AGENT ACTIVITY: tool use and command execution records */}
         {toolList.length > 0 && (
           <div className="chat-activity">
@@ -1203,7 +1249,10 @@ const ChatMessageItemComponent: React.FC<ChatMessageProps> = ({
                     ? [['Time to First Token', `${Math.max(0, message.metadata.firstTokenAt - message.timestamp)}ms`]]
                     : []),
                   ...(cleanedAssistantContent ? [['Est. Response Tokens', `~${Math.round(cleanedAssistantContent.length / 4)}`]] : []),
-                  ...(toolList.length > 0 ? [['Tools Executed', String(toolList.length)]] : [])
+                  ...(toolList.length > 0 ? [['Tools Executed', String(toolList.length)]] : []),
+                  ...(message.routeTrail || message.routeFailure?.trail
+                    ? [['Route Trail', message.routeTrail || message.routeFailure!.trail]]
+                    : [])
                 ].map(([label, value]) => (
                   <div key={label} className="chat-telemetry-row">
                     <span>{label}:</span>

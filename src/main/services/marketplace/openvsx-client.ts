@@ -151,6 +151,17 @@ export class OpenVsxClient {
   }
 
   /**
+   * Open VSX returns files.* entries as relative URIs ("/api/{ns}/{ext}/{version}/file/...").
+   * The renderer resolves images against its own origin, so they must be absolutized here.
+   */
+  private absolutizeFileUrl(value?: string): string | undefined {
+    if (typeof value !== 'string' || !value.trim()) return undefined;
+    if (/^https?:\/\//i.test(value)) return value;
+    if (value.startsWith('/')) return `${this.baseUrl}${value}`;
+    return undefined;
+  }
+
+  /**
    * Maps raw Open VSX extension item to UI Data Contract.
    */
   private mapToEntry(raw: Record<string, unknown>, installedMap: Map<string, { enabled: boolean }>): MarketplaceExtensionEntry {
@@ -171,9 +182,10 @@ export class OpenVsxClient {
 
     // Extract files object
     const files = raw.files && typeof raw.files === 'object' ? (raw.files as Record<string, unknown>) : {};
-    const iconUrl = typeof files.icon === 'string' ? files.icon : undefined;
-    const downloadUrl = typeof files.download === 'string' ? files.download : undefined;
-    const readmeUrl = typeof files.readme === 'string' ? files.readme : undefined;
+    const iconUrl = this.absolutizeFileUrl(typeof files.icon === 'string' ? files.icon : undefined);
+    const downloadUrl = this.absolutizeFileUrl(typeof files.download === 'string' ? files.download : undefined);
+    const readmeUrl = this.absolutizeFileUrl(typeof files.readme === 'string' ? files.readme : undefined);
+    const changelogUrl = this.absolutizeFileUrl(typeof files.changelog === 'string' ? files.changelog : undefined);
     const sha256 = typeof files.sha256 === 'string' ? files.sha256 : undefined;
 
     // Installed & Enabled state from local registry
@@ -205,6 +217,7 @@ export class OpenVsxClient {
       rating,
       categories,
       readmeUrl,
+      changelogUrl,
       repository: typeof raw.repository === 'string' ? raw.repository : undefined,
       publishedDate: typeof raw.timestamp === 'string' ? raw.timestamp : undefined
     };

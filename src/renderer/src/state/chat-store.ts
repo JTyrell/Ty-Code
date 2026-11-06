@@ -13,6 +13,8 @@ import {
 import { useGitStore } from './git-store';
 import { useWorkspaceStore } from './workspace-store';
 import { useSettingsStore, TY_CODE_FREE_MODEL, TY_CODE_FREE_PROVIDER } from './settings-store';
+import { shouldShowNoResponseNotice } from './no-response-notice';
+import { buildRouteFailure } from './route-trail';
 
 interface ChatState {
   messages: ChatMessage[];
@@ -52,7 +54,7 @@ interface ChatState {
     activeFilePath?: string,
     activeFileContent?: string,
     appendUserMessage?: boolean,
-    traceOptions?: { traceId?: string; providerOverride?: string; modelOverride?: string; clientSentAt?: number },
+    traceOptions?: { traceId?: string; providerOverride?: string; modelOverride?: string; excludeRoute?: string; clientSentAt?: number },
     images?: string[]
   ) => Promise<void>;
   stopTask: () => Promise<void>;
@@ -1081,6 +1083,41 @@ export const useChatStore = create<ChatState>((set, get) => ({
             : (state.currentThoughts.length > 0 ? state.currentThoughts : (m.reasoning ? m.reasoning.split('\n').filter(Boolean) : []));
           const finalizedThoughts = [...rawThoughts];
 
+          // Blank-turn guard: a turn that finalized with NO content, thoughts,
+          // tool executions, diffs or document AND no error card would render
+          // an empty bubble that looks like a frozen "Thinking…" state. Flag it
+          // so the message renders an actionable "no response received" strip
+          // (with Regenerate) instead of blank. A late token flush is already
+          // folded in above (flushTokenBuffer runs before this map), so the
+          // notice auto-clears whenever any content actually landed.
+          const cancelledTurn = status === 'Task stopped.';
+          const noResponseNotice = shouldShowNoResponseNotice({
+            role: m.role,
+            content: finalizedContent,
+            thoughts: finalizedThoughts,
+            toolExecutions: m.toolExecutions,
+            proposedDiffs: m.proposedDiffs,
+            proposedDocument: m.proposedDocument,
+            hasErrorCard: Boolean(errorCard || m.errorCard),
+            cancelled: cancelledTurn
+          });
+          // Output Validity Gate (Step 4): when the turn finalized hollow, fold
+          // the consolidated [ROUTE] trail (already streamed as the final status
+          // line and sitting in m.statusText before we clear it) into a compact
+          // failure descriptor so the strip can name the degenerate route and
+          // count tried routes. No fake content — only real routing facts.
+          const routeFailure = noResponseNotice
+            ? buildRouteFailure(m.statusText, currentTaskProviderId || m.metadata?.providerId || '')
+            : undefined;
+          // Step 4.3: keep the consolidated trail on ANY finalized message that
+          // actually failed over (degenerate attempts included) so Details can
+          // show it. Key rotations live in the local reliability ledger and the
+          // Diagnostics panel; the trail line names each route + outcome.
+          const routeTrail =
+            typeof m.statusText === 'string' && m.statusText.startsWith('[ROUTE]')
+              ? m.statusText
+              : undefined;
+
           return {
             ...m,
             content: finalizedContent,
@@ -1092,6 +1129,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
             thoughtDurationSeconds: m.thoughtDurationSeconds || durationSeconds,
             reasoning: finalizedThoughts.join('\n'),
             errorCard: errorCard || m.errorCard,
+            noResponseNotice,
+            ...(routeFailure ? { routeFailure } : {}),
+            ...(routeTrail ? { routeTrail } : {}),
             metadata: m.metadata
               ? { ...m.metadata, streamEventCount: Math.max(1, currentTaskStreamEvents) }
               : {
@@ -1559,6 +1599,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         traceId: traceOptions?.traceId,
         providerOverride: traceOptions?.providerOverride,
         modelOverride: traceOptions?.modelOverride,
+        ...(traceOptions?.excludeRoute ? { excludeRoute: traceOptions.excludeRoute } : {}),
         prompt,
         ...(images && images.length > 0 ? { images } : {}),
         workspacePath,

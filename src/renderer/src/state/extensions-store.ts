@@ -13,7 +13,11 @@ import type {
   InstallResult,
   InstallStep,
   ExtensionInstallState,
-  ExtensionEnabledState
+  ExtensionEnabledState,
+  ExtensionUpdateInfo,
+  RunningExtensionInfo,
+  ExtensionBisectState,
+  BulkToggleResult
 } from '../../../shared/types/marketplace';
 import { extensionHost } from '../services/extension-host';
 
@@ -42,6 +46,14 @@ export interface ExtensionStoreState {
   // Pipeline tracking
   installingMap: Record<string, { step: InstallStep; percent?: number; message?: string }>;
   errorMap: Record<string, { message: string; step?: InstallStep; canRetry: boolean }>;
+  pendingVsixProgress: { percent: number; message: string } | null;
+
+  // Extension controls (VS Code parity "…" menu)
+  updatesAvailable: ExtensionUpdateInfo[];
+  isCheckingUpdates: boolean;
+  autoUpdateEnabled: boolean;
+  runningExtensions: RunningExtensionInfo[];
+  bisectState: ExtensionBisectState | null;
 
   // Actions
   setActiveTab: (tab: 'installed' | 'marketplace') => void;
@@ -62,6 +74,16 @@ export interface ExtensionStoreState {
   retrySearch: () => Promise<void>;
   executeCommand: (commandId: string, ...args: unknown[]) => Promise<unknown>;
   getAvailableCommands: () => ExtensionCommand[];
+  checkForUpdates: () => Promise<ExtensionUpdateInfo[]>;
+  updateExtensionNow: (id: string) => Promise<boolean>;
+  applyAllUpdates: () => Promise<number>;
+  toggleAllExtensions: (enabled: boolean) => Promise<BulkToggleResult | null>;
+  loadRunningExtensions: () => Promise<RunningExtensionInfo[]>;
+  setAutoUpdate: (enabled: boolean) => Promise<boolean>;
+  loadAutoUpdatePreference: () => Promise<void>;
+  startBisect: () => Promise<ExtensionBisectState | null>;
+  reportBisectRound: (issuePresent: boolean) => Promise<ExtensionBisectState | null>;
+  stopBisect: (restore?: boolean) => Promise<void>;
 }
 
 export const useExtensionStore = create<ExtensionStoreState>((set, get) => ({
@@ -82,6 +104,12 @@ export const useExtensionStore = create<ExtensionStoreState>((set, get) => ({
   error: null,
   installingMap: {},
   errorMap: {},
+  pendingVsixProgress: null,
+  updatesAvailable: [],
+  isCheckingUpdates: false,
+  autoUpdateEnabled: true,
+  runningExtensions: [],
+  bisectState: null,
 
   setActiveTab: (tab) => set({ activeTab: tab }),
   setSelectedCategory: (cat) => set({ selectedCategory: cat }),
@@ -446,8 +474,23 @@ export const useExtensionStore = create<ExtensionStoreState>((set, get) => ({
   },
 
   installFromVsix: async () => {
+    let cleanupProgress: (() => void) | undefined;
+    const progressIds = new Set<string>();
     try {
-      set({ isLoading: true, error: null });
+      set({ isLoading: true, error: null, pendingVsixProgress: { percent: 2, message: 'Select a .vsix package…' } });
+
+      if (window.electronAPI.onMarketplaceInstallProgress) {
+        cleanupProgress = window.electronAPI.onMarketplaceInstallProgress((evt) => {
+          if (evt && typeof evt === 'object' && typeof evt.id === 'string') {
+            progressIds.add(evt.id);
+            set((state) => ({
+              pendingVsixProgress: { percent: evt.percent ?? 50, message: evt.message || evt.step },
+              installingMap: { ...state.installingMap, [evt.id]: { step: evt.step, percent: evt.percent, message: evt.message } }
+            }));
+          }
+        });
+      }
+
       const res = await window.electronAPI.installExtensionFromVsix();
       if (res.success && res.data) {
         await get().loadInstalled();
@@ -456,12 +499,190 @@ export const useExtensionStore = create<ExtensionStoreState>((set, get) => ({
         if (res.error !== 'Installation cancelled') {
           set({ error: res.error || 'VSIX install failed' });
         }
-        set({ isLoading: false });
         return false;
       }
     } catch (err: unknown) {
-      set({ error: err instanceof Error ? err.message : String(err), isLoading: false });
+      set({ error: err instanceof Error ? err.message : String(err) });
       return false;
+    } finally {
+      cleanupProgress?.();
+      set((state) => {
+        const nextInstalling = { ...state.installingMap };
+        for (const id of progressIds) delete nextInstalling[id];
+        return { isLoading: false, pendingVsixProgress: null, installingMap: nextInstalling };
+      });
+    }
+  },
+
+  // Extension controls (VS Code parity "…" menu) ----------------------------
+
+  checkForUpdates: async () => {
+    try {
+      set({ isCheckingUpdates: true });
+      const res = await window.electronAPI.checkExtensionUpdates();
+      const updates = res.success && res.data ? res.data : [];
+      set({ updatesAvailable: updates, isCheckingUpdates: false, error: res.success ? null : res.error || null });
+      return updates;
+    } catch (err: unknown) {
+      set({ isCheckingUpdates: false, error: err instanceof Error ? err.message : String(err) });
+      return [];
+    }
+  },
+
+  updateExtensionNow: async (id) => {
+    const update = get().updatesAvailable.find((u) => u.id === id);
+    let cleanupProgress: (() => void) | undefined;
+    try {
+      if (window.electronAPI.onMarketplaceInstallProgress) {
+        cleanupProgress = window.electronAPI.onMarketplaceInstallProgress((evt) => {
+          if (evt?.id?.toLowerCase() === id.toLowerCase()) {
+            set((state) => ({
+              installingMap: { ...state.installingMap, [id]: { step: evt.step, percent: evt.percent, message: evt.message } }
+            }));
+          }
+        });
+      }
+
+      set((state) => ({
+        installingMap: { ...state.installingMap, [id]: { step: 'download', message: `Updating ${update?.displayName || id}…`, percent: 5 } }
+      }));
+
+      const res = await window.electronAPI.updateExtension(id);
+      if (res.success && res.data?.success) {
+        set((state) => {
+          const nextInstalling = { ...state.installingMap };
+          delete nextInstalling[id];
+          return {
+            installingMap: nextInstalling,
+            updatesAvailable: state.updatesAvailable.filter((u) => u.id !== id)
+          };
+        });
+        await get().loadInstalled();
+        return true;
+      }
+      const errorMsg = res.error || res.data?.error || 'Update failed';
+      set((state) => {
+        const nextInstalling = { ...state.installingMap };
+        delete nextInstalling[id];
+        return { installingMap: nextInstalling, errorMap: { ...state.errorMap, [id]: { message: errorMsg, step: 'download', canRetry: true } } };
+      });
+      return false;
+    } catch (err: unknown) {
+      set((state) => {
+        const nextInstalling = { ...state.installingMap };
+        delete nextInstalling[id];
+        return { installingMap: nextInstalling, error: err instanceof Error ? err.message : String(err) };
+      });
+      return false;
+    } finally {
+      cleanupProgress?.();
+    }
+  },
+
+  applyAllUpdates: async () => {
+    const pending = [...get().updatesAvailable];
+    let applied = 0;
+    for (const update of pending) {
+      const ok = await get().updateExtensionNow(update.id);
+      if (ok) applied += 1;
+    }
+    return applied;
+  },
+
+  toggleAllExtensions: async (enabled) => {
+    try {
+      set({ isLoading: true, error: null });
+      const res = await window.electronAPI.toggleAllExtensions(enabled);
+      if (res.success && res.data) {
+        await get().loadInstalled();
+        set({ isLoading: false });
+        return res.data;
+      }
+      set({ error: res.error || 'Bulk toggle failed', isLoading: false });
+      return null;
+    } catch (err: unknown) {
+      set({ error: err instanceof Error ? err.message : String(err), isLoading: false });
+      return null;
+    }
+  },
+
+  loadRunningExtensions: async () => {
+    try {
+      const res = await window.electronAPI.getRunningExtensions();
+      const list = res.success && res.data ? res.data : [];
+      set({ runningExtensions: list });
+      return list;
+    } catch {
+      set({ runningExtensions: [] });
+      return [];
+    }
+  },
+
+  loadAutoUpdatePreference: async () => {
+    try {
+      const res = await window.electronAPI.getExtensionAutoUpdate();
+      if (res.success && typeof res.data === 'boolean') {
+        set({ autoUpdateEnabled: res.data });
+      }
+    } catch {
+      // keep default
+    }
+  },
+
+  setAutoUpdate: async (enabled) => {
+    try {
+      const res = await window.electronAPI.setExtensionAutoUpdate(enabled);
+      if (res.success) {
+        set({ autoUpdateEnabled: enabled });
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  },
+
+  startBisect: async () => {
+    try {
+      const res = await window.electronAPI.startExtensionBisect();
+      if (res.success && res.data) {
+        set({ bisectState: res.data });
+        await get().loadInstalled();
+        return res.data;
+      }
+      set({ error: res.error || 'Unable to start extension bisect' });
+      return null;
+    } catch (err: unknown) {
+      set({ error: err instanceof Error ? err.message : String(err) });
+      return null;
+    }
+  },
+
+  reportBisectRound: async (issuePresent) => {
+    try {
+      const res = await window.electronAPI.reportExtensionBisectRound(issuePresent);
+      if (res.success && res.data) {
+        set({ bisectState: res.data });
+        await get().loadInstalled();
+        return res.data;
+      }
+      set({ error: res.error || 'Bisect report failed' });
+      return null;
+    } catch (err: unknown) {
+      set({ error: err instanceof Error ? err.message : String(err) });
+      return null;
+    }
+  },
+
+  stopBisect: async (restore) => {
+    try {
+      const res = await window.electronAPI.stopExtensionBisect(restore);
+      if (res.success) {
+        set({ bisectState: null });
+        await get().loadInstalled();
+      }
+    } catch (err: unknown) {
+      set({ error: err instanceof Error ? err.message : String(err) });
     }
   },
 

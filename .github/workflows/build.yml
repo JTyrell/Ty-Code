@@ -88,6 +88,9 @@ jobs:
       - name: Cross-Stage Integration Gate: Run Workspace Cache + Agent Loop Integration Suite
         run: npm run test:integration
 
+      - name: Offline Platform Conformance Gate: Skeleton + Validator + Export Pipeline
+        run: npm run test:platform-conformance
+
       - name: Live Validation Gate: Run Real Network & Disk E2E Suite
         run: npm run test:live
 

@@ -357,6 +357,66 @@ export async function getKey(providerId: string): Promise<string | null> {
   return null;
 }
 
+// ===== Key Pool (Output Validity Gate, Step 2) =================================
+// Multiple keys per provider so a 401/403/429 or DEGENERATE on a keyed route
+// advances to the NEXT key before rotating models or providers. Backward
+// compatible: the primary key stays under `${provider}`; extra pool members
+// live under `${provider}#2`, `${provider}#3`, … in the SAME encrypted blob,
+// so a single-key provider yields a pool of exactly one and nothing changes.
+const POOL_SEP = '#';
+
+/** Ordered, de-duplicated, non-empty key pool for a provider (primary first). */
+export async function getKeyPool(providerId: string): Promise<string[]> {
+  const normProvider = providerId.toLowerCase().trim();
+  const pool: string[] = [];
+  const seen = new Set<string>();
+  const push = (k?: string | null): void => {
+    const v = (k ?? '').trim();
+    if (v && !seen.has(v)) {
+      seen.add(v);
+      pool.push(v);
+    }
+  };
+  // Primary first — reuses the full alias / community-key resolution chain.
+  push(await getKey(providerId));
+  // Extra pool members stored under `${provider}#N`, in ascending order.
+  const all = await loadAllKeysSingleFlight(normProvider);
+  const prefix = `${normProvider}${POOL_SEP}`;
+  const extras = Object.entries(all)
+    .filter(([k]) => k.startsWith(prefix) && /^\d+$/.test(k.slice(prefix.length)))
+    .sort((a, b) => (parseInt(a[0].slice(prefix.length), 10) || 0) - (parseInt(b[0].slice(prefix.length), 10) || 0));
+  for (const [, v] of extras) push(v);
+  return pool;
+}
+
+/** Append a key to the provider pool (next `${provider}#N`). Never touches the primary. */
+export async function addKeyToPool(providerId: string, key: string): Promise<void> {
+  if (!isVaultReady()) {
+    throw new Error('safeStorage encryption is not available');
+  }
+  const sanitized = sanitizeApiKey(key);
+  const normProvider = providerId.toLowerCase().trim();
+  const keys = loadAllKeys();
+  let n = 2;
+  while (keys[`${normProvider}${POOL_SEP}${n}`] !== undefined) n += 1;
+  const entryId = `${normProvider}${POOL_SEP}${n}`;
+  keys[entryId] = sanitized.key;
+  if (decryptedFileSnapshot) decryptedFileSnapshot[entryId] = sanitized.key;
+
+  const filePath = getCredentialsFilePath();
+  const dir = path.dirname(filePath);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  try {
+    const encryptedBuffer = safeStorage.encryptString(JSON.stringify(keys));
+    fs.writeFileSync(filePath, encryptedBuffer);
+  } catch (err) {
+    console.warn(`[VAULT] safeStorage encryption FAILED (pool): ${err instanceof Error ? err.message : String(err)}`);
+    throw err;
+  }
+  clearKeyCache(normProvider);
+  console.log(`[VAULT] Added pool key #${n} for ${normProvider}`);
+}
+
 // ===== Community Key remote bootstrap (ZeroFriction, Cloudflare KV edition) ==
 //
 // Source of truth: https://api.tycode.dev/community-key - a Cloudflare Worker
@@ -475,6 +535,18 @@ async function fetchCommunityKeyRemote(): Promise<string | null> {
         : Date.now() + 24 * 3_600_000;
     console.log('[VAULT] Community key bootstrapped and encrypted via safeStorage.');
     emitCommunityKeyStatus('active');
+    // Catalog freshness at fetch: a fresh Community Key means the free tier is
+    // usable again, so re-validate the baked ty-code-free default list against
+    // the PUBLIC OpenRouter catalog in the background. This prunes any retired
+    // slug and repoints the default off it before the next send, so the
+    // freshly-bootstrapped key is never used against a dead default model.
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { modelCatalogVerifier } = require('./providers/catalog-verifier') as typeof import('./providers/catalog-verifier');
+      void modelCatalogVerifier.healOpenRouterFreeTier().catch(() => undefined);
+    } catch {
+      // Verifier unavailable: the periodic pass still re-validates later.
+    }
     return value;
   } catch (err) {
     console.warn(`[VAULT] Fetch FAILED: ${err instanceof Error ? err.message : String(err)}`);

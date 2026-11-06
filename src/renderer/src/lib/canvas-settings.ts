@@ -27,6 +27,19 @@ export interface CanvasSettings {
   chromeTheme: CanvasChromeTheme;
   defaultLeftWidth: number;
   defaultRightWidth: number;
+  /**
+   * Prompt 4 Step 5: a custom accent override (any CSS color). Empty string
+   * means "follow the chrome theme". Sourced from the extracted DesignProfile
+   * palette when the user picks one, but stored here so it survives
+   * independently of the app theme.
+   */
+  accentColor: string;
+  /**
+   * Prompt 4 Step 5: the canvas stage background color. Empty string means
+   * "follow the chrome theme" (var(--bg-primary)); otherwise a CSS color the
+   * stage paints behind the device frame.
+   */
+  backgroundColor: string;
 }
 
 export const DEFAULT_CANVAS_SETTINGS: CanvasSettings = {
@@ -38,7 +51,9 @@ export const DEFAULT_CANVAS_SETTINGS: CanvasSettings = {
   minimapDefault: true,
   chromeTheme: 'dark',
   defaultLeftWidth: 232,
-  defaultRightWidth: 250
+  defaultRightWidth: 250,
+  accentColor: '',
+  backgroundColor: ''
 };
 
 const STORAGE_KEY = 'tycode.canvas.settings';
@@ -61,7 +76,9 @@ const normalize = (parsed: Partial<CanvasSettings> | null | undefined): CanvasSe
     minimapDefault: src.minimapDefault !== false,
     chromeTheme: theme,
     defaultLeftWidth: clamp(src.defaultLeftWidth as number, 220, 480, DEFAULT_CANVAS_SETTINGS.defaultLeftWidth),
-    defaultRightWidth: clamp(src.defaultRightWidth as number, 220, 480, DEFAULT_CANVAS_SETTINGS.defaultRightWidth)
+    defaultRightWidth: clamp(src.defaultRightWidth as number, 220, 480, DEFAULT_CANVAS_SETTINGS.defaultRightWidth),
+    accentColor: typeof src.accentColor === 'string' ? src.accentColor.trim() : '',
+    backgroundColor: typeof src.backgroundColor === 'string' ? src.backgroundColor.trim() : ''
   };
 };
 
@@ -128,7 +145,11 @@ export const subscribeCanvasSettings = (listener: Listener): (() => void) => {
  * are CSS custom-property overrides scoped to the Sketcher root element, so a
  * theme change recolours panels and toolbar live without touching global CSS.
  */
-export const canvasThemeVars = (theme: CanvasChromeTheme): Record<string, string> => {
+export const canvasThemeVars = (
+  theme: CanvasChromeTheme,
+  overrides?: { accentColor?: string; backgroundColor?: string }
+): Record<string, string> => {
+  const base: Record<string, string> = ((): Record<string, string> => {
   switch (theme) {
     case 'light':
       return {
@@ -151,4 +172,18 @@ export const canvasThemeVars = (theme: CanvasChromeTheme): Record<string, string
     default:
       return {};
   }
+  })();
+  // Prompt 4 Step 5: a custom accent (from the design profile) recolours the
+  // Sketcher's accent tokens, and an explicit background overrides the stage
+  // fill — both applied ON TOP of the chrome theme, still independent of the
+  // app theme because they live in their own localStorage key.
+  const accent = overrides?.accentColor?.trim();
+  if (accent) {
+    base['--accent-primary'] = accent;
+  }
+  const background = overrides?.backgroundColor?.trim();
+  if (background) {
+    base['--canvas-bg'] = background;
+  }
+  return base;
 };

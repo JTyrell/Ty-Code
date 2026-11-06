@@ -34,7 +34,7 @@ import { chatLatencyTracker } from '../../providers/provider-gateway';
 import { reliabilityLedger } from './reliability-ledger';
 import { classifyProviderFailure } from '../../providers/error-classifier';
 import { broadcastReliability, isPackagedBuild } from './bus';
-import type { DevChaosRequest, ReliabilityHealthSnapshot, ReliabilityRouteHealth } from '../../../shared/types/agent-events';
+import type { DevChaosFault, DevChaosRequest, ReliabilityHealthSnapshot, ReliabilityRouteHealth } from '../../../shared/types/agent-events';
 
 const TICK_INTERVAL_MS = 50_000;
 const FIRST_TICK_MIN_MS = 20_000;
@@ -47,6 +47,11 @@ const TTFT_WINDOW = 20;
 const COOLING_SUCCESS_THRESHOLD = 0.6;
 const COOLING_MIN_SAMPLES = 6;
 const OK_SUCCESS_THRESHOLD = 0.85;
+// Output Validity Gate (Step 3.2): a route whose DEGENERATE rate exceeds 30%
+// over the last SUCCESS_WINDOW attempts is marked 'degraded' and deprioritized
+// in chain order — an empty 200 is a FAILURE, not a healthy result.
+const DEGENERATE_RATE_THRESHOLD = 0.3;
+const DEGENERATE_MIN_SAMPLES = 4;
 const BASE_429_COOLDOWN_MS = 180_000;
 const BASE_PROBE_COOLDOWN_MS = 90_000;
 const MAX_COOLDOWN_MS = 3_600_000;
@@ -58,7 +63,7 @@ interface RouteStat {
   providerId: string;
   modelId: string;
   url: string;
-  results: Array<{ ok: boolean; at: number; ttftMs?: number; status?: number }>;
+  results: Array<{ ok: boolean; at: number; ttftMs?: number; status?: number; degenerate?: boolean }>;
   status: RouteStatus;
   failuresInARow: number;
   cooldownUntil: number;
@@ -99,7 +104,9 @@ class ReliabilitySentinel {
   private buildPromise: Promise<void> | null = null;
   private keyTimer: ReturnType<typeof setInterval> | null = null;
   private keyRevalidateIdx = 0;
-  private queuedFaults = new Map<string, { fault: 'timeout' | 'refused' | 'rate_429'; until: number }>();
+  // auth_401 never queues (it invalidates + re-fetches the community key), so
+  // the queued set is every other fault including the Output-Validity ones.
+  private queuedFaults = new Map<string, { fault: Exclude<DevChaosFault, 'auth_401'>; until: number }>();
   private routeListeners = new Set<(providerId: string, modelId: string, status: RouteStatus) => void>();
 
   // ---------- Lifecycle ----------
@@ -290,10 +297,20 @@ class ReliabilitySentinel {
         signal: AbortSignal.timeout(PROBE_TIMEOUT_MS)
       });
       const latencyMs = Date.now() - started;
-      const ok = res.status >= 200 && res.status < 300;
+      // Output Validity Gate (Step 3.1): a probe asserts NON-EMPTY content. A
+      // 2xx with an empty body is NOT healthy — it is the same hollow-success
+      // class we reject on the request path, so it counts as a failure.
+      const statusOk = res.status >= 200 && res.status < 300;
+      let bodyText = '';
+      try {
+        bodyText = await res.text();
+      } catch {
+        bodyText = '';
+      }
+      const ok = statusOk && bodyText.trim().length > 0;
       stat.ttftHistory.push(latencyMs);
       if (stat.ttftHistory.length > TTFT_WINDOW) stat.ttftHistory = stat.ttftHistory.slice(-TTFT_WINDOW);
-      this.recordOutcome(stat, ok, latencyMs, res.status);
+      this.recordOutcome(stat, ok, latencyMs, res.status, ok ? undefined : (statusOk ? 'empty_probe_body' : `HTTP ${res.status}`));
     } catch (err) {
       const latencyMs = Date.now() - started;
       this.recordOutcome(stat, false, latencyMs, undefined, err instanceof Error ? err.message : String(err));
@@ -303,7 +320,8 @@ class ReliabilitySentinel {
   // ---------- Stats + cooldown ----------
 
   private recordOutcome(stat: RouteStat, ok: boolean, ttftMs: number | undefined, httpStatus: number | undefined, error?: string): void {
-    stat.results.push({ ok, at: Date.now(), ttftMs, status: httpStatus });
+    const degenerate = !ok && typeof error === 'string' && error.startsWith('degenerate_output');
+    stat.results.push({ ok, at: Date.now(), ttftMs, status: httpStatus, degenerate });
     if (stat.results.length > SUCCESS_WINDOW) stat.results = stat.results.slice(-SUCCESS_WINDOW);
 
     const previous = stat.status;
@@ -362,6 +380,14 @@ class ReliabilitySentinel {
     const now = Date.now();
     const okCount = stat.results.filter((r) => r.ok).length;
     const rate = stat.results.length > 0 ? okCount / stat.results.length : 0;
+    // Output Validity Gate (Step 3.2): a DEGENERATE rate above 30% over the last
+    // SUCCESS_WINDOW attempts marks the route degraded (a routable failure), so
+    // chain selection deprioritizes it even when the raw HTTP status was 200.
+    if (stat.results.length >= DEGENERATE_MIN_SAMPLES) {
+      const recent = stat.results.slice(-SUCCESS_WINDOW);
+      const degenerateCount = recent.filter((r) => r.degenerate).length;
+      if (degenerateCount / recent.length > DEGENERATE_RATE_THRESHOLD) return 'degraded';
+    }
     if (stat.results.length >= COOLING_MIN_SAMPLES && rate < COOLING_SUCCESS_THRESHOLD) return 'cooling';
     if (stat.cooldownUntil > now && stat.failuresInARow >= 2) return 'cooling';
     if (stat.failuresInARow >= 2) return 'degraded';

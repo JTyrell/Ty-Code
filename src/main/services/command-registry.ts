@@ -220,6 +220,17 @@ export const COMMAND_ENTRY_INPUTS: CommandEntryInput[] = [
   { id: 'canvas.send-backward', label: 'Send Backward', menu: 'View', group: 8, keybinding: 'Ctrl+[', when: 'canvasActive', disabledReason: 'Open the UI Sketcher to lower its selected layers.', command: 'canvas.sendBackward', category: 'View' },
   { id: 'canvas.send-back', label: 'Send to Back', menu: 'View', group: 8, keybinding: 'Ctrl+Shift+[', when: 'canvasActive', disabledReason: 'Open the UI Sketcher to lower its selected layers.', command: 'canvas.sendBack', category: 'View' },
 
+  // Prompt 4 + platform extension: export/copy, responsive + chrome toggles and
+  // the layer-tree helpers. All gated on `canvasActive` (no new context keys), so
+  // they only surface in the Sketcher window; `M3ECanvas` registers the handlers.
+  { id: 'canvas.export-to-project', label: 'Export Canvas to Project', menu: 'View', group: 9, when: 'canvasActive', disabledReason: 'Open the UI Sketcher to export its canvas as the selected dialect.', command: 'canvas.exportToProject', category: 'View' },
+  { id: 'canvas.copy-code', label: 'Copy Canvas Code', menu: 'View', group: 9, when: 'canvasActive', disabledReason: 'Open the UI Sketcher to copy the generated dialect to the clipboard.', command: 'canvas.copyCode', category: 'View' },
+  { id: 'canvas.responsive-preset-cycle', label: 'Cycle Responsive Preview Width', menu: 'View', group: 9, when: 'canvasActive', disabledReason: 'Open the UI Sketcher to change its responsive preview.', command: 'canvas.responsivePresetCycle', category: 'View' },
+  { id: 'canvas.chrome-theme-toggle', label: 'Toggle Canvas Chrome Theme', menu: 'View', group: 9, when: 'canvasActive', disabledReason: 'Open the UI Sketcher to switch its canvas chrome theme.', command: 'canvas.chromeThemeToggle', category: 'View' },
+  { id: 'canvas.expand-all-layers', label: 'Expand All Layers', menu: 'View', group: 9, when: 'canvasActive', disabledReason: 'Open the UI Sketcher to expand its layer tree.', command: 'canvas.expandAllLayers', category: 'View' },
+  { id: 'canvas.collapse-all-layers', label: 'Collapse All Layers', menu: 'View', group: 9, when: 'canvasActive', disabledReason: 'Open the UI Sketcher to collapse its layer tree.', command: 'canvas.collapseAllLayers', category: 'View' },
+  { id: 'canvas.focus-layer-filter', label: 'Focus Layer Filter', menu: 'View', group: 9, when: 'canvasActive', disabledReason: 'Open the UI Sketcher to filter its layer tree.', command: 'canvas.focusLayerFilter', category: 'View' },
+
   // Palette-only (no menu): these keep three shortcuts that `App.tsx` bound by
   // hand before the registry existed. Without entries here, retiring that
   // keydown chain in favour of registry keybindings would silently delete a

@@ -265,7 +265,11 @@ import type {
   InstallProgressEvent,
   InstallStep,
   ExtensionInstallState,
-  ExtensionEnabledState
+  ExtensionEnabledState,
+  ExtensionUpdateInfo,
+  RunningExtensionInfo,
+  ExtensionBisectState,
+  BulkToggleResult
 } from '../shared/types/marketplace';
 export type {
   MarketplaceExtensionEntry,
@@ -275,7 +279,11 @@ export type {
   InstallProgressEvent,
   InstallStep,
   ExtensionInstallState,
-  ExtensionEnabledState
+  ExtensionEnabledState,
+  ExtensionUpdateInfo,
+  RunningExtensionInfo,
+  ExtensionBisectState,
+  BulkToggleResult
 };
 export type { FreeProvider, ModelTier, TierClassification, ProviderHealthStatus, ScopeRejectionCard };
 export type {
@@ -758,6 +766,18 @@ export interface ChatMessage {
   truncated?: boolean;
   modeEscalation?: { from: string; to: string };
   scopeRejectionCard?: ScopeRejectionCard;
+  /** True when the turn finalized with no content, thoughts, tools or error —
+   *  surfaces an actionable "no response received" strip instead of a blank
+   *  bubble. Never carries model text; auto-cleared if content arrives. */
+  noResponseNotice?: boolean;
+  /** Output Validity Gate (Step 4): when a turn finalized hollow, the parsed
+   *  route trail so the strip can name the degenerate route, show how many
+   *  routes were tried, and expose the full trail in Details. Never carries
+   *  fabricated model content. */
+  routeFailure?: { route: string; triedCount: number; trail: string };
+  /** The consolidated per-turn [ROUTE] trail line (present whenever a real
+   *  failover/degenerate happened). Shown in Details on any message. */
+  routeTrail?: string;
 }
 
 export interface ProposedDiff {
@@ -1492,6 +1512,9 @@ export interface ElectronAPI {
     openFilePaths?: string[];
     providerOverride?: ProviderType;
     modelOverride?: string;
+    /** Regenerate after a degenerate failure: exclude this route from the
+     *  FIRST attempt so the hollow route is not retried before rotating. */
+    excludeRoute?: string;
     skills?: SkillDefinition[];
     resumeSessionId?: string;
     clientSentAt?: number;
@@ -1837,6 +1860,17 @@ export interface ElectronAPI {
   toggleExtension: (id: string, enabled: boolean) => Promise<IpcResponse<InstalledExtension>>;
   updateExtensionSettings: (id: string, settings: Record<string, unknown>) => Promise<IpcResponse<void>>;
   installExtensionFromVsix: () => Promise<IpcResponse<InstalledExtension>>;
+  // Extension Controls (VS Code parity "…" menu)
+  checkExtensionUpdates: () => Promise<IpcResponse<ExtensionUpdateInfo[]>>;
+  updateExtension: (id: string) => Promise<IpcResponse<InstallResult>>;
+  toggleAllExtensions: (enabled: boolean) => Promise<IpcResponse<BulkToggleResult>>;
+  getRunningExtensions: () => Promise<IpcResponse<RunningExtensionInfo[]>>;
+  getExtensionAutoUpdate: () => Promise<IpcResponse<boolean>>;
+  setExtensionAutoUpdate: (enabled: boolean) => Promise<IpcResponse<boolean>>;
+  startExtensionBisect: () => Promise<IpcResponse<ExtensionBisectState>>;
+  reportExtensionBisectRound: (issuePresent: boolean) => Promise<IpcResponse<ExtensionBisectState>>;
+  stopExtensionBisect: (restore?: boolean) => Promise<IpcResponse<ExtensionBisectState | null>>;
+  getExtensionBisectState: () => Promise<IpcResponse<ExtensionBisectState | null>>;
   extensionCapability: (request: ExtensionCapabilityRequest) => Promise<IpcResponse<unknown>>;
   extensionActivate: (id: string) => Promise<IpcResponse<boolean>>;
   extensionDeactivate: (id: string) => Promise<IpcResponse<boolean>>;
@@ -2073,6 +2107,8 @@ export interface ElectronAPI {
   canvasSyncMessage?: (payload: { message: CanvasMessageData }) => Promise<IpcResponse<CanvasMessageData>>;
   canvasAgentGenerate?: (prompt: string) => Promise<IpcResponse<CanvasAgentGenerationResultData>>;
   canvasChatSend?: (payload: CanvasChatSendData) => Promise<IpcResponse<CanvasAgentGenerationResultData & { runId: string }>>;
+  canvasExportDialect?: (payload: CanvasExportDialectRequestData) => Promise<IpcResponse<CanvasExportDialectData>>;
+  canvasExportCancel?: (requestId: string) => Promise<IpcResponse<boolean>>;
   notifyMainChatOfCanvasUpdate?: (payload: CanvasUpdateNotificationData) => Promise<IpcResponse<boolean>>;
   focusCanvasWindow?: () => Promise<IpcResponse<boolean>>;
   onCanvasStateSynced?: (callback: (state: CanvasSnapshotData) => void) => () => void;
@@ -2440,6 +2476,18 @@ export interface CanvasChatSendData {
     activePlatform?: 'react' | 'flutter' | 'swiftui' | 'web' | 'other';
     canvasComponents?: CanvasComponentNodeData[];
   };
+}
+
+// Canvas dialect export (Prompt 4 extension). The result shape derives from the
+// shared Zod `CanvasExportDialectResultSchema`; the request is validated at the
+// ipcMain boundary against `CanvasExportDialectRequestSchema`.
+export type CanvasExportDialectData = import('../shared/types/canvas-export').CanvasExportDialectResult;
+export interface CanvasExportDialectRequestData {
+  requestId: string;
+  targetId: import('../shared/canvas-platform-registry').CanvasTargetId;
+  nodes: CanvasComponentNodeData[];
+  componentName: string;
+  workspaceRoot: string;
 }
 
 export interface CanvasSnapshotData {

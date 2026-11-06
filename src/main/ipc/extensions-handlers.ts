@@ -8,7 +8,16 @@ import {
   ExtensionMetadataSchema
 } from '../../preload/extension-schemas';
 import { extensionManager } from '../services/extension-manager';
+import { vsixInstaller } from '../services/marketplace/vsix-installer';
 import { extensionHost } from '../services/extensions/extension-host';
+import { extensionControls } from '../services/extensions/extension-controls';
+import type {
+  ExtensionUpdateInfo,
+  RunningExtensionInfo,
+  ExtensionBisectState,
+  BulkToggleResult,
+  InstallResult
+} from '../../shared/types/marketplace';
 
 const MAX_REGISTRY_RESPONSE_BYTES = 1_000_000;
 
@@ -48,6 +57,18 @@ function safeHttpsUrl(value: unknown, allowedHost?: string): string | undefined 
   }
 }
 
+/**
+ * Open VSX "files" entries can be relative URIs ("/api/..."). Absolutize them
+ * against the registry origin before HTTPS validation so real icons and VSIX
+ * download URLs survive the schema round-trip.
+ */
+function registryFileUrl(value: unknown): string | undefined {
+  if (typeof value !== 'string' || !value.trim()) return undefined;
+  if (/^https?:\/\//i.test(value)) return value;
+  if (value.startsWith('/')) return `https://open-vsx.org${value}`;
+  return undefined;
+}
+
 function toMarketplaceMetadata(item: unknown): ExtensionMetadata | undefined {
   if (!item || typeof item !== 'object' || Array.isArray(item)) return undefined;
   const raw = item as Record<string, unknown>;
@@ -61,8 +82,8 @@ function toMarketplaceMetadata(item: unknown): ExtensionMetadata | undefined {
     displayName: typeof raw.displayName === 'string' ? raw.displayName.slice(0, 160) : name,
     description: typeof raw.description === 'string' ? raw.description.slice(0, 2_000) : '',
     version: raw.version,
-    iconUrl: safeHttpsUrl(files.icon, 'open-vsx.org'),
-    downloadUrl: safeHttpsUrl(files.download, 'open-vsx.org'),
+    iconUrl: safeHttpsUrl(registryFileUrl(files.icon), 'open-vsx.org'),
+    downloadUrl: safeHttpsUrl(registryFileUrl(files.download), 'open-vsx.org'),
     downloadCount: typeof raw.downloadCount === 'number' && Number.isFinite(raw.downloadCount) ? Math.max(0, raw.downloadCount) : 0,
     rating: typeof raw.averageRating === 'number' && Number.isFinite(raw.averageRating) ? Math.min(5, Math.max(0, raw.averageRating)) : undefined,
     publishedDate: typeof raw.timestamp === 'string' ? raw.timestamp.slice(0, 80) : undefined,
@@ -225,7 +246,28 @@ export async function handleInstallExtensionFromVsix(window?: BrowserWindow): Pr
       properties: ['openFile']
     });
     if (result.canceled || result.filePaths.length === 0) return { success: false, error: 'Installation cancelled' };
-    return { success: false, error: 'VSIX installation is unavailable until package validation and security review are implemented.' };
+
+    const vsixPath = result.filePaths[0];
+    // Real pipeline: magic-byte check, zip-slip-safe extraction, manifest validation,
+    // host registration, and rollback on failure (see VsixInstaller.installFromVsix).
+    const broadcastProgress = (progressEvent: { id: string; step: string; percent?: number; message?: string }) => {
+      try {
+        for (const target of BrowserWindow.getAllWindows()) {
+          if (!target.isDestroyed()) {
+            target.webContents.send('marketplace:install-progress', progressEvent);
+          }
+        }
+      } catch {
+        // Ignore progress delivery failures
+      }
+    };
+
+    const installResult = await vsixInstaller.installFromVsix(vsixPath, broadcastProgress);
+    if (installResult.success && installResult.installedExtension) {
+      broadcastProgress({ id: installResult.id, step: 'registration', percent: 100, message: 'Installation complete!' });
+      return { success: true, data: installResult.installedExtension as InstalledExtension };
+    }
+    return { success: false, error: installResult.error || 'VSIX installation failed.' };
   } catch (err: unknown) {
     return { success: false, error: err instanceof Error ? err.message : String(err) };
   }
@@ -297,6 +339,107 @@ export async function handleExtensionProvideCompletions(payload: unknown): Promi
       raw.character || 0
     );
     return { success: true, data: items };
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Extension Controls (VS Code parity "…" menu)
+// ---------------------------------------------------------------------------
+
+export async function handleCheckExtensionUpdates(): Promise<IpcResponse<ExtensionUpdateInfo[]>> {
+  try {
+    const updates = await extensionControls.checkForUpdates();
+    return { success: true, data: updates };
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : String(err), data: [] };
+  }
+}
+
+export async function handleUpdateExtension(id: unknown): Promise<IpcResponse<InstallResult>> {
+  try {
+    const safeId = ExtensionIdSchema.parse(id);
+    // Real VSIX pipeline: resolves latest metadata from Open VSX, downloads,
+    // verifies checksum, extracts with zip-slip protection, re-registers host.
+    const result = await vsixInstaller.install({ id: safeId }, (event) => {
+      try {
+        for (const target of BrowserWindow.getAllWindows()) {
+          if (!target.isDestroyed()) target.webContents.send('marketplace:install-progress', event);
+        }
+      } catch {
+        // Ignore progress delivery failures
+      }
+    });
+    return { success: result.success, data: result, error: result.error };
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+export async function handleToggleAllExtensions(enabled: unknown): Promise<IpcResponse<BulkToggleResult>> {
+  try {
+    if (typeof enabled !== 'boolean') throw new Error('Bulk toggle target must be boolean.');
+    const result = await extensionControls.toggleAllExtensions(enabled);
+    return { success: true, data: result };
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+export async function handleGetRunningExtensions(): Promise<IpcResponse<RunningExtensionInfo[]>> {
+  try {
+    return { success: true, data: extensionHost.getRunningExtensions() };
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : String(err), data: [] };
+  }
+}
+
+export async function handleGetExtensionAutoUpdate(): Promise<IpcResponse<boolean>> {
+  try {
+    return { success: true, data: await extensionControls.getAutoUpdateEnabled() };
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : String(err), data: true };
+  }
+}
+
+export async function handleSetExtensionAutoUpdate(enabled: unknown): Promise<IpcResponse<boolean>> {
+  try {
+    if (typeof enabled !== 'boolean') throw new Error('Auto-update flag must be boolean.');
+    return { success: true, data: await extensionControls.setAutoUpdateEnabled(enabled) };
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+export async function handleStartExtensionBisect(): Promise<IpcResponse<ExtensionBisectState>> {
+  try {
+    return { success: true, data: await extensionControls.startBisect() };
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+export async function handleReportExtensionBisectRound(issuePresent: unknown): Promise<IpcResponse<ExtensionBisectState>> {
+  try {
+    if (typeof issuePresent !== 'boolean') throw new Error('Bisect report must be boolean.');
+    return { success: true, data: await extensionControls.reportBisectRound(issuePresent) };
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+export async function handleStopExtensionBisect(restore: unknown): Promise<IpcResponse<ExtensionBisectState | null>> {
+  try {
+    return { success: true, data: await extensionControls.stopBisect(restore !== false) };
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+export async function handleGetExtensionBisectState(): Promise<IpcResponse<ExtensionBisectState | null>> {
+  try {
+    return { success: true, data: extensionControls.getBisectState() };
   } catch (err: unknown) {
     return { success: false, error: err instanceof Error ? err.message : String(err) };
   }

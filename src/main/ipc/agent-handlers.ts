@@ -92,7 +92,7 @@ function cancelTaskApprovals(taskId: string): void {
 }
 
 import { connectivityTracer } from '../services/diagnostics/connectivity-tracer';
-import { chatLatencyTracker } from '../providers/provider-gateway';
+import { chatLatencyTracker, setTurnExcludedRoute } from '../providers/provider-gateway';
 
 export async function startAgentTask(
   mainWindow: BrowserWindow,
@@ -111,12 +111,16 @@ export async function startAgentTask(
     openFilePaths?: string[];
     providerOverride?: string;
     modelOverride?: string;
+    excludeRoute?: string;
     resumeSessionId?: string;
     clientSentAt?: number;
   }
 ): Promise<IpcResponse<string>> {
   const taskId = params.taskId || `task_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   chatLatencyTracker.setActiveTaskId(taskId);
+  // Regenerate-excludes-route (Step 4.2): register the hollow route so the
+  // gateway rotates away from it on this turn's FIRST attempt (consumed once).
+  if (params.excludeRoute) setTurnExcludedRoute(taskId, params.excludeRoute);
   if (params.clientSentAt) {
     chatLatencyTracker.recordH1(taskId, params.clientSentAt);
   }

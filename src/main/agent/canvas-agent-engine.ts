@@ -19,6 +19,7 @@ import { getOrScanWorkspaceProfile } from '../services/context-engine/workspace-
 import type { WorkspaceProfile } from '../services/context-engine/types';
 import { onCorrectionAdded, computeWorkspaceHash, type CorrectionEvent, getCorrections } from '../services/context-engine/correction-memory';
 import { workspaceCache, workspaceCacheKey, WORKSPACE_CACHE_TTL_MS } from '../services/workspace-cache-service';
+import { CANVAS_TARGET_PROMPTS } from './canvas-platform-prompts';
 
 const liveCanvasCorrections = new Map<string, Set<string>>();
 
@@ -43,131 +44,17 @@ onCorrectionAdded((event: CorrectionEvent) => {
 // EXACT system prompt templates per target platform
 // ---------------------------------------------------------------------------
 
-const CANVAS_OUTPUT_PROTOCOL = `
-
-OUTPUT PROTOCOL (mandatory):
-After the code block, append ONE more fenced block: a JSON object of the EXACT UI tree you rendered:
-\`\`\`tycode
-{ "canvas": [
-  { "type": "container",  "props": { "width": 320, "height": 220, "color": "#1e1b29" } },
-  { "type": "button",     "props": { "text": "Get Started" } },
-  { "type": "text",       "props": { "text": "Welcome", "fontSize": 20, "color": "#e7eaf6" } }
-] }
-\`\`\`
-Allowed types: container, card, button, text, input, image, checkbox, switch, progress, divider, avatar.
-Allowed props: width, height, text (label/placeholder), color (background), textColor, fontSize, fontWeight, borderRadius, padding, checked (checkbox/switch), value (progress 0-100). Coordinates are auto-laid-out — do NOT include x/y.
-The JSON tree drives the live visual canvas — every element in your code MUST appear in it.`;
-
-const REACT_WEB_SYSTEM_PROMPT = `You are the Ty-Code M3E Canvas generation agent for WEB (React + Tailwind CSS).
-Generate a single React functional component for a Material-3-Expressive web page.
-
-STRICT RULES:
-1. Output ONLY one fenced \`\`\`tsx block with one default-export functional component. No prose before or after.
-2. Styling: Tailwind CSS utility classes ONLY (no .css files, no <style>, no external UI kit imports).
-3. Elements must stay simple and composable: div, section, button, input, img, p, span, h1-h6.
-4. Colors: use hex values like bg-[#a855f7] / text-[#e7eaf6], or standard palette names
-   (purple-500 #a855f7, purple-600 #9333ea, indigo-500 #6366f1, emerald-500 #10b981, slate-900 #0f172a).
-5. Rounded, expressive surfaces (rounded-xl / rounded-2xl), generous spacing, subtle shadows.
-6. No runtime dependencies: hooks from 'react' only.
-
-Examples of correct style:
-\`\`\`tsx
-export default function HeroCard() {
-  return (
-    <div className="bg-[#1e1b29] rounded-2xl p-6 text-[#e7eaf6]">
-      <button className="bg-[#a855f7] text-white rounded-xl px-4 py-2">Get Started</button>
-    </div>
-  );
-}
-\`\`\`${CANVAS_OUTPUT_PROTOCOL}`;
-
-const REACT_NATIVE_SYSTEM_PROMPT = `You are the Ty-Code M3E Canvas generation agent for MOBILE (React Native).
-Generate a single React Native functional component for a Material-3-Expressive mobile screen.
-
-STRICT RULES:
-1. Output ONLY one fenced \`\`\`tsx block with one default-export functional component. No prose before or after.
-2. Imports ONLY from 'react' and 'react-native' (View, Text, TextInput, TouchableOpacity, Image, Switch, ScrollView, StyleSheet).
-3. Styling via StyleSheet with flex layout and hex colors (\`backgroundColor: '#a855f7'\`); platform-safe for iOS and Android.
-4. All interactive controls live inside TouchableOpacity wrappers; text ONLY inside <Text>.
-5. Fonts/typography: system defaults (fontWeight/fontSize in StyleSheet), no font imports.
-6. The screen must fit a phone frame (390x844) using flex column layout with padding 24.
-
-Examples of correct style:
-\`\`\`tsx
-export default function HomeScreen() {
-  return (
-    <View style={{ flex: 1, backgroundColor: '#121316', padding: 24 }}>
-      <TouchableOpacity style={{ backgroundColor: '#a855f7', borderRadius: 14, paddingVertical: 12 }}>
-        <Text style={{ color: '#ffffff', fontWeight: '600' }}>Get Started</Text>
-      </TouchableOpacity>
-    </View>
-  );
-}
-\`\`\`${CANVAS_OUTPUT_PROTOCOL}`;
-
-const FLUTTER_SYSTEM_PROMPT = `You are the Ty-Code M3E Canvas generation agent for MOBILE (Flutter).
-Generate valid Dart code for a Material-3-Expressive Flutter screen.
-
-STRICT RULES:
-1. Output ONLY one fenced \`\`\`dart block containing a single StatefulWidget + its State class (plus minimal imports: package:flutter/material.dart). No prose before or after.
-2. Only Flutter SDK widgets: Column, Row, Container, Padding, SizedBox, Card, Text, TextField, ElevatedButton, TextButton, FilledButton, Image.asset/network, Switch, Checkbox, LinearProgressIndicator, ListView.
-3. Colors via Color(0xFFa855f7) hex literals or Material palette constants.
-4. Expressive shapes: BorderRadius.circular(14) or .all(Radius.circular(14)); rounded surfaces.
-5. No packages beyond flutter/material.dart; no generated code.
-
-Examples of correct style:
-\`\`\`dart
-class HomeScreen extends StatefulWidget { const HomeScreen({super.key}); @override State<HomeScreen> createState() => _HomeScreenState(); }
-class _HomeScreenState extends State<HomeScreen> {
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      color: Color(0xFF121316),
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        children: [
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Color(0xFFa855f7)),
-            onPressed: () {},
-            child: const Text('Get Started'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-\`\`\`${CANVAS_OUTPUT_PROTOCOL}`;
-
-const SWIFTUI_SYSTEM_PROMPT = `You are the Ty-Code M3E Canvas generation agent for DESKTOP (SwiftUI).
-Generate a single SwiftUI View for a Material-3-Expressive desktop window.
-
-STRICT RULES:
-1. Output ONLY one fenced \`\`\`swift block with one struct conforming to View (body: some View). No prose before or after.
-2. SwiftUI SDK only: VStack, HStack, ZStack, Text, TextField, Button, Image, Toggle, ProgressView, Divider, Color.
-3. Styling with modifiers (.background(Color(hex:...)), .cornerRadius(14), .padding(24)); define a hex Color extension inline if needed.
-4. macOS desktop layout with clear vertical rhythm and spacing helpers.
-5. No third-party imports; @State allowed.
-
-Examples of correct style:
-\`\`\`swift
-struct HomeScreen: View {
-    var body: some View {
-        VStack(spacing: 16) {
-            Button("Get Started") {}
-                .buttonStyle(.borderedProminent)
-        }
-        .padding(24)
-        .background(Color(red: 0.07, green: 0.07, blue: 0.09))
-    }
-}
-\`\`\`${CANVAS_OUTPUT_PROTOCOL}`;
-
+// Prompt templates are sourced from a single file — `canvas-platform-prompts.ts`
+// — shared by the chat and the export orchestrator. These legacy tables preserve
+// the EXACT prior `CANVAS_SYSTEM_PROMPTS` / `CANVAS_LANGUAGE_FOR_PLATFORM`
+// behavior (web/other -> React web, react -> React Native) so existing chat output
+// and every prompt contract string stay byte-identical (golden-tested in CI).
 export const CANVAS_SYSTEM_PROMPTS: Record<CanvasPlatform, string> = {
-  web: REACT_WEB_SYSTEM_PROMPT,
-  react: REACT_NATIVE_SYSTEM_PROMPT,
-  flutter: FLUTTER_SYSTEM_PROMPT,
-  swiftui: SWIFTUI_SYSTEM_PROMPT,
-  other: REACT_WEB_SYSTEM_PROMPT
+  web: CANVAS_TARGET_PROMPTS['react-web'],
+  react: CANVAS_TARGET_PROMPTS['react-native'],
+  flutter: CANVAS_TARGET_PROMPTS.flutter,
+  swiftui: CANVAS_TARGET_PROMPTS.swiftui,
+  other: CANVAS_TARGET_PROMPTS['react-web']
 };
 
 export const CANVAS_LANGUAGE_FOR_PLATFORM: Record<CanvasPlatform, string> = {
@@ -569,35 +456,15 @@ export class CanvasAgentEngine {
       // Defaults hold.
     }
 
-    let projectDesignPrompt = '';
-    try {
-      const workspaceRoot = opts.workspaceRoot || process.cwd();
-      const hash = computeWorkspaceHash(workspaceRoot);
-      // Stage 7a: the expensive design-system + workspace extraction and
-      // persistent-rule load are memoized per root through the shared
-      // workspace cache singleton (same instance the Debugger uses in 6b), so a
-      // restyle on a warm workspace skips re-scanning. Live, in-session
-      // corrections are still applied fresh on top of the cached base.
-      const extracted = await workspaceCache.getOrCompute(
-        workspaceCacheKey(workspaceRoot, 'canvas-design-prompt'),
-        WORKSPACE_CACHE_TTL_MS,
-        async () => {
-          const [designProfile, workspaceProfile, persistentRules] = await Promise.all([
-            extractDesignSystem(workspaceRoot).catch(() => null),
-            getOrScanWorkspaceProfile(workspaceRoot).catch(() => null),
-            getCorrections(workspaceRoot).catch(() => [] as string[])
-          ]);
-          return { designProfile, workspaceProfile, persistentRules };
-        }
-      );
-      const liveRules = Array.from(liveCanvasCorrections.get(hash) || []);
-      const allRules = Array.from(new Set([...extracted.persistentRules, ...liveRules]));
-      projectDesignPrompt = buildProjectDesignPrompt(extracted.designProfile, extracted.workspaceProfile, allRules);
-    } catch {
-      // Non-blocking fallback
-    }
+    // Stage 7a: the expensive design-system + workspace extraction and
+    // persistent-rule load are memoized per root through the shared workspace
+    // cache singleton (same instance the Debugger uses in 6b), so a restyle on a
+    // warm workspace skips re-scanning. Reused verbatim by the export
+    // orchestrator so an export never triggers a fresh FS walk on a warm cache
+    // (Prompt 4 extension, amendment 2).
+    const projectDesignPrompt = await buildCanvasProjectDesignPrompt(opts.workspaceRoot || process.cwd());
 
-    const basePrompt = CANVAS_SYSTEM_PROMPTS[platform] ?? REACT_WEB_SYSTEM_PROMPT;
+    const basePrompt = CANVAS_SYSTEM_PROMPTS[platform] ?? CANVAS_TARGET_PROMPTS['react-web'];
     const systemPrompt = platform === 'web' || platform === 'other'
       ? `${basePrompt}${projectDesignPrompt}`
       : basePrompt;
@@ -750,3 +617,32 @@ export class CanvasAgentEngine {
 }
 
 export const canvasAgentEngine = new CanvasAgentEngine();
+
+/**
+ * Build the project design-system + learned-rules block for a workspace,
+ * memoized through the shared `workspaceCache` singleton (Stages 6b/7a). Live,
+ * in-session corrections are still layered fresh on top of the cached base.
+ * Shared by `generate()` and the export orchestrator (amendment 2).
+ */
+export async function buildCanvasProjectDesignPrompt(workspaceRoot: string): Promise<string> {
+  try {
+    const hash = computeWorkspaceHash(workspaceRoot);
+    const extracted = await workspaceCache.getOrCompute(
+      workspaceCacheKey(workspaceRoot, 'canvas-design-prompt'),
+      WORKSPACE_CACHE_TTL_MS,
+      async () => {
+        const [designProfile, workspaceProfile, persistentRules] = await Promise.all([
+          extractDesignSystem(workspaceRoot).catch(() => null),
+          getOrScanWorkspaceProfile(workspaceRoot).catch(() => null),
+          getCorrections(workspaceRoot).catch(() => [] as string[])
+        ]);
+        return { designProfile, workspaceProfile, persistentRules };
+      }
+    );
+    const liveRules = Array.from(liveCanvasCorrections.get(hash) || []);
+    const allRules = Array.from(new Set([...extracted.persistentRules, ...liveRules]));
+    return buildProjectDesignPrompt(extracted.designProfile, extracted.workspaceProfile, allRules);
+  } catch {
+    return '';
+  }
+}
